@@ -1,4 +1,3 @@
-"""Tests for the environment snapshot recorded alongside run outputs."""
 
 from __future__ import annotations
 
@@ -10,7 +9,6 @@ from tools.runtime.environment_capture import EnvironmentCapture
 
 
 def test_snapshot_carries_the_version_and_host_keys():
-    """The snapshot names the host and every library version a rerun would need to match."""
     snapshot = EnvironmentCapture.snapshot()
 
     assert snapshot["hostname"] == socket.gethostname()
@@ -20,7 +18,6 @@ def test_snapshot_carries_the_version_and_host_keys():
 
 
 def test_snapshot_gpu_entries_match_the_visible_devices():
-    """The GPU list holds one named entry per visible CUDA device and is empty without CUDA."""
     snapshot = EnvironmentCapture.snapshot()
 
     if torch.cuda.is_available():
@@ -33,7 +30,6 @@ def test_snapshot_gpu_entries_match_the_visible_devices():
 
 
 def test_snapshot_is_json_serialisable():
-    """Every snapshot value survives a JSON round trip unchanged."""
     import json
 
     snapshot = EnvironmentCapture.snapshot()

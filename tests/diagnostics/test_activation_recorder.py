@@ -1,10 +1,3 @@
-"""Tests for activation recording and the activation x-ray issue detector.
-
-Covers hook coverage of leaf modules, statistic accumulation across batches,
-dead-channel and channel-concentration measures, the store mode that keeps raw
-layer outputs safe from in-place activations, and the severity rules that turn
-layer statistics into flagged reports and a run summary.
-"""
 
 from __future__ import annotations
 
@@ -17,21 +10,17 @@ from tools.diagnostics.activation_xray_analysis import ActivationIssueDetector, 
 
 
 class _TinyNet(torch.nn.Module):
-    """Three-layer convolutional network used as a recording target."""
     def __init__(self) -> None:
-        """Builds the convolution, ReLU and 1x1 head layers."""
         super().__init__()
         self.conv = torch.nn.Conv2d(2, 4, kernel_size=3, padding=1)
         self.act  = torch.nn.ReLU()
         self.head = torch.nn.Conv2d(4, 3, kernel_size=1)
 
     def forward(self, x):
-        """Returns the head output for an input of shape (batch, 2, height, width)."""
         return self.head(self.act(self.conv(x)))
 
 
 def _record(model, batches) -> dict:
-    """Returns the per-layer activation statistics after running the batches through the model."""
     recorder = ActivationRecorder(model)
     recorder.attach_stats()
 
@@ -44,7 +33,6 @@ def _record(model, batches) -> dict:
 
 
 def test_recorder_covers_all_leaf_modules():
-    """Statistics are collected for every leaf module with the right channel and batch counts."""
     stats = _record(_TinyNet(), [torch.randn(2, 2, 8, 8)])
 
     assert set(stats) == {"conv", "act", "head"}
@@ -53,7 +41,6 @@ def test_recorder_covers_all_leaf_modules():
 
 
 def test_recorder_accumulates_across_batches():
-    """Batch and element counts accumulate over successive forward passes."""
     stats = _record(_TinyNet(), [torch.randn(2, 2, 8, 8), torch.randn(2, 2, 8, 8)])
 
     assert stats["conv"]["n_batches"]  == 2
@@ -61,7 +48,6 @@ def test_recorder_accumulates_across_batches():
 
 
 def test_recorder_detects_dead_channels():
-    """A zeroed convolution channel with strong negative bias shows up as a dead ReLU channel."""
     model = _TinyNet()
     with torch.no_grad():
         model.conv.weight[0] = 0.0
@@ -74,16 +60,12 @@ def test_recorder_detects_dead_channels():
 
 
 def test_recorder_stats_are_exact_for_known_values():
-    """Zero fraction, mean and maximum absolute value match hand-computed values on a fixed tensor."""
     class _Identity(torch.nn.Module):
-        """Module wrapping a single Identity layer so its output can be recorded."""
         def __init__(self) -> None:
-            """Builds the identity layer."""
             super().__init__()
             self.layer = torch.nn.Identity()
 
         def forward(self, x):
-            """Returns the input unchanged through the identity layer."""
             return self.layer(x)
 
     values = torch.tensor([[0.0, 1.0], [2.0, 3.0]]).reshape(1, 4)
@@ -95,7 +77,6 @@ def test_recorder_stats_are_exact_for_known_values():
 
 
 def test_store_mode_returns_layer_outputs():
-    """Store mode keeps the raw outputs of the selected layers with their full shapes."""
     model    = _TinyNet()
     recorder = ActivationRecorder(model)
     recorder.attach_store(["conv", "act"])
@@ -112,7 +93,6 @@ def test_store_mode_returns_layer_outputs():
 
 
 def test_store_mode_unknown_module_raises():
-    """Requesting storage for a module name that does not exist raises KeyError."""
     recorder = ActivationRecorder(_TinyNet())
 
     with pytest.raises(KeyError):
@@ -120,7 +100,6 @@ def test_store_mode_unknown_module_raises():
 
 
 def _layer_stats(name: str, **overrides) -> dict:
-    """Returns a healthy layer statistics record with the given name and overrides applied."""
     stats = {
         "name": name, "module_type": "Conv2d", "shape": [4, 8, 8], "n_batches": 1, "n_elements": 100,
         "nonfinite_frac": 0.0, "zero_frac": 0.3, "mean": 0.5, "std": 1.0, "max_abs": 4.0,
@@ -132,7 +111,6 @@ def _layer_stats(name: str, **overrides) -> dict:
 
 
 def test_issue_detector_flags_dead_and_exploding_layers():
-    """A dead layer is critical, an exploding layer is a warning, and the summary counts both as flagged."""
     config = ActivationXrayConfig()
     stats  = {
         "dead"    : _layer_stats("dead", module_type="ReLU", zero_frac=0.995, mean=0.0, std=0.001, max_abs=0.01, abs_p50=0.001, abs_p99=0.01, dead_channels=4, dead_channel_frac=1.0, effective_channel_frac=0.0, channel_gini=None),
@@ -152,7 +130,6 @@ def test_issue_detector_flags_dead_and_exploding_layers():
 
 
 def test_nonfinite_activations_are_critical():
-    """A layer with non-finite activations is reported as critical with the matching issue code."""
     config = ActivationXrayConfig()
     stats  = {"naninf": _layer_stats("naninf", shape=[4], nonfinite_frac=0.02, zero_frac=0.0, max_abs=2.0, abs_p99=1.5)}
 
@@ -163,7 +140,6 @@ def test_nonfinite_activations_are_critical():
 
 
 def test_channel_collapse_is_flagged_only_on_live_layers():
-    """Channel collapse is reported for concentrated live layers but suppressed on dead or healthy ones."""
     config = ActivationXrayConfig()
     stats  = {
         "collapsed" : _layer_stats("collapsed", n_channels=64, effective_channel_frac=0.05, channel_gini=0.9),
@@ -180,7 +156,6 @@ def test_channel_collapse_is_flagged_only_on_live_layers():
 
 
 def test_summary_ranks_worst_layers_by_severity():
-    """The summary lists the critical layer ahead of the merely warned one."""
     config = ActivationXrayConfig()
     stats  = {
         "warned"   : _layer_stats("warned", max_abs=1e6),
@@ -195,17 +170,13 @@ def test_summary_ranks_worst_layers_by_severity():
 
 
 def test_store_mode_survives_inplace_activations():
-    """Stored pre-activation outputs keep their negative values despite the in-place ReLU."""
     class _InplaceNet(torch.nn.Module):
-        """Convolution followed by an in-place ReLU, used to test output cloning."""
         def __init__(self) -> None:
-            """Builds the 1x1 convolution and the in-place ReLU."""
             super().__init__()
             self.conv = torch.nn.Conv2d(2, 4, kernel_size=1, bias=True)
             self.act  = torch.nn.ReLU(inplace=True)
 
         def forward(self, x):
-            """Returns the in-place activated convolution output."""
             return self.act(self.conv(x))
 
     torch.manual_seed(0)
@@ -223,33 +194,27 @@ def test_store_mode_survives_inplace_activations():
 
 
 def test_stats_record_forward_order():
-    """First-seen counters order the layers along the forward pass."""
     stats = _record(_TinyNet(), [torch.randn(1, 2, 8, 8)])
 
     assert stats["conv"]["first_seen"] < stats["act"]["first_seen"] < stats["head"]["first_seen"]
 
 
 def test_abs_percentile_reports_overflow_via_max_abs():
-    """The 99th absolute percentile saturates at the maximum absolute value for huge activations."""
     stats = _record(_TinyNet(), [torch.randn(2, 2, 8, 8) * 1e6])
 
     assert stats["conv"]["abs_p99"] == stats["conv"]["max_abs"]
 
 
 class _PassThrough(torch.nn.Module):
-    """Module wrapping a single Identity layer for channel-statistic tests."""
     def __init__(self) -> None:
-        """Builds the identity layer."""
         super().__init__()
         self.layer = torch.nn.Identity()
 
     def forward(self, x):
-        """Returns the input unchanged through the identity layer."""
         return self.layer(x)
 
 
 def test_channel_concentration_separates_uniform_from_collapsed():
-    """Uniform channels give full effective fraction and zero Gini, a single dominant channel gives the opposite."""
     uniform   = torch.ones(1, 4, 4, 4)
     collapsed = torch.zeros(1, 4, 4, 4)
     collapsed[:, 0] = 1000.0
@@ -265,7 +230,6 @@ def test_channel_concentration_separates_uniform_from_collapsed():
 
 
 def test_all_dead_channels_report_zero_effective_fraction():
-    """An all-zero activation reports zero effective channels and an undefined Gini coefficient."""
     stats = _record(_PassThrough(), [torch.zeros(1, 4, 4, 4)])["layer"]
 
     assert stats["effective_channel_frac"] == 0.0
@@ -273,7 +237,6 @@ def test_all_dead_channels_report_zero_effective_fraction():
 
 
 def test_constant_activations_have_unit_dynamic_range():
-    """A constant activation has unit dynamic range and equal median and 99th absolute percentiles."""
     stats = _record(_PassThrough(), [torch.full((1, 4, 4, 4), 2.0)])["layer"]
 
     assert stats["dynamic_range"] == pytest.approx(1.0)
@@ -281,7 +244,6 @@ def test_constant_activations_have_unit_dynamic_range():
 
 
 def test_abs_percentiles_describe_the_non_zero_magnitudes():
-    """A layer that is 60% exact zeros reports the p50 and p99 of its non-zero values, not the zero-bin edge."""
     values          = torch.zeros(1, 10)
     values[0, :4]   = 0.5
     stats           = _record(_PassThrough(), [values])["layer"]
@@ -293,7 +255,6 @@ def test_abs_percentiles_describe_the_non_zero_magnitudes():
 
 
 def test_all_zero_layer_has_no_dynamic_range():
-    """A layer without any value above 1e-8 reports zero percentiles and no dynamic range."""
     stats = _record(_PassThrough(), [torch.zeros(1, 8)])["layer"]
 
     assert stats["abs_p50"]       == 0.0
@@ -302,21 +263,17 @@ def test_all_zero_layer_has_no_dynamic_range():
 
 
 class _SharedActNet(torch.nn.Module):
-    """Two convolutions of different width sharing one ReLU module, so the ReLU fires twice per forward."""
     def __init__(self) -> None:
-        """Builds the 4- and 8-channel convolutions and the shared ReLU."""
         super().__init__()
         self.conv_a = torch.nn.Conv2d(2, 4, kernel_size=1)
         self.conv_b = torch.nn.Conv2d(4, 8, kernel_size=1)
         self.act    = torch.nn.ReLU()
 
     def forward(self, x):
-        """Returns the twice-activated output for an input of shape (batch, 2, H, W)."""
         return self.act(self.conv_b(self.act(self.conv_a(x))))
 
 
 def test_reused_leaf_module_is_recorded_per_call_site():
-    """A module firing twice per forward gets one row per call site with the right width, and is reported as reused."""
     model    = _SharedActNet()
     recorder = ActivationRecorder(model)
     recorder.attach_stats()
@@ -338,7 +295,6 @@ def test_reused_leaf_module_is_recorded_per_call_site():
 
 
 def test_unshared_modules_are_not_reported_as_reused():
-    """A network whose leaves fire once per forward reports no reused module."""
     recorder = ActivationRecorder(_TinyNet())
     recorder.attach_stats()
 
@@ -351,7 +307,6 @@ def test_unshared_modules_are_not_reported_as_reused():
 
 
 def test_summary_carries_the_reused_modules():
-    """The run summary persists which modules were recorded per call site."""
     reports = ActivationIssueDetector(ActivationXrayConfig()).run({"clean": _layer_stats("clean")})
     summary = ActivationXraySummarizer(ActivationXrayConfig()).build(reports, "/tmp/run", n_batches=1, reused_modules={"pool": 4}, silent_layers={})
 
@@ -359,20 +314,16 @@ def test_summary_carries_the_reused_modules():
 
 
 class _UnwiredNet(torch.nn.Module):
-    """Convolution plus a second convolution that forward never calls, so that leaf stays silent."""
     def __init__(self) -> None:
-        """Builds the used and the unwired 1x1 convolutions."""
         super().__init__()
         self.conv   = torch.nn.Conv2d(2, 4, kernel_size=1)
         self.unused = torch.nn.Conv2d(4, 4, kernel_size=1)
 
     def forward(self, x):
-        """Returns the first convolution of x, of shape (batch, 4, H, W), never touching the second."""
         return self.conv(x)
 
 
 def test_silent_leaf_modules_are_named_and_left_out_of_the_stats():
-    """A hooked leaf the forward never runs is absent from the statistics but named with its type as silent."""
     model    = _UnwiredNet()
     recorder = ActivationRecorder(model)
     recorder.attach_stats()
@@ -387,7 +338,6 @@ def test_silent_leaf_modules_are_named_and_left_out_of_the_stats():
 
 
 def test_stats_raise_when_no_module_fired():
-    """Asking for statistics after a capture without any forward pass raises instead of returning an empty mapping."""
     recorder = ActivationRecorder(_TinyNet())
     recorder.attach_stats()
     recorder.detach()
@@ -397,7 +347,6 @@ def test_stats_raise_when_no_module_fired():
 
 
 def test_summary_counts_hooked_and_silent_layers():
-    """The run summary tells the recorded layers from the hooked ones and names the silent leaves."""
     reports = ActivationIssueDetector(ActivationXrayConfig()).run({"clean": _layer_stats("clean")})
     summary = ActivationXraySummarizer(ActivationXrayConfig()).build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={"unused": "Conv2d"})
 
@@ -407,7 +356,6 @@ def test_summary_counts_hooked_and_silent_layers():
 
 
 def test_summary_records_the_capture_settings_thresholds_and_provenance():
-    """The run summary persists the checkpoint, split, batch settings, every detector threshold and the code provenance."""
     config  = ActivationXrayConfig(split="val", batch_size=2, max_batches=3, dead_zero_frac_warn=0.8)
     reports = ActivationIssueDetector(config).run({"clean": _layer_stats("clean")})
     summary = ActivationXraySummarizer(config).build(reports, "/tmp/run", n_batches=3, reused_modules={}, silent_layers={})
@@ -422,7 +370,6 @@ def test_summary_records_the_capture_settings_thresholds_and_provenance():
 
 
 def test_hooked_layer_count_counts_a_reused_module_once():
-    """The summary's hooked-layer count names modules, so a module recorded at two call sites counts once."""
     model    = _SharedActNet()
     recorder = ActivationRecorder(model)
     recorder.attach_stats()

@@ -1,14 +1,3 @@
-"""Tests for the webui contention monitor that flags the stall this user inflicts on neighbours.
-
-Covers the per-user slice sampling (CPU share from the slice counters, the
-worst-stalled neighbour per resource, dominance), the verdicts (a stalled
-neighbour is this user's alarm only when this user is the dominant consumer,
-host pressure alone raises nothing), the disabled state when a kernel source is
-missing, alarm bookkeeping (only alarms attributed to the current user are
-logged, escalations are logged once, neighbour alarms clear silently), the
-separate full-stall threshold used for I/O, the automatic throttle that fires
-once per announced alarm of this user's, and the auto-nuke push.
-"""
 
 from __future__ import annotations
 
@@ -26,51 +15,29 @@ from tests.webui.conftest import StubNotifier, StubPaths
 
 
 class StubNuke:
-    """Stand-in for the process nuker, counting how often it is triggered.
-
-    Attributes:
-        fired : Number of nuke invocations.
-    """
 
     def __init__(self) -> None:
-        """Initialises the trigger counter at zero."""
         self.fired = 0
 
     def nuke(self) -> dict:
-        """Records a trigger and returns a successful no-op result."""
         self.fired += 1
         return {"ok": True, "signalled": 0, "killed": 0}
 
 
 class StubThrottle:
-    """Stand-in for the job throttle, counting calls and answering a fixed result.
-
-    Attributes:
-        calls  : Number of `apply` invocations.
-        result : Mapping returned by every `apply`.
-    """
 
     def __init__(self, ok: bool = True) -> None:
-        """Starts with no calls and a result of the given success."""
         self.calls  = 0
         self.result = {"ok": ok, "processes": 3, "renice": 0 if ok else 1, "ionice": 0, "error": "" if ok else "renice: failed to set priority"}
 
     def apply(self) -> dict:
-        """Records one call and returns the fixed result."""
         self.calls += 1
         return dict(self.result)
 
 
 class FakeHost:
-    """Writes a fake /proc/pressure directory and user.slice tree.
-
-    Attributes:
-        psi    : Directory standing in for /proc/pressure.
-        slices : Directory standing in for /sys/fs/cgroup/user.slice.
-    """
 
     def __init__(self, root) -> None:
-        """Creates the two directories with quiet host pressure files."""
         self.psi    = root / "pressure"
         self.slices = root / "user.slice"
         self.psi.mkdir()
@@ -80,24 +47,12 @@ class FakeHost:
 
     @staticmethod
     def pressure(some: float, full: float) -> str:
-        """Returns the text of a pressure file with the given avg10 percentages."""
         return f"some avg10={some:.2f} avg60=0.00 avg300=0.00 total=0\nfull avg10={full:.2f} avg60=0.00 avg300=0.00 total=0\n"
 
     def host(self, resource: str, some: float, full: float = 0.0) -> None:
-        """Sets the machine-wide pressure of one resource ("cpu", "memory" or "io")."""
         (self.psi / resource).write_text(self.pressure(some, full))
 
     def user(self, uid: int, cpu_usec: int, anon: int = 0, cpu: tuple = (0.0, 0.0), mem: tuple = (0.0, 0.0), io: tuple = (0.0, 0.0)) -> None:
-        """Writes or rewrites one user slice.
-
-        Args:
-            uid      : Numeric user id of the slice.
-            cpu_usec : Cumulative CPU time of the slice in microseconds.
-            anon     : Anonymous memory charged to the slice in bytes.
-            cpu      : (some, full) avg10 percentages of the slice's CPU pressure.
-            mem      : (some, full) avg10 percentages of the slice's memory pressure.
-            io       : (some, full) avg10 percentages of the slice's I/O pressure.
-        """
         base = self.slices / f"user-{uid}.slice"
         base.mkdir(exist_ok=True)
         (base / "cpu.stat").write_text(f"usage_usec {cpu_usec}\nuser_usec {cpu_usec}\nsystem_usec 0\n")
@@ -113,7 +68,6 @@ NEIGHBOUR = 424242
 
 @pytest.fixture
 def host(tmp_path, monkeypatch):
-    """Points the slice reader at a fake host tree and returns its writer."""
     fake = FakeHost(tmp_path)
     monkeypatch.setattr(UserSlices, "PSI_ROOT", str(fake.psi))
     monkeypatch.setattr(UserSlices, "ROOT", str(fake.slices))
@@ -121,7 +75,6 @@ def host(tmp_path, monkeypatch):
 
 
 def _monitor(tmp_path, throttle: StubThrottle | None = None) -> ContentionMonitor:
-    """Builds a contention monitor over stub paths with the given or a fresh stub throttle."""
     paths  = StubPaths(tmp_path / "repo")
     logger = WebLogger()
     return ContentionMonitor(paths, logger, StubNotifier(), StubNuke(), throttle or StubThrottle(), JobPoliteness(paths, logger))
@@ -129,20 +82,10 @@ def _monitor(tmp_path, throttle: StubThrottle | None = None) -> ContentionMonito
 
 @pytest.fixture
 def monitor(tmp_path, host):
-    """Returns a contention monitor over stub paths, the fake host, a stub nuker and a stub throttle."""
     return _monitor(tmp_path)
 
 
 def _signals(io_full: float) -> dict:
-    """Builds a sample where one neighbour is fully stalled on disk by this user.
-
-    Args:
-        io_full : PSI full-stall percentage of the neighbour's I/O pressure.
-
-    Returns:
-        Signal dictionary with quiet CPU and memory, a neighbour stalled 99 percent
-        of the time on I/O, and the disk throughput entirely driven by this user.
-    """
     quiet = {"stall": 0.0, "full": 0.0, "user": None, "n": 0}
     return {
         "psi"    : {"cpu": {"some": 0.0, "full": 0.0}, "mem": {"some": 0.0, "full": 0.0}, "io": {"some": 99.0, "full": io_full}},
@@ -159,35 +102,20 @@ def _signals(io_full: float) -> dict:
 
 
 def _alarm(monitor: ContentionMonitor, kind: str) -> dict | None:
-    """Returns the active alarm of the given kind, or None if it is not raised."""
     return next((entry for entry in monitor.state()["active"] if entry["kind"] == kind), None)
 
 
 def _alarm_events(monitor: ContentionMonitor) -> list[dict]:
-    """Returns the recorded events minus the throttle entries the announcements add."""
     return [event for event in monitor.state()["events"] if event["kind"] != "throttle"]
 
 
 def _advance(monitor: ContentionMonitor, host: FakeHost, me_usec: int, other_usec: int, **pressure) -> dict:
-    """Rewrites both slices with the given counters and takes one sample.
-
-    Args:
-        monitor    : Monitor under test.
-        host       : Fake host tree.
-        me_usec    : Cumulative CPU time of this user's slice.
-        other_usec : Cumulative CPU time of the neighbour's slice.
-        pressure   : Pressure tuples forwarded to the neighbour's slice.
-
-    Returns:
-        The sample as returned by `_sample`.
-    """
     host.user(ME, me_usec, anon=4 << 30)
     host.user(NEIGHBOUR, other_usec, anon=1 << 30, **pressure)
     return monitor._sample()
 
 
 def test_slice_rows_carry_cpu_memory_and_stall(host):
-    """Checks a slice row reports its counter, its charged memory and its three pressures."""
     host.user(NEIGHBOUR, 5_000_000, anon=3 << 30, cpu=(12.5, 1.0), io=(7.0, 0.0))
 
     rows = UserSlices.rows()
@@ -200,7 +128,6 @@ def test_slice_rows_carry_cpu_memory_and_stall(host):
 
 
 def test_cpu_share_comes_from_the_slice_counters(monitor, host):
-    """Checks the CPU share is this slice's delta over the sum of every slice's delta."""
     _advance(monitor, host, 0, 0)
     sample = _advance(monitor, host, 6_000_000, 2_000_000)
 
@@ -210,7 +137,6 @@ def test_cpu_share_comes_from_the_slice_counters(monitor, host):
 
 
 def test_the_worst_stalled_neighbour_is_reported_per_resource(monitor, host):
-    """Checks the neighbour summary names the stalled user and counts those above the threshold."""
     _advance(monitor, host, 0, 0)
     sample = _advance(monitor, host, 1, 1, cpu=(45.0, 6.0), mem=(2.0, 0.0))
 
@@ -220,7 +146,6 @@ def test_the_worst_stalled_neighbour_is_reported_per_resource(monitor, host):
 
 
 def test_a_stalled_neighbour_with_me_dominant_is_my_alarm(monitor, host):
-    """Checks a neighbour waiting for CPU while this user holds most of it raises an alarm owned by this user."""
     _advance(monitor, host, 0, 0)
     for step in range(1, ContentionMonitor.SUSTAIN + 1):
         monitor._evaluate(_advance(monitor, host, step * 9_000_000, step * 1_000_000, cpu=(50.0, 0.0)))
@@ -234,7 +159,6 @@ def test_a_stalled_neighbour_with_me_dominant_is_my_alarm(monitor, host):
 
 
 def test_a_stalled_neighbour_with_another_dominant_is_not_mine(monitor, host):
-    """Checks the same neighbour stall is attributed elsewhere when the neighbour holds the CPU."""
     _advance(monitor, host, 0, 0)
     for step in range(1, ContentionMonitor.SUSTAIN + 1):
         monitor._evaluate(_advance(monitor, host, step * 1_000_000, step * 9_000_000, cpu=(50.0, 0.0)))
@@ -247,7 +171,6 @@ def test_a_stalled_neighbour_with_another_dominant_is_not_mine(monitor, host):
 
 
 def test_host_pressure_without_a_stalled_neighbour_raises_nothing(monitor, host):
-    """Checks machine-wide pressure alone, with every neighbour's slice quiet, is not an alarm."""
     host.host("cpu", 90.0)
     host.host("io", 90.0, 20.0)
     _advance(monitor, host, 0, 0)
@@ -258,7 +181,6 @@ def test_host_pressure_without_a_stalled_neighbour_raises_nothing(monitor, host)
 
 
 def test_a_fully_stalled_neighbour_escalates_to_danger(monitor, host):
-    """Checks the neighbour's full-stall average drives the alarm level."""
     _advance(monitor, host, 0, 0)
     for step in range(1, ContentionMonitor.SUSTAIN + 1):
         monitor._evaluate(_advance(monitor, host, step * 9_000_000, step * 1_000_000, cpu=(60.0, 10.0)))
@@ -267,7 +189,6 @@ def test_a_fully_stalled_neighbour_escalates_to_danger(monitor, host):
 
 
 def test_missing_pressure_files_disable_the_monitor(tmp_path, host, monkeypatch):
-    """Checks a kernel without /proc/pressure leaves the monitor off instead of sampling zeros."""
     monkeypatch.setattr(UserSlices, "PSI_ROOT", str(tmp_path / "absent"))
     monitor = _monitor(tmp_path)
 
@@ -279,7 +200,6 @@ def test_missing_pressure_files_disable_the_monitor(tmp_path, host, monkeypatch)
 
 
 def test_an_alarm_that_becomes_mine_is_recorded_and_logged(monitor):
-    """Checks an alarm is logged only once it is attributed to the current user."""
     monitor._raise("mem", "warn", False, "neighbour holds the RAM")
 
     assert monitor.state()["events"] == []
@@ -293,7 +213,6 @@ def test_an_alarm_that_becomes_mine_is_recorded_and_logged(monitor):
 
 
 def test_an_escalation_to_danger_is_recorded_once(monitor):
-    """Checks repeated raises at the same level log nothing and only the escalation is added."""
     monitor._raise("mem", "warn", True, "you hold the RAM")
     monitor._raise("mem", "warn", True, "you hold the RAM")
     monitor._raise("mem", "danger", True, "you hold the RAM and the neighbours are stalling")
@@ -304,7 +223,6 @@ def test_an_escalation_to_danger_is_recorded_once(monitor):
 
 
 def test_an_alarm_raised_for_a_neighbour_clears_without_a_log(monitor):
-    """Checks a neighbour-owned alarm leaves no event behind when it drops."""
     monitor._raise("io", "warn", False, "neighbour drives the disk")
     monitor._drop("io")
 
@@ -313,7 +231,6 @@ def test_an_alarm_raised_for_a_neighbour_clears_without_a_log(monitor):
 
 
 def test_io_escalation_uses_its_own_full_threshold(monitor, monkeypatch):
-    """Checks the I/O alarm level follows IO_FULL rather than the shared threshold."""
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._evaluate(_signals(io_full=6.0))
 
@@ -326,7 +243,6 @@ def test_io_escalation_uses_its_own_full_threshold(monitor, monkeypatch):
 
 
 def test_an_announced_alert_is_pushed_through_the_notifier(monitor):
-    """An alert attributed to this user is pushed once when it is announced."""
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("io", "warn", True, False, True, "disk stall caused by you")
 
@@ -336,7 +252,6 @@ def test_an_announced_alert_is_pushed_through_the_notifier(monitor):
 
 
 def test_a_neighbours_alert_is_not_pushed(monitor):
-    """An alert another user causes stays out of the push channel."""
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("io", "warn", True, False, False, "disk stall caused by them")
 
@@ -344,7 +259,6 @@ def test_a_neighbours_alert_is_not_pushed(monitor):
 
 
 def test_announcing_my_alarm_throttles_once(monitor):
-    """Checks the first announcement of an alarm this user causes lowers the running jobs once and records it."""
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("cpu", "warn", True, False, True, "cpu stall caused by you")
     monitor._track("cpu", "warn", True, False, True, "cpu stall caused by you")
@@ -360,7 +274,6 @@ def test_announcing_my_alarm_throttles_once(monitor):
 
 
 def test_a_dropped_alarm_can_throttle_again_when_it_returns(monitor):
-    """Checks the throttle re-arms only after the alarm has cleared."""
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("mem", "warn", True, False, True, "memory stall caused by you")
     monitor._drop("mem")
@@ -372,7 +285,6 @@ def test_a_dropped_alarm_can_throttle_again_when_it_returns(monitor):
 
 
 def test_a_neighbours_alarm_never_throttles(monitor):
-    """Checks an alarm attributed to another user leaves this user's jobs alone."""
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("io", "danger", True, False, False, "disk stall caused by them")
 
@@ -381,7 +293,6 @@ def test_a_neighbours_alarm_never_throttles(monitor):
 
 
 def test_a_leak_alarm_never_throttles(monitor):
-    """Checks the advisory RAM-growth alarm does not lower priorities."""
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("leak", "warn", True, False, True, "process climbing")
 
@@ -389,7 +300,6 @@ def test_a_leak_alarm_never_throttles(monitor):
 
 
 def test_auto_throttle_off_leaves_the_jobs_alone(monitor):
-    """Checks the politeness flag gates the automatic throttle."""
     monitor.politeness.configure({"auto_throttle": False})
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("cpu", "danger", True, False, True, "cpu stall caused by you")
@@ -399,7 +309,6 @@ def test_auto_throttle_off_leaves_the_jobs_alone(monitor):
 
 
 def test_an_alarm_that_becomes_mine_throttles_at_the_flip(monitor):
-    """Checks ownership flipping to this user on a standing alarm triggers the throttle."""
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("cpu", "warn", True, False, False, "cpu stall caused by them")
 
@@ -411,7 +320,6 @@ def test_an_alarm_that_becomes_mine_throttles_at_the_flip(monitor):
 
 
 def test_a_failed_throttle_is_recorded_as_danger(tmp_path, host):
-    """Checks a throttle that could not lower the processes is logged, recorded and pushed high."""
     monitor = _monitor(tmp_path, StubThrottle(ok=False))
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("cpu", "warn", True, False, True, "cpu stall caused by you")
@@ -425,7 +333,6 @@ def test_a_failed_throttle_is_recorded_as_danger(tmp_path, host):
 
 
 def test_the_state_carries_the_politeness_settings(monitor):
-    """Checks the UI snapshot includes the launch politeness and its prefix."""
     state = monitor.state()["politeness"]
 
     assert state["level"]         == "polite"
@@ -434,7 +341,6 @@ def test_the_state_carries_the_politeness_settings(monitor):
 
 
 def test_the_auto_nuke_pushes_an_urgent_notification(monitor):
-    """A fired auto-nuke pushes one urgent notification."""
     monitor.auto_nuke = True
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("mem", "danger", True, False, True, "memory stall caused by you")

@@ -1,9 +1,3 @@
-"""Tests for saving and restoring the full trainer state.
-
-Covers the round trip of model weights, EMA shadow, optimizer, warmup,
-scheduler, early stopping, checkpoint bookkeeping, gradient clipper history
-and RNG state, plus the post-restore hook.
-"""
 
 from __future__ import annotations
 
@@ -22,27 +16,22 @@ from tests.training_runtime.conftest import RecordingTracker, TinyModel
 
 
 def _warmup_config(fraction: float = 0.05) -> SimpleNamespace:
-    """Returns a namespace holding a linear warmup section spanning `fraction` of the total steps."""
     return SimpleNamespace(warmup=SimpleNamespace(warmup_fraction=fraction, warmup_start_factor=0.1, warmup_enabled=True, warmup_mode="linear", warmup_poly_power=2.0))
 
 
 def _scheduler_config(epochs: int = 10) -> SimpleNamespace:
-    """Returns a namespace holding a cosine scheduler section and a warmup section."""
     return SimpleNamespace(scheduler=SimpleNamespace(type="cosine_annealing", epochs=epochs, eta_min=1e-6, step_size=30, gamma=0.1, power=1.0), optimizer=SimpleNamespace(lr_scale=1.0), warmup=_warmup_config().warmup)
 
 
 def _stopping_config(patience: int = 3) -> SimpleNamespace:
-    """Returns a namespace holding an early_stopping section with the given patience."""
     return SimpleNamespace(early_stopping=SimpleNamespace(patience=patience, min_delta=0.0, restore_best=True))
 
 
 def _clipper_config(window: int = 4) -> SimpleNamespace:
-    """Returns a namespace holding an adaptive-percentile gradient clipper section."""
     return SimpleNamespace(gradient_clipper=SimpleNamespace(clip_mode="adaptive_percentile", max_grad_norm=1.0, adaptive_window=window, adaptive_percentile=95.0, adaptive_mean_std_k=2.0, clip_epsilon=1e-6, log_histogram_freq=100))
 
 
 def _trainer(tmp_path, seed: int = 0, batch_size: int = 8, lr_scale: float = 1.0) -> SimpleNamespace:
-    """Returns a trainer shim with every stateful component wired up, seeded by `seed`, under the given batch geometry."""
     torch.manual_seed(seed)
 
     logger  = SilentLogger()
@@ -78,7 +67,6 @@ def _trainer(tmp_path, seed: int = 0, batch_size: int = 8, lr_scale: float = 1.0
 
 
 def _advance(trainer) -> None:
-    """Advances every stateful component of `trainer` so a restore has something to compare."""
     trainer.model.linear.weight.grad = torch.ones_like(trainer.model.linear.weight)
     trainer.optimizer.step()
     trainer.ema.update(trainer.model)
@@ -102,7 +90,6 @@ def _advance(trainer) -> None:
 
 
 def test_roundtrip_restores_all_components(tmp_path):
-    """Verifies that every trainer component is restored from a saved state."""
     source = _trainer(tmp_path, seed=0)
     _advance(source)
 
@@ -132,7 +119,6 @@ def test_roundtrip_restores_all_components(tmp_path):
 
 
 def test_restore_invokes_hook_with_state(tmp_path):
-    """Verifies that the post-restore hook receives the loaded state payload."""
     source = _trainer(tmp_path)
     path   = tmp_path / "last.pt"
     TrainerState.save(source, epoch=2, path=path)
@@ -147,7 +133,6 @@ def test_restore_invokes_hook_with_state(tmp_path):
 
 
 def test_restore_missing_file_raises(tmp_path):
-    """Verifies that restoring from a missing checkpoint raises FileNotFoundError."""
     trainer = _trainer(tmp_path)
 
     with pytest.raises(FileNotFoundError):
@@ -155,14 +140,12 @@ def test_restore_missing_file_raises(tmp_path):
 
 
 def test_capture_records_the_batch_geometry(tmp_path):
-    """Verifies the saved state carries the micro-batch, accumulation window, rank count and LR scale it was trained under."""
     state = TrainerState.capture(_trainer(tmp_path, batch_size=16, lr_scale=2.0), epoch=0)
 
     assert state["batch_geometry"] == {"batch_size": 16, "accumulation_steps": 1, "world_size": 1, "lr_scale": 2.0}
 
 
 def test_restore_refuses_a_different_batch_geometry(tmp_path):
-    """Verifies a state saved under another micro-batch or LR scale is refused, naming each changed setting, before touching the trainer."""
     path = tmp_path / "last.pt"
     TrainerState.save(_trainer(tmp_path, batch_size=16, lr_scale=2.0), epoch=3, path=path)
 
@@ -177,7 +160,6 @@ def test_restore_refuses_a_different_batch_geometry(tmp_path):
 
 
 def test_restore_refuses_a_state_without_batch_geometry(tmp_path):
-    """Verifies a state saved before the geometry was recorded is refused rather than resumed unchecked."""
     path  = tmp_path / "last.pt"
     state = TrainerState.capture(_trainer(tmp_path), epoch=0)
     del state["batch_geometry"]
@@ -188,7 +170,6 @@ def test_restore_refuses_a_state_without_batch_geometry(tmp_path):
 
 
 def test_rng_roundtrip_reproduces_draws(tmp_path):
-    """Verifies that torch RNG state is restored so subsequent draws repeat."""
     trainer = _trainer(tmp_path)
     path    = tmp_path / "last.pt"
 

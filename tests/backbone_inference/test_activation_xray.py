@@ -1,9 +1,3 @@
-"""End-to-end test of the activation x-ray on the real-data run directory.
-
-Covers the summary the run persists beside its verdict: the capture settings,
-the thresholds, the hooked-versus-recorded layer counts and the provenance,
-and the report header that renders them.
-"""
 
 from __future__ import annotations
 
@@ -23,7 +17,6 @@ from tests.conftest                    import RecordingLogger
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_activation_xray_run_persists_capture_settings_layer_counts_and_thresholds(tmp_path, test_data_dir, params_dir):
-    """One x-ray of the miniature U-Net run writes a summary with its settings, counts and thresholds, and a report rendering them."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
     config  = ActivationXrayConfig(runs_dir=tmp_path, split="test", device="cpu", batch_size=2, max_batches=1, make_plots=False)
     logger  = RecordingLogger()
@@ -53,12 +46,10 @@ def test_activation_xray_run_persists_capture_settings_layer_counts_and_threshol
     ({"critical": 0, "warning": 0, "info": 3, "ok": 5}, "ok"),
 ])
 def test_status_follows_the_worst_flagged_severity(counts, status):
-    """Critical layers make the result line an error, warning layers a warning, and minor observations stay ok."""
     assert ActivationXrayRun._status({"severity_counts": counts}) == status
 
 
 def test_critical_result_line_is_logged_as_an_error(tmp_path):
-    """The shared result line of a critical outcome goes out at error level, not through ok."""
     logger = RecordingLogger()
     xray   = ActivationXrayRun(tmp_path, ActivationXrayConfig(), logger)
 

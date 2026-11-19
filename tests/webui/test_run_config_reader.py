@@ -1,14 +1,3 @@
-"""Tests for the run-config reader behind the copy-from-run launch control.
-
-Covers discovery of run directories holding a resolved config file, including
-runs nested under a directory that carries one, the priority order of the
-candidate file locations, the withholding of the source run's identity fields,
-the error paths for absent or unreadable configs, and — most importantly — that
-values read back from a ``ConfigCli.save_resolved`` file render through the
-shared ``ConfigValueRenderer`` to exactly the strings the script config resolver
-produces for equal defaults, so the launch form only marks genuinely different
-fields as overrides.
-"""
 
 from __future__ import annotations
 
@@ -28,7 +17,6 @@ from tools.runtime.config_cli import ConfigCli
 
 
 class Matching(Enum):
-    """Tiny enum standing in for a config choice field."""
 
     HUNGARIAN = "hungarian"
     SORTED    = "sorted_gt"
@@ -36,7 +24,6 @@ class Matching(Enum):
 
 @dataclass
 class TrainingSection:
-    """Nested section exercising numeric, boolean and container leaves."""
 
     epochs        : int              = 65
     lr            : float            = 1e-05
@@ -52,7 +39,6 @@ class TrainingSection:
 
 @dataclass
 class EntryStub:
-    """Entry-style config with a scalar root leaf and one nested section."""
 
     backbone_name : str             = "resunet"
     training      : TrainingSection = field(default_factory=TrainingSection)
@@ -60,17 +46,10 @@ class EntryStub:
 
 @pytest.fixture
 def reader():
-    """Returns a reader with a quiet web logger."""
     return RunConfigReader(WebLogger())
 
 
 def test_read_matches_resolver_rendering(reader, tmp_path):
-    """Every value saved by ConfigCli reads back as the resolver's default string.
-
-    This is the invariant the copy control rests on: a copied value equal to a
-    field's default must compare string-equal to the resolved leaf, so it stays
-    out of the override set.
-    """
     config  = EntryStub()
     run_dir = tmp_path / "resunet_20260818_120000"
     ConfigCli.save_resolved(config, run_dir / "docs" / "resolved_entry_config.json")
@@ -86,7 +65,6 @@ def test_read_matches_resolver_rendering(reader, tmp_path):
 
 
 def test_read_prefers_entry_config_over_other_candidates(reader, tmp_path):
-    """A docs entry config wins over pipeline and bare resolved config files."""
     run_dir = tmp_path / "run"
     (run_dir / "docs").mkdir(parents=True)
     (run_dir / "pipeline").mkdir()
@@ -100,7 +78,6 @@ def test_read_prefers_entry_config_over_other_candidates(reader, tmp_path):
 
 
 def test_read_refuses_run_without_config(reader, tmp_path):
-    """A directory holding no candidate file is refused with the locations named."""
     (tmp_path / "bare_run").mkdir()
 
     result = reader.read(str(tmp_path / "bare_run"))
@@ -109,7 +86,6 @@ def test_read_refuses_run_without_config(reader, tmp_path):
 
 
 def test_read_refuses_missing_directory_and_broken_json(reader, tmp_path):
-    """A missing directory, invalid JSON and a non-mapping payload all fail loudly."""
     assert not reader.read(str(tmp_path / "absent"))["ok"]
 
     run_dir = tmp_path / "run"
@@ -123,7 +99,6 @@ def test_read_refuses_missing_directory_and_broken_json(reader, tmp_path):
 
 
 def test_list_runs_finds_each_candidate_kind_at_depth(reader, tmp_path):
-    """Listing finds training, staged and bare resolved configs, nested runs included."""
     (tmp_path / "train_run" / "docs").mkdir(parents=True)
     (tmp_path / "train_run" / "docs" / "resolved_entry_config.json").write_text("{}")
 
@@ -148,19 +123,11 @@ def test_list_runs_finds_each_candidate_kind_at_depth(reader, tmp_path):
 
 
 def test_list_runs_refuses_bad_base(reader, tmp_path):
-    """An empty or non-directory base is refused instead of listing nothing."""
     assert not reader.list_runs("")["ok"]
     assert not reader.list_runs(str(tmp_path / "absent"))["ok"]
 
 
 def test_list_runs_finds_runs_nested_under_a_run_that_has_a_config(reader, tmp_path):
-    """A parameter run under an already preprocessed dataset is listed alongside it.
-
-    Preprocessing writes ``<dataset>/docs/resolved_entry_config.json`` and every
-    parameter extraction writes ``<dataset>/params/<name>/docs/...``, so a walk
-    that stopped at the first config would hide every extraction run of every
-    dataset that has been preprocessed.
-    """
     (tmp_path / "site_a" / "docs").mkdir(parents=True)
     (tmp_path / "site_a" / "docs" / "resolved_entry_config.json").write_text("{}")
 
@@ -177,11 +144,6 @@ def test_list_runs_finds_runs_nested_under_a_run_that_has_a_config(reader, tmp_p
 
 
 def test_read_withholds_the_identity_fields_of_the_source_run(reader, tmp_path):
-    """The run's own name and resume state are reported, never served as settings.
-
-    Copying them would point the relaunch at the source run's directory, where
-    the resume gate either skips the launch or deletes the copied-from run.
-    """
     run_dir = tmp_path / "resunet_20260818_120000"
     (run_dir / "docs").mkdir(parents=True)
     (run_dir / "docs" / "resolved_entry_config.json").write_text(json.dumps({

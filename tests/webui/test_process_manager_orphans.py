@@ -1,9 +1,3 @@
-"""Tests for adoption of untracked runs started outside the console.
-
-Covers which live processes qualify as orphans of the repository's main/ tree,
-de-duplication against already tracked or already adopted processes, and
-stopping an adopted job.
-"""
 from __future__ import annotations
 
 import subprocess
@@ -19,7 +13,6 @@ SPAWNER = "import os, subprocess, sys, time\nsubprocess.Popen([sys.executable, o
 
 @pytest.fixture
 def manager(make_manager):
-    """Returns a process manager with the orphan age and rescan delays disabled."""
     instance                  = make_manager({})
     instance.ORPHAN_MIN_AGE_S = 0.0
     instance.ORPHAN_RESCAN_S  = 0.0
@@ -28,7 +21,6 @@ def manager(make_manager):
 
 @pytest.fixture
 def spawned():
-    """Yields a list of Popen handles killed and reaped at teardown."""
     procs = []
     yield procs
     for proc in procs:
@@ -37,7 +29,6 @@ def spawned():
 
 
 def _spawn(procs: list, script: Path) -> subprocess.Popen:
-    """Starts `script` in its own session, records the handle and gives it time to appear in /proc."""
     proc = subprocess.Popen([sys.executable, str(script)], start_new_session=True)
     procs.append(proc)
     time.sleep(0.3)
@@ -45,7 +36,6 @@ def _spawn(procs: list, script: Path) -> subprocess.Popen:
 
 
 def test_orphan_under_main_is_adopted(manager, spawned, tmp_path):
-    """A process running a script under main/ is adopted once as a running job."""
     script = tmp_path / "main" / "analysis" / "fake_sleep.py"
     script.write_text(SLEEPER)
     proc = _spawn(spawned, script)
@@ -62,7 +52,6 @@ def test_orphan_under_main_is_adopted(manager, spawned, tmp_path):
 
 
 def test_process_outside_main_is_ignored(manager, spawned, tmp_path):
-    """A process running a script outside main/ is not adopted."""
     script = tmp_path / "loose_sleep.py"
     script.write_text(SLEEPER)
     _spawn(spawned, script)
@@ -71,7 +60,6 @@ def test_process_outside_main_is_ignored(manager, spawned, tmp_path):
 
 
 def test_child_of_matching_process_is_not_adopted_twice(manager, spawned, tmp_path):
-    """Only the parent is adopted when a matching process spawns a matching child."""
     (tmp_path / "main" / "analysis" / "fake_sleep.py").write_text(SLEEPER)
     spawner = tmp_path / "main" / "analysis" / "parent_spawn.py"
     spawner.write_text(SPAWNER)
@@ -85,7 +73,6 @@ def test_child_of_matching_process_is_not_adopted_twice(manager, spawned, tmp_pa
 
 
 def test_tracked_job_is_not_readopted(manager, spawned, tmp_path):
-    """A pid already present in the job table is not adopted again."""
     script = tmp_path / "main" / "analysis" / "fake_sleep.py"
     script.write_text(SLEEPER)
     proc = _spawn(spawned, script)
@@ -97,7 +84,6 @@ def test_tracked_job_is_not_readopted(manager, spawned, tmp_path):
 
 
 def test_stop_kills_adopted_process(manager, spawned, tmp_path):
-    """Stopping an adopted job kills the process and the record turns to finished."""
     script = tmp_path / "main" / "analysis" / "fake_sleep.py"
     script.write_text(SLEEPER)
     proc = _spawn(spawned, script)

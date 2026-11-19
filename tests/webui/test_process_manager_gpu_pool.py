@@ -1,9 +1,3 @@
-"""Tests for the live GPU pool file the process manager injects into fan-out runs.
-
-Covers which launch scripts receive a per-job pool file, honouring an explicit
-gpus_file override, and the validation, parking, preemption and error paths of
-set_gpus and gpu_pool.
-"""
 from __future__ import annotations
 
 import json
@@ -42,25 +36,21 @@ _SCHEDULING_PAGES = [
 
 @pytest.fixture
 def manager(make_manager):
-    """Returns a process manager whose fan-out and tuning scripts are long sleeps."""
     return make_manager({name: SLEEP_LONG for name in ("train_backbone", "train_dual", "train_jepa", "tune_dataloader")})
 
 
 def _pool_path(manager: ProcessManager, job_id: str) -> Path:
-    """Returns the GPU pool file path injected into the job's overrides."""
     with manager.lock:
         return Path(manager.jobs[job_id]["overrides"]["gpus_file"])
 
 
 def test_pool_scripts_match_the_configs_exposing_a_pool_file():
-    """POOL_SCRIPTS matches exactly the launch pages whose config exposes a gpus_file field."""
     capable = {key for key, config in _SCHEDULING_PAGES if "gpus_file" in {field.name for field in fields(config())}}
 
     assert set(ProcessManager.POOL_SCRIPTS) == capable
 
 
 def test_launch_injects_a_per_job_pool_file_for_fan_out_scripts(manager):
-    """A fan-out script gets a per-job pool file under gpu_pools_dir passed on the command line."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -74,7 +64,6 @@ def test_launch_injects_a_per_job_pool_file_for_fan_out_scripts(manager):
 
 
 def test_launch_leaves_other_scripts_without_a_pool_file(manager):
-    """A non-fan-out script gets no pool file and reports the pool as unsupported."""
     result = manager.launch("tune_dataloader", sys.executable)
 
     with manager.lock:
@@ -87,7 +76,6 @@ def test_launch_leaves_other_scripts_without_a_pool_file(manager):
 
 
 def test_launch_keeps_an_explicit_pool_file_override(manager, tmp_path):
-    """An explicit gpus_file override is kept instead of the per-job default."""
     chosen = tmp_path / "mine.json"
     result = manager.launch("train_backbone", sys.executable, {"gpus_file": str(chosen)})
 
@@ -101,7 +89,6 @@ def test_launch_keeps_an_explicit_pool_file_override(manager, tmp_path):
 
 
 def test_the_stored_request_omits_the_per_job_pool_file(manager):
-    """The request kept for a retry carries the overrides as sent, without the injected pool file."""
     result = manager.launch("train_backbone", sys.executable, {"epochs": "3"}, "tune_dataloader", False)
 
     with manager.lock:
@@ -114,7 +101,6 @@ def test_the_stored_request_omits_the_per_job_pool_file(manager):
 
 
 def test_a_recovered_pool_file_under_gpu_pools_dir_is_dropped_from_the_request(manager, tmp_path):
-    """An adopted command line loses the pool file the console injected, but keeps one chosen elsewhere."""
     injected = str(manager.paths.gpu_pools_dir / "abc.json")
     chosen   = str(tmp_path / "mine.json")
 
@@ -124,7 +110,6 @@ def test_a_recovered_pool_file_under_gpu_pools_dir_is_dropped_from_the_request(m
 
 
 def test_attach_finalize_stores_the_switches_on_the_request(manager):
-    """The finalize switches a launch was sent with land on its stored request."""
     result = manager.launch("train_backbone", sys.executable)
     manager.attach_finalize(result["job_id"], {"compare_trials": True})
 
@@ -135,7 +120,6 @@ def test_attach_finalize_stores_the_switches_on_the_request(manager):
 
 
 def test_set_gpus_writes_the_pool_file_of_a_running_fan_out(manager):
-    """set_gpus rewrites the pool file of a running fan-out job and gpu_pool reads it back."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -155,7 +139,6 @@ def test_set_gpus_writes_the_pool_file_of_a_running_fan_out(manager):
 
 
 def test_set_gpus_reports_a_pool_file_write_failure(manager, monkeypatch):
-    """set_gpus returns the OSError of a failed pool file write as an error and leaves the pool unchanged."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -166,7 +149,6 @@ def test_set_gpus_reports_a_pool_file_write_failure(manager, monkeypatch):
     pool.write_text(json.dumps({"gpus": [0]}))
 
     def refuse(self, gpus, preempt):
-        """Fails the write as a full disk would."""
         raise OSError("disk full")
 
     monkeypatch.setattr(GpuPoolFile, "write", refuse)
@@ -181,7 +163,6 @@ def test_set_gpus_reports_a_pool_file_write_failure(manager, monkeypatch):
 
 
 def test_set_gpus_refuses_a_job_that_seeded_no_pool(manager):
-    """set_gpus fails when the running job has not written a pool file yet."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -197,7 +178,6 @@ def test_set_gpus_refuses_a_job_that_seeded_no_pool(manager):
 
 
 def test_set_gpus_parks_only_when_parking_is_confirmed(manager):
-    """An empty selection needs park=True, and a later non-empty selection resumes the job."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -228,7 +208,6 @@ def test_set_gpus_parks_only_when_parking_is_confirmed(manager):
 
 
 def test_set_gpus_writes_the_preempt_list_beside_the_pool(manager):
-    """A preempt list is written next to the new pool so the scheduler frees those devices at once."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -248,7 +227,6 @@ def test_set_gpus_writes_the_preempt_list_beside_the_pool(manager):
 
 
 def test_set_gpus_rejects_a_device_kept_and_preempted_at_once(manager):
-    """A device listed both in the pool and in preempt is refused and the file stays untouched."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -268,7 +246,6 @@ def test_set_gpus_rejects_a_device_kept_and_preempted_at_once(manager):
 
 
 def test_set_gpus_parks_now_when_every_device_is_preempted(manager):
-    """An empty pool with every device preempted parks the job and stops its runs at once."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -293,7 +270,6 @@ def test_set_gpus_parks_now_when_every_device_is_preempted(manager):
     ("0,1",        "list"),
 ])
 def test_set_gpus_rejects_an_invalid_selection(manager, gpus, reason):
-    """An invalid GPU selection is rejected with a reason and leaves the pool file untouched."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -313,7 +289,6 @@ def test_set_gpus_rejects_an_invalid_selection(manager, gpus, reason):
 
 
 def test_set_gpus_refuses_a_finished_job(manager):
-    """set_gpus refuses a job that is no longer running."""
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
 
@@ -329,6 +304,5 @@ def test_set_gpus_refuses_a_finished_job(manager):
 
 
 def test_set_gpus_reports_an_unknown_job(manager):
-    """set_gpus and gpu_pool both report an unknown job id."""
     assert manager.set_gpus("nope", [0]) == {"ok": False, "error": "unknown job"}
     assert manager.gpu_pool("nope")      == {"ok": False, "error": "unknown job"}

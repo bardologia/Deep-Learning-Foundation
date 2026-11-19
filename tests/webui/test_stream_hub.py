@@ -1,13 +1,3 @@
-"""Tests for the page-wide live-output channel and its routes.
-
-Covers the running event ids a job stream assigns and the replay after the
-last id a viewer holds, the tagging sink, the channel's queue with truncation
-and close sentinel, subscription attach, replace, detach and prune, the hub's
-channel registry across reconnects and its boot token, the subscribe and
-unsubscribe results for main streams and unit tails, the SSE pump with its
-hello frame and keepalives, the POST route validation, and a real process
-manager job followed end to end through a channel.
-"""
 
 from __future__ import annotations
 
@@ -29,53 +19,38 @@ from tests.webui.conftest import FakeHandler, SLEEP_LONG
 
 
 class BrokenPipe:
-    """Output stream standing in for a socket whose peer has gone away."""
 
     def write(self, data: bytes) -> int:
-        """Raises the broken pipe a dead client socket raises."""
         raise BrokenPipeError
 
     def flush(self) -> None:
-        """Flushing a dead socket is a no-op here."""
         return
 
 
 class FakeBackend:
-    """Process manager stub handing out prepared main streams and unit tails.
-
-    Attributes:
-        streams : Main streams keyed by job id.
-        units   : Unit tail results keyed by (job id, unit index).
-    """
 
     def __init__(self) -> None:
-        """Starts with no jobs."""
         self.streams = {}
         self.units   = {}
 
     def get_stream(self, job_id: str):
-        """Returns the main stream of a job, or None for an unknown job."""
         return self.streams.get(job_id)
 
     def unit_stream(self, job_id: str, index: int) -> dict:
-        """Returns the prepared unit tail result, or the lookup error."""
         return self.units.get((job_id, index), {"ok": False, "error": f"unit index {index} is out of range"})
 
 
 @pytest.fixture
 def logger():
-    """Returns a logger stub recording warnings."""
     return MagicMock()
 
 
 @pytest.fixture
 def hub(logger):
-    """Returns a hub over the stub logger."""
     return StreamHub(logger)
 
 
 def drain(channel: StreamChannel) -> list[dict]:
-    """Returns every event queued on a channel without waiting."""
     events = []
     while True:
         event = channel.next(0)
@@ -85,7 +60,6 @@ def drain(channel: StreamChannel) -> list[dict]:
 
 
 def unit_tail(logger, *chunks: str) -> dict:
-    """Returns a unit tail result whose stream already carries its header and the given chunks."""
     stream = JobStream(logger)
     stream.publish({"type": "unit", "name": "seed0", "log": "/x/seed0.log", "status": "running", "gpu": 0})
     for chunk in chunks:
@@ -94,7 +68,6 @@ def unit_tail(logger, *chunks: str) -> dict:
 
 
 def job_stream(n_chunks: int) -> JobStream:
-    """Returns a job stream holding ``n_chunks`` output chunks followed by the end marker."""
     stream = JobStream(WebLogger())
     for index in range(n_chunks):
         stream.publish({"type": "chunk", "data": f"line {index}\n"})
@@ -103,14 +76,12 @@ def job_stream(n_chunks: int) -> JobStream:
 
 
 def test_published_events_carry_running_ids():
-    """Every published event is numbered from 1 in publication order."""
     stream = job_stream(3)
 
     assert [event["id"] for event in stream.buffer] == [1, 2, 3, 4]
 
 
 def test_a_queue_subscriber_replays_only_the_events_after_its_last_id():
-    """A queue subscriber naming id 2 gets events 3 and 4, a fresh one gets the whole buffer."""
     stream = job_stream(3)
 
     fresh  = stream.subscribe()
@@ -121,7 +92,6 @@ def test_a_queue_subscriber_replays_only_the_events_after_its_last_id():
 
 
 def test_sink_tags_events_with_its_key_and_flags_the_end(logger):
-    """A sink prefixes every event with the subscription key and remembers having seen the end event."""
     channel = StreamChannel("ch", logger)
     sink    = ChannelSink(channel, "job-1")
 
@@ -135,7 +105,6 @@ def test_sink_tags_events_with_its_key_and_flags_the_end(logger):
 
 
 def test_a_full_channel_is_truncated_with_a_marker_and_keeps_flowing(logger, monkeypatch):
-    """Offering past the queue limit drains the queue, records the loss in a marker and delivers the new event."""
     monkeypatch.setattr(StreamChannel, "QUEUE_LIMIT", 3)
     channel = StreamChannel("ch", logger)
 
@@ -152,7 +121,6 @@ def test_a_full_channel_is_truncated_with_a_marker_and_keeps_flowing(logger, mon
 
 
 def test_attach_replays_the_buffer_after_the_given_id_and_tags_live_events(logger):
-    """Attaching a stream replays only the buffered events newer than `after`, then forwards live ones."""
     channel = StreamChannel("ch", logger)
     stream  = JobStream(logger)
     for index in range(3):
@@ -169,7 +137,6 @@ def test_attach_replays_the_buffer_after_the_given_id_and_tags_live_events(logge
 
 
 def test_attach_after_zero_replays_the_whole_buffer(logger):
-    """An `after` of 0, the id a page holds before its first event, replays every buffered event."""
     channel = StreamChannel("ch", logger)
     stream  = job_stream(2)
 
@@ -179,7 +146,6 @@ def test_attach_after_zero_replays_the_whole_buffer(logger):
 
 
 def test_attaching_the_same_key_again_releases_the_previous_subscription(logger):
-    """Re-subscribing a key detaches the earlier sink from its stream and sets its tail's stop event."""
     channel = StreamChannel("ch", logger)
     first   = JobStream(logger)
     second  = JobStream(logger)
@@ -196,7 +162,6 @@ def test_attaching_the_same_key_again_releases_the_previous_subscription(logger)
 
 
 def test_detach_releases_and_reports_whether_the_key_was_attached(logger):
-    """Detaching an attached key releases it and returns True; an unknown key returns False."""
     channel = StreamChannel("ch", logger)
     stream  = JobStream(logger)
     stop    = threading.Event()
@@ -210,7 +175,6 @@ def test_detach_releases_and_reports_whether_the_key_was_attached(logger):
 
 
 def test_prune_releases_only_the_subscriptions_whose_stream_ended(logger):
-    """Pruning drops the keys whose sink saw the end event and leaves the live ones attached."""
     channel = StreamChannel("ch", logger)
     ended   = JobStream(logger)
     live    = JobStream(logger)
@@ -226,7 +190,6 @@ def test_prune_releases_only_the_subscriptions_whose_stream_ended(logger):
 
 
 def test_close_releases_everything_and_queues_the_sentinel_even_when_full(logger, monkeypatch):
-    """Closing releases every subscription and makes room for the close sentinel on a full queue."""
     monkeypatch.setattr(StreamChannel, "QUEUE_LIMIT", 2)
     channel = StreamChannel("ch", logger)
     stream  = JobStream(logger)
@@ -245,7 +208,6 @@ def test_close_releases_everything_and_queues_the_sentinel_even_when_full(logger
 
 
 def test_every_hub_carries_its_own_boot_token(logger):
-    """A restarted server builds a new hub whose boot token differs, which is how a page detects the restart."""
     first  = StreamHub(logger)
     second = StreamHub(logger)
 
@@ -254,7 +216,6 @@ def test_every_hub_carries_its_own_boot_token(logger):
 
 
 def test_opening_the_same_channel_id_again_closes_the_one_left_behind(hub):
-    """A reconnecting page gets a fresh channel while the stale one is closed and its subscriptions released."""
     stream = JobStream(hub.logger)
     stale  = hub.open("page-1")
     stale.attach("job-1", stream, None, 0)
@@ -269,7 +230,6 @@ def test_opening_the_same_channel_id_again_closes_the_one_left_behind(hub):
 
 
 def test_release_closes_only_the_channel_that_is_still_current(hub):
-    """Releasing a replaced channel leaves the current one untouched; releasing the current one removes it."""
     stale = hub.open("page-1")
     fresh = hub.open("page-1")
 
@@ -283,7 +243,6 @@ def test_release_closes_only_the_channel_that_is_still_current(hub):
 
 
 def test_subscribe_on_an_unknown_channel_is_refused_as_stale(hub):
-    """Subscribing or unsubscribing before the channel exists reports a stale channel so the page retries after its hello."""
     backend = FakeBackend()
 
     assert hub.subscribe("missing", backend, "job-1", None, 0) == {"ok": False, "error": "unknown channel", "stale": True}
@@ -291,7 +250,6 @@ def test_subscribe_on_an_unknown_channel_is_refused_as_stale(hub):
 
 
 def test_subscribe_main_stream_replays_after_the_given_id(hub):
-    """Subscribing a job's main stream attaches it under the job id and honours `after`."""
     backend = FakeBackend()
     stream  = JobStream(hub.logger)
     backend.streams["job-1"] = stream
@@ -306,7 +264,6 @@ def test_subscribe_main_stream_replays_after_the_given_id(hub):
 
 
 def test_subscribe_unknown_job_reports_the_error(hub):
-    """A job the backend does not know is refused without touching the channel."""
     channel = hub.open("page-1")
 
     assert hub.subscribe("page-1", FakeBackend(), "job-x", None, 0) == {"ok": False, "error": "unknown job"}
@@ -314,7 +271,6 @@ def test_subscribe_unknown_job_reports_the_error(hub):
 
 
 def test_subscribe_unit_tail_ignores_after_and_releases_on_unsubscribe(hub):
-    """A unit tail replays from its top whatever `after` says, and unsubscribing stops the tail."""
     backend = FakeBackend()
     tail    = unit_tail(hub.logger, "line 1", "line 2")
     backend.units[("job-1", 3)] = tail
@@ -333,7 +289,6 @@ def test_subscribe_unit_tail_ignores_after_and_releases_on_unsubscribe(hub):
 
 
 def test_subscribe_unit_lookup_error_is_passed_through(hub):
-    """The backend's unit lookup error is the subscribe result."""
     hub.open("page-1")
 
     result = hub.subscribe("page-1", FakeBackend(), "job-1", 7, 0)
@@ -342,7 +297,6 @@ def test_subscribe_unit_lookup_error_is_passed_through(hub):
 
 
 def test_subscribe_prunes_ended_keys_first(hub):
-    """An ended subscription the page never released is dropped when the page subscribes again."""
     backend = FakeBackend()
     ended   = JobStream(hub.logger)
     live    = JobStream(hub.logger)
@@ -358,7 +312,6 @@ def test_subscribe_prunes_ended_keys_first(hub):
 
 
 def pump_in_thread(router: JobRouter, handler: FakeHandler) -> threading.Thread:
-    """Runs the channel route in a daemon thread and returns it."""
     exchange = HttpExchange.of(handler)
     worker   = threading.Thread(target=router.stream, args=(exchange,), daemon=True)
     worker.start()
@@ -366,7 +319,6 @@ def pump_in_thread(router: JobRouter, handler: FakeHandler) -> threading.Thread:
 
 
 def frames(handler: FakeHandler) -> list:
-    """Returns the SSE frames written so far: decoded data payloads, or the raw comment lines."""
     out = []
     for block in handler.wfile.getvalue().decode("utf-8").split("\n\n"):
         if block.startswith("data: "):
@@ -377,7 +329,6 @@ def frames(handler: FakeHandler) -> list:
 
 
 def wait_until(predicate, timeout: float = 3.0) -> bool:
-    """Polls `predicate` until it holds or the timeout passes."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -387,7 +338,6 @@ def wait_until(predicate, timeout: float = 3.0) -> bool:
 
 
 def test_stream_route_requires_the_channel_parameter(hub):
-    """A channel request without the channel id is a 400."""
     router  = JobRouter(None, None, None, hub)
     handler = FakeHandler("GET", "/api/stream")
 
@@ -399,7 +349,6 @@ def test_stream_route_requires_the_channel_parameter(hub):
 
 
 def test_stream_route_sends_hello_then_tagged_events_until_the_channel_closes(hub):
-    """The pump opens the channel, writes the hello frame with the boot token, forwards tagged numbered events and exits on close."""
     router  = JobRouter(None, None, None, hub)
     backend = FakeBackend()
     stream  = JobStream(hub.logger)
@@ -429,7 +378,6 @@ def test_stream_route_sends_hello_then_tagged_events_until_the_channel_closes(hu
 
 
 def test_stream_route_writes_keepalive_comments_while_silent(hub, monkeypatch):
-    """After KEEPALIVE_S of silence the pump writes a keepalive comment instead of closing."""
     monkeypatch.setattr(JobRouter, "KEEPALIVE_S", 0.05)
     router  = JobRouter(None, None, None, hub)
     handler = FakeHandler("GET", "/api/stream?channel=page-1")
@@ -444,7 +392,6 @@ def test_stream_route_writes_keepalive_comments_while_silent(hub, monkeypatch):
 
 
 def test_stream_route_reconnect_replaces_the_channel_and_ends_the_old_pump(hub):
-    """A second connection under the same channel id ends the first pump and keeps the new channel open."""
     router = JobRouter(None, None, None, hub)
     first  = FakeHandler("GET", "/api/stream?channel=page-1")
     second = FakeHandler("GET", "/api/stream?channel=page-1")
@@ -467,7 +414,6 @@ def test_stream_route_reconnect_replaces_the_channel_and_ends_the_old_pump(hub):
 
 
 def test_a_reconnect_resumes_the_job_stream_after_the_last_id_it_received(hub):
-    """A page that held event 2 when its link dropped reconnects, resubscribes with after 2 and gets only the later events."""
     router  = JobRouter(None, None, None, hub)
     backend = FakeBackend()
     backend.streams["job-1"] = job_stream(3)
@@ -493,7 +439,6 @@ def test_a_reconnect_resumes_the_job_stream_after_the_last_id_it_received(hub):
 
 
 def test_stream_route_releases_the_channel_when_the_client_breaks_the_pipe(hub):
-    """A broken pipe while writing ends the pump and releases the channel and its subscriptions."""
     router  = JobRouter(None, None, None, hub)
     backend = FakeBackend()
     stream  = JobStream(hub.logger)
@@ -514,7 +459,6 @@ def test_stream_route_releases_the_channel_when_the_client_breaks_the_pipe(hub):
 
 
 def post(router: JobRouter, path: str, body) -> FakeHandler:
-    """Sends a JSON POST through the router's table and returns the handler holding the answer."""
     handler  = FakeHandler("POST", path, json.dumps(body).encode("utf-8"), {"Content-Type": "application/json"})
     exchange = HttpExchange.of(handler)
     exchange.read_body()
@@ -523,7 +467,6 @@ def post(router: JobRouter, path: str, body) -> FakeHandler:
 
 
 def test_subscribe_route_validates_the_body(hub):
-    """A missing job id, a non-integer unit, a non-integer or negative after, or a body that is not an object are answered with 400."""
     router = JobRouter(None, None, None, hub)
     hub.open("page-1")
 
@@ -541,7 +484,6 @@ def test_subscribe_route_validates_the_body(hub):
 
 
 def test_subscribe_and_unsubscribe_routes_answer_404_for_an_unknown_channel(hub):
-    """Channel routes on a channel the hub does not hold answer 404 flagged stale."""
     router = JobRouter(None, None, None, hub)
 
     subscribed   = post(router, "/api/stream/ghost/subscribe",   {"job_id": "job-1"})
@@ -552,7 +494,6 @@ def test_subscribe_and_unsubscribe_routes_answer_404_for_an_unknown_channel(hub)
 
 
 def test_subscribe_route_attaches_through_the_process_manager(hub):
-    """A subscription resolves the job's stream on the process manager and answers its key."""
     backend = FakeBackend()
     backend.streams["0f3c88aa9911"] = JobStream(hub.logger)
     router  = JobRouter(None, backend, None, hub)
@@ -566,7 +507,6 @@ def test_subscribe_route_attaches_through_the_process_manager(hub):
 
 
 def test_subscribe_route_answers_404_for_an_unknown_job_or_unit(hub):
-    """A job the process manager does not know and a unit it cannot resolve are both 404s."""
     router = JobRouter(None, FakeBackend(), None, hub)
     hub.open("page-1")
 
@@ -578,7 +518,6 @@ def test_subscribe_route_answers_404_for_an_unknown_job_or_unit(hub):
 
 
 def test_unsubscribe_route_detaches_and_reports_the_attachment(hub):
-    """Unsubscribing an attached key answers attached True, a second time attached False."""
     backend = FakeBackend()
     backend.streams["job-1"] = JobStream(hub.logger)
     router = JobRouter(None, backend, None, hub)
@@ -594,7 +533,6 @@ def test_unsubscribe_route_detaches_and_reports_the_attachment(hub):
 
 
 def test_the_per_job_stream_route_is_gone(hub):
-    """The old per-job stream URL is no longer served, so no page can open one connection per job."""
     router  = JobRouter(None, FakeBackend(), None, hub)
     handler = FakeHandler("GET", "/api/jobs/job-1/stream")
 
@@ -602,7 +540,6 @@ def test_the_per_job_stream_route_is_gone(hub):
 
 
 def test_a_real_job_is_followed_end_to_end_through_a_channel(make_manager):
-    """A launched process's output and end event reach the channel tagged with its job id, and the key prunes."""
     manager = make_manager({"echo": "print('channel hello', flush=True)\n", "sleep_long": SLEEP_LONG})
     hub     = StreamHub(manager.logger)
     router  = JobRouter(None, manager, None, hub)

@@ -1,12 +1,3 @@
-"""Tests for the backbone Trainer and its curriculum controller.
-
-Covers component wiring and named parameter groups, a single optimisation step, one- and
-multi-epoch fits, TensorBoard throughput and diagnostic scalars, non-finite handling in
-training and evaluation with the term and data verdict in its messages, checkpoint save
-and restore, resume from ``last.pt`` (an early-stopped state included), early-stopping
-and scheduler resets, and the curriculum swap with its learning-rate and
-diagnostic-threshold effects.
-"""
 
 from __future__ import annotations
 
@@ -32,7 +23,6 @@ pytestmark = pytest.mark.usefixtures("force_cpu")
 
 
 def _loader(in_channels: int = 2, n_gaussians: int = 2, n: int = 6, hw: int = 16) -> DataLoader:
-    """Returns a loader of random (n, in_channels, hw, hw) inputs and (n, 3*n_gaussians, hw, hw) targets with a few hand-set pixels covering amplitude, mu separation and slot-order cases."""
     gen  = torch.Generator().manual_seed(0)
     imgs = torch.randn(n, in_channels, hw, hw, generator=gen)
     tgt  = torch.randn(n, n_gaussians * 3, hw, hw, generator=gen)
@@ -57,18 +47,6 @@ def _loader(in_channels: int = 2, n_gaussians: int = 2, n: int = 6, hw: int = 16
 
 
 def _build_trainer(tmp_path, epochs: int = 1, n_gaussians: int = 2, resume: bool = False, level: str = "ERROR") -> Trainer:
-    """Returns a Trainer over a tiny backbone with an identity output normalizer.
-
-    Args:
-        tmp_path    : Run directory receiving checkpoints and logs/trainer.log.
-        epochs      : Number of training epochs.
-        n_gaussians : Number of Gaussian slots of the model and the targets.
-        resume      : Whether the trainer resumes from the run directory's last.pt.
-        level       : Level of the file logger, ERROR by default to keep it quiet.
-
-    Returns:
-        Trainer with its warmup resolved over 200 steps.
-    """
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=n_gaussians)
     config           = tiny_trainer_config(n_gaussians=n_gaussians, epochs=epochs)
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level=level)
@@ -82,7 +60,6 @@ def _build_trainer(tmp_path, epochs: int = 1, n_gaussians: int = 2, resume: bool
 
 
 def test_trainer_builds_on_cpu_with_wired_components(tmp_path):
-    """Verifies the trainer lands on CPU with criterion, optimizer, scheduler, stopper, warmup and curriculum controller wired."""
     trainer = _build_trainer(tmp_path)
 
     assert trainer.device.type == "cpu"
@@ -95,7 +72,6 @@ def test_trainer_builds_on_cpu_with_wired_components(tmp_path):
 
 
 def test_trainer_optimizer_has_named_param_groups(tmp_path):
-    """Verifies the optimizer carries named encoder and output-head groups with a base learning rate each."""
     trainer = _build_trainer(tmp_path)
     names   = {group.get("name") for group in trainer.optimizer.param_groups}
 
@@ -105,7 +81,6 @@ def test_trainer_optimizer_has_named_param_groups(tmp_path):
 
 
 def test_single_train_step_updates_parameters(tmp_path):
-    """Verifies one training epoch returns a finite average loss and changes model parameters."""
     trainer = _build_trainer(tmp_path)
     loader  = _loader()
 
@@ -119,7 +94,6 @@ def test_single_train_step_updates_parameters(tmp_path):
 
 
 def test_compute_loss_returns_finite_total(tmp_path):
-    """Verifies the per-batch loss computation returns a finite total."""
     trainer = _build_trainer(tmp_path)
     batch   = next(iter(_loader()))
 
@@ -130,7 +104,6 @@ def test_compute_loss_returns_finite_total(tmp_path):
 
 
 def test_one_epoch_fit_writes_checkpoint(tmp_path):
-    """Verifies a one-epoch fit writes the best checkpoint and a finite best validation loss."""
     trainer = _build_trainer(tmp_path, epochs=1)
     loader  = _loader()
 
@@ -142,7 +115,6 @@ def test_one_epoch_fit_writes_checkpoint(tmp_path):
 
 
 def test_trainer_builds_the_configured_optimizer_family(tmp_path):
-    """The optimizer type dispatches to SGD with the configured momentum and rejects unknown names."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
 
@@ -161,7 +133,6 @@ def test_trainer_builds_the_configured_optimizer_family(tmp_path):
 
 
 def test_swa_writes_averaged_checkpoint_and_marker(tmp_path):
-    """With SWA on from epoch one, training writes swa_model.pt and records its val loss in the marker."""
     trainer = _build_trainer(tmp_path, epochs=2)
 
     trainer.config.training.use_swa = True
@@ -180,7 +151,6 @@ def test_swa_writes_averaged_checkpoint_and_marker(tmp_path):
 
 
 def test_train_writes_final_model_checkpoint(tmp_path):
-    """Verifies training always writes the final-epoch weights to final_model.pt with the same schema as best_model.pt."""
     trainer = _build_trainer(tmp_path, epochs=2)
     loader  = _loader()
 
@@ -197,7 +167,6 @@ def test_train_writes_final_model_checkpoint(tmp_path):
 
 
 def test_complete_stage_with_zero_weights_is_rejected_before_training(tmp_path):
-    """Verifies a curriculum whose complete stage would reduce the loss to zero is refused at construction, not at the swap."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=2)
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level="ERROR")
@@ -212,7 +181,6 @@ def test_complete_stage_with_zero_weights_is_rejected_before_training(tmp_path):
 
 
 def test_multi_epoch_fit_records_losses(tmp_path):
-    """Verifies a three-epoch fit records one finite training loss per epoch and at least one validation loss."""
     trainer = _build_trainer(tmp_path, epochs=3)
     loader  = _loader()
 
@@ -224,7 +192,6 @@ def test_multi_epoch_fit_records_losses(tmp_path):
 
 
 def test_train_logs_throughput_and_diagnostics(tmp_path):
-    """Verifies training emits throughput, non-finite-batch and gradient-norm scalars, twelve validation reconstruction figures and the Custom Scalars page with the slot category."""
     writer           = RecordingWriter()
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
@@ -255,17 +222,14 @@ def test_train_logs_throughput_and_diagnostics(tmp_path):
 
 
 def _loss_dict(total: float) -> dict:
-    """Returns a loss output dict carrying only the given scalar total."""
     return {"total_loss": torch.tensor(total), "components": {}, "monitor": {}, "occupancy": {}, "physical": {}}
 
 
 def _diverged_loss_dict(bad_term: str) -> dict:
-    """Returns a loss output whose total and the named term are NaN while param_l1 stays finite."""
     return {"total_loss": torch.tensor(float("nan")), "components": {"param_l1": torch.tensor(0.5), bad_term: torch.tensor(float("nan"))}, "monitor": {}, "occupancy": {}, "physical": {}}
 
 
 def test_evaluate_raises_on_nonfinite_loss(tmp_path):
-    """Verifies evaluation aborts with FloatingPointError on a non-finite batch loss."""
     trainer = _build_trainer(tmp_path)
     loader  = _loader()
 
@@ -276,7 +240,6 @@ def test_evaluate_raises_on_nonfinite_loss(tmp_path):
 
 
 def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
-    """Verifies evaluation skips non-finite batches and averages the rest when aborting is disabled."""
     trainer = _build_trainer(tmp_path)
     trainer.abort_on_nonfinite_loss = False
 
@@ -292,7 +255,6 @@ def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
 
 
 def test_trainer_channels_last_converts_model_and_batches(tmp_path):
-    """With channels_last enabled the conv weights and evaluation run in NHWC layout."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
 
@@ -310,7 +272,6 @@ def test_trainer_channels_last_converts_model_and_batches(tmp_path):
 
 
 def test_trainer_compile_flag_compiles_the_forward(tmp_path, monkeypatch):
-    """With compile_model enabled the model forward passes through torch.compile with the configured mode."""
     recorded = {}
 
     def _fake_compile(fn, mode=None):
@@ -333,7 +294,6 @@ def test_trainer_compile_flag_compiles_the_forward(tmp_path, monkeypatch):
 
 
 def test_trainer_activation_checkpointing_wraps_and_trains(tmp_path):
-    """A configured pattern wraps the matched blocks and one epoch still trains with clean checkpoint keys."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     reference_keys   = sorted(model.state_dict())
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
@@ -350,7 +310,6 @@ def test_trainer_activation_checkpointing_wraps_and_trains(tmp_path):
 
 
 def test_evaluate_weights_batches_by_sample_count(tmp_path):
-    """Verifies the evaluation average weights a partial final batch by its sample count, not like a full batch."""
     trainer = _build_trainer(tmp_path)
 
     gen    = torch.Generator().manual_seed(0)
@@ -368,7 +327,6 @@ def test_evaluate_weights_batches_by_sample_count(tmp_path):
 
 
 def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
-    """Verifies evaluation reports zero batches and a NaN average when every batch is non-finite."""
     trainer = _build_trainer(tmp_path)
     trainer.abort_on_nonfinite_loss = False
 
@@ -381,7 +339,6 @@ def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
 
 
 def test_nonfinite_train_loss_abort_names_the_term_and_clears_the_data(tmp_path):
-    """Verifies the training abort names the non-finite term and states that the batch inputs and targets were finite."""
     trainer = _build_trainer(tmp_path)
 
     trainer._compute_loss = lambda batch: _diverged_loss_dict("mse_curve")
@@ -391,7 +348,6 @@ def test_nonfinite_train_loss_abort_names_the_term_and_clears_the_data(tmp_path)
 
 
 def test_nonfinite_train_loss_abort_names_corrupt_inputs(tmp_path):
-    """Verifies the training abort blames the batch when the inputs already held NaN."""
     trainer = _build_trainer(tmp_path)
     loader  = _loader()
 
@@ -403,7 +359,6 @@ def test_nonfinite_train_loss_abort_names_corrupt_inputs(tmp_path):
 
 
 def test_evaluate_skip_warning_names_the_nonfinite_term(tmp_path):
-    """Verifies the skip-path warning of evaluation names the non-finite term when aborting is disabled."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer_warn", level="WARNING")
@@ -422,7 +377,6 @@ def test_evaluate_skip_warning_names_the_nonfinite_term(tmp_path):
 
 
 def test_checkpoint_save_restore_round_trip(tmp_path):
-    """Verifies the best checkpoint stores params, x axis and best loss, and reloads into a fresh model."""
     trainer = _build_trainer(tmp_path, epochs=1)
     loader  = _loader()
 
@@ -442,7 +396,6 @@ def test_checkpoint_save_restore_round_trip(tmp_path):
 
 
 def test_best_checkpoint_epoch_matches_trainer_state_convention(tmp_path):
-    """Verifies the best checkpoint's epoch equals its best epoch while the last checkpoint holds the final epoch index."""
     trainer = _build_trainer(tmp_path, epochs=2)
     loader  = _loader()
 
@@ -457,7 +410,6 @@ def test_best_checkpoint_epoch_matches_trainer_state_convention(tmp_path):
 
 
 def test_resume_of_an_early_stopped_state_trains_no_further_epoch(tmp_path):
-    """Verifies a state saved after early stopping fired is resumed straight into the final phase, with a warning, instead of training on."""
     loader = _loader()
     _build_trainer(tmp_path, epochs=1).train(loader, loader, loader)
 
@@ -482,7 +434,6 @@ def test_resume_of_an_early_stopped_state_trains_no_further_epoch(tmp_path):
 
 
 def test_restore_best_loads_best_parameters(tmp_path):
-    """Verifies the trainer's weights after fitting match the saved best checkpoint."""
     trainer = _build_trainer(tmp_path, epochs=2)
     loader  = _loader()
 
@@ -495,7 +446,6 @@ def test_restore_best_loads_best_parameters(tmp_path):
 
 
 def test_early_stopping_reset_clears_state(tmp_path):
-    """Verifies resetting early stopping clears the best loss, counter and trigger flag."""
     trainer = _build_trainer(tmp_path)
 
     trainer.early_stopping(val_loss=1.0, epoch=0)
@@ -507,7 +457,6 @@ def test_early_stopping_reset_clears_state(tmp_path):
 
 
 def test_scheduler_reset_restores_base_lrs(tmp_path):
-    """Verifies resetting the scheduler returns the current learning rates to the base rates."""
     trainer = _build_trainer(tmp_path)
 
     trainer.lr_scheduler.step(epoch=5)
@@ -517,7 +466,6 @@ def test_scheduler_reset_restores_base_lrs(tmp_path):
 
 
 def test_curriculum_swap_disabled_is_noop(tmp_path):
-    """Verifies a disabled curriculum never swaps and leaves the loss generation at zero."""
     trainer = _build_trainer(tmp_path)
 
     swapped = trainer.curriculum_controller.maybe_swap(epoch=0)
@@ -527,7 +475,6 @@ def test_curriculum_swap_disabled_is_noop(tmp_path):
 
 
 def test_curriculum_swap_replaces_loss_config(tmp_path):
-    """Verifies reaching the swap epoch installs the complete loss config and bumps the loss generation."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
 
@@ -547,7 +494,6 @@ def test_curriculum_swap_replaces_loss_config(tmp_path):
 
 
 def test_slot_diagnostics_adopt_the_label_run_threshold(tmp_path):
-    """Verifies the parameter sampler and slot vitals use the label run's activity threshold, unchanged by a curriculum swap."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
 
@@ -576,7 +522,6 @@ def test_slot_diagnostics_adopt_the_label_run_threshold(tmp_path):
 
 
 def test_curriculum_swap_applies_the_scheduled_learning_rate(tmp_path):
-    """Verifies a swap without an LR reset keeps the scheduler's decayed learning rates."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=4)
 

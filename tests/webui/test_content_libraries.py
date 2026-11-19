@@ -1,11 +1,3 @@
-"""Tests for the curated webui content libraries: equations, flows, pipelines and physics.
-
-Asserts each catalog is internally consistent: unique group and item names,
-filled-in tex and legends, MathJax-renderable macros, flow nodes and steps that
-reference only declared ids and known vocabulary, pipeline cards naming
-launchable scripts, and physics terms that map onto real PhysicalLoss methods
-and real configuration fields.
-"""
 
 from __future__ import annotations
 
@@ -37,13 +29,11 @@ NODE_KINDS = {"scalar", "vector", "matrix", "tensor", "set"}
 
 @pytest.fixture(scope="module")
 def equations():
-    """Returns the collected equation catalog."""
     return EquationLibrary().collect()
 
 
 @pytest.fixture(scope="module")
 def flows():
-    """Returns the collected flow-animation catalog."""
     return FlowLibrary().collect()
 
 
@@ -51,19 +41,16 @@ def flows():
 
 @pytest.fixture(scope="module")
 def pipelines():
-    """Returns the collected pipeline card catalog."""
     return PipelineLibrary().collect()
 
 
 @pytest.fixture(scope="module")
 def script_keys():
-    """Returns the set of catalog keys the console can launch."""
     paths = ProjectPaths()
     return {entry["key"] for entry in ScriptCatalog(paths, ScriptConfigResolver(paths)).list_scripts()}
 
 
 def test_equation_groups_are_named_once_and_carry_items(equations):
-    """Checks equation groups have unique names and each carries a blurb and items."""
     names = [group["group"] for group in equations]
 
     assert equations
@@ -72,14 +59,12 @@ def test_equation_groups_are_named_once_and_carry_items(equations):
 
 
 def test_every_equation_title_is_unique_inside_its_group(equations):
-    """Checks no group repeats an equation title."""
     pairs = [(group["group"], item["title"]) for group in equations for item in group["items"]]
 
     assert sorted(pairs) == sorted(set(pairs))
 
 
 def test_every_equation_has_tex_and_a_legend(equations):
-    """Checks each equation has tex, a note and fully described legend symbols."""
     for group in equations:
         for item in group["items"]:
             assert item["tex"].strip(),  f"{item['title']} has no tex"
@@ -91,19 +76,16 @@ def test_every_equation_has_tex_and_a_legend(equations):
 
 
 def test_no_equation_uses_a_macro_the_renderer_cannot_draw(equations):
-    """Checks no equation uses boldsymbol, which the MathJax setup cannot render."""
     offenders = [item["title"] for group in equations for item in group["items"] if "\\boldsymbol" in item["tex"]]
 
     assert not offenders, f"MathJax renders \\mathbf, not \\boldsymbol: {offenders}"
 
 
 def test_the_flow_catalog_and_the_pipeline_catalog_agree(flows, pipelines):
-    """Checks flows and pipeline cards expose the same keys in the same order."""
     assert [flow["key"] for flow in flows] == [pipeline["key"] for pipeline in pipelines]
 
 
 def test_pipeline_scripts_point_at_real_entry_points(pipelines, script_keys):
-    """Checks every script named by a pipeline card exists in the launch catalog."""
     named   = [pipeline["script"] for pipeline in pipelines if pipeline["script"]]
     missing = [key for key in named if key not in script_keys]
 
@@ -111,7 +93,6 @@ def test_pipeline_scripts_point_at_real_entry_points(pipelines, script_keys):
 
 
 def test_every_pipeline_card_is_filled_in(pipelines):
-    """Checks pipeline keys are unique and each card has a name, blurb and at least three stages."""
     keys = [pipeline["key"] for pipeline in pipelines]
 
     assert sorted(keys) == sorted(set(keys))
@@ -121,7 +102,6 @@ def test_every_pipeline_card_is_filled_in(pipelines):
 
 
 def test_flow_node_ids_are_unique_within_a_flow(flows):
-    """Checks each flow has a name, a blurb and no repeated node id."""
     for flow in flows:
         ids = [node["id"] for node in flow["nodes"]]
 
@@ -130,7 +110,6 @@ def test_flow_node_ids_are_unique_within_a_flow(flows):
 
 
 def test_flow_nodes_use_the_known_vocabulary(flows):
-    """Checks every node uses a known role and kind and declares tex, description and shape."""
     for flow in flows:
         for node in flow["nodes"]:
             assert node["role"] in NODE_ROLES, (flow["key"], node["id"], node["role"])
@@ -139,7 +118,6 @@ def test_flow_nodes_use_the_known_vocabulary(flows):
 
 
 def test_every_flow_step_references_declared_nodes(flows):
-    """Checks no walkthrough step reads or writes a node the flow never declared."""
     dangling = []
 
     for flow in flows:
@@ -153,7 +131,6 @@ def test_every_flow_step_references_declared_nodes(flows):
 
 
 def test_flow_steps_are_unique_and_produce_something(flows):
-    """Checks step ids are unique and each step has a title, phase, note, outputs and lines."""
     for flow in flows:
         ids = [step["id"] for step in flow["steps"]]
 
@@ -167,7 +144,6 @@ def test_flow_steps_are_unique_and_produce_something(flows):
 
 
 def test_every_flow_sketch_matches_a_declared_step(flows):
-    """Checks every sketch defined in flow_sketches.js corresponds to a declared flow step."""
     text  = (WEBUI_ROOT / "static" / "js" / "flow_sketches.js").read_text()
     keys  = set(re.findall(r"^  (\w+): \{$", text, re.M))
     steps = {step["id"] for flow in flows for step in flow["steps"]}
@@ -177,7 +153,6 @@ def test_every_flow_sketch_matches_a_declared_step(flows):
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is required to load the flow sketch catalogue")
 def test_flow_sketch_catalogue_resolves_under_the_name_the_walkthrough_reads():
-    """Loads flow_sketches.js beside flow_view.js and builds every sketch through FlowSketches.CATALOG, the name the walkthrough reads."""
     text    = (WEBUI_ROOT / "static" / "js" / "flow_sketches.js").read_text()
     harness = WEBUI_ROOT / "tools" / "visual" / "flow_sketch_catalog.js"
     result  = subprocess.run(["node", str(harness)], capture_output=True, text=True, timeout=60)
@@ -193,7 +168,6 @@ def test_flow_sketch_catalogue_resolves_under_the_name_the_walkthrough_reads():
 
 
 def test_lr_warmup_content_follows_the_warmup_fraction_field(flows, equations):
-    """Schedule notes, formulas, sketch tooltips and the LR animation describe the warmup by the warmup_fraction field WarmupConfig carries."""
     js      = WEBUI_ROOT / "static" / "js"
     names   = {item.name for item in dataclasses.fields(WarmupConfig)}
     stated  = f"warmup_fraction = {WarmupConfig().warmup_fraction}"
@@ -205,7 +179,6 @@ def test_lr_warmup_content_follows_the_warmup_fraction_field(flows, equations):
 
 
 def test_weight_ema_equation_shows_the_decay_warmup(equations):
-    """The Weight EMA entry carries the min(decay, (1 + t) / (10 + t)) ramp the trainer applies by default through ema_warmup."""
     item = next(item for group in equations for item in group["items"] if item["title"] == "Weight EMA")
 
     assert TrainingLoopConfig().ema_warmup is True

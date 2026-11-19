@@ -1,12 +1,3 @@
-"""End-to-end tests of scoring a trained backbone run on a dataset it was not trained on.
-
-A miniature U-Net run built over the synthetic test scene is scored on a second
-synthetic scene, generated with another seed and four other secondary channels,
-over a crop outside the run's splits. The pass must stamp under the run's
-cross-dataset tree, record the target in its marker, metrics and report, score
-against the target's labels, leave the run's own inference untouched, and refuse a
-target whose labels or channel count do not fit the run.
-"""
 
 from __future__ import annotations
 
@@ -35,7 +26,6 @@ TARGET_CROP     = (1400, 1496, 600, 696)
 
 
 def _generate_scene(root: Path, name: str, **overrides) -> Path:
-    """Generates a synthetic scene under the root with the given configuration overrides and returns its dataset directory."""
     config = dataclasses.replace(SynthesisConfig(), output_directory=root / name, **overrides)
 
     SyntheticDatasetPipeline(config, logger=SilentLogger()).run()
@@ -45,12 +35,10 @@ def _generate_scene(root: Path, name: str, **overrides) -> Path:
 
 @pytest.fixture(scope="module")
 def second_scene(tmp_path_factory) -> Path:
-    """Returns a scene generated with another seed and other secondary channel labels than the test scene."""
     return _generate_scene(tmp_path_factory.mktemp("target"), "second_scene", seed=1, secondary_labels=TARGET_CHANNELS)
 
 
 def _config(run_dir: Path, scene: Path, label_run: str = SynthesisConfig().params_run_name, channels=TARGET_CHANNELS) -> InferenceConfig:
-    """Returns an inference configuration scoring the run on the scene's crop through the given secondary channels."""
     return InferenceConfig(
         run_directory   = run_dir,
         output_subdir   = "target",
@@ -76,7 +64,6 @@ def _config(run_dir: Path, scene: Path, label_run: str = SynthesisConfig().param
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_a_run_scored_on_a_target_dataset_stamps_under_its_cross_dataset_tree(tmp_path, test_data_dir, params_dir, second_scene):
-    """The pass scores the target crop through the target channels and records the target everywhere it is read back."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
     config  = _config(run_dir, second_scene)
 
@@ -126,7 +113,6 @@ def test_a_run_scored_on_a_target_dataset_stamps_under_its_cross_dataset_tree(tm
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_a_target_feeding_fewer_channels_than_the_run_consumes_is_refused(tmp_path, test_data_dir, params_dir, second_scene):
-    """Three target channels give fewer input channels than the four-secondary run was trained on."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
 
     with pytest.raises(ValueError, match="input channels"):
@@ -136,7 +122,6 @@ def test_a_target_feeding_fewer_channels_than_the_run_consumes_is_refused(tmp_pa
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_target_labels_fitted_at_another_k_are_refused(tmp_path, test_data_dir, params_dir):
-    """The K=3 label run of a scene cannot score a run that predicts K=2 Gaussians."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
     scene   = _generate_scene(tmp_path, "k3_scene", k_max=N_GAUSSIANS + 1, params_run_name=f"params_k{N_GAUSSIANS + 1}")
 

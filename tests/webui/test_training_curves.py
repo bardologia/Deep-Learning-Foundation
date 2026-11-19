@@ -1,4 +1,3 @@
-"""Tests covering the TensorBoard scalar reader behind the training-curves tab."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,7 +9,6 @@ from web_logger      import WebLogger
 
 
 def _make_run(base: Path, name: str, tags: dict) -> Path:
-    """Writes a TensorBoard run with the given scalar tags and returns its directory."""
     run    = base / name
     writer = SummaryWriter(log_dir=str(run / "tensorboard"))
 
@@ -23,7 +21,6 @@ def _make_run(base: Path, name: str, tags: dict) -> Path:
 
 
 def test_runs_lists_training_dirs(tmp_path):
-    """Nested run directories are listed by their path relative to the base."""
     _make_run(tmp_path, "run_a", {"loss/train": [1.0, 0.5]})
     _make_run(tmp_path / "group", "run_b", {"loss/train": [2.0]})
     (tmp_path / "not_a_run").mkdir()
@@ -36,7 +33,6 @@ def test_runs_lists_training_dirs(tmp_path):
 
 
 def test_runs_rejects_bad_base(tmp_path):
-    """Empty, relative and non-existent bases are rejected."""
     curves = TrainingCurves(WebLogger())
 
     assert not curves.runs("")["ok"]
@@ -45,7 +41,6 @@ def test_runs_rejects_bad_base(tmp_path):
 
 
 def test_curves_overlay_and_default_tag(tmp_path):
-    """An empty tag falls back to a shared tag and overlays one series per run."""
     run_a = _make_run(tmp_path, "run_a", {"loss/train": [1.0, 0.5, 0.2], "loss/val": [1.2, 0.7, 0.4]})
     run_b = _make_run(tmp_path, "run_b", {"loss/val": [2.0, 1.5]})
 
@@ -65,7 +60,6 @@ def test_curves_overlay_and_default_tag(tmp_path):
 
 
 def test_curves_respects_requested_tag_and_skips_missing(tmp_path):
-    """A requested tag is honoured and runs lacking it are dropped from the overlay."""
     run_a = _make_run(tmp_path, "run_a", {"loss/train": [1.0], "lr": [0.001]})
     run_b = _make_run(tmp_path, "run_b", {"loss/train": [2.0]})
 
@@ -78,7 +72,6 @@ def test_curves_respects_requested_tag_and_skips_missing(tmp_path):
 
 
 def test_curves_rejects_unknown_run(tmp_path):
-    """Curves are refused for runs the last listing did not discover."""
     run_a  = _make_run(tmp_path, "run_a", {"loss/train": [1.0]})
     curves = TrainingCurves(WebLogger())
     curves.runs(str(tmp_path))
@@ -90,7 +83,6 @@ def test_curves_rejects_unknown_run(tmp_path):
 
 
 def test_the_scalar_cache_is_bounded_and_reused(tmp_path, monkeypatch):
-    """The scalar cache evicts the oldest run once the cap is reached and serves the rest from memory."""
     monkeypatch.setattr(TrainingCurves, "CACHE_CAP", 2)
     runs   = [_make_run(tmp_path, f"run_{index}", {"loss/val": [float(index)]}) for index in range(3)]
     curves = TrainingCurves(WebLogger())
@@ -105,7 +97,6 @@ def test_the_scalar_cache_is_bounded_and_reused(tmp_path, monkeypatch):
 
 
 def test_downsample_caps_points(tmp_path):
-    """Long series are downsampled to the point cap while keeping the first and last point."""
     curves = TrainingCurves(WebLogger())
     points = [(i, float(i)) for i in range(5000)]
 

@@ -1,10 +1,3 @@
-"""Tests for the figure and animation layer of backbone inference.
-
-Covers `Animator` argument validation and GIF writing, the set of figure groups
-`FigureComposer` emits for plain runs, reduced-baseline comparisons, JEPA embedding
-maps and runs whose parameters were refitted from the curves, and the composer
-drawing the slices of the index dict `InferencePipeline` builds.
-"""
 
 from __future__ import annotations
 
@@ -32,45 +25,29 @@ from tests.conftest import RecordingLogger, SilentLogger
 
 
 class _RecordingProgress:
-    """Progress-bar stub that records the tasks added to it.
-
-    Attributes:
-        tasks : Tuples of (description, total) in the order the tasks were added.
-    """
 
     def __init__(self) -> None:
-        """Starts with no recorded task."""
         self.tasks = []
 
     def add_task(self, description, total=None, **kwargs):
-        """Records a task and returns its index."""
         self.tasks.append((description, total))
         return len(self.tasks) - 1
 
     def advance(self, task, advance=1):
-        """Ignores a progress advance."""
         pass
 
 
 class _TrackingLogger(RecordingLogger):
-    """Recording logger that also keeps the progress tasks opened through track.
-
-    Attributes:
-        progress : Progress stub shared by every track block, holding the added tasks.
-    """
 
     def __init__(self) -> None:
-        """Starts with an empty message log and progress stub."""
         super().__init__()
         self.progress = _RecordingProgress()
 
     @contextlib.contextmanager
     def track(self, transient: bool = False):
-        """Yields the shared progress stub in place of a live bar."""
         yield self.progress
 
     def of(self, level: str) -> list:
-        """Returns the recorded messages of one level."""
         return [message for recorded, message in self.messages if recorded == level]
 
 
@@ -80,12 +57,10 @@ H           = W       = 8
 
 
 def _x_axis():
-    """Returns the z axis of N_Z samples spanning -20 m to 80 m."""
     return np.linspace(-20.0, 80.0, N_Z).astype(np.float32)
 
 
 def _params():
-    """Returns a parameter cube of shape (3 * N_GAUSSIANS, H, W) with random amplitudes and fixed centres and widths."""
     rng    = np.random.default_rng(0)
     params = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
     for k in range(N_GAUSSIANS):
@@ -96,15 +71,6 @@ def _params():
 
 
 def _curves(params, z_axis):
-    """Renders a parameter cube into z profiles.
-
-    Args:
-        params : Parameter cube of shape (3 * N_GAUSSIANS, H, W), grouped amplitude, mu, sigma.
-        z_axis : Z axis in metres, of shape (n_z,).
-
-    Returns:
-        Curve cube of shape (n_z, H, W).
-    """
     curve = np.zeros((z_axis.size, H, W), dtype=np.float32)
     for k in range(N_GAUSSIANS):
         a   = np.maximum(params[3 * k], 0.0)[None]
@@ -116,27 +82,12 @@ def _curves(params, z_axis):
 
 
 def _slice_indices(n_col_slices: int = 2, n_row_slices: int = 2, n_z_slices: int = 2) -> dict:
-    """Returns the slice-index dict InferencePipeline builds for the test cube of shape (N_Z, H, W).
-
-    Args:
-        n_col_slices : Number of col slices plotted.
-        n_row_slices : Number of row slices plotted.
-        n_z_slices   : Number of z slices plotted.
-
-    Returns:
-        The pipeline's mapping of plotted and full index arrays per axis.
-    """
     cfg = InferenceConfig(run_directory=Path("run"), device="cpu", n_col_slices=n_col_slices, n_row_slices=n_row_slices, n_z_slices=n_z_slices)
 
     return InferencePipeline(cfg)._compute_slice_indices(cfg, N_Z, H, W)
 
 
 def _result_and_metrics():
-    """Builds a slightly noisy prediction together with its metrics and slice indices.
-
-    Returns:
-        Tuple of the Result, the global metrics dict, the index dict InferencePipeline builds for the composer and the z axis in metres.
-    """
     z_axis = _x_axis()
     params = _params()
     gt     = _curves(params, z_axis)
@@ -173,7 +124,6 @@ def _result_and_metrics():
 
 
 def _run_stub():
-    """Returns a run stub carrying the split region, full curves and channel geometry the composer reads."""
     region = CropRegion(row_start=0, row_end=H, col_start=0, col_end=W)
     return types.SimpleNamespace(
         n_gaussians        = N_GAUSSIANS,
@@ -187,15 +137,6 @@ def _run_stub():
 
 
 def _composer(tmp_path, logger=None):
-    """Builds a figure composer writing under a freshly created output tree.
-
-    Args:
-        tmp_path : Run directory the inference output subdirectory is created under.
-        logger   : Logger handed to the composer, a silent one when omitted.
-
-    Returns:
-        Tuple of the composer and the inference metadata holding its output paths.
-    """
     cfg  = InferenceConfig(run_directory=tmp_path, output_subdir="fig", device="cpu", normalize_intensity=False)
     meta = InferenceMetadata(cfg)
     meta.create_dirs()
@@ -204,7 +145,6 @@ def _composer(tmp_path, logger=None):
 
 
 def test_animator_build_axis_bad_axis():
-    """An unknown walk axis raises ValueError."""
     animator = Animator(SilentLogger())
     cubes    = (np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32))
     with pytest.raises(ValueError, match="axis must be"):
@@ -212,14 +152,12 @@ def test_animator_build_axis_bad_axis():
 
 
 def test_animator_rejects_non_positive_max_frames():
-    """Constructing an animator with max_frames of zero raises ValueError."""
     with pytest.raises(ValueError, match="max_frames"):
         Animator(SilentLogger(), max_frames=0)
 
 
 @pytest.mark.slow
 def test_animator_walk_gif(tmp_path):
-    """Walking the z axis writes a non-empty GIF."""
     z_axis = _x_axis()
     params = _params()
     gt     = _curves(params, z_axis)
@@ -238,7 +176,6 @@ def test_animator_walk_gif(tmp_path):
 
 @pytest.mark.slow
 def test_animator_renders_frames_through_the_logger_bar_and_logs_frame_counts(tmp_path):
-    """Frame progress goes through the logger's bar, named after the GIF, and the written line carries frames, delay and time."""
     z_axis = _x_axis()
     params = _params()
     gt     = _curves(params, z_axis)
@@ -260,20 +197,17 @@ def test_animator_renders_frames_through_the_logger_bar_and_logs_frame_counts(tm
 
 
 def test_animator_rejects_non_positive_duration():
-    """Constructing an animator with a zero duration raises ValueError."""
     with pytest.raises(ValueError, match="duration"):
         Animator(SilentLogger(), duration=0.0)
 
 
 def test_animator_frame_delay_from_duration_or_fps():
-    """The frame delay follows the total duration when set and the fps otherwise."""
     assert Animator(SilentLogger(), fps=10)._frame_delay_ms(50)               == 100
     assert Animator(SilentLogger(), fps=10, duration=5.0)._frame_delay_ms(50) == 100
     assert Animator(SilentLogger(), fps=10, duration=2.0)._frame_delay_ms(8)  == 250
 
 
 def test_animator_panel_figsize_follows_slice_aspect():
-    """The single-panel figure keeps the slice aspect ratio with the long side fixed and the short side floored."""
     wide_w, wide_h = Animator._panel_figsize(100, 400)
     tall_w, tall_h = Animator._panel_figsize(400, 100)
     thin_w, thin_h = Animator._panel_figsize(10, 400)
@@ -285,7 +219,6 @@ def test_animator_panel_figsize_follows_slice_aspect():
 
 @pytest.mark.slow
 def test_animator_walk_gif_separate_panels(tmp_path):
-    """Separate panels write one single-cube GIF per available cube next to the composite."""
     z_axis = _x_axis()
     params = _params()
     gt     = _curves(params, z_axis)
@@ -306,7 +239,6 @@ def test_animator_walk_gif_separate_panels(tmp_path):
 
 @pytest.mark.slow
 def test_figure_composer_compose_creates_files(tmp_path):
-    """Composing a parameter-space run emits every expected figure group as non-empty files and closes with the per-family table and total."""
     res, gm, indices, z_axis = _result_and_metrics()
     logger                   = _TrackingLogger()
     composer, meta           = _composer(tmp_path, logger)
@@ -337,7 +269,6 @@ def test_figure_composer_compose_creates_files(tmp_path):
 
 @pytest.mark.slow
 def test_figure_composer_names_the_pixel_maps_drawn_and_reports_an_empty_separation_profile(tmp_path):
-    """The pixel-map line names every map drawn, the histograms are counted, and an empty miss-by-separation profile is warned about and summarised."""
     res, _gm, _indices, _z_axis = _result_and_metrics()
     res.label_r2                = res.pixel_r2.copy()
     res.miss_by_sep             = []
@@ -360,7 +291,6 @@ def test_figure_composer_names_the_pixel_maps_drawn_and_reports_an_empty_separat
 
 @pytest.mark.slow
 def test_figure_composer_tracks_each_slice_set_on_the_logger_bar(tmp_path):
-    """Both slice sets open one progress task each, sized to the col, row and z slices they draw."""
     res, gm, indices, z_axis = _result_and_metrics()
     logger                   = _TrackingLogger()
     composer, _meta          = _composer(tmp_path, logger)
@@ -373,7 +303,6 @@ def test_figure_composer_tracks_each_slice_set_on_the_logger_bar(tmp_path):
 
 @pytest.mark.slow
 def test_figure_composer_draws_the_slices_the_pipeline_indexes(tmp_path):
-    """The index dict InferencePipeline builds feeds the slice figures as is, with one figure stem per plotted col, row and z index."""
     res, gm, _indices, z_axis = _result_and_metrics()
     indices                   = _slice_indices(n_col_slices=3, n_row_slices=2, n_z_slices=4)
     composer, _meta           = _composer(tmp_path)
@@ -393,7 +322,6 @@ def test_figure_composer_draws_the_slices_the_pipeline_indexes(tmp_path):
 
 @pytest.mark.slow
 def test_figure_composer_counts_param_figures_against_three_per_slot(tmp_path):
-    """With every GT slot matched, each parameter family reports 3 K of 3 K figures and nothing is skipped."""
     res, _gm, _indices, _z_axis = _result_and_metrics()
     logger                      = _TrackingLogger()
     composer, meta              = _composer(tmp_path, logger)
@@ -407,7 +335,6 @@ def test_figure_composer_counts_param_figures_against_three_per_slot(tmp_path):
 
 @pytest.mark.slow
 def test_figure_composer_explains_the_param_figures_a_collapsed_slot_loses(tmp_path):
-    """A GT slot with no matched active prediction loses its scatter, error-map and error-histogram figures under one warning."""
     res, _gm, _indices, _z_axis = _result_and_metrics()
     res.params_pred[3]          = 0.0
     logger                      = _TrackingLogger()
@@ -435,9 +362,7 @@ def test_figure_composer_explains_the_param_figures_a_collapsed_slot_loses(tmp_p
 
 
 class _EmbeddingMaps:
-    """Stand-in for the JEPA embedding maps attached to a Result."""
     def __init__(self):
-        """Fills the four embedding maps of shape (H, W) with random values."""
         rng = np.random.default_rng(3)
 
         self.embedding_error  = rng.random((H, W)).astype(np.float32)
@@ -448,7 +373,6 @@ class _EmbeddingMaps:
 
 @pytest.mark.slow
 def test_figure_composer_writes_embedding_maps(tmp_path):
-    """Embedding maps on the result produce the four map figures and the histogram figure."""
     res, gm, indices, z_axis = _result_and_metrics()
     res.embedding_maps       = _EmbeddingMaps()
 
@@ -466,7 +390,6 @@ def test_figure_composer_writes_embedding_maps(tmp_path):
 
 @pytest.mark.slow
 def test_figure_composer_skips_slot_organization_for_extracted_parameters(tmp_path):
-    """Refitted parameters swap the slot-organisation figures for the extraction R2 map."""
     res, gm, indices, z_axis = _result_and_metrics()
     res.params_source        = "extracted"
     res.extract_r2           = np.random.default_rng(4).uniform(0.8, 1.0, (H, W)).astype(np.float32)
@@ -485,7 +408,6 @@ def test_figure_composer_skips_slot_organization_for_extracted_parameters(tmp_pa
 
 @pytest.mark.slow
 def test_figure_composer_keeps_slot_organization_for_model_parameters(tmp_path):
-    """Model-predicted parameters keep the slot-usage figure."""
     res, gm, indices, z_axis = _result_and_metrics()
 
     composer, _meta = _composer(tmp_path)

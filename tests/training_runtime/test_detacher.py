@@ -1,4 +1,3 @@
-"""Tests for the detacher that re-execs an entry point as a background process."""
 
 from __future__ import annotations
 
@@ -9,13 +8,11 @@ from tools.runtime.detacher import Detacher
 
 
 class _Process:
-    """Popen stub exposing only the pid the detacher reports."""
 
     pid = 4242
 
 
 def _ensure_with_captured_env(tmp_path, monkeypatch) -> dict:
-    """Runs Detacher.ensure past the re-exec and returns the child environment it built."""
     captured = {}
 
     def _popen(command, env=None, **kwargs):
@@ -33,7 +30,6 @@ def _ensure_with_captured_env(tmp_path, monkeypatch) -> dict:
 
 
 def test_ensure_drops_the_pin_when_the_parent_inherited_no_mask(tmp_path, monkeypatch):
-    """The re-exec child of a bare-machine parent sees no CUDA mask, so --gpu addresses physical devices."""
     monkeypatch.setenv("MLTEMPLATE_INHERITED_CUDA_MASK", "")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
 
@@ -45,7 +41,6 @@ def test_ensure_drops_the_pin_when_the_parent_inherited_no_mask(tmp_path, monkey
 
 
 def test_ensure_restores_an_inherited_allocation_mask(tmp_path, monkeypatch):
-    """The re-exec child of a scheduler-allocated parent sees the allocation's full mask."""
     monkeypatch.setenv("MLTEMPLATE_INHERITED_CUDA_MASK", "2,3")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
 
@@ -56,7 +51,6 @@ def test_ensure_restores_an_inherited_allocation_mask(tmp_path, monkeypatch):
 
 
 def test_detached_child_takes_its_output_path_out_of_the_environment(monkeypatch):
-    """The detached child records its .out path for its own log headers and removes it from the environment its subprocesses inherit."""
     monkeypatch.setattr(module.signal, "signal", lambda *args: None)
     monkeypatch.setattr(Detacher, "output_path", None)
     monkeypatch.setenv(Detacher.ENV_FLAG, "1")

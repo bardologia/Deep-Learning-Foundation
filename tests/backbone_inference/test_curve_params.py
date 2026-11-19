@@ -1,9 +1,3 @@
-"""Tests for refitting Gaussian parameters from predicted z profiles.
-
-Covers `CurveParamExtractor` on synthetic mixtures (accuracy, ordering, chunking,
-determinism, axis validation) and the inference-pipeline stage that runs it, fills
-`params_pred` and measures the extraction floor on the ground-truth curves.
-"""
 
 from __future__ import annotations
 
@@ -26,22 +20,10 @@ N_Z = 120
 
 
 def _axis() -> np.ndarray:
-    """Returns the ascending z axis of N_Z samples spanning -20 m to 20 m."""
     return np.linspace(-20.0, 20.0, N_Z).astype(np.float32)
 
 
 def _mixture(amps: np.ndarray, mus: np.ndarray, sigs: np.ndarray, z_axis: np.ndarray) -> np.ndarray:
-    """Renders a Gaussian mixture onto the z axis.
-
-    Args:
-        amps   : Amplitudes of shape (n_components, height, width).
-        mus    : Centres in metres, of shape (n_components, height, width).
-        sigs   : Widths in metres, of shape (n_components, height, width).
-        z_axis : Z axis in metres, of shape (n_z,).
-
-    Returns:
-        Curve cube of shape (n_z, height, width).
-    """
     curves = np.zeros((z_axis.size, *amps.shape[1:]), dtype=np.float32)
 
     for k in range(amps.shape[0]):
@@ -52,17 +34,6 @@ def _mixture(amps: np.ndarray, mus: np.ndarray, sigs: np.ndarray, z_axis: np.nda
 
 
 def _separated_scene(seed: int = 0, height: int = 4, width: int = 3):
-    """Builds a two-component scene whose Gaussians sit on opposite halves of the axis.
-
-    Args:
-        seed   : Seed of the random generator drawing the component parameters.
-        height : Row extent of the scene.
-        width  : Range extent of the scene.
-
-    Returns:
-        Tuple of the curve cube of shape (n_z, height, width), the amplitudes,
-        the centres in metres, the widths in metres and the z axis.
-    """
     rng    = np.random.default_rng(seed)
     z_axis = _axis()
 
@@ -74,7 +45,6 @@ def _separated_scene(seed: int = 0, height: int = 4, width: int = 3):
 
 
 def test_extractor_recovers_separated_gaussians():
-    """Centres, widths and amplitudes of well-separated Gaussians are recovered within tight tolerances."""
     curves, amps, mus, sigs, z_axis = _separated_scene()
 
     result = CurveParamExtractor(z_axis, 2, 1e-4).run(curves)
@@ -89,7 +59,6 @@ def test_extractor_recovers_separated_gaussians():
 
 
 def test_extractor_fit_quality_is_high_on_exact_mixtures():
-    """Per-pixel fit R2 exceeds 0.99 when the curves are exact Gaussian mixtures."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene()
 
     result = CurveParamExtractor(z_axis, 2, 1e-4).run(curves)
@@ -99,7 +68,6 @@ def test_extractor_fit_quality_is_high_on_exact_mixtures():
 
 
 def test_extractor_orders_components_by_position():
-    """Extracted slots come out sorted by ascending centre."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene(seed=3)
 
     params = CurveParamExtractor(z_axis, 2, 1e-4).run(curves).params
@@ -108,7 +76,6 @@ def test_extractor_orders_components_by_position():
 
 
 def test_extractor_render_round_trips_its_own_parameters():
-    """Rendering the extracted parameters reproduces the input curves."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene(seed=5)
 
     extractor = CurveParamExtractor(z_axis, 2, 1e-4)
@@ -120,7 +87,6 @@ def test_extractor_render_round_trips_its_own_parameters():
 
 
 def test_extractor_returns_inactive_amplitudes_on_empty_profiles():
-    """All-zero profiles yield zero amplitudes in every slot."""
     z_axis = _axis()
     curves = np.zeros((N_Z, 3, 2), dtype=np.float32)
 
@@ -131,7 +97,6 @@ def test_extractor_returns_inactive_amplitudes_on_empty_profiles():
 
 
 def test_extractor_is_deterministic():
-    """Two runs on the same curves give bit-identical parameters."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene(seed=7)
 
     first  = CurveParamExtractor(z_axis, 2, 1e-4).run(curves).params
@@ -141,7 +106,6 @@ def test_extractor_is_deterministic():
 
 
 def test_extractor_chunking_does_not_change_the_result():
-    """Chunking the pixel dimension leaves parameters and fit R2 unchanged."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene(seed=9, height=6, width=5)
 
     whole   = CurveParamExtractor(z_axis, 2, 1e-4, chunk_pixels=10_000).run(curves)
@@ -152,7 +116,6 @@ def test_extractor_chunking_does_not_change_the_result():
 
 
 def test_extractor_rejects_a_mismatched_z_axis():
-    """Curves whose z length differs from the axis raise ValueError."""
     curves = np.zeros((N_Z + 1, 2, 2), dtype=np.float32)
 
     with pytest.raises(ValueError, match="different z grids"):
@@ -160,13 +123,11 @@ def test_extractor_rejects_a_mismatched_z_axis():
 
 
 def test_extractor_rejects_a_degenerate_axis():
-    """An z axis shorter than three samples is rejected at construction."""
     with pytest.raises(ValueError, match="at least 3 samples"):
         CurveParamExtractor(np.array([0.0, 1.0], dtype=np.float32), 1, 1e-4)
 
 
 def test_wider_gaussians_yield_wider_extracted_sigmas():
-    """Extracted sigma tracks the true width for narrow and wide single Gaussians."""
     z_axis = _axis()
     amps   = np.ones((1, 2, 2), dtype=np.float32)
     mus    = np.zeros((1, 2, 2), dtype=np.float32)
@@ -180,16 +141,6 @@ def test_wider_gaussians_yield_wider_extracted_sigmas():
 
 
 def _pipeline_pieces(tmp_path, seed=11):
-    """Assembles an inference pipeline and a matching result for the extraction stage.
-
-    Args:
-        tmp_path : Directory used as run directory and cube directory.
-        seed     : Seed of the synthetic two-component scene.
-
-    Returns:
-        Tuple of the pipeline, its configuration, the metadata stub, the run stub, a
-        Result whose predicted curves equal the ground truth, and the z axis.
-    """
     curves, amps, mus, sigs, z_axis = _separated_scene(seed=seed, height=4, width=3)
 
     params_gt = np.zeros((6, *curves.shape[1:]), dtype=np.float32)
@@ -225,7 +176,6 @@ def _pipeline_pieces(tmp_path, seed=11):
 
 
 def test_extraction_stage_fills_predicted_parameters_and_the_floor(tmp_path):
-    """The stage writes extracted parameters, the fit R2 map and the extraction floor onto the result."""
     pipeline, cfg, meta, run, result, z_axis = _pipeline_pieces(tmp_path)
 
     pipeline._extract_curve_params(cfg, meta, run, result, z_axis, SilentLogger())
@@ -237,13 +187,11 @@ def test_extraction_stage_fills_predicted_parameters_and_the_floor(tmp_path):
 
 
 def test_extraction_stage_parallelises_over_the_configured_cpu_workers(tmp_path, monkeypatch):
-    """The extractor is constructed with the worker count taken from the inference configuration."""
     pipeline, cfg, meta, run, result, z_axis = _pipeline_pieces(tmp_path)
 
     captured = {}
 
     def _spy(**kwargs):
-        """Records the extractor keyword arguments and forwards them to the real extractor."""
         captured.update(kwargs)
         return CurveParamExtractor(**kwargs)
 
@@ -255,7 +203,6 @@ def test_extraction_stage_parallelises_over_the_configured_cpu_workers(tmp_path,
 
 
 def test_extraction_stage_is_skipped_when_disabled(tmp_path):
-    """With extract_curve_params off, no parameters are extracted and the source stays \"model\"."""
     pipeline, cfg, meta, run, result, z_axis = _pipeline_pieces(tmp_path)
     cfg.extract_curve_params = False
 
@@ -266,7 +213,6 @@ def test_extraction_stage_is_skipped_when_disabled(tmp_path):
 
 
 def test_extraction_stage_leaves_parameter_models_untouched(tmp_path):
-    """Parameter-space models keep their own head output instead of refitted parameters."""
     pipeline, cfg, meta, run, result, z_axis = _pipeline_pieces(tmp_path)
     pipeline.components = InferenceComponents(param_space=True)
 
@@ -276,7 +222,6 @@ def test_extraction_stage_leaves_parameter_models_untouched(tmp_path):
 
 
 def test_extracted_parameters_unlock_the_param_space_metrics(tmp_path):
-    """Extracted parameters enable the matched and floor metrics while slot-organisation metrics stay suppressed."""
     pipeline, cfg, meta, run, result, z_axis = _pipeline_pieces(tmp_path)
 
     pipeline._extract_curve_params(cfg, meta, run, result, z_axis, SilentLogger())
@@ -293,7 +238,6 @@ def test_extracted_parameters_unlock_the_param_space_metrics(tmp_path):
 
 
 def test_extractor_handles_a_descending_z_axis():
-    """A descending z axis still recovers the true centre and width."""
     z_axis = _axis()[::-1].copy()
     amps   = np.ones((1, 2, 2), dtype=np.float32)
     mus    = np.full((1, 2, 2), 3.0, dtype=np.float32)
@@ -306,7 +250,6 @@ def test_extractor_handles_a_descending_z_axis():
 
 
 def test_extraction_stage_requires_the_exact_gt_parameters(tmp_path):
-    """Missing ground-truth parameters make the stage raise, since the floor cannot be measured."""
     pipeline, cfg, meta, run, result, z_axis = _pipeline_pieces(tmp_path)
     result.params_gt = None
 
@@ -315,14 +258,12 @@ def test_extraction_stage_requires_the_exact_gt_parameters(tmp_path):
 
 
 def test_extractor_does_not_fork_a_process_pool_by_default():
-    """The peak initialiser is built single-threaded and forks no process pool."""
     from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
 
     created = []
     build   = PeakInitialiser.__init__
 
     def spy(self, n_workers=1):
-        """Records the worker count the initialiser is built with and asserts no pool is created."""
         created.append(n_workers)
         build(self, n_workers=n_workers)
         assert self._pool is None

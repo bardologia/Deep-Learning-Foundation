@@ -1,9 +1,3 @@
-"""Tests of the raw-cube SSIM stage of the backbone inference pipeline.
-
-The stage is exercised in isolation on synthetic cubes: the reference it scores against,
-the metric keys it writes in raw intensity and unit area, the log section it opens and
-the skip status it records when the sweep is switched off.
-"""
 
 from __future__ import annotations
 
@@ -29,15 +23,6 @@ N_COLS = 10
 
 
 def _result(pred: np.ndarray, gt: np.ndarray) -> Result:
-    """Builds a Result whose pixel maps are derived from the given cubes.
-
-    Args:
-        pred : Predicted cube of shape (N_Z, N_ROWS, N_COLS).
-        gt   : Ground-truth cube of the same shape.
-
-    Returns:
-        A Result carrying both cubes and their per-pixel metric maps.
-    """
     maps = Metrics.curve_pixel_metrics(pred, gt)
 
     return Result(
@@ -55,18 +40,6 @@ def _result(pred: np.ndarray, gt: np.ndarray) -> Result:
 
 
 def _stage(tmp_path, *, enabled: bool):
-    """Prepares the pipeline, config, metadata, run stub, result and indices for the stage.
-
-    The prediction equals the raw cube while the ground truth is unrelated, so a unit
-    score can only come from scoring against the raw cube.
-
-    Args:
-        tmp_path : Directory standing in for the training run directory.
-        enabled  : Value of compute_cube_ssim.
-
-    Returns:
-        Tuple of pipeline, config, metadata, run stub, result, z axis and slice indices.
-    """
     rng  = np.random.default_rng(0)
     full = rng.uniform(0.5, 2.0, (N_Z, N_ROWS, N_COLS)).astype(np.float32)
     gt   = rng.uniform(0.5, 2.0, (N_Z, N_ROWS, N_COLS)).astype(np.float32)
@@ -91,13 +64,11 @@ def _stage(tmp_path, *, enabled: bool):
 
 
 def test_cube_ssim_is_off_by_default():
-    """The stage adds two full SSIM sweeps, so neither the inference nor the benchmark inference config runs it unless asked."""
     assert InferenceConfig(run_directory=Path(".")).compute_cube_ssim is False
     assert InferenceQueueConfig().compute_cube_ssim                   is False
 
 
 def test_cube_ssim_stage_scores_against_the_raw_cube(tmp_path):
-    """The prediction is scored against run.full_curves in both forms, not against the Gaussian ground truth."""
     pipeline, config, meta, run, result, z_axis, indices = _stage(tmp_path, enabled=True)
     metrics = {}
     logger  = RecordingLogger()
@@ -116,7 +87,6 @@ def test_cube_ssim_stage_scores_against_the_raw_cube(tmp_path):
 
 
 def test_cube_ssim_stage_records_its_skip(tmp_path):
-    """Disabling the sweep logs a skip section and records the status instead of staying silent."""
     pipeline, config, meta, run, result, z_axis, indices = _stage(tmp_path, enabled=False)
     metrics = {}
     logger  = RecordingLogger()

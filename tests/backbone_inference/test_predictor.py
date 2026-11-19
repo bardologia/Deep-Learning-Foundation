@@ -1,8 +1,3 @@
-"""Tests covering patch windows, cube stitching and the inference predictor loop.
-
-The predictor cases build a tiny UNet run over a synthetic patch grid and check the
-stitched curve and parameter cubes, the CPU render worker and the result-window budget.
-"""
 
 from __future__ import annotations
 
@@ -31,27 +26,12 @@ PATCH       = 16
 
 
 class _IdentityNormalizer:
-    """Normalizer stub that leaves denormalized outputs untouched."""
     @staticmethod
     def denormalize_output(t):
-        """Returns the tensor unchanged."""
         return t
 
 
 def _build_run(n_rows: int, n_cols: int, in_channels: int = 4):
-    """Builds a synthetic inference run over a single-batch patch grid.
-
-    Args:
-        n_rows        : Row size of the crop region, in pixels.
-        n_cols        : Range size of the crop region, in pixels.
-        in_channels : Number of input channels fed to the backbone.
-
-    Returns:
-        Namespace holding the wrapped model, the patch grid, a one-batch loader of
-        images of shape (n_patches, in_channels, PATCH, PATCH) paired with
-        ground-truth parameter maps of shape (n_patches, OUT_CH, PATCH, PATCH), and
-        the crop region the patches cover.
-    """
     region = CropRegion(row_start=0, row_end=n_rows, col_start=0, col_end=n_cols)
     patch  = Patcher.build(spatial_size=(n_rows, n_cols), patch_size=(PATCH, PATCH), stride=(PATCH, PATCH), use_symmetric_padding=True)
     grid   = patch.grid
@@ -93,7 +73,6 @@ def _build_run(n_rows: int, n_cols: int, in_channels: int = 4):
 
 
 def _make_predictor(tmp_path, run) -> Predictor:
-    """Returns a predictor writing into a fresh inference metadata tree under tmp_path."""
     cfg  = InferenceConfig(run_directory=tmp_path, output_subdir="pred", device="cpu")
     meta = InferenceMetadata(cfg)
     meta.create_dirs()
@@ -110,27 +89,23 @@ def _make_predictor(tmp_path, run) -> Predictor:
 
 
 def test_make_patch_window_uniform():
-    """Uniform windows are all-ones over the patch shape."""
     w = CubeStitcher.make_patch_window((4, 4), kind="uniform")
     assert w.shape == (4, 4)
     assert np.allclose(w, 1.0)
 
 
 def test_make_patch_window_hann_is_positive_and_bell():
-    """Hann windows stay strictly positive and peak at the patch centre."""
     w = CubeStitcher.make_patch_window((8, 8), kind="hann")
     assert np.all(w >= 1e-3)
     assert w[4, 4] > w[0, 0]
 
 
 def test_make_patch_window_unknown_raises():
-    """An unknown window kind is rejected."""
     with pytest.raises(ValueError, match="Unknown window"):
         CubeStitcher.make_patch_window((4, 4), kind="bogus")
 
 
 def test_cube_stitcher_single_patch_reconstructs():
-    """A single uniform-weighted patch stitches back to the original cube."""
     patch = Patcher.build(spatial_size=(8, 8), patch_size=(8, 8), stride=(8, 8), use_symmetric_padding=False)
     grid  = patch.grid
 
@@ -145,7 +120,6 @@ def test_cube_stitcher_single_patch_reconstructs():
 
 
 def test_select_stitcher_takes_nearest_patch_centre():
-    """Overlapping patches are resolved by the nearest patch centre."""
     patcher = Patcher.build(spatial_size=(8, 12), patch_size=(8, 8), stride=(4, 4), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -161,7 +135,6 @@ def test_select_stitcher_takes_nearest_patch_centre():
 
 
 def test_select_stitcher_single_patch_is_exact():
-    """Nearest-centre selection is exact for a lone covering patch."""
     patcher = Patcher.build(spatial_size=(8, 8), patch_size=(8, 8), stride=(8, 8), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -175,7 +148,6 @@ def test_select_stitcher_single_patch_is_exact():
 
 
 def test_cube_stitcher_rectangular_patches_reconstruct():
-    """Hann-weighted overlapping rectangular patches reconstruct the source cube."""
     patcher = Patcher.build(spatial_size=(8, 24), patch_size=(8, 12), stride=(8, 6), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -192,7 +164,6 @@ def test_cube_stitcher_rectangular_patches_reconstruct():
 
 
 def test_select_stitcher_rectangular_patches_reconstruct():
-    """Nearest-centre selection reconstructs the source cube from rectangular patches."""
     patcher = Patcher.build(spatial_size=(12, 8), patch_size=(6, 8), stride=(3, 8), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -209,7 +180,6 @@ def test_select_stitcher_rectangular_patches_reconstruct():
 
 
 def test_select_stitcher_raises_on_uncovered_pixels():
-    """Finalizing a cube with pixels no patch covered raises."""
     patcher = Patcher.build(spatial_size=(8, 12), patch_size=(8, 8), stride=(4, 4), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -221,7 +191,6 @@ def test_select_stitcher_raises_on_uncovered_pixels():
 
 
 def test_cpu_worker_render_floor_drops_weak_components():
-    """Components below the amplitude floor vanish from the rendered curves while staying in the parameter cube."""
     z_axis = np.linspace(0.0, 40.0, 32).astype(np.float32)
 
     pred       = np.zeros((1, 6, 4, 4), dtype=np.float32)
@@ -246,7 +215,6 @@ def test_cpu_worker_render_floor_drops_weak_components():
 
 
 def test_result_window_is_bounded_by_the_byte_budget(tmp_path):
-    """The result window follows the byte budget, clamped to at least one task and at most the patch count."""
     run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)
     predictor.cpu_workers = 8
@@ -267,7 +235,6 @@ def test_result_window_is_bounded_by_the_byte_budget(tmp_path):
 
 
 def test_predictor_run_inference_shapes(tmp_path):
-    """Inference returns finite cubes shaped to the crop region and the z axis."""
     run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)
 
@@ -283,7 +250,6 @@ def test_predictor_run_inference_shapes(tmp_path):
 
 
 def test_predictor_writes_pixel_maps_without_save_cubes(tmp_path):
-    """The per-pixel error maps land on disk even when the heavy cubes are not saved."""
     run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)
 
@@ -297,7 +263,6 @@ def test_predictor_writes_pixel_maps_without_save_cubes(tmp_path):
 
 
 def test_predictor_gt_curves_match_gt_gaussian(tmp_path):
-    """Ground-truth curves render the analytic Gaussian of the ground-truth parameters."""
     run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)
 
@@ -311,7 +276,6 @@ def test_predictor_gt_curves_match_gt_gaussian(tmp_path):
 
 
 def test_predictor_warns_when_a_gt_pixel_has_a_constant_profile(tmp_path):
-    """A pixel whose ground-truth slots are all inactive has an undefined R2, which is counted and warned about instead of averaged."""
     run = _build_run(n_rows=16, n_cols=16)
     run.loader[0][1][:, 0, 0, 0] = 0.0
 
@@ -330,7 +294,6 @@ def test_predictor_warns_when_a_gt_pixel_has_a_constant_profile(tmp_path):
 
 
 def test_predictor_offsets_from_region(tmp_path):
-    """Result offsets are taken from the split-region start indices."""
     region = CropRegion(row_start=100, row_end=116, col_start=50, col_end=66)
     run    = _build_run(n_rows=16, n_cols=16)
     run.split_region = region
@@ -343,7 +306,6 @@ def test_predictor_offsets_from_region(tmp_path):
 
 
 def test_backend_row_names_the_model_device_not_cuda_availability(tmp_path, monkeypatch):
-    """A model on the CPU is logged as a CPU backend even when CUDA is available, with no GPU rows."""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
 
     rows = _make_predictor(tmp_path, _build_run(PATCH, PATCH))._device_rows()
@@ -352,7 +314,6 @@ def test_backend_row_names_the_model_device_not_cuda_availability(tmp_path, monk
 
 
 def test_backend_rows_name_the_physical_gpu_on_cuda(tmp_path, monkeypatch):
-    """A model on a CUDA device is logged with the GPU name, the pinned CUDA_VISIBLE_DEVICES token and the inherited mask."""
     run       = _build_run(PATCH, PATCH)
     run.model = types.SimpleNamespace(device="cuda:0")
 

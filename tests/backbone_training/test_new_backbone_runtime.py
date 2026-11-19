@@ -1,9 +1,3 @@
-"""Tests that the recently added backbones train end to end under the backbone Trainer.
-
-Covers learning-rate warmup engagement, EMA shadow updates and weight swapping, and the
-full fit with VRAM reservation on CUDA, parametrised over the pixel, local-CNN, NAFNet
-and set-prediction backbones.
-"""
 
 from __future__ import annotations
 
@@ -29,7 +23,6 @@ NEW_BACKBONES = {
 
 
 def _loader(n: int = 6, hw: int = 16) -> DataLoader:
-    """Returns a loader of random (n, 2, hw, hw) inputs and (n, 6, hw, hw) targets with physically plausible amplitude, mu and sigma channels."""
     gen  = torch.Generator().manual_seed(0)
     imgs = torch.randn(n, 2, hw, hw, generator=gen)
     tgt  = torch.randn(n, 6, hw, hw, generator=gen)
@@ -42,7 +35,6 @@ def _loader(n: int = 6, hw: int = 16) -> DataLoader:
 
 
 def _build_trainer(tmp_path, name: str, reserve_vram: bool = False) -> Trainer:
-    """Returns a one-epoch Trainer for the named backbone with EMA and LR warmup enabled."""
     backbone_name, overrides = NEW_BACKBONES[name]
     model, model_cfg         = get_backbone(backbone_name, in_channels=2, out_channels=6, **overrides)
 
@@ -63,7 +55,6 @@ def _build_trainer(tmp_path, name: str, reserve_vram: bool = False) -> Trainer:
 
 @pytest.mark.parametrize("name", sorted(NEW_BACKBONES))
 def test_train_epoch_engages_warmup(name, tmp_path, force_cpu):
-    """Verifies one epoch advances the warmup counter and holds every group below its base learning rate."""
     trainer = _build_trainer(tmp_path, name)
     loader  = _loader()
 
@@ -77,7 +68,6 @@ def test_train_epoch_engages_warmup(name, tmp_path, force_cpu):
 
 @pytest.mark.parametrize("name", sorted(NEW_BACKBONES))
 def test_train_epoch_updates_ema_shadow(name, tmp_path, force_cpu):
-    """Verifies one epoch moves at least one EMA shadow tensor and keeps all of them finite."""
     trainer = _build_trainer(tmp_path, name)
     initial = {key: tensor.clone() for key, tensor in trainer.ema.shadow.items()}
 
@@ -90,7 +80,6 @@ def test_train_epoch_updates_ema_shadow(name, tmp_path, force_cpu):
 
 @pytest.mark.parametrize("name", sorted(NEW_BACKBONES))
 def test_ema_applied_swaps_and_restores_weights(name, tmp_path, force_cpu):
-    """Verifies the EMA context installs the shadow weights, runs a finite forward pass and restores the raw weights."""
     trainer = _build_trainer(tmp_path, name)
     trainer.train_epoch(_loader(), epoch=0)
 
@@ -111,7 +100,6 @@ def test_ema_applied_swaps_and_restores_weights(name, tmp_path, force_cpu):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="VRAM reservation requires CUDA")
 @pytest.mark.parametrize("name", sorted(NEW_BACKBONES))
 def test_full_fit_with_vram_reservation_on_gpu(name, tmp_path):
-    """Verifies a full one-epoch fit runs on CUDA with VRAM reservation enabled."""
     trainer = _build_trainer(tmp_path, name, reserve_vram=True)
     loader  = _loader()
 

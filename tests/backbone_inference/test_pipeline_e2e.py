@@ -1,9 +1,3 @@
-"""End-to-end tests of the backbone inference pipeline on the synthetic test scene.
-
-A miniature U-Net run is inferred over the test split, then re-inferred with a
-region override that extends the split outward, and the equal-spacing slice
-index helper is checked in isolation.
-"""
 
 from __future__ import annotations
 
@@ -23,7 +17,6 @@ from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, build_run_direct
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir, param_extraction_meta):
-    """A full run writes the report, finite curve metrics, the label run's activity threshold and the saved cubes."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
 
     config = InferenceConfig(
@@ -84,7 +77,6 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir, para
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_inference_pipeline_scores_the_standard_ssim_against_the_raw_cube(tmp_path, test_data_dir, params_dir):
-    """With the switch on, a full run scores every slice against the raw cube and reports it beside the label SSIM."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
 
     config = InferenceConfig(
@@ -123,7 +115,6 @@ def test_inference_pipeline_scores_the_standard_ssim_against_the_raw_cube(tmp_pa
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_inference_pipeline_with_region_override(tmp_path, test_data_dir, params_dir):
-    """A region override widens the inferred area while the stored split region stays the reported core region."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
 
     config = InferenceConfig(
@@ -153,7 +144,6 @@ def test_inference_pipeline_with_region_override(tmp_path, test_data_dir, params
 
 @pytest.mark.dataset
 def test_region_override_must_contain_the_stored_split_region(tmp_path, test_data_dir, params_dir):
-    """A region override disjoint from the stored split region raises ValueError."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
 
     config = InferenceConfig(
@@ -174,7 +164,6 @@ def test_region_override_must_contain_the_stored_split_region(tmp_path, test_dat
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_runner_scores_each_region_of_a_split_stored_as_two(tmp_path, test_data_dir, params_dir):
-    """A test split stored as two disjoint regions is scored once per region, each pass reporting its own region as split and core region and its region pass."""
     from configuration.inference                       import BackboneInferenceEntryConfig
     from pipelines.shared.inference.inference_dispatch import BackboneInferenceRunner
 
@@ -217,7 +206,6 @@ def test_backbone_runner_scores_each_region_of_a_split_stored_as_two(tmp_path, t
 
 
 def test_equal_indices_are_unique_and_inside_the_axis():
-    """Equally spaced slice indices are unique and stay inside the axis for every axis and slice count."""
     for n_total in (7, 10, 64, 150):
         for n_slices in (1, 3, 5, n_total):
             indices = InferencePipeline._equal_indices(n_total, n_slices)

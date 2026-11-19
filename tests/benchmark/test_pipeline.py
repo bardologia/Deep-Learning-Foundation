@@ -1,9 +1,3 @@
-"""Tests for the benchmark pipeline's model selection, stage state and stage ordering.
-
-Covers the model list derived from the backbone registry, the resolved-config artifact,
-the persisted per-stage state across processes, the per-training-type stage gating, and
-the prepare and compare partial-stage entry points.
-"""
 
 from __future__ import annotations
 
@@ -21,7 +15,6 @@ ENTRY = Path("/entry/run_benchmark.py")
 
 
 def _config(tmp_path, **kwargs):
-    """Returns a benchmark config rooted at tmp_path with a fixed run tag and the given field overrides."""
     config                    = BenchmarkConfig()
     config.paths.log_base_dir = tmp_path
     config.run_tag            = "unit_run"
@@ -31,7 +24,6 @@ def _config(tmp_path, **kwargs):
 
 
 def test_pipeline_builds_model_list_from_registry(tmp_path):
-    """Verifies the model list comes from the registry without duplicates."""
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     assert "unet" in pipeline.models
@@ -39,21 +31,18 @@ def test_pipeline_builds_model_list_from_registry(tmp_path):
 
 
 def test_pipeline_excludes_skipped_models(tmp_path):
-    """Verifies a skipped model is absent from the model list."""
     pipeline = BenchmarkPipeline(_config(tmp_path, skip_models=["unet"]), entry_script=ENTRY)
 
     assert "unet" not in pipeline.models
 
 
 def test_pipeline_writes_resolved_config(tmp_path):
-    """Verifies construction writes the resolved config into the run's pipeline directory."""
     BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     assert (tmp_path / "unit_run" / "pipeline" / "resolved_config.json").exists()
 
 
 def test_mark_stage_persists_state(tmp_path):
-    """Verifies marking a stage writes its status and the run tag to the state file."""
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     pipeline._mark_stage("size_match", "completed")
@@ -64,7 +53,6 @@ def test_mark_stage_persists_state(tmp_path):
 
 
 def test_a_later_stage_process_keeps_the_earlier_stage_history(tmp_path):
-    """Verifies a second pipeline process appends to rather than replaces the recorded stage history."""
     prepare = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
     prepare._mark_stage("size_match", "completed")
     prepare._mark_stage("prepare", "completed")
@@ -77,7 +65,6 @@ def test_a_later_stage_process_keeps_the_earlier_stage_history(tmp_path):
 
 
 def test_runs_gating_for_backbone(tmp_path):
-    """Verifies backbone sweeps run the size-match and inference stages."""
     config = _config(tmp_path, training_type="backbone")
 
     assert config.runs_size_match() is True
@@ -85,7 +72,6 @@ def test_runs_gating_for_backbone(tmp_path):
 
 
 def test_runs_gating_for_profile_autoencoder(tmp_path):
-    """Verifies profile-autoencoder sweeps skip the size-match and inference stages."""
     config = _config(tmp_path, training_type="profile_autoencoder")
 
     assert config.runs_size_match() is False
@@ -93,7 +79,6 @@ def test_runs_gating_for_profile_autoencoder(tmp_path):
 
 
 def _patch_stage_methods(pipeline, monkeypatch, order):
-    """Replaces each pipeline stage method with a recorder appending its name to order."""
     monkeypatch.setattr(pipeline, "_run_size_match",  lambda: order.append("size_match") or {})
     monkeypatch.setattr(pipeline, "_run_max_batch",   lambda: order.append("max_batch") or {})
     monkeypatch.setattr(pipeline, "_run_training",    lambda: order.append("training") or [{"name": "unet/seed0", "status": "DONE"}])
@@ -103,7 +88,6 @@ def _patch_stage_methods(pipeline, monkeypatch, order):
 
 @pytest.mark.slow
 def test_run_executes_stages_in_expected_order(tmp_path, monkeypatch):
-    """Verifies a full run executes the five stages in order and marks the pipeline completed."""
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     order = []
@@ -119,7 +103,6 @@ def test_run_executes_stages_in_expected_order(tmp_path, monkeypatch):
 
 @pytest.mark.slow
 def test_run_skips_size_match_and_inference_for_autoencoder(tmp_path, monkeypatch):
-    """Verifies an autoencoder run probes, trains and compares without size match or inference, warns that infer_after is ignored, and logs and marks the skipped inference stage."""
     pipeline = BenchmarkPipeline(_config(tmp_path, training_type="profile_autoencoder"), entry_script=ENTRY)
 
     order = []
@@ -143,7 +126,6 @@ def test_run_skips_size_match_and_inference_for_autoencoder(tmp_path, monkeypatc
 
 
 def test_run_with_infer_after_off_logs_and_marks_the_skipped_inference(tmp_path, monkeypatch):
-    """A backbone run with infer_after off skips the inference stage with a line naming the reason and a 'skipped' mark, without a warning."""
     pipeline = BenchmarkPipeline(_config(tmp_path, infer_after=False), entry_script=ENTRY)
 
     order = []
@@ -162,7 +144,6 @@ def test_run_with_infer_after_off_logs_and_marks_the_skipped_inference(tmp_path,
 
 
 def test_run_rejects_unsupported_training_type(tmp_path):
-    """Verifies an unsupported training type exits the pipeline."""
     pipeline = BenchmarkPipeline(_config(tmp_path, training_type="nonexistent_type"), entry_script=ENTRY)
 
     with pytest.raises(SystemExit, match="nonexistent_type"):
@@ -170,7 +151,6 @@ def test_run_rejects_unsupported_training_type(tmp_path):
 
 
 def _recording_pipeline(tmp_path, monkeypatch, **kwargs):
-    """Returns a pipeline whose stage methods record their names, together with the call log."""
     pipeline = BenchmarkPipeline(_config(tmp_path, **kwargs), entry_script=ENTRY)
     calls    = []
     returns  = {
@@ -189,7 +169,6 @@ def _recording_pipeline(tmp_path, monkeypatch, **kwargs):
 
 
 def test_prepare_stage_stops_before_training(tmp_path, monkeypatch):
-    """Verifies the prepare stage runs size-match and max-batch only and marks itself completed."""
     pipeline, calls = _recording_pipeline(tmp_path, monkeypatch, stage="prepare")
 
     pipeline.run()
@@ -200,7 +179,6 @@ def test_prepare_stage_stops_before_training(tmp_path, monkeypatch):
 
 
 def test_compare_stage_runs_the_comparison_only(tmp_path, monkeypatch):
-    """Verifies the compare stage runs only the comparison and marks the pipeline completed."""
     pipeline, calls = _recording_pipeline(tmp_path, monkeypatch, stage="compare")
 
     pipeline.run()
@@ -211,7 +189,6 @@ def test_compare_stage_runs_the_comparison_only(tmp_path, monkeypatch):
 
 
 def test_unknown_stage_is_rejected(tmp_path):
-    """Verifies an unrecognised stage name exits the pipeline run."""
     pipeline = BenchmarkPipeline(_config(tmp_path, stage="warmup"), entry_script=ENTRY)
 
     with pytest.raises(SystemExit, match="unknown benchmark stage"):
@@ -219,11 +196,9 @@ def test_unknown_stage_is_rejected(tmp_path):
 
 
 def test_an_exception_in_a_stage_is_logged_with_its_stage_and_marked_failed(tmp_path, monkeypatch):
-    """An exception escaping a stage is re-raised after the pipeline log names the stage and state.json marks it and the pipeline failed."""
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     def failing_max_batch():
-        """Stands in for the probe stage and fails inside it."""
         pipeline._begin_stage("max_batch")
         raise RuntimeError("probe queue died")
 
@@ -244,7 +219,6 @@ def test_an_exception_in_a_stage_is_logged_with_its_stage_and_marked_failed(tmp_
 
 
 def test_an_abort_overrides_the_completed_mark_of_an_earlier_launch(tmp_path, monkeypatch):
-    """A relaunch that fails no longer leaves the earlier launch's 'pipeline: completed' in the state file."""
     earlier = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
     earlier._mark_stage("pipeline", "completed")
     earlier.logger.close()
@@ -261,11 +235,9 @@ def test_an_abort_overrides_the_completed_mark_of_an_earlier_launch(tmp_path, mo
 
 
 def test_a_clean_system_exit_is_not_recorded_as_an_abort(tmp_path, monkeypatch):
-    """A SystemExit with code zero ends the run with the END banner and leaves the stage state untouched."""
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     def clean_exit():
-        """Ends the stage sequence deliberately."""
         raise SystemExit(0)
 
     monkeypatch.setattr(pipeline, "_execute", clean_exit)
@@ -281,12 +253,10 @@ def test_a_clean_system_exit_is_not_recorded_as_an_abort(tmp_path, monkeypatch):
 
 
 def _unit_results(statuses: dict) -> list[dict]:
-    """Returns stage results named by unit with the given statuses."""
     return [{"name": name, "status": status} for name, status in statuses.items()]
 
 
 def test_a_failed_training_unit_ends_the_run_as_partial_with_a_non_zero_exit(tmp_path, monkeypatch):
-    """A unit that failed training still gets the comparison written, then the run is marked partial, names the unit and exits non-zero with the END banner."""
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     order = []
@@ -309,7 +279,6 @@ def test_a_failed_training_unit_ends_the_run_as_partial_with_a_non_zero_exit(tmp
 
 
 def test_a_failed_inference_unit_counts_toward_the_partial_exit(tmp_path, monkeypatch):
-    """A unit whose training finished but whose inference failed makes the run partial as well."""
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     order = []
@@ -327,7 +296,6 @@ def test_a_failed_inference_unit_counts_toward_the_partial_exit(tmp_path, monkey
 
 
 def test_a_run_whose_units_all_finished_ends_as_done(tmp_path, monkeypatch):
-    """A run with every unit trained and inferred is marked completed and its summary counts the units, not the models."""
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     order = []
@@ -345,7 +313,6 @@ def test_a_run_whose_units_all_finished_ends_as_done(tmp_path, monkeypatch):
 
 
 def test_a_relaunch_appends_to_the_pipeline_log_instead_of_truncating_it(tmp_path):
-    """A second launch into the same run tag keeps the first launch's log above its own RUN banner, so a compare job never wipes the prepare job's record."""
     first = BenchmarkPipeline(_config(tmp_path, stage="prepare"), entry_script=ENTRY)
     first.logger.info("first launch marker")
     first.logger.close()
@@ -363,7 +330,6 @@ def test_a_relaunch_appends_to_the_pipeline_log_instead_of_truncating_it(tmp_pat
 
 
 def test_a_relaunch_with_a_changed_config_warns_and_names_the_archived_recording(tmp_path):
-    """Relaunching a run tag with other settings archives the recording and the log lists the changed leaves with the archive path."""
     first = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
     first.logger.close()
 
@@ -385,7 +351,6 @@ def test_a_relaunch_with_a_changed_config_warns_and_names_the_archived_recording
 
 
 def test_a_relaunch_changing_only_launch_owned_fields_logs_no_config_warning(tmp_path):
-    """A compare job following a prepare job changes only the stage, which is not reported as a configuration change."""
     first = BenchmarkPipeline(_config(tmp_path, stage="prepare"), entry_script=ENTRY)
     first.logger.close()
 
@@ -400,7 +365,6 @@ def test_a_relaunch_changing_only_launch_owned_fields_logs_no_config_warning(tmp
 
 
 def test_a_first_launch_records_no_config_change(tmp_path):
-    """A fresh run tag has nothing to compare against."""
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
     pipeline.logger.close()
 
@@ -409,24 +373,19 @@ def test_a_first_launch_records_no_config_change(tmp_path):
 
 
 def test_a_resumed_launch_leaves_the_change_report_to_the_resumed_run(tmp_path):
-    """With a resumed-run description the launch logs its report and no relaunch warning, since that report already lists the changes."""
     first = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
     first.logger.close()
 
     class FakeResumed:
-        """Resumed-run stand-in recording whether its report was logged."""
         def __init__(self):
-            """Starts with no report logged and no refresh."""
             self.root      = tmp_path / "unit_run"
             self.logged    = False
             self.refreshed = None
 
         def refresh(self, config):
-            """Records the configuration the pipeline refreshed the change report with."""
             self.refreshed = config
 
         def log(self, logger):
-            """Records the report call."""
             self.logged = True
 
     changed                 = _config(tmp_path)
@@ -445,7 +404,6 @@ def test_a_resumed_launch_leaves_the_change_report_to_the_resumed_run(tmp_path):
 
 
 def test_every_launch_appends_its_provenance_to_the_launch_record(tmp_path, monkeypatch):
-    """Each launch into a run tag adds one line naming its stage, the recording it archived and the commit and host it ran from, and the log names the commit."""
     import json
 
     from tools.runtime.git_state import GitState
@@ -471,7 +429,6 @@ def test_every_launch_appends_its_provenance_to_the_launch_record(tmp_path, monk
 
 
 def test_a_skip_entry_matching_no_model_is_refused(tmp_path):
-    """A skip_models entry that names no model key and no backbone name stops the sweep before anything runs, naming the entry."""
     config = _config(tmp_path, skip_models=["unet", "resnut"])
 
     with pytest.raises(SystemExit, match=r"skip_models lists \['resnut'\], which match no backbone model key"):
@@ -479,7 +436,6 @@ def test_a_skip_entry_matching_no_model_is_refused(tmp_path):
 
 
 def test_a_skip_entry_may_name_a_full_key_or_a_backbone_name(tmp_path):
-    """A skip entry naming a backbone-and-head key or a bare backbone name is accepted."""
     config = _config(tmp_path, heads=["conv", "set_pred"], skip_models=["unet-set_pred", "resunet"])
 
     BenchmarkPipeline.validate_sweep(config)
@@ -488,7 +444,6 @@ def test_a_skip_entry_may_name_a_full_key_or_a_backbone_name(tmp_path):
 
 
 def test_the_pipeline_logs_the_selected_and_the_skipped_models(tmp_path, monkeypatch):
-    """The pipeline head lists the benchmarked keys and the keys skip_models removed."""
     pipeline = BenchmarkPipeline(_config(tmp_path, skip_models=["resunet"]), entry_script=ENTRY)
 
     order = []
@@ -504,31 +459,24 @@ def test_the_pipeline_logs_the_selected_and_the_skipped_models(tmp_path, monkeyp
 
 
 def test_comparison_receives_the_unit_plan_of_the_launch(tmp_path, monkeypatch):
-    """The comparison stage is handed every planned unit with the directory the training stage matched it to."""
     import pipelines.benchmark.pipeline as pipeline_module
 
     class FakeTraining:
-        """Training stage stub planning two units, one matched to a renamed directory."""
         items = ["unet/seed0", "unet/seed1"]
 
         def __init__(self, **kwargs):
-            """Accepts the stage arguments."""
             pass
 
         def unit_name(self, item):
-            """Maps the second unit to its renamed directory."""
             return "renamed/seed1" if item == "unet/seed1" else item
 
     seen = {}
 
     class FakeComparison:
-        """Comparison stage stub recording the plan it receives."""
         def __init__(self, **kwargs):
-            """Records the planned units."""
             seen["planned_units"] = kwargs["planned_units"]
 
         def run(self):
-            """Returns a fixed output directory."""
             return tmp_path / "comparison"
 
     monkeypatch.setattr(pipeline_module, "TrainingStage",   FakeTraining)

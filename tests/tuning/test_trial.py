@@ -1,8 +1,3 @@
-"""Tests for trial trainers and the AE and JEPA tuners.
-
-Covers intermediate value reporting and pruning from the trainer callbacks,
-and the entry configs the tuners materialize for each trial.
-"""
 
 from __future__ import annotations
 
@@ -23,7 +18,6 @@ SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
 
 
 def test_trial_callback_reports_intermediate_value(fake_logger):
-    """Verifies that the trainer callback reports the loss as an intermediate value."""
     study = optuna.create_study(direction="minimize")
     trial = study.ask()
 
@@ -37,15 +31,12 @@ def test_trial_callback_reports_intermediate_value(fake_logger):
 
 
 def test_trial_pipeline_honours_the_caller_emit_docs(monkeypatch):
-    """Verifies that the pipeline's emit_docs default is overridden by an explicit argument."""
     from pipelines.tuning.trial import TrialPipeline
 
     captured = []
 
     class CaptureTrainer:
-        """Trainer stub recording the emit_docs flag it was constructed with."""
         def __init__(self, **kwargs):
-            """Records the emit_docs keyword argument."""
             captured.append(kwargs["emit_docs"])
 
     monkeypatch.setattr(trial_mod, "TrialTrainer", CaptureTrainer)
@@ -64,7 +55,6 @@ def test_trial_pipeline_honours_the_caller_emit_docs(monkeypatch):
 
 
 def test_trial_callback_no_prune_without_pruner(fake_logger):
-    """Verifies that no pruning occurs when the study uses a no-op pruner."""
     study = optuna.create_study(direction="minimize", pruner=optuna.pruners.NopPruner())
     trial = study.ask()
 
@@ -77,7 +67,6 @@ def test_trial_callback_no_prune_without_pruner(fake_logger):
 
 
 def test_trial_callback_prunes_on_bad_intermediate(fake_logger):
-    """Verifies that an intermediate value above the threshold raises TrialPruned."""
     pruner = optuna.pruners.ThresholdPruner(upper=1.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
     trial  = study.ask()
@@ -93,7 +82,6 @@ def test_trial_callback_prunes_on_bad_intermediate(fake_logger):
 
 
 def test_trial_callback_keeps_trial_under_threshold(fake_logger):
-    """Verifies that an intermediate value below the threshold leaves the trial running."""
     pruner = optuna.pruners.ThresholdPruner(upper=10.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
     trial  = study.ask()
@@ -106,7 +94,6 @@ def test_trial_callback_keeps_trial_under_threshold(fake_logger):
 
 
 def test_ae_trainer_after_eval_reports_and_prunes(fake_logger):
-    """Verifies that the profile AE trainer reports the value and prunes above threshold."""
     pruner = optuna.pruners.ThresholdPruner(upper=1.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
     trial  = study.ask()
@@ -122,7 +109,6 @@ def test_ae_trainer_after_eval_reports_and_prunes(fake_logger):
 
 
 def test_ae_trainer_after_eval_survives_good_value(fake_logger):
-    """Verifies that the profile AE trainer survives a value below the threshold."""
     pruner = optuna.pruners.ThresholdPruner(upper=10.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
     trial  = study.ask()
@@ -135,7 +121,6 @@ def test_ae_trainer_after_eval_survives_good_value(fake_logger):
 
 
 def test_jepa_trainer_after_eval_reports_and_prunes(fake_logger):
-    """Verifies that the JEPA trainer prunes on an intermediate value above threshold."""
     pruner = optuna.pruners.ThresholdPruner(upper=1.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
     trial  = study.ask()
@@ -149,7 +134,6 @@ def test_jepa_trainer_after_eval_reports_and_prunes(fake_logger):
 
 
 def test_image_ae_trainer_after_eval_reports_and_prunes(fake_logger):
-    """Verifies that the image AE trainer reports the value and prunes above threshold."""
     pruner = optuna.pruners.ThresholdPruner(upper=1.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
     trial  = study.ask()
@@ -165,28 +149,22 @@ def test_image_ae_trainer_after_eval_reports_and_prunes(fake_logger):
 
 
 class FakeEntryTraining:
-    """Training section stub carrying the epoch budget and patience fields."""
     def __init__(self):
-        """Initialises the epoch and patience fields to zero."""
         self.epochs              = 0
         self.scheduler_epochs    = 0
         self.early_stop_patience = 0
 
 
 class FakeAeEntry:
-    """Autoencoder entry config stub carrying only a training section."""
     def __init__(self):
-        """Builds the nested training section."""
         self.training = FakeEntryTraining()
 
 
 class FakeAeConfig:
-    """Autoencoder model config stub exposing a small tunable search space."""
     encoder_lr = 3e-4
     decoder_lr = 3e-4
 
     def __init__(self):
-        """Initialises the learning rates, weight decays and embedding dimension."""
         self.encoder_lr    = 3e-4
         self.decoder_lr    = 3e-4
         self.encoder_wd    = 1e-4
@@ -195,7 +173,6 @@ class FakeAeConfig:
 
     @classmethod
     def tunable_lr_params(cls):
-        """Returns the tunable learning-rate search space."""
         return {
             "encoder_lr"    : {"type": "float",       "low": 1e-5, "high": 1e-2, "log": True},
             "embedding_dim" : {"type": "categorical", "choices": [16, 24, 32]},
@@ -203,23 +180,18 @@ class FakeAeConfig:
 
     @classmethod
     def tunable_arch_params(cls):
-        """Returns the tunable architecture search space."""
         return {"depth": {"type": "categorical", "choices": [3, 4, 6]}}
 
 
 def test_ae_tuner_objective_materializes_entry(fake_logger, tune_cfg, tmp_path):
-    """Verifies that the AE tuner fills run name, seed, log dir and model overrides."""
     captured = {}
 
     class CaptureAePipeline:
-        """Trial pipeline stub capturing the entry config and trial it received."""
         def __init__(self, entry, trial):
-            """Records the entry config and trial."""
             captured["entry"] = entry
             captured["trial"] = trial
 
         def run(self):
-            """Returns a fixed validation loss of 0.5."""
             return (None, None, 0.5), None
 
     tuner = AeTuner(
@@ -251,15 +223,11 @@ def test_ae_tuner_objective_materializes_entry(fake_logger, tune_cfg, tmp_path):
 
 
 def test_ae_tuner_objective_returns_best_val_loss(fake_logger, tune_cfg, tmp_path):
-    """Verifies that the objective returns the validation loss reported by the pipeline."""
     class FakeAePipeline:
-        """Trial pipeline stub returning a fixed validation loss."""
         def __init__(self, entry, trial):
-            """Stores the entry config."""
             self.entry = entry
 
         def run(self):
-            """Returns a fixed validation loss of 0.7."""
             return (None, None, 0.7), None
 
     tuner = AeTuner(
@@ -279,14 +247,11 @@ def test_ae_tuner_objective_returns_best_val_loss(fake_logger, tune_cfg, tmp_pat
 
 
 def test_ae_tuner_names_the_error_of_a_failed_trial(fake_logger, tune_cfg, tmp_path):
-    """A divergence or device error in an autoencoder trial is logged with its type and message and kept on the trial, as the backbone tuner does."""
     class DivergingAePipeline:
-        """Trial pipeline stub whose run diverges."""
         def __init__(self, entry, trial):
-            """Ignores the entry config."""
+            pass
 
         def run(self):
-            """Raises the trainer's divergence error."""
             raise FloatingPointError("reconstruction loss is non-finite at step 3")
 
     tuner = AeTuner(
@@ -308,17 +273,13 @@ def test_ae_tuner_names_the_error_of_a_failed_trial(fake_logger, tune_cfg, tmp_p
 
 
 def test_ae_tuner_image_entry_gets_model_overrides(fake_logger, tune_cfg, tmp_path):
-    """Verifies that the image AE entry receives the sampled model overrides."""
     captured = {}
 
     class CaptureImageAePipeline:
-        """Trial pipeline stub capturing the entry config it received."""
         def __init__(self, entry, trial):
-            """Records the entry config."""
             captured["entry"] = entry
 
         def run(self):
-            """Returns a fixed validation loss of 0.3."""
             return (None, None, 0.3), None
 
     tuner = AeTuner(
@@ -340,10 +301,8 @@ def test_ae_tuner_image_entry_gets_model_overrides(fake_logger, tune_cfg, tmp_pa
 
 
 class FakeJepaConfig:
-    """JEPA model config stub exposing an architecture-only search space."""
     @classmethod
     def tunable_arch_params(cls):
-        """Returns the tunable architecture search space."""
         return {
             "depth"      : {"type": "categorical", "choices": [2, 4, 8]},
             "hidden_dim" : {"type": "categorical", "choices": [64, 128]},
@@ -351,18 +310,14 @@ class FakeJepaConfig:
 
 
 class FakeJepaTraining:
-    """Training section stub carrying the epoch budget and patience fields."""
     def __init__(self):
-        """Initialises the epoch and patience fields to zero."""
         self.epochs              = 0
         self.scheduler_epochs    = 0
         self.early_stop_patience = 0
 
 
 class FakeJepaEntry:
-    """JEPA entry config stub with the fields the run-name builder reads."""
     def __init__(self, test_data_dir: Path, ae_logdir: Path | None = None):
-        """Wires dataset paths, loss configs and optional autoencoder references."""
         from configuration.dataset               import AugmentationConfig
         from configuration.training              import EmbeddingLossConfig, LossConfig
         from configuration.training.general.run  import TrainingPathsConfig
@@ -386,17 +341,13 @@ class FakeJepaEntry:
 
 @pytest.mark.dataset
 def test_jepa_tuner_objective_sets_model_overrides(fake_logger, tune_cfg, tmp_path, monkeypatch, test_data_dir):
-    """Verifies that the JEPA tuner sets the backbone, run name and model overrides."""
     captured = {}
 
     class CaptureJepaPipeline:
-        """Trial pipeline stub capturing the entry config it received."""
         def __init__(self, entry, trial):
-            """Records the entry config."""
             captured["entry"] = entry
 
         def run(self):
-            """Returns a fixed validation loss of 0.4."""
             return (None, None, 0.4), None
 
     monkeypatch.setattr(trial_mod, "TrialJepaPipeline", CaptureJepaPipeline)
@@ -428,7 +379,6 @@ def test_jepa_tuner_objective_sets_model_overrides(fake_logger, tune_cfg, tmp_pa
 
 @pytest.mark.dataset
 def test_jepa_tuner_space_uses_arch_params_only(fake_logger, tune_cfg, tmp_path, test_data_dir):
-    """Verifies that the JEPA search space holds architecture params only."""
     from configuration.architectures                import GruAutoencoderConfig
     from pipelines.shared.config.config_persistence import ProfileAutoencoderConfigIO
 
@@ -449,7 +399,6 @@ def test_jepa_tuner_space_uses_arch_params_only(fake_logger, tune_cfg, tmp_path,
 
 @pytest.mark.dataset
 def test_jepa_tuner_rejects_an_entry_it_cannot_name(fake_logger, tune_cfg, tmp_path, test_data_dir):
-    """Verifies that an entry the run-name builder cannot describe raises ValueError."""
     with pytest.raises(ValueError, match="JEPA run naming requires"):
         JepaTuner(
             model_name       = "vit",

@@ -1,11 +1,3 @@
-"""Tests for the frontend figure saver that exports the console's on-screen images.
-
-Covers the load order of the two new modules, the single home of the browser
-download helper, the tab registry and the per-tab filename context it calls,
-the labelling attributes the scanner reads, and the ZIP writer itself, which is
-executed under node and read back with the standard library when node is
-available.
-"""
 
 from __future__ import annotations
 
@@ -29,12 +21,10 @@ VIEW_BIND   = re.compile(r"this\.(\w+)\s*=\s*new\s+window\.(\w+)\(")
 
 
 def _loaded_scripts() -> list:
-    """Returns the JavaScript file names index.html loads, in document order."""
     return re.findall(r'<script src="/static/js/([\w.]+\.js)', INDEX.read_text(encoding="utf-8"))
 
 
 def _classes() -> dict:
-    """Returns every top-level frontend class as name to (body, base class name)."""
     found = {}
 
     for path in JS_DIR.glob("*.js"):
@@ -49,7 +39,6 @@ def _classes() -> dict:
 
 
 def _defines(classes: dict, name: str, method: str) -> bool:
-    """Reports whether the class or one of its bases declares the given method."""
     while name in classes:
         body, base = classes[name]
         if re.search(rf"^\s+{method}\(", body, re.M): return True
@@ -59,7 +48,6 @@ def _defines(classes: dict, name: str, method: str) -> bool:
 
 
 def _figure_tabs() -> dict:
-    """Returns the dock's route to view-property registry parsed from app.js."""
     block = FIGURE_TABS.search((JS_DIR / "app.js").read_text(encoding="utf-8"))
     assert block, "app.js no longer declares a _figureTabs registry"
 
@@ -67,7 +55,6 @@ def _figure_tabs() -> dict:
 
 
 def test_the_figure_modules_load_before_their_users():
-    """Both saver modules are served and precede every module that calls into them."""
     loaded = _loaded_scripts()
 
     for module in ("figure_export.js", "figure_saver.js"):
@@ -79,14 +66,12 @@ def test_the_figure_modules_load_before_their_users():
 
 
 def test_the_browser_download_helper_lives_in_one_module():
-    """No module builds its own download anchor outside figure_export.js."""
     holders = [path.name for path in JS_DIR.glob("*.js") if re.search(r"\.download\s*=", path.read_text(encoding="utf-8"))]
 
     assert holders == ["figure_export.js"]
 
 
 def test_the_cube_explorer_delegates_its_downloads():
-    """The cube explorer's PNG, CSV and story exports all run through the shared exporter."""
     text = (JS_DIR / "cube_view.js").read_text(encoding="utf-8")
 
     for call in ("FigureExport.download(", "FigureExport.saveCanvas(", "FigureExport.saveBitmap("):
@@ -97,7 +82,6 @@ def test_the_cube_explorer_delegates_its_downloads():
 
 
 def test_every_registered_figure_tab_supplies_a_filename_context():
-    """Each route the dock mounts on names a view whose class declares figureTag."""
     classes = _classes()
     binds   = dict(VIEW_BIND.findall((JS_DIR / "app.js").read_text(encoding="utf-8")))
     tabs    = _figure_tabs()
@@ -110,7 +94,6 @@ def test_every_registered_figure_tab_supplies_a_filename_context():
 
 
 def test_the_analysis_picker_carries_the_shared_tag():
-    """The shared analysis picker names its figures from the picked run plus a detail hook subclasses may extend."""
     classes = _classes()
 
     assert _defines(classes, "AnalysisPickerView", "figureDetail")
@@ -118,7 +101,6 @@ def test_the_analysis_picker_carries_the_shared_tag():
 
 
 def test_the_inspect_views_label_their_bare_canvases():
-    """Charts without a caption or alt text carry an explicit data-fig label."""
     labelled = {
         "microscope.js" : ("probe-profile", "probe-erf", "probe-flips", "probe-whatif", "probe-sweep"),
         "survey.js"     : ("survey-erf", "survey-noise", "survey-occl"),
@@ -131,7 +113,6 @@ def test_the_inspect_views_label_their_bare_canvases():
 
 
 def test_the_cube_panels_label_every_slice_plane_and_profile():
-    """Every repeated cube figure carries the axis and source its file name needs."""
     html = INDEX.read_text(encoding="utf-8")
 
     assert len(re.findall(r'class="cube-slice" data-axis="\w+" data-source="\w+" data-fig="\w+ cut \w+"', html)) == 10
@@ -140,14 +121,12 @@ def test_the_cube_panels_label_every_slice_plane_and_profile():
 
 
 def test_the_volume_view_keeps_its_drawing_buffer():
-    """The WebGL volume canvas is labelled and keeps its drawing buffer, so it can be captured like any other figure."""
     assert 'id="cube-volume-canvas" data-fig="volume view"' in INDEX.read_text(encoding="utf-8")
     assert re.search(r'getContext\("webgl2", \{[^}]*preserveDrawingBuffer: true', (JS_DIR / "cube_view.js").read_text(encoding="utf-8"))
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is needed to execute the frontend ZIP writer")
 def test_the_zip_writer_produces_an_archive_the_standard_library_reads(tmp_path):
-    """Running ZipArchive under node yields a valid store-only archive with intact payloads."""
     script = tmp_path / "build_zip.cjs"
     target = tmp_path / "built.zip"
     script.write_text(

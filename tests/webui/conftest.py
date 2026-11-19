@@ -1,10 +1,3 @@
-"""Shared fixtures and builders for the webui test suite.
-
-Puts the ``webui`` package on ``sys.path`` and provides HTTP-handler and path
-stubs, synthetic preprocessing runs, inference stamps and cross-validation fold
-trees on disk, plus helpers that drive CubeExplorer loading and that build a
-ProcessManager over throwaway scripts.
-"""
 
 from __future__ import annotations
 
@@ -43,27 +36,8 @@ ARGS_DUMP  = "import pathlib, sys\npathlib.Path('argv.txt').write_text(' '.join(
 
 
 class FakeHandler:
-    """Stand-in for a BaseHTTPRequestHandler capturing the response it is sent.
-
-    Attributes:
-        command : HTTP method of the simulated request.
-        path    : Request path including any query string.
-        headers : Request headers, always carrying Content-Length.
-        rfile   : Readable stream over the request body.
-        wfile   : Writable stream collecting the response body.
-        status  : Status code passed to send_response.
-        sent    : Response headers passed to send_header, keyed by name.
-    """
 
     def __init__(self, command: str, path: str, body: bytes = b"", headers: dict | None = None) -> None:
-        """Builds a simulated request.
-
-        Args:
-            command : HTTP method, e.g. ``"GET"`` or ``"POST"``.
-            path    : Request path.
-            body    : Raw request body.
-            headers : Extra request headers merged over Content-Length.
-        """
         self.command = command
         self.path    = path
         self.headers = {"Content-Length": str(len(body)), **(headers or {})}
@@ -73,40 +47,21 @@ class FakeHandler:
         self.sent    = {}
 
     def send_response(self, status: int) -> None:
-        """Records the response status code."""
         self.status = status
 
     def send_header(self, name: str, value: str) -> None:
-        """Records a response header."""
         self.sent[name] = value
 
     def end_headers(self) -> None:
-        """Ends the header block, which the fake does not need to act on."""
         return
 
     def payload(self) -> dict:
-        """Returns the response body decoded as JSON."""
         return json.loads(self.wfile.getvalue().decode("utf-8"))
 
 
 class StubPaths:
-    """Minimal stand-in for the webui path registry rooted at a temporary directory.
-
-    Attributes:
-        profile        : Absent machine profile, so no root or hardware rewrite applies.
-        repo_root      : Root of the fake repository.
-        main_dir       : Directory holding entry-point scripts.
-        runs_dir       : Root of the run-output tree.
-        data_root      : Dataset root of the fake repository.
-        logs_dir       : Root of the log tree.
-        gpu_guard_dir  : Directory for GPU guard state files.
-        gpu_pools_dir  : Directory for GPU pool state files.
-        saved_runs_dir : Directory for saved run definitions.
-        sequences_dir  : Directory for experiment sequence definitions.
-    """
 
     def __init__(self, root: Path) -> None:
-        """Derives the standard subdirectories from a root path."""
         self.profile        = MachineProfile(None)
         self.repo_root      = root
         self.main_dir       = root / "main"
@@ -119,57 +74,34 @@ class StubPaths:
         self.sequences_dir  = root / "logs" / "sequences"
 
     def has_script(self, key: str) -> bool:
-        """Returns whether an analysis script exists for the given catalog key."""
         return (self.main_dir / "analysis" / f"{key}.py").exists()
 
     def script_entry(self, key: str) -> dict:
-        """Returns the absolute path and repo-relative path of an analysis script."""
         path = self.main_dir / "analysis" / f"{key}.py"
         return {"path": path, "rel": f"main/analysis/{key}.py"}
 
 
 class StubNotifier:
-    """Notifier stand-in recording every pushed system alert.
-
-    Attributes:
-        alerts : Recorded (title, body, priority) tuples, oldest first.
-    """
 
     def __init__(self) -> None:
-        """Starts with no recorded alerts."""
         self.alerts = []
 
     def system_alert(self, title: str, body: str, priority: str = "high") -> None:
-        """Records one pushed alert."""
         self.alerts.append((title, body, priority))
 
 
 class StubDescriber:
-    """Job describer stand-in returning a fixed sentence per catalog key."""
 
     def describe(self, key: str, interpreter: str, overrides: dict | None) -> str:
-        """Returns a constant description mentioning the catalog key."""
         return f"stub description for {key}"
 
 
 def job_record(manager: ProcessManager, job_id: str) -> dict:
-    """Returns a snapshot copy of a job record taken under the manager lock."""
     with manager.lock:
         return dict(manager.jobs[job_id])
 
 
 def wait_for_status(manager: ProcessManager, job_id: str, status: str, timeout: float = 10.0) -> bool:
-    """Polls until a job reaches a given status.
-
-    Args:
-        manager : Process manager owning the job.
-        job_id  : Identifier of the job to poll.
-        status  : Status value being waited for.
-        timeout : Maximum wait in seconds.
-
-    Returns:
-        True if the status was observed before the timeout.
-    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if job_record(manager, job_id)["status"] == status:
@@ -179,16 +111,6 @@ def wait_for_status(manager: ProcessManager, job_id: str, status: str, timeout: 
 
 
 def wait_until_finished(manager: ProcessManager, job_id: str, timeout: float = 10.0) -> bool:
-    """Polls until a job leaves the running state.
-
-    Args:
-        manager : Process manager owning the job.
-        job_id  : Identifier of the job to poll.
-        timeout : Maximum wait in seconds.
-
-    Returns:
-        True if the job stopped running before the timeout.
-    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if job_record(manager, job_id)["status"] != "running":
@@ -221,21 +143,6 @@ def make_preproc(base: Path, rng: np.random.Generator | None = None, with_full: 
 
 
 def make_stamp(run: Path, preproc: Path, rng: np.random.Generator, sources: tuple = ("pred", "gt"), x_min: float = -10.0, shape: tuple = (N_Z, N_ROWS, N_COLS), name: str = "stamp_1", region: list | None = None) -> Path:
-    """Writes an inference stamp with random curve cubes and its metrics file.
-
-    Args:
-        run     : Run directory receiving ``inference/<name>`` and ``meta``; several stamps may share it.
-        preproc : Preprocessing run the dataset config points back to.
-        rng     : Generator for the random curve cubes.
-        sources : Cube prefixes to write, each as ``<source>_curves.npy``.
-        x_min   : Lowest z value of the stamp's z axis.
-        shape   : Cube shape as (z, rows, cols).
-        name    : Stamp directory name.
-        region  : Split region as [row_start, row_end, col_start, col_end]; the whole scene when None.
-
-    Returns:
-        Path of the created stamp directory.
-    """
     stamp = run / "inference" / name
     (stamp / "cubes").mkdir(parents=True)
     (run / "meta").mkdir(parents=True, exist_ok=True)
@@ -304,7 +211,6 @@ def loaded_cube(base: Path, **kwargs) -> tuple[CubeExplorer, str]:
 
 @pytest.fixture
 def monitor(tmp_path, monkeypatch):
-    """Yields a SystemMonitor with its disk-usage and sampling loops disabled."""
     monkeypatch.setattr(SystemMonitor, "_du_loop", lambda self: None)
     monkeypatch.setattr(SystemHistory, "sample_loop", lambda self: None)
     monkeypatch.setattr(ActiveUsers, "sample_loop", lambda self: None)
@@ -315,7 +221,6 @@ def monitor(tmp_path, monkeypatch):
 
 @pytest.fixture
 def make_manager(tmp_path):
-    """Yields a factory building a ProcessManager over named throwaway scripts, stopping all jobs on teardown."""
     built = []
 
     def build(scripts: dict) -> ProcessManager:

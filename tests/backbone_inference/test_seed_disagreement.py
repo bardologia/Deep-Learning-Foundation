@@ -1,4 +1,3 @@
-"""Tests covering per-pixel seed disagreement maps and their integration into the seed comparison."""
 
 from __future__ import annotations
 
@@ -22,14 +21,6 @@ N_Z, N_ROWS, N_COLS = 4, 3, 2
 
 
 def _params(*slots: tuple) -> np.ndarray:
-    """Builds a constant parameter cube from per-slot triples.
-
-    Args:
-        *slots : One (amplitude, centre in metres, width in metres) triple per slot.
-
-    Returns:
-        Parameter cube of shape (3 * n_slots, N_ROWS, N_COLS).
-    """
     cube = np.zeros((len(slots) * 3, N_ROWS, N_COLS), dtype=np.float32)
 
     for k, (amp, mu, sigma) in enumerate(slots):
@@ -41,21 +32,6 @@ def _params(*slots: tuple) -> np.ndarray:
 
 
 def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.ndarray, params_gt: np.ndarray | None = None, stamp: str = "stamp", activity_threshold: float | None = 1e-4, region_start: tuple[int, int] = (0, 0)) -> Path:
-    """Writes a seed run directory with prediction cubes, metrics and a report.
-
-    Args:
-        group              : Directory holding the seed runs.
-        name               : Name of the seed run directory.
-        pred_curves        : Predicted curve cube of shape (N_Z, N_ROWS, N_COLS).
-        params_pred        : Predicted parameter cube of shape (3 * n_slots, N_ROWS, N_COLS).
-        params_gt          : Ground-truth parameter cube, defaulting to params_pred.
-        stamp              : Name of the inference output subdirectory.
-        activity_threshold : Activity threshold recorded in the metrics file, or None to leave it out as inference wrote it before the field existed.
-        region_start       : Row and column start of the split region recorded in the metrics file.
-
-    Returns:
-        Path of the created run directory.
-    """
     run_dir   = group / name
     out_dir   = run_dir / "inference" / stamp
     cubes_dir = out_dir / "cubes"
@@ -80,7 +56,6 @@ def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.n
 
 
 def _maps(group: Path, runs: list[Path], stamp: str = "stamp", active_amp_thr: float = 1e-4, logger=None) -> SeedDisagreementMaps:
-    """Returns a seed disagreement map builder over the given runs, inference stamp and activity threshold."""
     return SeedDisagreementMaps(
         group_dir        = group,
         run_dirs         = runs,
@@ -94,7 +69,6 @@ def _maps(group: Path, runs: list[Path], stamp: str = "stamp", active_amp_thr: f
 
 
 def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
-    """Returns a seed comparison config stub with disagreement computation on or off."""
     return SimpleNamespace(
         runs_dir             = str(runs_dir),
         group_tags           = [],
@@ -110,7 +84,6 @@ def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
 
 
 def test_identical_seeds_give_zero_disagreement(tmp_path):
-    """Seeds predicting the same cubes give zero standard deviation on every map."""
     group  = tmp_path / "group"
     curves = np.ones((N_Z, N_ROWS, N_COLS))
     params = _params((1.0, 5.0, 2.0))
@@ -130,7 +103,6 @@ def test_identical_seeds_give_zero_disagreement(tmp_path):
 
 
 def test_stages_are_timed_and_the_profile_map_reports_progress(tmp_path):
-    """Every heavy stage runs under a timer, the profile map drives one bar over the z bins, and the summary is tabled."""
     group  = tmp_path / "group"
     curves = np.ones((N_Z, N_ROWS, N_COLS))
     params = _params((1.0, 5.0, 2.0))
@@ -147,7 +119,6 @@ def test_stages_are_timed_and_the_profile_map_reports_progress(tmp_path):
 
 
 def test_known_offsets_give_the_sample_std(tmp_path):
-    """Profile, amplitude, centre and width maps carry the sample standard deviation across seeds."""
     group    = tmp_path / "group"
     curves_a = np.zeros((N_Z, N_ROWS, N_COLS))
     curves_b = np.zeros((N_Z, N_ROWS, N_COLS))
@@ -175,7 +146,6 @@ def test_known_offsets_give_the_sample_std(tmp_path):
 
 
 def test_risk_map_and_offsets_are_read_once_per_run(tmp_path, monkeypatch):
-    """The mean risk map and the region offsets are each read once per run."""
     group  = tmp_path / "group"
     curves = np.ones((N_Z, N_ROWS, N_COLS))
     params = _params((1.0, 5.0, 2.0))
@@ -196,7 +166,6 @@ def test_risk_map_and_offsets_are_read_once_per_run(tmp_path, monkeypatch):
 
 
 def test_mu_is_nan_where_fewer_than_two_seeds_are_active(tmp_path):
-    """Pixels with fewer than two active seeds report NaN parameter disagreement."""
     group = tmp_path / "group"
 
     curves   = np.zeros((N_Z, N_ROWS, N_COLS))
@@ -224,7 +193,6 @@ def test_mu_is_nan_where_fewer_than_two_seeds_are_active(tmp_path):
 
 
 def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
-    """Matching slots across seeds removes the disagreement caused by permuted slot order."""
     group  = tmp_path / "group"
     curves = np.ones((N_Z, N_ROWS, N_COLS))
 
@@ -247,7 +215,6 @@ def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
 
 
 def test_recorded_threshold_above_a_faint_slot_masks_it(tmp_path):
-    """Seeds scored at a threshold above a slot's amplitude lose that slot from the matched parameter maps."""
     curves = np.zeros((N_Z, N_ROWS, N_COLS))
     faint  = _params((5e-4, 5.0, 2.0))
     loose  = [_seed_run(tmp_path / "loose",  f"seed{i}", curves, faint) for i in range(2)]
@@ -264,7 +231,6 @@ def test_recorded_threshold_above_a_faint_slot_masks_it(tmp_path):
 
 
 def test_layers_carry_a_source_record_and_replacing_them_warns(tmp_path):
-    """Every seed's cube directory gets a source record, and a second comparison warns before replacing the earlier layers."""
     group  = tmp_path / "group"
     curves = np.ones((N_Z, N_ROWS, N_COLS))
     params = _params((1.0, 5.0, 2.0))
@@ -293,7 +259,6 @@ def test_layers_carry_a_source_record_and_replacing_them_warns(tmp_path):
 
 
 def test_missing_cubes_raise(tmp_path):
-    """A run missing a prediction cube is rejected."""
     group = tmp_path / "group"
     runs  = [_seed_run(group, f"seed{i}", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0))) for i in range(2)]
 
@@ -304,7 +269,6 @@ def test_missing_cubes_raise(tmp_path):
 
 
 def test_seeds_inferred_on_different_regions_are_refused(tmp_path):
-    """Seeds whose inferences cover different regions of the same shape are refused before any map is written."""
     group  = tmp_path / "group"
     curves = np.zeros((N_Z, N_ROWS, N_COLS))
     params = _params((1.0, 5.0, 2.0))
@@ -317,7 +281,6 @@ def test_seeds_inferred_on_different_regions_are_refused(tmp_path):
 
 
 def test_shape_mismatch_raises(tmp_path):
-    """Runs whose cubes differ in spatial shape are rejected."""
     group = tmp_path / "group"
     run_a = _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
     run_b = _seed_run(group, "seed1", np.zeros((N_Z, N_ROWS + 1, N_COLS)), _params((1.0, 5.0, 2.0)))
@@ -329,7 +292,6 @@ def test_shape_mismatch_raises(tmp_path):
 
 
 def test_comparison_writes_maps_figures_and_report_section(tmp_path):
-    """Enabling disagreement writes per-seed map cubes, aggregate figures and the report section with risk-coverage scalars."""
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
     _seed_run(group, "seed1", np.ones((N_Z, N_ROWS, N_COLS)),  _params((2.0, 6.0, 3.0)))
@@ -360,7 +322,6 @@ def test_comparison_writes_maps_figures_and_report_section(tmp_path):
 
 
 def test_comparison_skips_disagreement_when_disabled(tmp_path):
-    """Disabling disagreement leaves the report, payload and cube directories untouched."""
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
     _seed_run(group, "seed1", np.ones((N_Z, N_ROWS, N_COLS)),  _params((2.0, 6.0, 3.0)))

@@ -1,10 +1,3 @@
-"""Tests for ModelSurvey, the region-wide sweep behind the webui autopsy tab.
-
-Covers tile coverage and progress accounting, the aggregated fit, detection and
-matched-parameter statistics, the ablation, attribution, flip, noise, occlusion,
-effective-receptive-field and mean-gradient sections, the request validation on start,
-and cancellation and thread-count handling in the worker.
-"""
 
 from __future__ import annotations
 
@@ -21,15 +14,6 @@ from tests.webui._probe_fakes import N_ROWS, N_COLS, PH, PW, fake_run
 
 
 def _survey(n_slots: int = 1, with_gt: bool = True) -> ModelSurvey:
-    """Returns a ModelSurvey holding a fake loaded run.
-
-    Args:
-        n_slots : Number of Gaussian component slots the fake model predicts.
-        with_gt : Whether the fake run carries ground-truth parameters.
-
-    Returns:
-        A survey whose loaded state and status are set as if a run had been loaded.
-    """
     survey = ModelSurvey(SilentLogger())
     run    = fake_run(n_slots, with_gt)
 
@@ -49,7 +33,6 @@ def _survey(n_slots: int = 1, with_gt: bool = True) -> ModelSurvey:
 
 
 def test_survey_covers_the_region_and_finishes():
-    """A full survey reaches the done state and reports the region, tile and pixel coverage, channel labels and elapsed time."""
     survey = _survey()
     survey._survey()
 
@@ -64,7 +47,6 @@ def test_survey_covers_the_region_and_finishes():
 
 
 def test_survey_fit_detection_and_matches():
-    """The fit, detection and matched sections report curve errors, active-slot counts and per-parameter errors over every surveyed pixel."""
     survey = _survey()
     survey._survey()
 
@@ -88,7 +70,6 @@ def test_survey_fit_detection_and_matches():
 
 
 def test_survey_ranks_ablation_and_attribution_on_the_used_channel():
-    """Ablation and attribution both concentrate on the channel the model reads and mark the unused parameter family dead."""
     survey = _survey()
     survey._survey()
 
@@ -109,7 +90,6 @@ def test_survey_ranks_ablation_and_attribution_on_the_used_channel():
 
 
 def test_survey_flips_noise_occlusion_and_erf_profiles():
-    """The flip, noise, occlusion, receptive-field and vitals sections report the behaviour expected of a pointwise model."""
     survey = _survey()
     survey._survey()
 
@@ -142,7 +122,6 @@ def test_survey_flips_noise_occlusion_and_erf_profiles():
 
 
 def test_survey_mean_gradient_maps_follow_the_used_channel():
-    """The mean gradient maps carry the sample count and patch geometry, render a PNG only for the read channel and mark the unused family dead."""
     survey = _survey()
     survey._survey()
 
@@ -163,7 +142,6 @@ def test_survey_mean_gradient_maps_follow_the_used_channel():
 
 
 def test_survey_without_gt_omits_fit_gt_sections():
-    """A run without ground truth omits the ground-truth fit, detection and matched sections."""
     survey = _survey(with_gt=False)
     survey._survey()
 
@@ -174,7 +152,6 @@ def test_survey_without_gt_omits_fit_gt_sections():
 
 
 def test_survey_tile_cap_strides_evenly_and_reports_totals():
-    """A tile cap surveys a strided subset while still reporting the total tile count."""
     survey          = _survey()
     survey.tile_cap = 2
     survey._survey()
@@ -186,7 +163,6 @@ def test_survey_tile_cap_strides_evenly_and_reports_totals():
 
 
 def test_survey_cancel_stops_the_run():
-    """A cancel request ends the survey in the cancelled state with no result."""
     survey = _survey()
     survey.cancel_flag = True
     survey._survey()
@@ -196,14 +172,12 @@ def test_survey_cancel_stops_the_run():
 
 
 def test_worker_caps_torch_threads_and_restores_them(monkeypatch):
-    """The worker caps the torch thread count for the duration of the run and restores the previous value on failure."""
     import torch
 
     survey = ModelSurvey(SilentLogger())
     seen   = {}
 
     def observing_load(run_path, split, device):
-        """Records the active torch thread count and aborts the worker."""
         seen["threads"] = torch.get_num_threads()
         raise RuntimeError("stop")
 
@@ -223,7 +197,6 @@ def test_worker_caps_torch_threads_and_restores_them(monkeypatch):
 
 
 def test_survey_start_refuses_non_runs(tmp_path):
-    """Starting a survey on a missing directory is refused."""
     survey = ModelSurvey(SilentLogger())
 
     out = survey.start({"path": str(tmp_path / "nowhere")})
@@ -232,7 +205,6 @@ def test_survey_start_refuses_non_runs(tmp_path):
 
 
 def _loadable_run(tmp_path, survey):
-    """Creates a catalogued run directory holding a checkpoint and a persisted model config."""
     run_dir = tmp_path / "run_ok"
     run_dir.mkdir()
     (run_dir / "best_model.pt").write_bytes(b"x")
@@ -244,7 +216,6 @@ def _loadable_run(tmp_path, survey):
 
 
 def test_survey_start_refuses_bad_configs(tmp_path):
-    """Unknown splits and devices, negative tile and sample counts, and a thread count below one are all refused."""
     survey = ModelSurvey(SilentLogger())
     path   = _loadable_run(tmp_path, survey)
 
@@ -270,7 +241,6 @@ def test_survey_start_refuses_bad_configs(tmp_path):
 
 
 def test_survey_with_zero_erf_samples_skips_the_phase():
-    """Zero receptive-field samples skips that phase, still completing with every family marked dead."""
     survey             = _survey()
     survey.erf_samples = 0
     survey._survey()
@@ -287,6 +257,5 @@ def test_survey_with_zero_erf_samples_skips_the_phase():
 
 
 def test_survey_result_before_any_run_fails():
-    """Fetching a result or cancelling before any survey has started fails."""
     assert ModelSurvey(SilentLogger()).survey_result()["ok"] is False
     assert ModelSurvey(SilentLogger()).cancel()["ok"] is False

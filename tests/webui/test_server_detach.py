@@ -1,14 +1,3 @@
-"""Tests for the console server's root isolation, shutdown and detach behaviour.
-
-The server tests drive a real ``serve.py`` process over HTTP: they check that the
-``--root`` option keeps logs out of the live repository, that shutdown exits the
-front-end process together with every other console on the same root while sparing
-consoles on other roots, and that a detached server shields itself, surviving SIGHUP,
-SIGTERM and SIGINT while reporting its log file, holding scope and any shield failure.
-Unit tests check that an unreadable cgroup file during the session escape lands in
-the shield error and that the main thread's wait loop wakes on a timeout, so a
-signal handed to another thread is still handled promptly.
-"""
 
 from __future__ import annotations
 
@@ -30,34 +19,29 @@ from tests.webui.conftest import WEBUI_ROOT, StubPaths
 
 
 def _free_port() -> int:
-    """Returns a loopback TCP port the operating system currently reports as free."""
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
 
 def _get(port: int, route: str) -> dict:
-    """Returns the decoded JSON body of a GET against the local console."""
     with urllib.request.urlopen(f"http://127.0.0.1:{port}{route}", timeout=5) as response:
         return json.loads(response.read())
 
 
 def _post(port: int, route: str) -> dict:
-    """Returns the decoded JSON body of an empty POST against the local console."""
     request = urllib.request.Request(f"http://127.0.0.1:{port}{route}", data=b"{}", method="POST")
     with urllib.request.urlopen(request, timeout=40) as response:
         return json.loads(response.read())
 
 
 def _make_root(path: Path) -> Path:
-    """Creates the directories ProjectPaths requires under a temporary root and returns it."""
     for name in ("main", "configuration", "tools"):
         (path / name).mkdir(parents=True)
     return path
 
 
 def _launch(root: Path) -> tuple[int, subprocess.Popen]:
-    """Starts serve.py on a free port under the given root and returns (port, process) once it answers."""
     port = _free_port()
     proc = subprocess.Popen([sys.executable, str(WEBUI_ROOT / "serve.py"), "--port", str(port), "--root", str(root)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
@@ -74,7 +58,6 @@ def _launch(root: Path) -> tuple[int, subprocess.Popen]:
 
 
 def _stop(proc: subprocess.Popen) -> None:
-    """Terminates a server process, escalating to SIGKILL when it does not exit in time."""
     if proc.poll() is not None:
         return
     proc.terminate()
@@ -86,7 +69,6 @@ def _stop(proc: subprocess.Popen) -> None:
 
 
 def _wait_exit(proc: subprocess.Popen, timeout: float = 15.0) -> int | None:
-    """Returns the process's exit code once it exits within the timeout, or None when it is still running."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline and proc.poll() is None:
         time.sleep(0.2)
@@ -95,7 +77,6 @@ def _wait_exit(proc: subprocess.Popen, timeout: float = 15.0) -> int | None:
 
 @pytest.fixture
 def server(tmp_path):
-    """Starts serve.py on a free port under a temporary root and yields (port, process, root)."""
     root       = _make_root(tmp_path / "project_root")
     port, proc = _launch(root)
 
@@ -104,7 +85,6 @@ def server(tmp_path):
 
 
 def test_server_root_isolates_the_console_from_the_live_repository(server):
-    """A server started with --root reports no jobs and writes its log under that root."""
     port, _, root = server
 
     assert _get(port, "/api/jobs")["jobs"] == []
@@ -114,7 +94,6 @@ def test_server_root_isolates_the_console_from_the_live_repository(server):
 
 
 def test_shutdown_stops_the_front_end_process(server):
-    """The shutdown route names the server pid, reports no siblings when it runs alone, and exits cleanly."""
     port, proc, _ = server
 
     result = _post(port, "/api/system/shutdown")
@@ -126,7 +105,6 @@ def test_shutdown_stops_the_front_end_process(server):
 
 
 def test_shutdown_kills_every_other_console_on_the_same_root(server):
-    """The shutdown route force-kills the other console servers on the same root and reports their pids."""
     port, proc, root = server
     _, other         = _launch(root)
 
@@ -142,7 +120,6 @@ def test_shutdown_kills_every_other_console_on_the_same_root(server):
 
 
 def test_shutdown_spares_consoles_on_other_roots(server, tmp_path):
-    """A console serving a different root is not a sibling and keeps running after the shutdown."""
     port, proc, _     = server
     other_port, other = _launch(_make_root(tmp_path / "other_root"))
 
@@ -158,7 +135,6 @@ def test_shutdown_spares_consoles_on_other_roots(server, tmp_path):
 
 
 def test_detach_survives_termination_signals(server):
-    """After detaching, the server shields itself against SIGHUP, SIGTERM and SIGINT and detaching again is idempotent."""
     port, proc, root = server
 
     before = _get(port, "/api/system")
@@ -196,7 +172,6 @@ def test_detach_survives_termination_signals(server):
 
 
 def test_unreadable_cgroup_file_lands_in_the_shield_error(tmp_path, monkeypatch):
-    """A failed read of /proc/self/cgroup after the scope move is recorded in shield_error and no scope is claimed."""
     detacher = ServerDetacher(StubPaths(tmp_path), WebLogger())
 
     def unreadable(self, *args, **kwargs):
@@ -212,22 +187,13 @@ def test_unreadable_cgroup_file_lands_in_the_shield_error(tmp_path, monkeypatch)
 
 
 class CountingEvent:
-    """Event stand-in recording each wait timeout and raising the shutdown flag after a few timed-out waits.
-
-    Attributes:
-        detacher : Detacher whose stopping flag is raised once enough waits have timed out.
-        timeouts : Timeout passed to each wait, oldest first.
-        rounds   : Number of timed-out waits before the request is answered.
-    """
 
     def __init__(self, detacher: ServerDetacher, rounds: int) -> None:
-        """Binds the detacher and the number of idle waits."""
         self.detacher = detacher
         self.timeouts = []
         self.rounds   = rounds
 
     def wait(self, timeout: float | None = None) -> bool:
-        """Records the timeout and reports a request only after the idle rounds have passed."""
         self.timeouts.append(timeout)
         if len(self.timeouts) <= self.rounds:
             return False
@@ -236,12 +202,10 @@ class CountingEvent:
         return True
 
     def clear(self) -> None:
-        """Accepts the clear the wait loop sends after a request."""
         return None
 
 
 def test_the_wait_loop_wakes_on_a_timeout_until_a_request_arrives(tmp_path):
-    """Each wait carries WAKE_S as its timeout, idle wakes loop back to waiting, and a shutdown request ends the loop."""
     detacher           = ServerDetacher(StubPaths(tmp_path), WebLogger())
     detacher.requested = CountingEvent(detacher, rounds=3)
 

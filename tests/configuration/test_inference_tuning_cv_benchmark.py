@@ -1,9 +1,3 @@
-"""Tests for the inference, tuning, cross-validation and benchmark configurations.
-
-Covers that each entry config builds from defaults, that inference defaults come
-from one factory across standalone and training entries, and that the tuning,
-fold and benchmark configs carry their expected sub-configs and dispatch rules.
-"""
 
 from __future__ import annotations
 
@@ -68,13 +62,11 @@ IDS = [c.__name__ for c in DEFAULT_CONFIGS]
 
 @pytest.mark.parametrize("config_cls", DEFAULT_CONFIGS, ids=IDS)
 def test_default_config_instantiates(config_cls):
-    """Verifies every listed entry config builds from defaults as a dataclass."""
     instance = config_cls()
     assert dataclasses.is_dataclass(instance)
 
 
 def test_inference_config_requires_run_directory():
-    """Verifies the inference config demands a run directory and defaults to CUDA with an unset batch size."""
     with pytest.raises(TypeError):
         InferenceConfig()
 
@@ -86,7 +78,6 @@ def test_inference_config_requires_run_directory():
 
 
 def test_inference_config_profile_counts_positive():
-    """Verifies the best, worst and random profile counts plotted at inference are positive."""
     cfg = InferenceConfig(run_directory=Path("."))
     assert cfg.n_best_profiles   > 0
     assert cfg.n_worst_profiles  > 0
@@ -94,7 +85,6 @@ def test_inference_config_profile_counts_positive():
 
 
 def test_backbone_inference_entry_config_holds_inference():
-    """Verifies the backbone inference entry carries an inference config, the three GIF axes and a runs directory."""
     cfg = BackboneInferenceEntryConfig()
     assert isinstance(cfg.inference, InferenceConfig)
     assert cfg.inference.gif_axes == ["z", "col", "row"]
@@ -103,7 +93,6 @@ def test_backbone_inference_entry_config_holds_inference():
 
 
 def test_run_directory_inference_defaults_come_from_one_factory():
-    """Verifies standalone and training inference configs share the same defaults and differ only in whether reduced products are computed."""
     from configuration.training.backbone import BackboneEntryConfig
     from configuration.training.dual     import DualEntryConfig
     from configuration.training.jepa     import JepaEntryConfig
@@ -120,7 +109,6 @@ def test_run_directory_inference_defaults_come_from_one_factory():
 
 
 def test_ae_inference_entry_configs_expose_only_their_tree():
-    """Verifies the autoencoder inference entries expose only their own inference tree and runs directory."""
     profile = ProfileAeInferenceEntryConfig()
     image   = ImageAeInferenceEntryConfig()
 
@@ -134,7 +122,6 @@ def test_ae_inference_entry_configs_expose_only_their_tree():
 
 
 def test_tuning_config_positive_trials():
-    """Verifies the tuning defaults carry positive trial, epoch and patience counts."""
     cfg = TuningConfig()
     assert cfg.n_trials > 0
     assert cfg.n_epochs > 0
@@ -142,7 +129,6 @@ def test_tuning_config_positive_trials():
 
 
 def test_tuning_config_searches_the_model_groups_by_default():
-    """Verifies the tuning defaults search the learning rates and the architecture and leave the batch size to the training config."""
     cfg = TuningConfig()
     assert cfg.search_lr    is True
     assert cfg.search_arch  is True
@@ -151,7 +137,6 @@ def test_tuning_config_searches_the_model_groups_by_default():
 
 
 def test_tuning_config_stop_rules_default_off():
-    """Verifies the tuning defaults run the trial target out with no plateau rule or time budget."""
     cfg = TuningConfig()
     assert cfg.plateau_patience  == 0
     assert cfg.plateau_min_delta == 0.0
@@ -159,12 +144,10 @@ def test_tuning_config_stop_rules_default_off():
 
 
 def test_tuning_config_discards_trial_checkpoints_by_default():
-    """Verifies a finished trial's checkpoint files are deleted unless kept on request."""
     assert TuningConfig().keep_trial_checkpoints is False
 
 
 def test_training_queue_lr_scale_follows_the_batch_rule():
-    """The scale is the batch over the reference batch times the multiplier when scaling is on, the multiplier alone when off."""
     cfg = TrainingQueueConfig(batch_size=256, lr_reference_batch_size=256, lr_multiplier=2.0)
 
     assert cfg.lr_scale()    == 2.0
@@ -175,7 +158,6 @@ def test_training_queue_lr_scale_follows_the_batch_rule():
 
 
 def test_tuning_entry_config_subconfigs():
-    """Verifies the tuning entry carries the tuning, JEPA coupling, paths and GPU sub-configs with a positive batch size."""
     cfg = TuningEntryConfig()
     assert isinstance(cfg.tuning, TuningConfig)
     assert isinstance(cfg.jepa, JepaCouplingConfig)
@@ -185,20 +167,17 @@ def test_tuning_entry_config_subconfigs():
 
 
 def test_tuning_entry_ae_loss_default_factory():
-    """Verifies the tuning entry builds its own profile autoencoder loss config."""
     cfg = TuningEntryConfig()
     assert isinstance(cfg.ae_loss, ProfileAeLossConfig)
 
 
 def test_fold_config_defaults():
-    """Verifies the fold defaults carry a positive fold count over a non-empty row extent."""
     cfg = FoldConfig()
     assert cfg.n_folds > 0
     assert cfg.row_end > cfg.row_start
 
 
 def test_cross_validation_config_subconfigs():
-    """Verifies the cross-validation config carries its fold, JEPA and autoencoder sub-configs and evaluates both val and test."""
     cfg = CrossValidationConfig()
     assert isinstance(cfg.folds, FoldConfig)
     assert isinstance(cfg.jepa, JepaCouplingConfig)
@@ -207,7 +186,6 @@ def test_cross_validation_config_subconfigs():
 
 
 def test_cross_validation_validates_the_standard_backbone():
-    """Verifies cross-validation defaults to the same backbone and head as backbone training."""
     from configuration.training.backbone import BackboneEntryConfig
 
     cfg = CrossValidationConfig()
@@ -217,7 +195,6 @@ def test_cross_validation_validates_the_standard_backbone():
 
 
 def test_cross_validation_carries_the_input_stack_and_overfit_gate():
-    """Verifies cross-validation carries the input stack with secondaries enabled and the overfit-check gate."""
     cfg = CrossValidationConfig()
 
     assert isinstance(cfg.input, InputConfig)
@@ -226,20 +203,17 @@ def test_cross_validation_carries_the_input_stack_and_overfit_gate():
 
 
 def test_cross_validation_fold_inference_saves_cubes():
-    """Verifies fold inference saves cubes while benchmark inference does not."""
     assert CrossValidationConfig().inference.save_cubes is True
     assert BenchmarkConfig().inference.save_cubes is False
 
 
 def test_cross_validation_runs_inference_logic():
-    """Verifies inference runs for backbone and profile autoencoder training but not when the split list is empty."""
     assert CrossValidationConfig(training_type="backbone").runs_inference() is True
     assert CrossValidationConfig(training_type="profile_autoencoder").runs_inference() is True
     assert CrossValidationConfig(training_type="image_autoencoder", inference_splits=[]).runs_inference() is False
 
 
 def test_benchmark_paths_defaults_are_paths():
-    """Verifies the run paths config exposes path objects and a tuple of secondary labels."""
     cfg = RunPathsConfig()
     assert isinstance(cfg.dataset_path, Path)
     assert isinstance(cfg.parameters_path, Path)
@@ -247,7 +221,6 @@ def test_benchmark_paths_defaults_are_paths():
 
 
 def test_training_queue_config_axis_tuples():
-    """Verifies the queued training defaults carry positive epochs and batch size plus two-element patch and row extents."""
     cfg = TrainingQueueConfig()
     assert cfg.epochs > 0
     assert cfg.batch_size > 0
@@ -257,7 +230,6 @@ def test_training_queue_config_axis_tuples():
 
 
 def test_size_match_locked_params_tuple():
-    """Verifies the size-match defaults lock a tuple of parameters over a valid scale range with positive input channels."""
     cfg = SizeMatchConfig()
     assert isinstance(cfg.locked_params, tuple)
     assert cfg.scale_high > cfg.scale_low
@@ -265,14 +237,12 @@ def test_size_match_locked_params_tuple():
 
 
 def test_max_batch_config_budget_positive():
-    """Verifies the max-batch defaults carry a positive VRAM budget and batch ceiling."""
     cfg = MaxBatchConfig()
     assert cfg.vram_budget_gb > 0
     assert cfg.max_batch > 0
 
 
 def test_benchmark_config_dispatch_methods():
-    """Verifies which stages each training type runs: size match for backbone only, no inference for the profile autoencoder, inference for JEPA."""
     backbone = BenchmarkConfig(training_type="backbone")
     assert backbone.runs_size_match() is True
     assert backbone.runs_inference() is True
@@ -286,7 +256,6 @@ def test_benchmark_config_dispatch_methods():
 
 
 def test_benchmark_config_subconfigs():
-    """Verifies the benchmark config carries the max-batch, size-match and JEPA coupling sub-configs."""
     cfg = BenchmarkConfig()
     assert isinstance(cfg.max_batch, MaxBatchConfig)
     assert isinstance(cfg.size_match, SizeMatchConfig)
@@ -294,7 +263,6 @@ def test_benchmark_config_subconfigs():
 
 
 def test_benchmark_config_exposes_training_recipe_sections():
-    """Verifies the benchmark config exposes the input, geometry, normalization and augmentation recipe sections."""
     cfg = BenchmarkConfig()
     assert isinstance(cfg.input, InputConfig)
     assert isinstance(cfg.normalization, NormalizationConfig)
@@ -302,7 +270,6 @@ def test_benchmark_config_exposes_training_recipe_sections():
 
 
 def test_dataloader_tuning_entry_lists_independent():
-    """Verifies two dataloader tuning entries hold independent batch-size lists and a path output directory."""
     a = DataLoaderTuningEntryConfig()
     b = DataLoaderTuningEntryConfig()
     a.batch_sizes.append(99999)

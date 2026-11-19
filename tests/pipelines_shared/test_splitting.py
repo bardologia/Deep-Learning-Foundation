@@ -1,4 +1,3 @@
-"""Tests for the profile parameter cropper over explicit row splits."""
 
 from __future__ import annotations
 
@@ -13,7 +12,6 @@ from tools.monitoring.logger                         import Logger
 
 @pytest.mark.dataset
 def test_parameter_cropper_loads_disjoint_pixel_counts(test_data_dir, params_dir, parameters, scene_config, tmp_path):
-    """The cropper loads each split at its own row extent and reports the profile length."""
     logger = Logger(log_dir=str(tmp_path / "logs"), name="split_scene", level="ERROR")
     layout = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")
 
@@ -37,7 +35,6 @@ def test_parameter_cropper_loads_disjoint_pixel_counts(test_data_dir, params_dir
 
 @pytest.mark.dataset
 def test_parameter_cropper_regions_load_distinct_data(test_data_dir, params_dir, tmp_path):
-    """Adjacent split regions load different parameter data."""
     logger = Logger(log_dir=str(tmp_path / "logs"), name="split_real2", level="ERROR")
     layout = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")
 
@@ -57,7 +54,6 @@ def test_parameter_cropper_regions_load_distinct_data(test_data_dir, params_dir,
 
 @pytest.mark.dataset
 def test_parameter_cropper_rejects_overlapping_splits(test_data_dir, params_dir, tmp_path):
-    """Overlapping split regions raise ValueError."""
     logger = Logger(log_dir=str(tmp_path / "logs"), name="split_overlap", level="ERROR")
     layout = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")
 

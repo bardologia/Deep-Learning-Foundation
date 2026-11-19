@@ -1,4 +1,3 @@
-"""Tests for the result-table exporter: discovery, column selection and the three outputs."""
 
 from __future__ import annotations
 
@@ -14,7 +13,6 @@ from tests.conftest                     import RecordingLogger, SilentLogger
 
 
 def _run(root: Path, name: str, stamp: str, metrics: dict, split: str | None = "test") -> Path:
-    """Creates one fake run with an inference stamp holding a metrics file, completed on the split unless it is None."""
     stamp_dir = root / name / "inference" / stamp
     stamp_dir.mkdir(parents=True)
     (stamp_dir / "metrics.json").write_text(json.dumps(metrics))
@@ -26,7 +24,6 @@ def _run(root: Path, name: str, stamp: str, metrics: dict, split: str | None = "
 
 
 def _entry(root: Path, **overrides) -> ResultTableEntryConfig:
-    """Returns an entry config pointed at the fake runs root and a tables dir beside it."""
     entry            = ResultTableEntryConfig(**overrides)
     entry.runs_dir   = root
     entry.output_dir = root.parent / "tables"
@@ -35,7 +32,6 @@ def _entry(root: Path, **overrides) -> ResultTableEntryConfig:
 
 
 def test_exporter_writes_csv_tex_and_md(tmp_path):
-    """One row per run lands in all three outputs, with the metric columns shared."""
     root = tmp_path / "runs"
     _run(root, "run_a", "s1", {"curve_mse_gt": 1.25, "overall_r2_gt": 0.5, "split": "test"})
     _run(root, "run_b", "s1", {"curve_mse_gt": 2.5, "overall_r2_gt": 0.25, "split": "test"})
@@ -53,7 +49,6 @@ def test_exporter_writes_csv_tex_and_md(tmp_path):
 
 
 def test_exporter_uses_latest_stamp_and_nested_runs(tmp_path):
-    """The newest stamp of each run wins and nested run directories are discovered."""
     root = tmp_path / "runs"
     _run(root, "group/run_a", "s1", {"curve_mse_gt": 9.0})
     _run(root, "group/run_a", "s2", {"curve_mse_gt": 1.0})
@@ -67,7 +62,6 @@ def test_exporter_uses_latest_stamp_and_nested_runs(tmp_path):
 
 
 def test_exporter_selected_columns_and_sorting(tmp_path):
-    """Configured metrics restrict the LaTeX columns and sort_by orders the rows."""
     root = tmp_path / "runs"
     _run(root, "worse",  "s1", {"curve_mse_gt": 3.0, "other": 1.0})
     _run(root, "better", "s1", {"curve_mse_gt": 1.0, "other": 2.0})
@@ -82,7 +76,6 @@ def test_exporter_selected_columns_and_sorting(tmp_path):
 
 
 def test_exporter_rejects_unknown_metric_keys(tmp_path):
-    """A configured column no run reports fails loudly instead of rendering blanks."""
     root = tmp_path / "runs"
     _run(root, "run_a", "s1", {"curve_mse_gt": 1.0})
 
@@ -93,7 +86,6 @@ def test_exporter_rejects_unknown_metric_keys(tmp_path):
 
 
 def test_exporter_raises_without_finished_inference(tmp_path):
-    """A runs root with no finished inference is rejected."""
     root = tmp_path / "runs"
     (root / "run_a" / "inference").mkdir(parents=True)
 
@@ -102,7 +94,6 @@ def test_exporter_raises_without_finished_inference(tmp_path):
 
 
 def test_exporter_reads_only_completed_stamps_of_the_split(tmp_path):
-    """A newer unfinished or other-split stamp is skipped and the completed stamp of the split is exported."""
     root = tmp_path / "runs"
     _run(root, "run_a", "s1", {"curve_mse_gt": 1.0})
     _run(root, "run_a", "s2", {"curve_mse_gt": 5.0}, split="val")

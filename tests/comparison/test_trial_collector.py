@@ -1,9 +1,3 @@
-"""Tests for run comparison collection and reporting across trials.
-
-Covers how TrialCollector expands and aggregates per-seed run tags, how it picks
-the inference directory of the requested split, and how TrialComparisonReport
-renders dispersion and per-run figure sections.
-"""
 
 from __future__ import annotations
 
@@ -20,7 +14,6 @@ from tests.conftest import RecordingLogger
 
 
 def _run_with_metrics(run_dir: Path, rmse: float, split: str = "test", stamp: str = "20260101_000000", extra: dict | None = None) -> None:
-    """Writes a completed inference directory under run_dir carrying the given curve RMSE, any extra metrics and the split."""
     inference_dir = run_dir / "inference" / stamp
     inference_dir.mkdir(parents=True)
     (inference_dir / "metrics.json").write_text(json.dumps({"curve_rmse_gt": rmse, **(extra or {})}))
@@ -28,7 +21,6 @@ def _run_with_metrics(run_dir: Path, rmse: float, split: str = "test", stamp: st
 
 
 def test_trial_tag_expands_and_aggregates_seed_runs(tmp_path):
-    """Verifies a bare trial tag expands to its seed runs and aggregates into one record with dispersion."""
     _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
     _run_with_metrics(tmp_path / "trial_a" / "seed1", 4.0)
 
@@ -43,7 +35,6 @@ def test_trial_tag_expands_and_aggregates_seed_runs(tmp_path):
 
 
 def test_explicit_seed_run_tags_aggregate_into_one_trial(tmp_path):
-    """Verifies explicitly listed seed tags of one trial aggregate into a single record."""
     _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
     _run_with_metrics(tmp_path / "trial_a" / "seed1", 4.0)
 
@@ -55,7 +46,6 @@ def test_explicit_seed_run_tags_aggregate_into_one_trial(tmp_path):
 
 
 def test_duplicate_unit_and_seed_tags_collapse_once(tmp_path):
-    """Verifies a trial tag repeated alongside one of its seed tags is collected only once."""
     _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
     _run_with_metrics(tmp_path / "trial_a" / "seed1", 4.0)
 
@@ -68,7 +58,6 @@ def test_duplicate_unit_and_seed_tags_collapse_once(tmp_path):
 
 
 def test_seed_means_disclose_the_seeds_they_cover(tmp_path):
-    """Verifies a seed without inference and a seed with a NaN metric are counted out of the mean, warned about, and shown as used/total in the Seeds cell."""
     _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
     _run_with_metrics(tmp_path / "trial_a" / "seed1", float("nan"))
     (tmp_path / "trial_a" / "seed2").mkdir()
@@ -99,13 +88,11 @@ def test_seed_means_disclose_the_seeds_they_cover(tmp_path):
 
 
 def test_empty_run_tags_raise(tmp_path):
-    """Verifies a comparison without any requested run tag refuses to run, since it discovers no runs on its own."""
     with pytest.raises(ValueError, match="No run tags requested"):
         TrialCollector(runs_dir=tmp_path, run_tags=[], logger=RecordingLogger(), inference_split="test").collect()
 
 
 def test_missing_run_directory_raises_naming_it(tmp_path):
-    """Verifies a requested run tag whose directory does not exist aborts the comparison and is named."""
     _run_with_metrics(tmp_path / "run_x", 1.0)
 
     with pytest.raises(FileNotFoundError, match="gone"):
@@ -113,7 +100,6 @@ def test_missing_run_directory_raises_naming_it(tmp_path):
 
 
 def test_trial_without_inference_on_the_split_warns_and_names_the_family_subdir(tmp_path):
-    """Verifies a trial inferred on another split, with stamps in a family sub-directory, is warned about but still listed."""
     _run_with_metrics(tmp_path / "run_x", 1.0)
     _run_with_metrics(tmp_path / "run_y", 2.0, split="val")
     (tmp_path / "run_y" / "inference" / "profile_ae").mkdir()
@@ -135,7 +121,6 @@ def test_trial_without_inference_on_the_split_warns_and_names_the_family_subdir(
 
 
 def test_comparison_without_any_scored_trial_raises(tmp_path):
-    """Verifies a comparison in which no trial carries metrics on the split aborts instead of writing empty pages."""
     _run_with_metrics(tmp_path / "run_x", 1.0, split="val")
     _run_with_metrics(tmp_path / "run_y", 2.0, split="val")
 
@@ -144,7 +129,6 @@ def test_comparison_without_any_scored_trial_raises(tmp_path):
 
 
 def test_flat_runs_pass_through_unchanged(tmp_path):
-    """Verifies runs without a seed level are kept separate and report no dispersion."""
     _run_with_metrics(tmp_path / "run_x", 1.0)
     _run_with_metrics(tmp_path / "run_y", 2.0)
 
@@ -156,7 +140,6 @@ def test_flat_runs_pass_through_unchanged(tmp_path):
 
 
 def test_named_output_subdir_of_other_split_does_not_win(tmp_path):
-    """Verifies an inference directory of another split is ignored even when named."""
     _run_with_metrics(tmp_path / "run_x", 1.0)
     _run_with_metrics(tmp_path / "run_x", 9.9, split="val", stamp="region_override")
 
@@ -168,7 +151,6 @@ def test_named_output_subdir_of_other_split_does_not_win(tmp_path):
 
 
 def test_single_seed_run_tag_stays_identity(tmp_path):
-    """Verifies a lone seed tag keeps its full name and reports no dispersion."""
     _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
 
     collector = TrialCollector(runs_dir=tmp_path, run_tags=["trial_a/seed0"], logger=RecordingLogger(), inference_split="test")
@@ -179,7 +161,6 @@ def test_single_seed_run_tag_stays_identity(tmp_path):
 
 
 def test_report_annotates_seed_dispersion(tmp_path):
-    """Verifies the overview gains a Seeds column and the metric table a plus-minus dispersion term."""
     _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
     _run_with_metrics(tmp_path / "trial_a" / "seed1", 4.0)
     _run_with_metrics(tmp_path / "run_x", 1.0)
@@ -199,7 +180,6 @@ def test_report_annotates_seed_dispersion(tmp_path):
 
 
 def test_report_states_the_split_and_writes_a_json_summary(tmp_path):
-    """Verifies the overview names the split and comparison_summary.json records the split, every trial's stamp and the seed coverage."""
     _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
     _run_with_metrics(tmp_path / "trial_a" / "seed1", 4.0)
     _run_with_metrics(tmp_path / "run_x", 1.0)
@@ -225,7 +205,6 @@ def test_report_states_the_split_and_writes_a_json_summary(tmp_path):
 
 
 def test_leaderboard_names_the_attainable_p_floor_and_the_shared_seeds(tmp_path):
-    """Verifies the leaderboard says which seed counts cannot reach the star, warns once per report, and names the shared seeds behind an n/a cell."""
     for seed, rmse in (("seed0", 1.0), ("seed1", 1.1)):
         _run_with_metrics(tmp_path / "trial_a" / seed, rmse, extra={"count_exact_frac": 0.9})
     for seed, rmse in (("seed0", 2.0), ("seed1", 2.2)):
@@ -251,7 +230,6 @@ def test_leaderboard_names_the_attainable_p_floor_and_the_shared_seeds(tmp_path)
 
 
 def test_figure_section_marks_figures_absent_from_a_trial(tmp_path):
-    """Verifies the figure section lists the union of figure names and marks the ones a run lacks."""
     _run_with_metrics(tmp_path / "run_x", 1.0)
     _run_with_metrics(tmp_path / "run_y", 2.0)
 
@@ -276,7 +254,6 @@ def test_figure_section_marks_figures_absent_from_a_trial(tmp_path):
 
 
 def test_figure_subdir_outside_the_known_table_gets_its_own_gallery(tmp_path):
-    """Verifies a figure sub-directory absent from FIGURE_SUBDIRS is rendered as its own page and named in the log."""
     _run_with_metrics(tmp_path / "run_x", 1.0)
 
     stratified = tmp_path / "run_x" / "inference" / "20260101_000000" / "figures" / "stratified"
@@ -299,7 +276,6 @@ def test_figure_subdir_outside_the_known_table_gets_its_own_gallery(tmp_path):
 
 
 def test_galleries_warn_when_no_trial_holds_figures(tmp_path):
-    """Verifies enabling the figure galleries over trials without figures writes none and says so."""
     _run_with_metrics(tmp_path / "run_x", 1.0)
 
     logger    = RecordingLogger()

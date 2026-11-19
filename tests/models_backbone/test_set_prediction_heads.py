@@ -1,9 +1,3 @@
-"""Tests covering the gated set-prediction head on the backbone models.
-
-The existence gate is forced fully closed or fully open and the emitted parameter stack
-is compared against the raw Gaussian heads to confirm the gate only ever touches
-amplitude, and that gradients reach the gate.
-"""
 
 from __future__ import annotations
 
@@ -22,13 +16,11 @@ OVERRIDES = {"head": "set_pred", "features": [8, 16], "bottleneck_factor": 1, "d
 
 
 def _build(name):
-    """Returns the named backbone built with the set-prediction head, in eval mode."""
     model, config = get_backbone(name, **OVERRIDES)
     return model.eval(), config
 
 
 def _force_gate(model, logit_value: float) -> None:
-    """Pins the existence head to a constant logit by zeroing its final weights and setting its bias."""
     final_conv = model.existence_head.mlp[-1]
     torch.nn.init.zeros_(final_conv.weight)
     torch.nn.init.constant_(final_conv.bias, logit_value)
@@ -36,7 +28,6 @@ def _force_gate(model, logit_value: float) -> None:
 
 @pytest.mark.parametrize("name", SETPRED_NAMES)
 def test_closed_gate_pins_amplitude_to_off_level(name):
-    """Verifies a fully closed gate drives each slot amplitude to its learned off level."""
     model, config = _build(name)
     _force_gate(model, logit_value=-30.0)
 
@@ -53,7 +44,6 @@ def test_closed_gate_pins_amplitude_to_off_level(name):
 
 @pytest.mark.parametrize("name", SETPRED_NAMES)
 def test_open_gate_passes_raw_amplitude(name):
-    """Verifies a fully open gate passes the raw head amplitudes through unchanged."""
     model, config = _build(name)
     _force_gate(model, logit_value=30.0)
 
@@ -72,7 +62,6 @@ def test_open_gate_passes_raw_amplitude(name):
 
 @pytest.mark.parametrize("name", SETPRED_NAMES)
 def test_gate_leaves_mu_sigma_untouched(name):
-    """Verifies the gate leaves the mu and sigma channels identical to the raw head outputs."""
     model, config = _build(name)
     _force_gate(model, logit_value=-30.0)
 
@@ -91,7 +80,6 @@ def test_gate_leaves_mu_sigma_untouched(name):
 
 @pytest.mark.parametrize("name", SETPRED_NAMES)
 def test_gate_gradients_reach_existence_head(name):
-    """Verifies backpropagation delivers finite gradients to the existence head and the off level."""
     model, config = _build(name)
     model.train()
 

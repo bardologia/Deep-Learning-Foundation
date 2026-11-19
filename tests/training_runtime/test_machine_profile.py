@@ -1,12 +1,3 @@
-"""Tests for the per-machine profile and its application through ConfigCli.
-
-Covers the environment-driven location, schema refusal, section defaults, the
-longest-anchor-first rebase of reference-layout paths, the hardware and mail field
-rules, explicit Class.field overrides, the shell twin written beside the profile,
-the refusal of a named profile file that is missing, the one-line state of a
-profile, the reporting of rewritten defaults in the config help, and the source
-records that say which profile applied and what it rewrote.
-"""
 
 from __future__ import annotations
 
@@ -24,20 +15,17 @@ from tools.runtime.machine_profile  import FieldRule, MachineProfile
 
 @dataclass
 class PathsSection:
-    """Base section with a dataset path below the reference data root."""
     dataset_path : Path = ReferenceLayout.DATASET_DIR
     log_base_dir : Path = ReferenceLayout.RUNS_ROOT / "benchmark"
 
 
 @dataclass
 class ExtendedPaths(PathsSection):
-    """Section extending the base, so base-class rules must reach it."""
     extra : int = 1
 
 
 @dataclass
 class LoaderSection:
-    """Section with worker counts and a flag the worker rules must skip."""
     num_workers       : int  = 16
     parameter_workers : int  = 2
     pin_memory        : bool = True
@@ -45,14 +33,12 @@ class LoaderSection:
 
 @dataclass
 class MailSection:
-    """Section reusing mail field names outside the mailer config, which mail rules must skip."""
     sender    : str = "unrelated"
     recipient : str = "unrelated"
 
 
 @dataclass
 class ReportMailEntryConfig:
-    """Section named like the real mailer config, which mail rules must reach."""
     sender    : str = "owner@example.org"
     recipient : str = "owner@example.org"
     smtp_host : str = "smtp.gmail.com"
@@ -61,7 +47,6 @@ class ReportMailEntryConfig:
 
 @dataclass
 class EntryConfig:
-    """Root config exercising rebasing, MRO ownership, caps, type filters and overrides."""
     paths          : ExtendedPaths         = field(default_factory=ExtendedPaths)
     loader         : LoaderSection         = field(default_factory=LoaderSection)
     other          : MailSection           = field(default_factory=MailSection)
@@ -90,37 +75,19 @@ FULL_DATA = {
 
 
 class TableLogger:
-    """Logger stub keeping the tables ConfigCli.report writes.
-
-    Attributes:
-        kv_tables : Key-value tables received, as (title, mapping) pairs.
-        rows      : Rows of every metrics table received, concatenated.
-    """
 
     def __init__(self) -> None:
-        """Starts with no tables recorded."""
         self.kv_tables = []
         self.rows      = []
 
     def kv_table(self, data, title=None, **kwargs) -> None:
-        """Records a key-value table with its title."""
         self.kv_tables.append((title, dict(data)))
 
     def metrics_table(self, rows, columns, title=None, **kwargs) -> None:
-        """Records the rows of a metrics table."""
         self.rows.extend(dict(row) for row in rows)
 
 
 def _profile(tmp_path: Path, data: dict) -> MachineProfile:
-    """Writes a profile file with the given content and loads it back.
-
-    Args:
-        tmp_path : Directory the profile is written into.
-        data     : Profile mapping, written verbatim.
-
-    Returns:
-        The loaded profile.
-    """
     path = tmp_path / "machine.json"
     path.write_text(json.dumps(data))
 
@@ -128,7 +95,6 @@ def _profile(tmp_path: Path, data: dict) -> MachineProfile:
 
 
 def test_location_follows_the_environment_variable(monkeypatch, tmp_path):
-    """The variable names the file, an empty value disables profiles, unset falls back to the home config."""
     monkeypatch.setenv(MachineProfile.ENV_VAR, str(tmp_path / "p.json"))
     assert MachineProfile.location() == tmp_path / "p.json"
 
@@ -141,7 +107,6 @@ def test_location_follows_the_environment_variable(monkeypatch, tmp_path):
 
 
 def test_current_returns_an_absent_profile_when_the_default_location_holds_none(monkeypatch, tmp_path):
-    """With the variable unset, a missing file at the default location yields a profile that exists is False and applies nothing."""
     monkeypatch.delenv(MachineProfile.ENV_VAR, raising=False)
     monkeypatch.setattr(MachineProfile, "default_path", classmethod(lambda cls: tmp_path / "none.json"))
 
@@ -154,7 +119,6 @@ def test_current_returns_an_absent_profile_when_the_default_location_holds_none(
 
 
 def test_current_refuses_a_named_file_that_is_missing(monkeypatch, tmp_path):
-    """A path named by the variable must exist, so a mistyped or moved profile fails instead of running on the reference defaults."""
     monkeypatch.setenv(MachineProfile.ENV_VAR, str(tmp_path / "moved.json"))
 
     with pytest.raises(FileNotFoundError, match=f"{MachineProfile.ENV_VAR} names .*moved.json"):
@@ -162,7 +126,6 @@ def test_current_refuses_a_named_file_that_is_missing(monkeypatch, tmp_path):
 
 
 def test_describe_and_state_follow_the_profile_location(tmp_path):
-    """A loaded, an absent and a disabled profile each describe themselves in one line."""
     loaded = _profile(tmp_path, FULL_DATA)
     absent = MachineProfile(tmp_path / "none.json")
     off    = MachineProfile(None)
@@ -173,7 +136,6 @@ def test_describe_and_state_follow_the_profile_location(tmp_path):
 
 
 def test_load_refuses_another_schema(tmp_path):
-    """A profile written by another schema version is rejected instead of half-applied."""
     with pytest.raises(ValueError, match="schema 0"):
         _profile(tmp_path, {"schema": 0})
 
@@ -182,7 +144,6 @@ def test_load_refuses_another_schema(tmp_path):
 
 
 def test_sections_merge_over_defaults(tmp_path):
-    """Every section carries its default keys and the loaded values win."""
     profile = _profile(tmp_path, FULL_DATA)
 
     assert profile.console           == {"host": "0.0.0.0", "port": 9001}
@@ -199,7 +160,6 @@ def test_sections_merge_over_defaults(tmp_path):
 
 
 def test_path_anchors_are_ordered_most_specific_first(tmp_path):
-    """The parameter file anchor precedes the dataset, which precedes the data root, and unset roots are omitted."""
     profile = _profile(tmp_path, {"schema": 1, "roots": {"data": "/d", "runs": "/r"}, "dataset": {"path": "/d/s"}})
     anchors = [anchor for anchor, _ in profile.path_anchors()]
 
@@ -211,7 +171,6 @@ def test_path_anchors_are_ordered_most_specific_first(tmp_path):
 
 
 def test_rebase_matches_whole_components_only():
-    """A root matches itself or a child path, never a sibling sharing the prefix, and keeps a trailing slash."""
     anchors = [("runs/sub", "/x"), ("runs", "/y")]
 
     assert MachineProfile.rebase("runs/sub",    anchors) == "/x"
@@ -224,7 +183,6 @@ def test_rebase_matches_whole_components_only():
 
 
 def test_field_rules_follow_the_hardware_and_mail_sections(tmp_path):
-    """Set rules for the pool, VRAM and worker counts, caps for loader workers, and owner-bound mail rules."""
     rules = {(rule.field, rule.kind, rule.owner): rule for rule in _profile(tmp_path, FULL_DATA).field_rules()}
 
     assert rules[("gpus", "set", None)].value              == [1]
@@ -241,7 +199,6 @@ def test_field_rules_follow_the_hardware_and_mail_sections(tmp_path):
 
 
 def test_config_overrides_must_name_a_class_and_field(tmp_path):
-    """A bare field name in config_overrides is refused."""
     profile = _profile(tmp_path, {"schema": 1, "config_overrides": {"seed": 1}})
 
     with pytest.raises(ValueError, match="Class.field"):
@@ -249,7 +206,6 @@ def test_config_overrides_must_name_a_class_and_field(tmp_path):
 
 
 def test_config_cli_applies_the_profile_to_the_defaults(tmp_path):
-    """Paths below the reference roots are rebased, rules apply by name, owner and type, and the changes are reported."""
     profile = _profile(tmp_path, {**FULL_DATA, "config_overrides": {"EntryConfig.seed": 7, "PathsSection.extra": 5}})
     cli     = ConfigCli(EntryConfig(), profile=profile)
     config  = cli.config
@@ -278,7 +234,6 @@ def test_config_cli_applies_the_profile_to_the_defaults(tmp_path):
 
 
 def test_a_dataset_path_alone_leaves_the_other_roots_relative(tmp_path):
-    """Only the roots the profile sets move; a dataset path without a data root leaves the runs tree in the checkout."""
     profile = _profile(tmp_path, {"schema": 1, "dataset": {"path": "/data/me/scene"}})
     config  = ConfigCli(EntryConfig(), profile=profile).config
 
@@ -288,7 +243,6 @@ def test_a_dataset_path_alone_leaves_the_other_roots_relative(tmp_path):
 
 
 def test_sources_name_the_kind_of_rule_behind_each_rewritten_default(tmp_path):
-    """Every rewrite records the leaf, the default, the written value and whether a rebase, a set or a cap did it."""
     profile = _profile(tmp_path, FULL_DATA)
     cli     = ConfigCli(EntryConfig(), profile=profile)
     origins = {source.path: source.origin for source in cli.sources}
@@ -305,7 +259,6 @@ def test_sources_name_the_kind_of_rule_behind_each_rewritten_default(tmp_path):
 
 
 def test_config_overrides_that_name_no_leaf_are_listed(tmp_path):
-    """An explicit Class.field override matching nothing in this config is reported instead of vanishing."""
     profile = _profile(tmp_path, {**FULL_DATA, "config_overrides": {"EntryConfig.seed": 7, "LoaderSection.num_wrokers": 2}})
     cli     = ConfigCli(EntryConfig(), profile=profile)
 
@@ -314,7 +267,6 @@ def test_config_overrides_that_name_no_leaf_are_listed(tmp_path):
 
 
 def test_report_logs_the_profile_state_and_one_row_per_rewritten_leaf(tmp_path):
-    """The report names the profile file, counts the rewrites and lists each leaf with its origin and both values."""
     profile = _profile(tmp_path, FULL_DATA)
     cli     = ConfigCli(EntryConfig(), profile=profile)
     cli.apply(["--seed", "9"])
@@ -336,7 +288,6 @@ def test_report_logs_the_profile_state_and_one_row_per_rewritten_leaf(tmp_path):
 
 
 def test_command_line_flags_override_the_profile(tmp_path):
-    """A flag wins over the profile value for the same leaf."""
     profile = _profile(tmp_path, FULL_DATA)
     config  = ConfigCli(EntryConfig(), profile=profile).apply(["--paths.dataset_path", "/cli/scene", "--gpus", "[0, 2]"])
 
@@ -345,7 +296,6 @@ def test_command_line_flags_override_the_profile(tmp_path):
 
 
 def test_a_disabled_profile_leaves_the_defaults_alone():
-    """The absent profile keeps every default and reports no rewrite."""
     cli = ConfigCli(EntryConfig(), profile=MachineProfile(None))
 
     assert cli.profile_overrides         == {}
@@ -354,7 +304,6 @@ def test_a_disabled_profile_leaves_the_defaults_alone():
 
 
 def test_help_marks_the_defaults_the_profile_rewrote(tmp_path, capsys):
-    """The config help flags rewritten rows and names the profile file."""
     profile = _profile(tmp_path, FULL_DATA)
 
     with pytest.raises(SystemExit):
@@ -372,7 +321,6 @@ def test_help_marks_the_defaults_the_profile_rewrote(tmp_path, capsys):
 
 
 def test_save_writes_the_profile_and_its_shell_twin(tmp_path):
-    """Saving writes owner-only JSON with the schema and stamp, plus the exported shell variables beside it."""
     path    = tmp_path / "cfg" / "machine.json"
     profile = MachineProfile(path, {"machine": {"env_name": "Env", "interpreter": "/envs/Env/bin/python", "conda_root": "/opt/conda"}, "console": {"port": 9001}, "roots": {"repo": "/home/me/repo"}})
 
@@ -397,13 +345,11 @@ def test_save_writes_the_profile_and_its_shell_twin(tmp_path):
 
 
 def test_save_refuses_when_profiles_are_disabled():
-    """Without a location there is nowhere to write."""
     with pytest.raises(RuntimeError, match=MachineProfile.ENV_VAR):
         MachineProfile(None, {"machine": {}}).save()
 
 
 def test_field_rule_is_immutable():
-    """Rules are frozen so a shared rule list cannot be edited by a consumer."""
     rule = FieldRule("gpus", "set", [0])
 
     with pytest.raises(AttributeError):

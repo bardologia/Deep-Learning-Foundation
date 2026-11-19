@@ -1,4 +1,3 @@
-"""Tests for the FileIO directory, JSON and text-metadata helpers."""
 
 from __future__ import annotations
 
@@ -14,7 +13,6 @@ from tools.data.io import FileIO
 
 
 def test_ensure_dir_creates_and_returns(tmp_path):
-    """Verifies ensure_dir creates the nested directory and returns its path."""
     target = tmp_path / "a" / "b" / "c"
     result = FileIO.ensure_dir(target)
 
@@ -23,7 +21,6 @@ def test_ensure_dir_creates_and_returns(tmp_path):
 
 
 def test_ensure_dir_idempotent(tmp_path):
-    """Verifies ensure_dir on an existing directory is harmless."""
     target = tmp_path / "x"
     FileIO.ensure_dir(target)
     FileIO.ensure_dir(target)
@@ -32,7 +29,6 @@ def test_ensure_dir_idempotent(tmp_path):
 
 
 def test_ensure_dirs_creates_all(tmp_path):
-    """Verifies ensure_dirs creates every requested directory."""
     a = tmp_path / "one"
     b = tmp_path / "two" / "nested"
     c = tmp_path / "three"
@@ -45,7 +41,6 @@ def test_ensure_dirs_creates_all(tmp_path):
 
 
 def test_save_json_roundtrip(tmp_path):
-    """Verifies save_json returns the path and writes the payload verbatim."""
     payload = {"k": 1, "nested": {"a": [1, 2, 3]}, "flag": True}
     path    = tmp_path / "out.json"
 
@@ -56,7 +51,6 @@ def test_save_json_roundtrip(tmp_path):
 
 
 def test_save_json_creates_parent_dirs(tmp_path):
-    """Verifies save_json creates the missing parent directories."""
     path = tmp_path / "deep" / "nested" / "file.json"
     FileIO.save_json({"x": 1}, path)
 
@@ -64,7 +58,6 @@ def test_save_json_creates_parent_dirs(tmp_path):
 
 
 def test_save_json_load_json_roundtrip(tmp_path):
-    """Verifies a payload survives a save and load round trip."""
     payload = {"alpha": 0.5, "beta": [True, False, None]}
     path    = tmp_path / "rt.json"
 
@@ -75,7 +68,6 @@ def test_save_json_load_json_roundtrip(tmp_path):
 
 
 def test_save_json_atomic_leaves_no_tmp(tmp_path):
-    """Verifies an atomic save leaves no temporary sidecar behind."""
     path = tmp_path / "atomic.json"
     FileIO.save_json({"v": 7}, path, atomic=True)
 
@@ -85,14 +77,12 @@ def test_save_json_atomic_leaves_no_tmp(tmp_path):
 
 
 def test_save_json_atomic_sidecar_is_process_private(tmp_path):
-    """Verifies the atomic sidecar name carries the writing process identifier."""
     path    = tmp_path / "atomic.json"
     written = []
 
     real_replace = os.replace
 
     def _capture(source, destination):
-        """Records the sidecar name and performs the real replacement."""
         written.append(Path(source).name)
         real_replace(source, destination)
 
@@ -103,7 +93,6 @@ def test_save_json_atomic_sidecar_is_process_private(tmp_path):
 
 
 def test_save_json_indent_applied(tmp_path):
-    """Verifies the indent argument reaches the JSON encoder."""
     path = tmp_path / "indent.json"
     FileIO.save_json({"a": 1}, path, indent=2)
 
@@ -112,7 +101,6 @@ def test_save_json_indent_applied(tmp_path):
 
 
 def test_save_json_serializes_nonjson_via_default(tmp_path):
-    """Verifies non-JSON values such as Path are serialised through the default encoder."""
     path = tmp_path / "p.json"
     FileIO.save_json({"path": Path("/x/y")}, path)
 
@@ -121,7 +109,6 @@ def test_save_json_serializes_nonjson_via_default(tmp_path):
 
 
 def test_save_text_metadata_format(tmp_path):
-    """Verifies text metadata is written as one key: value line per entry."""
     path = tmp_path / "meta.txt"
     FileIO.save_text_metadata({"name": "foo", "count": 3}, path)
 
@@ -130,7 +117,6 @@ def test_save_text_metadata_format(tmp_path):
 
 
 def test_save_text_metadata_creates_parent(tmp_path):
-    """Verifies save_text_metadata creates the missing parent directory."""
     path = tmp_path / "sub" / "meta.txt"
     FileIO.save_text_metadata({"k": "v"}, path)
 
@@ -139,7 +125,6 @@ def test_save_text_metadata_creates_parent(tmp_path):
 
 @pytest.mark.dataset
 def test_load_json_reads_scene_config_state(meta_dir):
-    """Verifies the scene preprocessing config state loads with its crop bounds."""
     loaded = FileIO.load_json(meta_dir / "config_state.json")
 
     assert "crop" in loaded
@@ -148,7 +133,6 @@ def test_load_json_reads_scene_config_state(meta_dir):
 
 @pytest.mark.dataset
 def test_save_json_roundtrip_scene_layout(dataset_json, tmp_path):
-    """Verifies the scene dataset manifest survives a save and load round trip."""
     path = tmp_path / "dataset_copy.json"
     FileIO.save_json(dataset_json, path)
 
@@ -156,7 +140,6 @@ def test_save_json_roundtrip_scene_layout(dataset_json, tmp_path):
 
 
 def test_dataset_fingerprint_digest_matches_hashlib(tmp_path):
-    """Verifies the digest equals a direct sha256 of the file bytes with the byte size."""
     import hashlib
 
     from tools.data.io import DatasetFingerprint
@@ -172,7 +155,6 @@ def test_dataset_fingerprint_digest_matches_hashlib(tmp_path):
 
 
 def test_dataset_fingerprint_keys_relative_to_root(tmp_path):
-    """Verifies files under the root are keyed relatively and outside files keep their absolute path."""
     from tools.data.io import DatasetFingerprint
 
     inside  = tmp_path / "data" / "primary.npy"
@@ -190,7 +172,6 @@ def test_dataset_fingerprint_keys_relative_to_root(tmp_path):
 
 
 def test_dataset_fingerprint_changes_when_content_changes(tmp_path):
-    """Verifies two files of equal size but different content produce different hashes."""
     from tools.data.io import DatasetFingerprint
 
     a = tmp_path / "a.npy"

@@ -1,11 +1,3 @@
-"""Tests for the slice collector that exports z-profile slices across several runs.
-
-Covers cube inspection (dimensions, available sources, intensity ranges), the primary
-map, single-slice PNG rendering with and without a colour-limit override, the basket collect
-operation (directory layout, per-item styling, run label disambiguation, shared colour limits,
-input validation, restoration of the global plot style) and mailing a basket as zip
-attachments through a stand-in SMTP server.
-"""
 
 from __future__ import annotations
 
@@ -26,19 +18,6 @@ from tests.webui.conftest import N_COLS, N_ROWS, N_Z, make_cube_run, open_explor
 
 
 def _make_run(base: Path, group: str, name: str, stamp: str = "stamp_1", sources: tuple = ("pred", "gt"), seed: int = 0) -> Path:
-    """Writes one inference stamp without a dataset run behind it.
-
-    Args:
-        base    : Runs root the run is written under.
-        group   : Group folder between the root and the run, or empty.
-        name    : Run directory name.
-        stamp   : Stamp directory name.
-        sources : Curve cubes the stamp carries.
-        seed    : Seed of the random cube values.
-
-    Returns:
-        The stamp directory.
-    """
     rng       = np.random.default_rng(seed)
     run       = base / group / name if group else base / name
     stamp_dir = run / "inference" / stamp
@@ -52,26 +31,12 @@ def _make_run(base: Path, group: str, name: str, stamp: str = "stamp_1", sources
 
 
 def _collector(base: Path) -> tuple[SliceCollector, list]:
-    """Returns a collector over every stamp under ``base`` and the catalogued cube ids."""
     cubes, cube_ids = open_explorer(base)
 
     return SliceCollector(cubes, WebLogger()), cube_ids
 
 
 def _basket(ids: list, points: list, sources: tuple = ("pred",), axes: tuple = ("col",), space: str = "physical", cmap: str = "jet") -> list:
-    """Returns the basket entries a map click adds: every run, source and axis at every point.
-
-    Args:
-        ids     : Cube ids of the runs.
-        points  : (row, column) pixel pairs.
-        sources : Cube sources to cut.
-        axes    : Cut axes.
-        space   : Value space of every entry.
-        cmap    : Colormap of every entry.
-
-    Returns:
-        List of basket entry dicts in point, source, axis, run order.
-    """
     return [
         {"id": cube_id, "source": source, "axis": axis, "row": row, "col": col, "space": space, "cmap": cmap}
         for row, col in points
@@ -82,54 +47,32 @@ def _basket(ids: list, points: list, sources: tuple = ("pred",), axes: tuple = (
 
 
 class FakeSmtp:
-    """Stand-in for smtplib.SMTP_SSL recording the login and every submitted message.
-
-    Attributes:
-        sent   : Messages submitted across every instance, as bytes.
-        logins : (user, password) pairs used across every instance.
-        fail   : Whether sending raises an SMTP error instead of recording.
-    """
 
     sent   = []
     logins = []
     fail   = False
 
     def __init__(self, host: str, port: int, timeout: float) -> None:
-        """Records nothing on connection; the host, port and timeout are accepted as given."""
         self.host    = host
         self.port    = port
         self.timeout = timeout
 
     def __enter__(self):
-        """Returns the connection itself."""
         return self
 
     def __exit__(self, *exc) -> None:
-        """Closes nothing."""
+        pass
 
     def login(self, user: str, password: str) -> None:
-        """Records the login pair."""
         FakeSmtp.logins.append((user, password))
 
     def send_message(self, message) -> None:
-        """Records the message, or raises when the class is set to fail."""
         if FakeSmtp.fail:
             raise report_mailer.smtplib.SMTPServerDisconnected("connection dropped")
         FakeSmtp.sent.append(message.as_bytes())
 
 
 def _mailer(base: Path, monkeypatch, password: str = "app-password", fail: bool = False) -> tuple[SliceCollectionMailer, list]:
-    """Returns a basket mailer over ``base`` whose SMTP connection is a FakeSmtp, and the cube ids.
-
-    Args:
-        base        : Root the runs were written under.
-        monkeypatch : Pytest fixture used to swap the SMTP class and the password variable.
-        password    : Value of the password variable; empty unsets it.
-        fail        : Whether the fake SMTP server refuses to send.
-
-    Returns:
-        The mailer and the catalogued cube ids.
-    """
     FakeSmtp.sent, FakeSmtp.logins, FakeSmtp.fail = [], [], fail
     monkeypatch.setattr(report_mailer.smtplib, "SMTP_SSL", FakeSmtp)
 
@@ -144,7 +87,6 @@ def _mailer(base: Path, monkeypatch, password: str = "app-password", fail: bool 
 
 
 def test_info_reports_dims_sources_and_intensity(tmp_path):
-    """Cube info reports row and column extents, the available sources and a non-degenerate intensity range each."""
     _make_run(tmp_path, "group", "run_a")
     collector, ids = _collector(tmp_path)
 
@@ -157,7 +99,6 @@ def test_info_reports_dims_sources_and_intensity(tmp_path):
 
 
 def test_info_rejects_ids_outside_catalogued_roots(tmp_path):
-    """A stamp outside every catalogued runs root is refused."""
     _make_run(tmp_path / "runs", "group", "run_a")
     foreign = _make_run(tmp_path / "foreign", "group", "run_b")
 
@@ -166,7 +107,6 @@ def test_info_rejects_ids_outside_catalogued_roots(tmp_path):
 
 
 def test_slice_png_serves_with_and_without_clim_override(tmp_path):
-    """A slice renders as a PNG with its own or an overriding colour scale, and a missing source or unknown axis renders nothing."""
     _make_run(tmp_path, "group", "run_a")
     collector, ids = _collector(tmp_path)
 
@@ -180,7 +120,6 @@ def test_slice_png_serves_with_and_without_clim_override(tmp_path):
 
 
 def test_primary_map_matches_the_cube_grid_and_is_cached(tmp_path):
-    """The primary map is one image pixel per cube pixel, rows down and columns across, and repeat requests reuse the rendered bytes."""
     make_cube_run(tmp_path)
     collector, ids = _collector(tmp_path)
 
@@ -191,7 +130,6 @@ def test_primary_map_matches_the_cube_grid_and_is_cached(tmp_path):
 
 
 def test_primary_map_without_a_dataset_run_explains_itself(tmp_path, capsys):
-    """A stamp whose run names no dataset run serves no map and logs why."""
     _make_run(tmp_path, "group", "run_a")
     collector, ids = _collector(tmp_path)
     capsys.readouterr()
@@ -201,7 +139,6 @@ def test_primary_map_without_a_dataset_run_explains_itself(tmp_path, capsys):
 
 
 def test_a_refused_slice_explains_itself_in_the_log(tmp_path, capsys):
-    """An unknown cube id and a missing source each log the reason the slice was refused."""
     _make_run(tmp_path / "runs", "group", "run_a", sources=("pred",))
     foreign = _make_run(tmp_path / "foreign", "group", "run_b")
 
@@ -217,7 +154,6 @@ def test_a_refused_slice_explains_itself_in_the_log(tmp_path, capsys):
 
 
 def test_collect_refuses_an_existing_collection_name(tmp_path):
-    """A second collection under a taken name is refused instead of overwriting the first."""
     _make_run(tmp_path, "group", "run_a", seed=0)
     collector, ids = _collector(tmp_path)
 
@@ -229,7 +165,6 @@ def test_collect_refuses_an_existing_collection_name(tmp_path):
 
 
 def test_collect_writes_figures_grouped_by_cut(tmp_path):
-    """Figures land under point/axis/source/space/colormap folders, one file per run, and the manifest mirrors them."""
     _make_run(tmp_path, "group", "run_a", seed=0)
     _make_run(tmp_path, "group", "run_b", seed=1)
     collector, ids = _collector(tmp_path)
@@ -258,7 +193,6 @@ def test_collect_writes_figures_grouped_by_cut(tmp_path):
 
 
 def test_collect_keeps_each_items_own_cut_space_and_colormap(tmp_path):
-    """Basket entries of one run at different points, spaces and colormaps each land in their own folder, and repeated entries render once."""
     _make_run(tmp_path, "group", "run_a")
     collector, ids = _collector(tmp_path)
 
@@ -269,7 +203,6 @@ def test_collect_keeps_each_items_own_cut_space_and_colormap(tmp_path):
 
 
 def test_collect_shared_clim_spans_all_runs(tmp_path):
-    """Shared colour limits span the intensity ranges of every basket run, and are absent when per-run scaling is asked for."""
     _make_run(tmp_path, "group", "run_a", seed=0)
     _make_run(tmp_path, "group", "run_b", seed=1)
     collector, ids = _collector(tmp_path)
@@ -286,7 +219,6 @@ def test_collect_shared_clim_spans_all_runs(tmp_path):
 
 
 def test_collect_disambiguates_duplicate_run_names(tmp_path):
-    """Runs sharing a name in different groups are labelled with their group."""
     _make_run(tmp_path, "group_a", "run", seed=0)
     _make_run(tmp_path, "group_b", "run", seed=1)
     collector, ids = _collector(tmp_path)
@@ -299,7 +231,6 @@ def test_collect_disambiguates_duplicate_run_names(tmp_path):
 
 
 def test_collect_disambiguates_stamps_of_the_same_run(tmp_path):
-    """Two stamps of one run are labelled with their stamp names."""
     _make_run(tmp_path, "group", "run", stamp="stamp_1", seed=0)
     _make_run(tmp_path, "group", "run", stamp="stamp_2", seed=1)
     collector, ids = _collector(tmp_path)
@@ -312,7 +243,6 @@ def test_collect_disambiguates_stamps_of_the_same_run(tmp_path):
 
 
 def test_collect_skips_runs_missing_a_source(tmp_path):
-    """Entries whose run lacks the source are reported as missing, and a basket nothing can render is refused."""
     _make_run(tmp_path, "group", "run_a", sources=("pred", "gt"), seed=0)
     _make_run(tmp_path, "group", "run_b", sources=("pred",), seed=1)
     collector, ids = _collector(tmp_path)
@@ -327,7 +257,6 @@ def test_collect_skips_runs_missing_a_source(tmp_path):
 
 
 def test_collect_rejects_bad_inputs(tmp_path):
-    """An empty basket, entries lacking a key, unknown sources, axes, spaces or colormaps, negative indices and unknown runs are all refused."""
     _make_run(tmp_path, "group", "run_a")
     collector, ids = _collector(tmp_path)
 
@@ -344,7 +273,6 @@ def test_collect_rejects_bad_inputs(tmp_path):
 
 
 def test_collect_restores_figure_style(tmp_path):
-    """Rendering a collection in the paper style leaves the process-wide style as it was."""
     _make_run(tmp_path, "group", "run_a")
     collector, ids = _collector(tmp_path)
 
@@ -355,7 +283,6 @@ def test_collect_restores_figure_style(tmp_path):
 
 
 def test_mail_settings_report_the_default_recipient_and_password_state(tmp_path, monkeypatch):
-    """The form defaults carry the configured recipient and whether the password variable is set."""
     _make_run(tmp_path, "group", "run_a")
 
     mailer, _ = _mailer(tmp_path, monkeypatch)
@@ -368,7 +295,6 @@ def test_mail_settings_report_the_default_recipient_and_password_state(tmp_path,
 
 
 def test_mail_sends_the_rendered_collection_as_one_zip(tmp_path, monkeypatch):
-    """Mailing renders the basket to disk, zips it under the collection name and sends one message to every recipient."""
     _make_run(tmp_path, "group", "run_a", seed=0)
     _make_run(tmp_path, "group", "run_b", seed=1)
     mailer, ids = _mailer(tmp_path, monkeypatch)
@@ -396,7 +322,6 @@ def test_mail_sends_the_rendered_collection_as_one_zip(tmp_path, monkeypatch):
 
 
 def test_mail_refuses_before_rendering_without_recipient_or_password(tmp_path, monkeypatch):
-    """A malformed recipient or an unset password variable is refused before any figure is written."""
     _make_run(tmp_path, "group", "run_a")
 
     mailer, ids = _mailer(tmp_path, monkeypatch)
@@ -411,7 +336,6 @@ def test_mail_refuses_before_rendering_without_recipient_or_password(tmp_path, m
 
 
 def test_mail_failure_after_rendering_keeps_the_collection(tmp_path, monkeypatch):
-    """When the SMTP server drops the message, the error names the saved folder, which stays on disk."""
     _make_run(tmp_path, "group", "run_a")
     mailer, ids = _mailer(tmp_path, monkeypatch, fail=True)
 
@@ -422,7 +346,6 @@ def test_mail_failure_after_rendering_keeps_the_collection(tmp_path, monkeypatch
 
 
 def test_mail_reuses_a_basket_saved_under_the_same_name(tmp_path, monkeypatch):
-    """Mailing a basket already saved under its name sends that folder without rendering it again, while another basket under the name is refused."""
     _make_run(tmp_path, "group", "run_a")
     mailer, ids = _mailer(tmp_path, monkeypatch)
 

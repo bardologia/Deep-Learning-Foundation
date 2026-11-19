@@ -1,9 +1,3 @@
-"""Tests for the benchmark worker processes.
-
-Covers run naming, the size-match and max-batch artefacts a worker reads from the
-run directory, the max-batch probe wrapper, and the entry configs a training
-worker hands to the underlying pipelines.
-"""
 
 from __future__ import annotations
 
@@ -25,7 +19,6 @@ SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
 
 @pytest.fixture
 def config(tmp_path):
-    """Returns a BenchmarkConfig logging into the temporary directory."""
     config                    = BenchmarkConfig()
     config.paths.log_base_dir = tmp_path
     return config
@@ -33,7 +26,6 @@ def config(tmp_path):
 
 @pytest.mark.dataset
 def test_run_name_encodes_model_head_matching_gaussians_aug_presence_component_and_seed(config, test_data_dir, params_dir):
-    """Verifies the run name carries the model, head, matching, Gaussian count, augmentation and presence stem, plus the loss component and seed when given."""
     from pipelines.shared.training.run_naming import RunNaming
 
     config.paths.dataset_path    = test_data_dir
@@ -50,14 +42,12 @@ def test_run_name_encodes_model_head_matching_gaussians_aug_presence_component_a
 
 
 def test_size_overrides_empty_without_file(config):
-    """Verifies no width overrides are applied when size_match.json is absent."""
     worker = BenchmarkWorker(config, "tag")
 
     assert worker._size_overrides("unet") == {}
 
 
 def test_size_overrides_reads_overrides(config):
-    """Verifies the stored width overrides for the model are returned."""
     worker = BenchmarkWorker(config, "tag")
     path   = worker.run_dir / "pipeline" / "size_match.json"
 
@@ -67,7 +57,6 @@ def test_size_overrides_reads_overrides(config):
 
 
 def test_backbone_training_rejects_a_stale_size_override(config):
-    """Verifies a stored override naming a field the model config lost is rejected."""
     from pipelines.benchmark.workers import TrainingWorker
 
     worker = TrainingWorker(config, "tag")
@@ -79,7 +68,6 @@ def test_backbone_training_rejects_a_stale_size_override(config):
 
 
 def test_size_overrides_missing_model_exits(config):
-    """Verifies a size-match file without an entry for the model exits."""
     worker = BenchmarkWorker(config, "tag")
     path   = worker.run_dir / "pipeline" / "size_match.json"
 
@@ -90,14 +78,12 @@ def test_size_overrides_missing_model_exits(config):
 
 
 def test_max_batch_size_none_without_file(config):
-    """Verifies no batch size is reported when max_batch.json is absent."""
     worker = BenchmarkWorker(config, "tag")
 
     assert worker._max_batch_size("unet") is None
 
 
 def test_max_batch_size_returns_measured_value(config):
-    """Verifies the measured batch size of a passing probe is returned."""
     worker = BenchmarkWorker(config, "tag")
     path   = worker.run_dir / "pipeline" / "max_batch.json"
 
@@ -107,7 +93,6 @@ def test_max_batch_size_returns_measured_value(config):
 
 
 def test_max_batch_size_raises_when_model_missing(config):
-    """Verifies a max-batch file without an entry for the model exits."""
     worker = BenchmarkWorker(config, "tag")
     path   = worker.run_dir / "pipeline" / "max_batch.json"
 
@@ -118,7 +103,6 @@ def test_max_batch_size_raises_when_model_missing(config):
 
 
 def test_max_batch_size_raises_when_not_passed(config):
-    """Verifies a failed max-batch probe result exits instead of being used."""
     worker = BenchmarkWorker(config, "tag")
     path   = worker.run_dir / "pipeline" / "max_batch.json"
 
@@ -129,14 +113,12 @@ def test_max_batch_size_raises_when_not_passed(config):
 
 
 def test_lr_multiplier_none_without_file(config):
-    """Verifies no LR multiplier is reported when max_batch.json is absent."""
     worker = BenchmarkWorker(config, "tag")
 
     assert worker._lr_multiplier("unet") is None
 
 
 def test_lr_multiplier_returns_probed_value(config):
-    """Verifies the multiplier the range test recorded for the model is returned."""
     worker = BenchmarkWorker(config, "tag")
     path   = worker.run_dir / "pipeline" / "max_batch.json"
 
@@ -146,7 +128,6 @@ def test_lr_multiplier_returns_probed_value(config):
 
 
 def test_lr_multiplier_none_when_the_test_selected_nothing(config):
-    """Verifies a probe record without a stable multiplier yields None."""
     worker = BenchmarkWorker(config, "tag")
     path   = worker.run_dir / "pipeline" / "max_batch.json"
 
@@ -156,7 +137,6 @@ def test_lr_multiplier_none_when_the_test_selected_nothing(config):
 
 
 def test_lr_multiplier_raises_when_model_missing(config):
-    """Verifies a max-batch file without an entry for the model exits."""
     worker = BenchmarkWorker(config, "tag")
     path   = worker.run_dir / "pipeline" / "max_batch.json"
 
@@ -167,20 +147,16 @@ def test_lr_multiplier_raises_when_model_missing(config):
 
 
 def test_max_batch_worker_builds_the_entry_probe_for_jepa(config, monkeypatch):
-    """Verifies a JEPA sweep dispatches to the entry probe wrapping the JEPA pipeline builder."""
     import pipelines.jepa.training.pipeline as jepa_pipeline_module
     from pipelines.benchmark.batch_probe import EntryMaxBatchProbe
 
     config.training_type = "jepa"
 
     class _FakePipeline:
-        """JEPA pipeline stub exposing only the preflight trainer builder."""
         def __init__(self, entry) -> None:
-            """Stores the entry config."""
             self.entry = entry
 
         def build_pretrain_trainer(self, work_dir, logger):
-            """Never called in this test."""
             raise AssertionError("the dispatch test must not build the probe trainer")
 
     monkeypatch.setattr(jepa_pipeline_module, "TrainingPipeline", _FakePipeline)
@@ -193,20 +169,16 @@ def test_max_batch_worker_builds_the_entry_probe_for_jepa(config, monkeypatch):
 
 
 def test_max_batch_worker_builds_the_entry_probe_for_profile_autoencoder(config, monkeypatch):
-    """Verifies a profile-AE sweep dispatches to the entry probe wrapping the AE pipeline builder."""
     import pipelines.profile_autoencoder.training.pipeline as pae_pipeline_module
     from pipelines.benchmark.batch_probe import EntryMaxBatchProbe
 
     config.training_type = "profile_autoencoder"
 
     class _FakePipeline:
-        """Profile-AE pipeline stub exposing only the preflight trainer builder."""
         def __init__(self, entry) -> None:
-            """Stores the entry config."""
             self.entry = entry
 
         def build_pretrain_trainer(self, work_dir, logger):
-            """Never called in this test."""
             raise AssertionError("the dispatch test must not build the probe trainer")
 
     monkeypatch.setattr(pae_pipeline_module, "TrainingPipeline", _FakePipeline)
@@ -219,7 +191,6 @@ def test_max_batch_worker_builds_the_entry_probe_for_profile_autoencoder(config,
 
 
 def test_jepa_training_applies_the_probed_batch_and_lr_multiplier(config, monkeypatch):
-    """Verifies a JEPA unit trains under the probed batch size and folded LR multiplier."""
     from pipelines.benchmark.workers import TrainingWorker
     import pipelines.jepa.training.pipeline as jepa_pipeline_module
 
@@ -232,13 +203,10 @@ def test_jepa_training_applies_the_probed_batch_and_lr_multiplier(config, monkey
     captured = {}
 
     class _FakePipeline:
-        """JEPA training pipeline stub capturing its entry config."""
         def __init__(self, entry) -> None:
-            """Captures the entry config."""
             captured["entry"] = entry
 
         def run(self):
-            """Returns nothing, standing in for a training run."""
             return None
 
     monkeypatch.setattr(jepa_pipeline_module, "TrainingPipeline", _FakePipeline)
@@ -250,7 +218,6 @@ def test_jepa_training_applies_the_probed_batch_and_lr_multiplier(config, monkey
 
 
 def test_profile_ae_training_applies_the_probed_batch_and_lr_multiplier(config, monkeypatch):
-    """Verifies a profile-AE unit trains under the probed batch size and folded LR multiplier."""
     from pipelines.benchmark.workers import TrainingWorker
     import pipelines.profile_autoencoder.training.pipeline as pae_pipeline_module
 
@@ -263,13 +230,10 @@ def test_profile_ae_training_applies_the_probed_batch_and_lr_multiplier(config, 
     captured = {}
 
     class _FakePipeline:
-        """Profile-AE training pipeline stub capturing its entry config."""
         def __init__(self, entry) -> None:
-            """Captures the entry config."""
             captured["entry"] = entry
 
         def run(self):
-            """Returns nothing, standing in for a training run."""
             return None
 
     monkeypatch.setattr(pae_pipeline_module, "TrainingPipeline", _FakePipeline)
@@ -281,7 +245,6 @@ def test_profile_ae_training_applies_the_probed_batch_and_lr_multiplier(config, 
 
 
 def test_probe_config_is_disabled(config):
-    """Verifies the worker's probe config is off by default and set to exit after probing."""
     probe = BenchmarkWorker(config, "tag").config.probe
 
     assert probe.enabled    is False
@@ -289,7 +252,6 @@ def test_probe_config_is_disabled(config):
 
 
 def test_probe_config_is_the_configured_one(config):
-    """Verifies an enabled probe config reaches the worker unchanged."""
     config.probe.enabled   = True
     config.probe.n_batches = 7
 
@@ -300,20 +262,16 @@ def test_probe_config_is_the_configured_one(config):
 
 
 def test_max_batch_worker_hands_the_probe_its_model_and_work_dir(config, monkeypatch):
-    """Verifies the probe receives the model name and its per-model work directory, and the result is written to disk."""
     worker = MaxBatchWorker(config, "tag")
 
     calls = {}
 
     class FakeProbe:
-        """Stand-in probe that records its construction arguments and reports success."""
         def __init__(self, config, model_name, overrides, work_dir):
-            """Records the model name, overrides and work directory handed to the probe."""
             calls["model_name"] = model_name
             calls["overrides"]  = overrides
             calls["work_dir"]   = work_dir
         def run(self):
-            """Returns a passing max-batch result."""
             return {"model": "unet", "status": "PASS", "batch_size": 64, "peak_gb": 12.0}
 
     monkeypatch.setattr("pipelines.benchmark.batch_probe.MaxBatchProbe", FakeProbe)
@@ -329,16 +287,12 @@ def test_max_batch_worker_hands_the_probe_its_model_and_work_dir(config, monkeyp
 
 
 def test_max_batch_worker_raises_on_probe_fail(config, monkeypatch):
-    """Verifies a failing probe makes the worker exit."""
     worker = MaxBatchWorker(config, "tag")
 
     class FakeProbe:
-        """Stand-in probe that always reports failure."""
         def __init__(self, *args, **kwargs):
-            """Accepts and discards the probe arguments."""
             pass
         def run(self):
-            """Returns a failing max-batch result."""
             return {"model": "unet", "status": "FAIL", "batch_size": None, "peak_gb": None}
 
     monkeypatch.setattr("pipelines.benchmark.batch_probe.MaxBatchProbe", FakeProbe)
@@ -349,7 +303,6 @@ def test_max_batch_worker_raises_on_probe_fail(config, monkeypatch):
 
 @pytest.mark.dataset
 def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data_dir, params_dir, monkeypatch):
-    """Verifies the trainer learning-rate scale and dataset batch size follow the measured max batch relative to the reference batch of 256."""
     from pipelines.benchmark.workers import TrainingWorker
 
     config.paths.dataset_path    = test_data_dir
@@ -364,12 +317,9 @@ def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data
     captured = {}
 
     class FakePipeline:
-        """Stand-in training pipeline that captures its constructor keyword arguments."""
         def __init__(self, **kwargs):
-            """Captures the configs handed to the pipeline."""
             captured.update(kwargs)
         def run(self, probe_config=None):
-            """Returns nothing, standing in for a training run."""
             return None
 
     monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)
@@ -382,7 +332,6 @@ def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data
 
 @pytest.mark.dataset
 def test_training_worker_applies_the_probed_lr_multiplier(config, test_data_dir, params_dir, monkeypatch):
-    """Verifies the probed multiplier folds into the trainer LR scale on top of the batch rule."""
     from pipelines.benchmark.workers import TrainingWorker
 
     config.paths.dataset_path     = test_data_dir
@@ -398,12 +347,9 @@ def test_training_worker_applies_the_probed_lr_multiplier(config, test_data_dir,
     captured = {}
 
     class FakePipeline:
-        """Stand-in training pipeline that captures its constructor keyword arguments."""
         def __init__(self, **kwargs):
-            """Captures the configs handed to the pipeline."""
             captured.update(kwargs)
         def run(self, probe_config=None):
-            """Returns nothing, standing in for a training run."""
             return None
 
     monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)
@@ -415,7 +361,6 @@ def test_training_worker_applies_the_probed_lr_multiplier(config, test_data_dir,
 
 @pytest.mark.dataset
 def test_training_worker_ignores_the_multiplier_when_the_test_is_disabled(config, test_data_dir, params_dir, monkeypatch):
-    """Verifies a recorded multiplier is not applied while find_lr is off."""
     from pipelines.benchmark.workers import TrainingWorker
 
     config.paths.dataset_path     = test_data_dir
@@ -430,12 +375,9 @@ def test_training_worker_ignores_the_multiplier_when_the_test_is_disabled(config
     captured = {}
 
     class FakePipeline:
-        """Stand-in training pipeline that captures its constructor keyword arguments."""
         def __init__(self, **kwargs):
-            """Captures the configs handed to the pipeline."""
             captured.update(kwargs)
         def run(self, probe_config=None):
-            """Returns nothing, standing in for a training run."""
             return None
 
     monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)
@@ -446,7 +388,6 @@ def test_training_worker_ignores_the_multiplier_when_the_test_is_disabled(config
 
 
 def test_training_entry_configs_carry_the_overfit_check(config):
-    """Verifies the autoencoder and JEPA entry configs share the worker's overfit-check config object."""
     from pipelines.benchmark.workers import TrainingWorker
 
     config.overfit_check.enabled = True
@@ -461,7 +402,6 @@ def test_training_entry_configs_carry_the_overfit_check(config):
 
 
 def test_jepa_entry_config_carries_the_autoencoder_finetune_rates(config):
-    """Verifies the JEPA entry config carries the profile and image autoencoder finetune learning rates and weight decays."""
     from pipelines.benchmark.workers import TrainingWorker
 
     config.jepa.profile_autoencoder_mode = "finetune"
@@ -480,7 +420,6 @@ def test_jepa_entry_config_carries_the_autoencoder_finetune_rates(config):
 
 
 def test_jepa_entry_config_forwards_the_loss_scale_probe(config):
-    """Verifies the sweep's loss-scale probe settings reach the JEPA entry config."""
     from pipelines.benchmark.workers import TrainingWorker
 
     config.probe.enabled = True
@@ -491,7 +430,6 @@ def test_jepa_entry_config_forwards_the_loss_scale_probe(config):
 
 
 def test_training_worker_rejects_unsupported_training_type(config):
-    """Verifies an unrolled training type is rejected by the training worker."""
     from pipelines.benchmark.workers import TrainingWorker
 
     config.training_type = "nonexistent_type"
@@ -503,7 +441,6 @@ def test_training_worker_rejects_unsupported_training_type(config):
 
 @pytest.mark.dataset
 def test_training_worker_leaves_a_finished_unit_alone(config, test_data_dir, params_dir, monkeypatch):
-    """Verifies a benchmark unit that already completed is not trained again, which a repeated dispatch relies on."""
     from pipelines.benchmark.workers import TrainingWorker
     from tools.runtime.completion    import CompletionMarker
 
@@ -525,7 +462,6 @@ def test_training_worker_leaves_a_finished_unit_alone(config, test_data_dir, par
 
 @pytest.mark.dataset
 def test_training_worker_writes_the_unit_manifest_into_the_handed_over_directory(config, test_data_dir, params_dir, monkeypatch):
-    """Verifies the training worker records the unit identity in the directory the scheduler handed over before training."""
     from pipelines.benchmark.stages                   import BenchmarkUnitManifest
     from pipelines.benchmark.workers                  import TrainingWorker
     from pipelines.shared.orchestration.unit_manifest import UnitManifest
@@ -547,7 +483,6 @@ def test_training_worker_writes_the_unit_manifest_into_the_handed_over_directory
 
 
 def test_training_worker_refuses_a_finished_unit_when_resume_is_off(config, monkeypatch):
-    """With resume off a unit that already completed is neither skipped as trained nor overwritten in place: the worker exits naming the directory."""
     from pipelines.benchmark.workers import TrainingWorker
     from tools.runtime.completion    import CompletionMarker
 
@@ -568,7 +503,6 @@ def test_training_worker_refuses_a_finished_unit_when_resume_is_off(config, monk
 
 
 def test_training_worker_trains_an_unfinished_unit_when_resume_is_off(config, monkeypatch):
-    """With resume off a unit without a completion marker is trained as usual."""
     from pipelines.benchmark.workers import TrainingWorker
 
     config.resume = False
@@ -583,21 +517,17 @@ def test_training_worker_trains_an_unfinished_unit_when_resume_is_off(config, mo
 
 
 def _stub_inference(monkeypatch) -> list:
-    """Replaces the backbone inference pipeline and its component resolver with stubs, returning the list of scored run directories."""
     import pipelines.backbone.inference.pipeline           as pipeline_module
     import pipelines.shared.inference.inference_components as components_module
 
     ran = []
 
     class FakePipeline:
-        """Inference pipeline stub recording the run directory it scores."""
 
         def __init__(self, inference_config, components=None):
-            """Stores the run directory of the inference configuration."""
             self.run_directory = inference_config.run_directory
 
         def run(self):
-            """Records the run directory as scored."""
             ran.append(self.run_directory)
 
     monkeypatch.setattr(pipeline_module, "InferencePipeline", FakePipeline, raising=True)
@@ -607,7 +537,6 @@ def _stub_inference(monkeypatch) -> list:
 
 
 def test_inference_worker_reuses_a_completed_inference_on_resume(config, monkeypatch):
-    """A resumed unit that already holds a completed stamp for the scored split is not inferred again, its unfinished stamps are deleted and the reuse is logged in the unit."""
     from pipelines.benchmark.workers import InferenceWorker
     from tools.runtime.completion    import CompletionMarker
 
@@ -631,7 +560,6 @@ def test_inference_worker_reuses_a_completed_inference_on_resume(config, monkeyp
 
 
 def test_inference_worker_scores_a_unit_without_a_completed_inference_for_the_split(config, monkeypatch):
-    """A stamp completed on another split does not count, so the unit is scored on the configured one."""
     from pipelines.benchmark.workers import InferenceWorker
     from tools.runtime.completion    import CompletionMarker
 
@@ -648,7 +576,6 @@ def test_inference_worker_scores_a_unit_without_a_completed_inference_for_the_sp
 
 
 def test_inference_worker_rescores_a_completed_unit_when_resume_is_off(config, monkeypatch):
-    """With resume off the worker scores the unit again even when a completed stamp for the split exists."""
     from pipelines.benchmark.workers import InferenceWorker
     from tools.runtime.completion    import CompletionMarker
 

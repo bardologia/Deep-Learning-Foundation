@@ -1,9 +1,3 @@
-"""Tests for the training launchers and the backbone trial scheduler.
-
-Covers seed-sweep launching and GPU fan-out, the trials planners for each mode,
-resume from an existing sweep folder, and the batched inference pass that runs
-after all trials have trained.
-"""
 
 from __future__ import annotations
 
@@ -19,11 +13,9 @@ from tools.runtime.completion             import CompletionMarker
 
 
 def test_seed_sweep_launcher_runs_runner_over_resolved_config(monkeypatch):
-    """Verifies a single-seed launch resolves the config through the CLI and runs the seed sweep runner over it."""
     captured = {}
 
     class Resolved:
-        """Config stand-in resolved to a single seed."""
         seed        = 4
         seeds       = [4]
         ddp         = False
@@ -32,23 +24,17 @@ def test_seed_sweep_launcher_runs_runner_over_resolved_config(monkeypatch):
     resolved = Resolved()
 
     class FakeCli:
-        """Stand-in config CLI recording the description and argv it receives."""
         def __init__(self, config, description):
-            """Records the launcher description and exposes empty overrides."""
             captured["description"] = description
             self.overrides          = {}
         def apply(self, argv):
-            """Records argv and returns the resolved config."""
             captured["argv"] = argv
             return resolved
 
     class FakeSweep:
-        """Stand-in seed sweep runner recording its config and runner class."""
         def __init__(self, config, runner_class):
-            """Records the config and runner class handed to the sweep."""
             captured["sweep"] = (config, runner_class)
         def run(self):
-            """Marks the sweep as executed."""
             captured["ran"] = True
 
     runner = object()
@@ -64,11 +50,9 @@ def test_seed_sweep_launcher_runs_runner_over_resolved_config(monkeypatch):
 
 
 def test_seed_sweep_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
-    """Verifies a multi-seed launch goes through the GPU fan-out scheduler with the CLI overrides, entry script and base label."""
     captured = {}
 
     class Resolved:
-        """Config stand-in resolved to three seeds and a base field."""
         seed        = 0
         seeds       = [0, 1, 2]
         ddp         = False
@@ -78,23 +62,17 @@ def test_seed_sweep_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
     resolved = Resolved()
 
     class FakeCli:
-        """Stand-in config CLI exposing one training override."""
         def __init__(self, config, description):
-            """Exposes a single epochs override."""
             self.overrides = {"training.epochs": "3"}
         def apply(self, argv):
-            """Returns the resolved config."""
             return resolved
 
     class FakeScheduler:
-        """Stand-in fan-out scheduler recording its factory arguments."""
         @classmethod
         def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False, infer_after=False):
-            """Records the config, overrides, entry script, runner factory and base label."""
             captured["for_runner"] = (config, cli_overrides, entry_script, runner_factory, base_label)
             return cls()
         def run(self):
-            """Marks the fan-out as executed."""
             captured["ran"] = True
 
     runner = object()
@@ -109,34 +87,24 @@ def test_seed_sweep_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
 
 
 def test_backbone_launcher_trial_runs_single_runner(monkeypatch):
-    """Verifies the --trial flag runs one training runner in-process instead of the scheduler."""
     ran = {}
 
     class FakeSingleRunner:
-        """Stand-in single training runner recording its config and execution."""
         def __init__(self, cfg):
-            """Records the config handed to the runner."""
             ran["single"] = cfg
         def run(self):
-            """Marks the single run as executed."""
             ran["ran"] = True
 
     class FakeScheduler:
-        """Stand-in trial scheduler that must not be constructed in trial mode."""
         def __init__(self, **kwargs):
-            """Records that the scheduler was constructed."""
             ran["scheduler"] = True
         def run(self):
-            """Marks the scheduler as executed."""
             ran["scheduler_ran"] = True
 
     class FakeCli:
-        """Stand-in config CLI returning a single-seed backbone entry config."""
         def __init__(self, config, description):
-            """Exposes empty CLI overrides."""
             self.overrides = {}
         def apply(self, argv):
-            """Returns a backbone entry config with a single seed."""
             config       = BackboneEntryConfig()
             config.seeds = [0]
             return config
@@ -152,38 +120,28 @@ def test_backbone_launcher_trial_runs_single_runner(monkeypatch):
 
 
 def test_backbone_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
-    """Verifies a default backbone launch fans seeds across the GPU pool with the single runner as factory."""
     ran = {}
 
     class FakeSingleRunner:
-        """Stand-in single training runner used as the fan-out runner factory."""
         def __init__(self, cfg):
-            """Records that a single runner was constructed."""
             ran["single"] = True
         def run(self):
-            """Marks the single run as executed."""
             ran["single_ran"] = True
 
     class FakeFanout:
-        """Stand-in fan-out scheduler recording the entry script and runner factory."""
         @classmethod
         def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False, infer_after=False):
-            """Records the entry script, runner factory and both inference flags."""
             ran["for_runner"] = (entry_script, runner_factory)
             ran["infer_at_end"] = infer_at_end
             ran["infer_after"]  = infer_after
             return cls()
         def run(self):
-            """Marks the fan-out as executed."""
             ran["fanout_ran"] = True
 
     class FakeCli:
-        """Stand-in config CLI returning a default backbone entry config."""
         def __init__(self, config, description):
-            """Exposes empty CLI overrides."""
             self.overrides = {}
         def apply(self, argv):
-            """Returns a default backbone entry config."""
             return BackboneEntryConfig()
 
     monkeypatch.setattr(backbone_pipeline, "SingleTrainRunner", FakeSingleRunner)
@@ -199,29 +157,21 @@ def test_backbone_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
 
 
 def test_backbone_launcher_fans_out_when_trials_enabled(monkeypatch):
-    """Verifies an enabled trials mode dispatches through the trial scheduler carrying the entry script."""
     ran = {}
 
     class FakeSingleRunner:
-        """Stand-in single training runner that must not run under a trials sweep."""
         def __init__(self, cfg):
-            """Records that a single runner was constructed."""
             ran["single"] = True
         def run(self):
-            """Marks the single run as executed."""
             ran["single_ran"] = True
 
     class FakeScheduler:
-        """Stand-in trial scheduler recording the entry script it was built with."""
         def __init__(self, **kwargs):
-            """Records the entry script keyword argument."""
             ran["entry_script"] = kwargs["entry_script"]
         def run(self):
-            """Marks the scheduler as executed."""
             ran["scheduler_ran"] = True
 
     class FakeConfig:
-        """Entry config stand-in with trials enabled and inference held back."""
         trials_enabled = True
         curriculum     = default_curriculum()
         infer_after    = False
@@ -229,12 +179,9 @@ def test_backbone_launcher_fans_out_when_trials_enabled(monkeypatch):
         resume_from    = ""
 
     class FakeCli:
-        """Stand-in config CLI returning the trials-enabled config."""
         def __init__(self, config, description):
-            """Exposes empty CLI overrides."""
             self.overrides = {}
         def apply(self, argv):
-            """Returns the trials-enabled config stand-in."""
             return FakeConfig()
 
     monkeypatch.setattr(backbone_pipeline, "SingleTrainRunner", FakeSingleRunner)
@@ -250,22 +197,17 @@ def test_backbone_launcher_fans_out_when_trials_enabled(monkeypatch):
 
 
 def _planned_units(monkeypatch, names):
-    """Replaces the scheduler planner with one planning the given unit names without overrides."""
     class _Planner:
-        """Planner stand-in yielding fixed unit names."""
         def plan(self):
-            """Returns one planned unit per configured name with empty overrides."""
             return [(name, {}) for name in names]
 
         def summary(self):
-            """Returns an empty planner summary."""
             return {}
 
     monkeypatch.setattr(backbone_pipeline.TrainScheduler, "planner", lambda self: _Planner())
 
 
 def test_trials_scheduler_resumes_from_a_sweep_folder(tmp_path, monkeypatch):
-    """Verifies resuming from a sweep folder reuses it as the runs root, skips completed units and forwards resume only into unfinished trial argvs."""
     _planned_units(monkeypatch, ["t-a", "t-b", "t-c"])
 
     root = tmp_path / "old_sweep"
@@ -298,7 +240,6 @@ def test_trials_scheduler_resumes_from_a_sweep_folder(tmp_path, monkeypatch):
 
 
 def test_trials_scheduler_trains_plan_missing_units_from_scratch(tmp_path, monkeypatch):
-    """Verifies a unit the resume plan found no run directory for gets an argv without resume flags, so it trains fresh instead of crashing on absent trainer state."""
     _planned_units(monkeypatch, ["t-a", "t-b", "t-c"])
 
     root = tmp_path / "old_sweep"
@@ -320,7 +261,6 @@ def test_trials_scheduler_trains_plan_missing_units_from_scratch(tmp_path, monke
 
 
 def test_seed_fanout_hands_every_resumed_seed_its_directory(tmp_path):
-    """Verifies a resumed seed sweep drops completed seeds and hands the unfinished and missing ones their exact seed directory."""
     root = tmp_path / "prefix_base"
     (root / "seed0").mkdir(parents=True)
     (root / "seed1").mkdir()
@@ -344,7 +284,6 @@ def test_seed_fanout_hands_every_resumed_seed_its_directory(tmp_path):
 
 
 def test_trials_scheduler_resolves_the_root_from_a_single_run(tmp_path, monkeypatch):
-    """Verifies pointing resume_from at one run directory resolves the sweep root and marks that unit unfinished."""
     _planned_units(monkeypatch, ["t-a", "t-b"])
 
     root = tmp_path / "physics"
@@ -362,7 +301,6 @@ def test_trials_scheduler_resolves_the_root_from_a_single_run(tmp_path, monkeypa
 
 
 def test_trials_scheduler_rejects_a_folder_without_planned_runs(tmp_path, monkeypatch):
-    """Verifies a resume folder holding no planned run directory exits."""
     _planned_units(monkeypatch, ["t-a", "t-b"])
 
     (tmp_path / "empty").mkdir()
@@ -377,7 +315,6 @@ def test_trials_scheduler_rejects_a_folder_without_planned_runs(tmp_path, monkey
 
 
 def test_ablation_scheduler_houses_runs_in_ablation_dir(tmp_path):
-    """Verifies the ablation mode places runs and batch logs under the ablation directory."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "ablation"
@@ -394,7 +331,6 @@ def test_ablation_scheduler_houses_runs_in_ablation_dir(tmp_path):
 
 
 def test_patch_scheduler_plans_the_grid_under_the_pixel_budget(tmp_path):
-    """Verifies the patch mode houses runs under patch/ and plans the rectangular grid with budgeted batches."""
     config                      = BackboneEntryConfig()
     config.logdir               = tmp_path
     config.trials_mode          = "patch"
@@ -417,7 +353,6 @@ def test_patch_scheduler_plans_the_grid_under_the_pixel_budget(tmp_path):
 
 
 def test_context_scheduler_plans_the_receptive_field_ladder(tmp_path):
-    """Verifies the context mode plans the pixel-MLP rung and the four constant-depth local CNN rungs with their widths and kernel patterns."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "context"
@@ -437,7 +372,6 @@ def test_context_scheduler_plans_the_receptive_field_ladder(tmp_path):
 
 @pytest.mark.dataset
 def test_reach_scheduler_houses_runs_and_plans_the_size_matched_arms(tmp_path, test_data_dir, params_dir):
-    """Verifies the reach mode plans the size-matched local CNN and unet arms on 32 by 32 patches."""
     config                       = BackboneEntryConfig()
     config.logdir                = tmp_path
     config.trials_mode           = "reach"
@@ -459,7 +393,6 @@ def test_reach_scheduler_houses_runs_and_plans_the_size_matched_arms(tmp_path, t
 
 
 def test_head_scheduler_plans_the_head_matching_grid(tmp_path):
-    """Verifies the head mode plans the head by parameter-matching grid over the backbone the entry names."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "head"
@@ -476,7 +409,6 @@ def test_head_scheduler_plans_the_head_matching_grid(tmp_path):
 
 
 def test_augmentation_scheduler_plans_the_cumulative_ladder(tmp_path):
-    """Verifies the augmentation mode plans the ladder from no augmentation through flips to the noise rungs."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "augmentation"
@@ -496,7 +428,6 @@ def test_augmentation_scheduler_plans_the_cumulative_ladder(tmp_path):
 
 
 def test_scheduler_fans_out_one_gpu_job_per_trial_seed(tmp_path):
-    """Verifies multi-seed trials expand into one job per trial and seed, each argv pinned to its own seed."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "augmentation"
@@ -521,7 +452,6 @@ def test_scheduler_fans_out_one_gpu_job_per_trial_seed(tmp_path):
 
 
 def test_scheduler_keeps_single_seed_trials_unexpanded(tmp_path):
-    """Verifies a single-seed sweep leaves the planned trials untouched and injects no seed overrides."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "augmentation"
@@ -537,7 +467,6 @@ def test_scheduler_keeps_single_seed_trials_unexpanded(tmp_path):
 
 
 def test_scheduler_run_dispatches_per_seed_jobs(tmp_path, monkeypatch):
-    """Verifies the run dispatches every per-seed job and writes the results file."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "augmentation"
@@ -548,7 +477,6 @@ def test_scheduler_run_dispatches_per_seed_jobs(tmp_path, monkeypatch):
     captured = {}
 
     def fake_run_queue(jobs):
-        """Captures the queued jobs and reports each as done."""
         captured["jobs"] = jobs
         return [{"name": job.name, "gpu": 0, "status": "DONE", "returncode": 0, "duration_s": 60.0, "log_file": str(job.log_path)} for job in jobs]
 
@@ -562,7 +490,6 @@ def test_scheduler_run_dispatches_per_seed_jobs(tmp_path, monkeypatch):
 
 
 def test_scheduler_batched_mode_holds_back_trial_inference(tmp_path):
-    """Verifies batched inference mode forwards no overrides and disables inference on the training jobs."""
     config              = BackboneEntryConfig()
     config.logdir       = tmp_path
     config.trials_mode  = "augmentation"
@@ -577,7 +504,6 @@ def test_scheduler_batched_mode_holds_back_trial_inference(tmp_path):
 
 
 def test_scheduler_inference_jobs_resume_into_inference_only(tmp_path):
-    """Verifies batched inference jobs resume the trained unit with inference enabled and log under a dedicated file."""
     config              = BackboneEntryConfig()
     config.logdir       = tmp_path
     config.trials_mode  = "augmentation"
@@ -595,7 +521,6 @@ def test_scheduler_inference_jobs_resume_into_inference_only(tmp_path):
 
 
 def test_scheduler_run_batches_inference_after_all_trials(tmp_path, monkeypatch):
-    """Verifies the run trains every trial first, then runs a second inference-only queue, writing both result files."""
     config              = BackboneEntryConfig()
     config.logdir       = tmp_path
     config.trials_mode  = "augmentation"
@@ -607,7 +532,6 @@ def test_scheduler_run_batches_inference_after_all_trials(tmp_path, monkeypatch)
     queues = []
 
     def fake_run_queue(jobs):
-        """Captures each queue and reports every job as done."""
         queues.append(jobs)
         return [{"name": job.name, "gpu": 0, "status": "DONE", "returncode": 0, "duration_s": 60.0, "log_file": str(job.log_path)} for job in jobs]
 
@@ -625,7 +549,6 @@ def test_scheduler_run_batches_inference_after_all_trials(tmp_path, monkeypatch)
 
 
 def test_scheduler_batched_inference_skips_failed_trainings(tmp_path, monkeypatch):
-    """Verifies a failed training trial exits and is excluded from the batched inference queue."""
     config              = BackboneEntryConfig()
     config.logdir       = tmp_path
     config.trials_mode  = "augmentation"
@@ -637,7 +560,6 @@ def test_scheduler_batched_inference_skips_failed_trainings(tmp_path, monkeypatc
     queues = []
 
     def fake_run_queue(jobs):
-        """Captures each queue and fails one trial on the training pass."""
         queues.append(jobs)
         first_pass = len(queues) == 1
         return [{"name": job.name, "gpu": 0, "status": "FAILED" if first_pass and job.name == "aug-0-none" else "DONE", "returncode": 0, "duration_s": 60.0, "log_file": str(job.log_path)} for job in jobs]
@@ -652,7 +574,6 @@ def test_scheduler_batched_inference_skips_failed_trainings(tmp_path, monkeypatc
 
 
 def test_scheduler_without_batched_mode_runs_a_single_queue(tmp_path, monkeypatch):
-    """Verifies the default mode runs one queue, passes no inference flag and writes no inference results file."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "augmentation"
@@ -663,7 +584,6 @@ def test_scheduler_without_batched_mode_runs_a_single_queue(tmp_path, monkeypatc
     queues = []
 
     def fake_run_queue(jobs):
-        """Captures the queued jobs and reports each as done."""
         queues.append(jobs)
         return [{"name": job.name, "gpu": 0, "status": "DONE", "returncode": 0, "duration_s": 60.0, "log_file": str(job.log_path)} for job in jobs]
 
@@ -677,14 +597,10 @@ def test_scheduler_without_batched_mode_runs_a_single_queue(tmp_path, monkeypatc
 
 
 def test_backbone_launcher_rejects_both_inference_flags(monkeypatch):
-    """Verifies setting both infer_after and infer_at_end exits."""
     class FakeCli:
-        """Stand-in config CLI returning a config with both inference flags set."""
         def __init__(self, config, description):
-            """Exposes empty CLI overrides."""
             self.overrides = {}
         def apply(self, argv):
-            """Returns a config with both inference flags enabled."""
             config              = BackboneEntryConfig()
             config.infer_after  = True
             config.infer_at_end = True
@@ -697,7 +613,6 @@ def test_backbone_launcher_rejects_both_inference_flags(monkeypatch):
 
 
 def test_scheduler_houses_each_mode_in_its_own_dir(tmp_path):
-    """Verifies every trials mode houses its runs, batch logs and job logdir under a directory named after the mode."""
     for mode in ("curriculum", "warmup", "presence", "pair", "secondary", "patch", "input", "context", "head", "augmentation", "ema", "amp", "ablation"):
         config             = BackboneEntryConfig()
         config.logdir      = tmp_path
@@ -713,7 +628,6 @@ def test_scheduler_houses_each_mode_in_its_own_dir(tmp_path):
 
 
 def test_units_expand_trials_by_seeds(tmp_path):
-    """Verifies units expand to one uniquely named entry per trial and seed."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "ablation"
@@ -729,7 +643,6 @@ def test_units_expand_trials_by_seeds(tmp_path):
 
 
 def test_trial_argv_matches_job_command(tmp_path):
-    """Verifies the job command is the trial argv prefixed by the interpreter, entry script and --trial."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "ablation"
@@ -743,7 +656,6 @@ def test_trial_argv_matches_job_command(tmp_path):
 
 
 def test_trial_argv_refuses_to_build_units_that_lose_their_inference(tmp_path):
-    """Verifies building a trial argv under batched inference requires the batched flag, which disables per-trial inference."""
     config              = BackboneEntryConfig()
     config.logdir       = tmp_path
     config.trials_mode  = "ablation"
@@ -760,7 +672,6 @@ def test_trial_argv_refuses_to_build_units_that_lose_their_inference(tmp_path):
 
 
 def test_inference_argv_resumes_the_trained_unit(tmp_path):
-    """Verifies the inference argv resumes the named unit in its mode directory with inference enabled, matching the inference job command."""
     config              = BackboneEntryConfig()
     config.logdir       = tmp_path
     config.trials_mode  = "ablation"
@@ -780,7 +691,6 @@ def test_inference_argv_resumes_the_trained_unit(tmp_path):
 
 
 def test_local_device_pins_are_not_forwarded_to_trial_units(tmp_path):
-    """Verifies GPU pins are stripped from the overrides forwarded into trial argv."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "ablation"
@@ -798,7 +708,6 @@ def test_local_device_pins_are_not_forwarded_to_trial_units(tmp_path):
 
 
 def test_building_a_scheduler_does_not_touch_the_batch_log_dir(tmp_path):
-    """Verifies constructing a scheduler and building argv neither creates nor overwrites the batch log directory."""
     launcher  = backbone_pipeline.BackboneTrainingLauncher(entry_script=Path("/entry/train_backbone.py"))
     scheduler = launcher.build_scheduler(["--logdir", str(tmp_path), "--trials_mode", "ablation"])
 
@@ -816,7 +725,6 @@ def test_building_a_scheduler_does_not_touch_the_batch_log_dir(tmp_path):
 
 
 def test_building_a_scheduler_rejects_contradictory_inference_flags(tmp_path):
-    """Verifies building a scheduler with both inference flags exits."""
     launcher = backbone_pipeline.BackboneTrainingLauncher(entry_script=Path("/entry/train_backbone.py"))
 
     with pytest.raises(SystemExit, match="mutually exclusive"):

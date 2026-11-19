@@ -1,12 +1,3 @@
-"""Guards that every path default in the configuration package is rebasable.
-
-The machine profile retargets defaults by rebasing the checkout-relative roots
-named in ReferenceLayout. A default written as an absolute path, or one placed
-below another root, would silently keep pointing at the checkout on every other
-installation, so this test walks every constructible configuration dataclass and
-refuses absolute defaults and checks that a full profile leaves no reference path
-behind.
-"""
 
 from __future__ import annotations
 
@@ -32,7 +23,6 @@ ALL_ROOTS_PROFILE = {
 
 
 def _constructible_dataclasses() -> list[tuple[str, type]]:
-    """Returns every dataclass under configuration/ that builds with no arguments."""
     found = []
 
     for module_info in pkgutil.walk_packages(configuration.__path__, "configuration."):
@@ -54,17 +44,14 @@ DATACLASSES = _constructible_dataclasses()
 
 
 def _text_leaves(config) -> list[tuple[str, str]]:
-    """Returns (dotted path, text) for every string-valued leaf of a config, Path leaves included."""
     return [(path, value) for path, value in ConfigCli.to_mapping(config).items() if isinstance(value, str)]
 
 
 def _below_a_root(text: str) -> bool:
-    """Returns whether a path text equals a reference root or lies below one."""
     return any(text == root or text.startswith(root + "/") for root in ROOTS)
 
 
 def test_the_default_dataset_constants_come_from_the_reference_layout():
-    """run.py exposes the example dataset and parameter run rather than its own literals."""
     assert DEFAULT_DATASET_DIR == ReferenceLayout.DATASET_DIR
     assert DEFAULT_PARAMS_RUN  == ReferenceLayout.PARAMS_RUN
     assert ReferenceLayout.PARAMETERS == ReferenceLayout.DATASET_DIR / "params" / ReferenceLayout.PARAMS_RUN / "parameters.npy"
@@ -75,7 +62,6 @@ def test_the_default_dataset_constants_come_from_the_reference_layout():
 
 @pytest.mark.parametrize("label, klass", DATACLASSES, ids=[label for label, _ in DATACLASSES])
 def test_no_configuration_default_is_an_absolute_path(label, klass):
-    """Every default is written against the checkout, never against one machine's filesystem."""
     absolute = [(path, text) for path, text in _text_leaves(klass()) if text.startswith("/")]
 
     assert absolute == [], f"{label} holds absolute defaults: {absolute}; write them below a ReferenceLayout root instead"
@@ -83,7 +69,6 @@ def test_no_configuration_default_is_an_absolute_path(label, klass):
 
 @pytest.mark.parametrize("label, klass", DATACLASSES, ids=[label for label, _ in DATACLASSES])
 def test_a_profile_setting_every_root_rebases_every_reference_default(label, klass):
-    """With all roots set, no default below a reference root still points into the checkout."""
     profile = MachineProfile(None, {"schema": MachineProfile.SCHEMA, **ALL_ROOTS_PROFILE})
     cli     = ConfigCli(klass(), profile=profile)
     stale   = [(path, text) for path, text in _text_leaves(cli.config) if _below_a_root(text)]

@@ -1,4 +1,3 @@
-"""Tests covering training-evolution frame rendering and epoch-checkpoint discovery."""
 
 from __future__ import annotations
 
@@ -16,7 +15,6 @@ from tests.conftest                    import SilentLogger
 
 
 def test_evolution_frame_renders_an_image():
-    """A frame renders a non-trivial RGB image of the ground-truth and predicted profiles."""
     frames = EvolutionFrames()
     z_axis = np.linspace(-10.0, 30.0, 24)
     gt     = np.exp(-((z_axis - 10.0) ** 2) / 8.0)
@@ -29,7 +27,6 @@ def test_evolution_frame_renders_an_image():
 
 
 def test_missing_snapshots_raise(tmp_path):
-    """An empty checkpoint directory is rejected."""
     (tmp_path / "checkpoints").mkdir()
 
     run = TrainingEvolutionRun(tmp_path, TrainingEvolutionConfig(), SilentLogger())
@@ -39,7 +36,6 @@ def test_missing_snapshots_raise(tmp_path):
 
 
 def test_snapshots_are_discovered_in_epoch_order(tmp_path):
-    """Epoch checkpoints are returned sorted by epoch, not by discovery order."""
     ckpt_dir = tmp_path / "checkpoints"
     ckpt_dir.mkdir()
 
@@ -55,7 +51,6 @@ def test_snapshots_are_discovered_in_epoch_order(tmp_path):
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_evolution_pass_announces_tracks_and_times_replay_and_frames(tmp_path, test_data_dir, params_dir):
-    """Replaying two snapshots at two probe pixels announces the snapshot range, advances one bar per snapshot and one per frame, and times both stages."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
     (run_dir / "checkpoints").mkdir()
     for epoch in (1, 2):

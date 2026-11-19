@@ -1,4 +1,3 @@
-"""Tests covering the patch trials collector and report: reading per-trial metrics and completion markers, plan-driven seed aggregation with missing and diverged seeds named, label-prefixed run directories, the ranking heatmap, curve, JSON, and markdown that are written, the logged ranking summary, and the scheduler wiring that triggers the report in patch mode only."""
 
 from __future__ import annotations
 
@@ -20,14 +19,6 @@ OPTIMUM = (24, 16)
 
 
 def make_planner(maximum: tuple[int, int] = (32, 16)) -> PatchSizeTrialPlanner:
-    """Builds a step-8 planner capped at the given patch maximum.
-
-    Args:
-        maximum : Largest (rows, cols) patch size in pixels.
-
-    Returns:
-        Planner over the sweep-narrowed three-level unet.
-    """
     config = BackboneEntryConfig()
     trials = PatchTrialsConfig(maximum=maximum)
 
@@ -35,23 +26,12 @@ def make_planner(maximum: tuple[int, int] = (32, 16)) -> PatchSizeTrialPlanner:
 
 
 def synthetic_loss(patch_size: tuple[int, int]) -> float:
-    """Returns a quadratic test loss minimised at the synthetic optimal patch size."""
     row_opt, range_opt = OPTIMUM
     row,     range_len = patch_size
     return 0.1 + 0.02 * ((row - row_opt) / 32) ** 2 + 0.02 * ((range_len - range_opt) / 32) ** 2
 
 
 def populate_runs(runs_root: Path, planner: PatchSizeTrialPlanner, seeds: list[int] | None = None, drop_metrics: set[str] = frozenset(), nan_units: set[str] = frozenset(), prefix: str = "") -> None:
-    """Writes per-trial metrics and completion markers for a finished sweep.
-
-    Args:
-        runs_root    : Directory the trial run directories are created under.
-        planner      : Planner supplying the trials to populate.
-        seeds        : Seed values nested under each trial, or None for unseeded runs.
-        drop_metrics : Trial names left without a test metrics file.
-        nan_units    : Unit run names (trial, or trial/seed<N>) whose test loss is written as NaN, as a diverged run leaves it when aborting is disabled.
-        prefix       : Label prefix composed in front of every trial directory name, as the entry's run naming does.
-    """
     for name, overrides in planner.plan():
         patch_size = overrides["training.patch_size"]
         trial_dir  = runs_root / f"{prefix}{name}"
@@ -72,26 +52,16 @@ def populate_runs(runs_root: Path, planner: PatchSizeTrialPlanner, seeds: list[i
 
 @pytest.fixture
 def logger(tmp_path):
-    """Yields a file logger writing into tmp_path and closes it afterwards."""
     log = Logger(log_dir=str(tmp_path / "logs"), name="patch_report_test")
     yield log
     log.close()
 
 
 def _log_text(tmp_path: Path) -> str:
-    """Returns the contents of the patch report test log."""
     return (tmp_path / "logs" / "patch_report_test.log").read_text(encoding="utf-8")
 
 
 def make_report(tmp_path: Path, planner: PatchSizeTrialPlanner, logger: Logger, seeds: list[int] | None = None) -> PatchTrialsReport:
-    """Builds a report writer over tmp_path's runs and report directories.
-
-    Args:
-        tmp_path : Directory holding the runs and report directories.
-        planner  : Planner of the swept patch shapes.
-        logger   : Logger of the report.
-        seeds    : Seeds the sweep was planned at; a single seed, matching unseeded run directories, when omitted.
-    """
     config       = BackboneEntryConfig()
     config.seeds = seeds or [0]
 
@@ -99,7 +69,6 @@ def make_report(tmp_path: Path, planner: PatchSizeTrialPlanner, logger: Logger, 
 
 
 def test_collector_reads_every_trial(tmp_path, logger):
-    """Verifies the collector returns one complete record per trial with its validation loss and best epoch."""
     planner = make_planner()
     populate_runs(tmp_path / "runs", planner)
 
@@ -112,7 +81,6 @@ def test_collector_reads_every_trial(tmp_path, logger):
 
 
 def test_collector_resolves_label_prefixed_run_directories(tmp_path, logger):
-    """Verifies trial directories carrying the entry's composed label prefix are found and scored."""
     planner = make_planner(maximum=(16, 16))
     populate_runs(tmp_path / "runs", planner, prefix="unet-conv_")
 
@@ -123,7 +91,6 @@ def test_collector_resolves_label_prefixed_run_directories(tmp_path, logger):
 
 
 def test_collector_marks_trials_without_metrics_incomplete(tmp_path, logger):
-    """Verifies only the trials missing a metrics file are excluded from the ranking, and the exclusion is logged with its reason."""
     planner = make_planner()
     populate_runs(tmp_path / "runs", planner, drop_metrics={"p-016x008"})
 
@@ -136,7 +103,6 @@ def test_collector_marks_trials_without_metrics_incomplete(tmp_path, logger):
 
 
 def test_collector_marks_unrun_trials_missing(tmp_path, logger):
-    """Verifies a trial without a run directory reports MISSING and no losses."""
     planner = make_planner()
     (tmp_path / "runs").mkdir()
 
@@ -147,7 +113,6 @@ def test_collector_marks_unrun_trials_missing(tmp_path, logger):
 
 
 def test_collector_aggregates_nested_seed_runs(tmp_path, logger):
-    """Verifies nested seed runs are averaged into one record carrying the seed count and spread."""
     planner = make_planner(maximum=(16, 16))
     populate_runs(tmp_path / "runs", planner, seeds=[0, 1])
 
@@ -163,7 +128,6 @@ def test_collector_aggregates_nested_seed_runs(tmp_path, logger):
 
 
 def test_collector_marks_a_planned_seed_without_a_directory(tmp_path, logger):
-    """Verifies a planned seed that never created its directory leaves the trial PARTIAL, counted against the plan and named in the log."""
     planner = make_planner(maximum=(16, 16))
     populate_runs(tmp_path / "runs", planner, seeds=[0])
 
@@ -176,7 +140,6 @@ def test_collector_marks_a_planned_seed_without_a_directory(tmp_path, logger):
 
 
 def test_collector_excludes_a_diverged_seed_and_names_it(tmp_path, logger):
-    """Verifies a seed whose test loss is NaN is dropped from the trial mean, leaves the trial PARTIAL and is named in the log."""
     planner = make_planner(maximum=(16, 16))
     populate_runs(tmp_path / "runs", planner, seeds=[0, 1], nan_units={"p-008x008/seed1"})
 
@@ -190,7 +153,6 @@ def test_collector_excludes_a_diverged_seed_and_names_it(tmp_path, logger):
 
 
 def test_report_ranks_the_synthetic_optimum_on_both_axes(tmp_path, logger):
-    """Verifies the report recovers the synthetic optimum and records both size grids."""
     planner = make_planner(maximum=(32, 16))
     populate_runs(tmp_path / "runs", planner)
 
@@ -205,7 +167,6 @@ def test_report_ranks_the_synthetic_optimum_on_both_axes(tmp_path, logger):
 
 
 def test_report_writes_the_heatmap_and_the_markdown(tmp_path, logger):
-    """Verifies the heatmap and the markdown report are written."""
     planner = make_planner()
     populate_runs(tmp_path / "runs", planner)
 
@@ -217,7 +178,6 @@ def test_report_writes_the_heatmap_and_the_markdown(tmp_path, logger):
 
 
 def test_report_falls_back_to_a_curve_when_only_one_axis_varies(tmp_path, logger):
-    """Verifies a single-axis sweep produces a curve instead of a heatmap."""
     planner = make_planner(maximum=(32, 8))
     populate_runs(tmp_path / "runs", planner)
 
@@ -228,7 +188,6 @@ def test_report_falls_back_to_a_curve_when_only_one_axis_varies(tmp_path, logger
 
 
 def test_report_survives_a_sweep_with_no_metrics(tmp_path, logger):
-    """Verifies a sweep without any metrics yields a null optimum, still writes the report and warns that nothing ranked."""
     planner = make_planner()
     populate_runs(tmp_path / "runs", planner, drop_metrics={name for name, _ in planner.plan()})
 
@@ -242,7 +201,6 @@ def test_report_survives_a_sweep_with_no_metrics(tmp_path, logger):
 
 
 def test_report_logs_the_ranking_and_the_winner(tmp_path, logger):
-    """Verifies the report logs how many trials ranked and the winning patch with its test loss and seed count."""
     planner = make_planner()
     populate_runs(tmp_path / "runs", planner, drop_metrics={"p-016x008"})
 
@@ -255,7 +213,6 @@ def test_report_logs_the_ranking_and_the_winner(tmp_path, logger):
 
 
 def test_markdown_names_the_ranking_metric_and_the_model(tmp_path, logger):
-    """Verifies the markdown carries the ranking metric, the model label, and the winning patch."""
     planner = make_planner()
     populate_runs(tmp_path / "runs", planner)
 
@@ -269,7 +226,6 @@ def test_markdown_names_the_ranking_metric_and_the_model(tmp_path, logger):
 
 
 def test_scheduler_writes_the_patch_report_under_the_runs_root(tmp_path):
-    """Verifies patch mode writes a timestamped report folder under the sweep runs root."""
     planner = make_planner(maximum=(16, 16))
     populate_runs(tmp_path / "patch", planner)
 
@@ -292,7 +248,6 @@ def test_scheduler_writes_the_patch_report_under_the_runs_root(tmp_path):
 
 
 def test_scheduler_writes_no_report_outside_patch_mode(tmp_path):
-    """Verifies a non-patch trial mode leaves the runs root without a report folder."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "ablation"
@@ -304,7 +259,6 @@ def test_scheduler_writes_no_report_outside_patch_mode(tmp_path):
 
 
 def _patch_scheduler(tmp_path, cli_overrides: dict):
-    """Returns a patch-mode backbone scheduler over a two-by-two grid with the given forwarded overrides."""
     config                      = BackboneEntryConfig()
     config.logdir               = tmp_path
     config.seeds                = [0]
@@ -317,7 +271,6 @@ def _patch_scheduler(tmp_path, cli_overrides: dict):
 
 
 def test_scheduler_warns_when_a_trial_replaces_a_forwarded_override(tmp_path):
-    """Verifies a forwarded pretrain.find_batch_size=true that every patch trial pins to false is named in a warning with the trial value."""
     scheduler = _patch_scheduler(tmp_path, {"pretrain.find_batch_size": True, "training.epochs": 3})
     scheduler._warn_shadowed_overrides()
     scheduler.logger.close()
@@ -329,7 +282,6 @@ def test_scheduler_warns_when_a_trial_replaces_a_forwarded_override(tmp_path):
 
 
 def test_scheduler_stays_quiet_when_a_forwarded_override_matches_every_trial(tmp_path):
-    """Verifies a forwarded value equal to the trial value, a tuple against a list included, raises no warning."""
     scheduler = _patch_scheduler(tmp_path, {"pretrain.find_batch_size": False})
     scheduler._warn_shadowed_overrides()
     scheduler.logger.close()

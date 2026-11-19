@@ -1,4 +1,3 @@
-"""Tests covering presence-calibration precision bins and risk-coverage diagnostics."""
 
 from __future__ import annotations
 
@@ -14,16 +13,6 @@ H, W = 40, 30
 
 
 def _cube(amp: np.ndarray, mu: np.ndarray, sigma: float = 3.0) -> np.ndarray:
-    """Builds a single-slot parameter cube of shape (3, H, W).
-
-    Args:
-        amp   : Amplitude map of shape (H, W).
-        mu    : Gaussian centre map of shape (H, W), in metres.
-        sigma : Constant Gaussian width, in metres.
-
-    Returns:
-        Cube stacking amplitude, centre and width along the first axis.
-    """
     cube    = np.zeros((3, H, W), dtype=np.float64)
     cube[0] = amp
     cube[1] = mu
@@ -33,12 +22,10 @@ def _cube(amp: np.ndarray, mu: np.ndarray, sigma: float = 3.0) -> np.ndarray:
 
 
 def _calibration(params_pred: np.ndarray, params_gt: np.ndarray) -> PresenceCalibration:
-    """Returns a calibration over Hungarian-matched pairs, mirroring the production pipeline path."""
     return PresenceCalibration(FailureModes(params_pred, params_gt, 1, 1e-4).pair_predictions())
 
 
 def test_perfect_predictions_have_full_precision():
-    """Predictions identical to the ground truth score precision one in every bin."""
     rng = np.random.default_rng(0)
     amp = rng.uniform(0.5, 2.0, size=(H, W))
     mu  = rng.uniform(0.0, 50.0, size=(H, W))
@@ -50,7 +37,6 @@ def test_perfect_predictions_have_full_precision():
 
 
 def test_low_amplitude_predictions_that_miss_reduce_low_bin_precision():
-    """Spurious low-amplitude detections depress low-bin precision while the high bin stays perfect."""
     rng = np.random.default_rng(1)
     amp = rng.uniform(0.01, 2.0, size=(H, W))
     mu  = np.full((H, W), 25.0)
@@ -65,7 +51,6 @@ def test_low_amplitude_predictions_that_miss_reduce_low_bin_precision():
 
 
 def test_too_few_predictions_raise():
-    """Too few predicted components to populate the bins raises."""
     amp        = np.zeros((H, W))
     amp[0, :3] = 1.0
     mu         = np.full((H, W), 25.0)
@@ -75,7 +60,6 @@ def test_too_few_predictions_raise():
 
 
 def test_risk_coverage_curve_is_monotone_for_informative_confidence():
-    """Disagreement that tracks error yields a rising risk curve and an AURC below the full-coverage risk."""
     rng          = np.random.default_rng(2)
     disagreement = rng.uniform(0.0, 1.0, size=(H, W))
     risk         = disagreement * 5.0 + rng.uniform(0.0, 0.01, size=(H, W))
@@ -91,13 +75,11 @@ def test_risk_coverage_curve_is_monotone_for_informative_confidence():
 
 
 def test_risk_coverage_shape_mismatch_raises():
-    """Disagreement and risk maps of different shapes are rejected."""
     with pytest.raises(ValueError):
         RiskCoverage(np.zeros((4, 4)), np.zeros((5, 4)))
 
 
 def test_uninformative_confidence_gives_flat_curve():
-    """Constant risk makes the AURC equal the full-coverage risk."""
     rng          = np.random.default_rng(3)
     disagreement = rng.uniform(0.0, 1.0, size=(H, W))
     risk         = np.ones((H, W))
@@ -109,7 +91,6 @@ def test_uninformative_confidence_gives_flat_curve():
 
 
 def test_label_suspects_flag_confident_wrong_pixels():
-    """Only pixels combining low disagreement with high error are flagged as label suspects."""
     from pipelines.backbone.inference.analysis.seed_disagreement import LabelSuspects
 
     disagreement = np.full((H, W), 0.5)
@@ -128,7 +109,6 @@ def test_label_suspects_flag_confident_wrong_pixels():
 
 
 def test_label_suspects_report_label_r2_of_flagged_pixels():
-    """Flagged pixels report their own label R2 mean alongside the overall map mean."""
     from pipelines.backbone.inference.analysis.seed_disagreement import LabelSuspects
 
     disagreement       = np.full((H, W), 0.5)

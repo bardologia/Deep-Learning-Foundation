@@ -1,4 +1,3 @@
-"""Tests for the stochastic weight average: math, application and BN refresh."""
 
 from __future__ import annotations
 
@@ -10,21 +9,17 @@ from tools.training.checkpoint import WeightSwa
 
 
 class _BnNet(nn.Module):
-    """One conv with batch norm, exercising both parameters and running buffers."""
 
     def __init__(self):
-        """Builds the conv-BN pair."""
         super().__init__()
         self.conv = nn.Conv2d(1, 2, 3, padding=1)
         self.bn   = nn.BatchNorm2d(2)
 
     def forward(self, x):
-        """Returns the normalised convolution output."""
         return self.bn(self.conv(x))
 
 
 def test_update_averages_snapshots_equally():
-    """Two snapshots average to their mean, regardless of order."""
     model = nn.Linear(2, 2, bias=False)
     swa   = WeightSwa(model, enabled=True)
 
@@ -41,7 +36,6 @@ def test_update_averages_snapshots_equally():
 
 
 def test_applied_swaps_weights_and_restores_buffers():
-    """Applying the average swaps parameters in and restores parameters and buffers on exit."""
     model = _BnNet()
     swa   = WeightSwa(model, enabled=True)
     swa.update(model)
@@ -59,7 +53,6 @@ def test_applied_swaps_weights_and_restores_buffers():
 
 
 def test_applied_without_updates_fails_loudly():
-    """Applying an empty average raises instead of silently using zero weights."""
     model = nn.Linear(2, 2)
     swa   = WeightSwa(model, enabled=True)
 
@@ -69,7 +62,6 @@ def test_applied_without_updates_fails_loudly():
 
 
 def test_refresh_bn_reestimates_running_stats():
-    """One refresh pass rewrites the BN running statistics from the loader batches."""
     torch.manual_seed(0)
     model = _BnNet()
 
@@ -84,7 +76,6 @@ def test_refresh_bn_reestimates_running_stats():
 
 
 def test_refresh_bn_skips_models_without_batchnorm():
-    """A model with no BN modules reports zero refreshed and consumes no batches."""
     consumed = []
 
     refreshed = WeightSwa.refresh_bn(nn.Linear(2, 2), consumed, lambda batch: None)
@@ -93,7 +84,6 @@ def test_refresh_bn_skips_models_without_batchnorm():
 
 
 def test_state_round_trip():
-    """The averaged weights and count survive a state-dict round trip."""
     model = nn.Linear(2, 2, bias=False)
     swa   = WeightSwa(model, enabled=True)
     swa.update(model)
@@ -106,7 +96,6 @@ def test_state_round_trip():
 
 
 def test_state_mismatch_fails_loudly():
-    """Restoring an enabled state into a disabled average is rejected."""
     model = nn.Linear(2, 2)
     swa   = WeightSwa(model, enabled=True)
     swa.update(model)

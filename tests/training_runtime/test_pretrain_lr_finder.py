@@ -1,10 +1,3 @@
-"""Tests for the pre-training LR range test.
-
-Covers the rewind that makes every rung start from the same state, the paired
-measurement batches, the minimum-loss selection over the safety factor, the
-edge and noise refusals that keep a non-measurement out of the training config,
-and the validation of the ladder definition.
-"""
 
 from __future__ import annotations
 
@@ -18,41 +11,24 @@ from tools.training.pretraining.lr_finder import LrRangeTest, TrainerStateSnapsh
 
 
 class _Logger:
-    """Logger stub recording the subsection lines and table titles of the range test.
-
-    Attributes:
-        lines  : Subsection messages in emission order.
-        tables : (title, rows) pairs of the metrics tables in emission order.
-    """
     def __init__(self):
-        """Starts with no recorded output."""
         self.lines  = []
         self.tables = []
 
     def subsection(self, message, *args, **kwargs):
-        """Records a subsection line."""
         self.lines.append(message)
 
     def metrics_table(self, rows, columns=None, title=None):
-        """Records a metrics table's title and rows."""
         self.tables.append((title, list(rows)))
 
 
 class _Clipper:
-    """Gradient-clipper stub recording norms without ever rescaling a gradient.
-
-    Attributes:
-        history : Gradient norms recorded so far.
-        raises  : Whether maybe_clip reports a non-finite gradient norm.
-    """
 
     def __init__(self, raises: bool = False) -> None:
-        """Builds an empty history and stores whether the clipper should fail."""
         self.history = []
         self.raises  = bool(raises)
 
     def maybe_clip(self, model, global_step: int) -> float:
-        """Returns the global gradient norm, raising when the stub is set to fail."""
         if self.raises:
             raise FloatingPointError(f"Gradient norm is non-finite at step {global_step}")
 
@@ -61,38 +37,18 @@ class _Clipper:
         return math.sqrt(total)
 
     def record(self, grad_norm_value: float, global_step: int) -> None:
-        """Appends a gradient norm to the history."""
         self.history.append(float(grad_norm_value))
 
     def state_dict(self) -> dict:
-        """Returns the recorded gradient-norm history."""
         return {"history": list(self.history)}
 
     def load_state_dict(self, state: dict) -> None:
-        """Restores the recorded gradient-norm history."""
         self.history = list(state["history"])
 
 
 class _StubTrainer:
-    """Trainer stub exposing the surface the range test drives.
-
-    Implements ``micro_step`` and ``apply_gradients`` exactly as ``BaseTrainer``
-    does, so the probe under test runs the same shape of step it runs in
-    production.
-
-    Attributes:
-        model              : Module holding the single fitted parameter.
-        optimizer          : SGD optimizer over that parameter.
-        base_lrs           : Warmup-free base learning rate of the single group.
-        use_amp            : Always False, keeping the probe on the plain forward path.
-        accumulation_steps : Micro-batches per optimizer step.
-        grad_clipper       : Clipper stub the probe snapshots and restores.
-        optimizer_steps    : Optimizer steps taken, counted outside the snapshotted state.
-        batches            : Batches seen by micro_step, in order.
-    """
 
     def __init__(self, base_lr: float, start: float = 10.0, warmup_factor: float = 1.0, accumulation_steps: int = 1, clipper_raises: bool = False) -> None:
-        """Builds the parameter, its optimizer and the clipper stub."""
         self.model     = torch.nn.Linear(1, 1, bias=False)
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=base_lr * warmup_factor)
 
@@ -109,19 +65,15 @@ class _StubTrainer:
 
     @property
     def weight(self) -> float:
-        """Returns the fitted scalar as a float."""
         return float(self.model.weight.detach().reshape(()))
 
     def _compute_loss(self, batch) -> dict:
-        """Returns the mean squared distance of the weight to the batch targets."""
         return {"total_loss": ((self.model.weight.reshape(()) - batch[0]) ** 2).mean()}
 
     def _eval_step(self, batch) -> dict:
-        """Returns the loss dictionary of one measurement batch."""
         return self._compute_loss(batch)
 
     def micro_step(self, batch, window_len: int) -> tuple[dict, float]:
-        """Runs one micro-batch, scales its loss by the window and backpropagates it."""
         self.batches.append(batch)
 
         loss_dict = self._compute_loss(batch)
@@ -135,7 +87,6 @@ class _StubTrainer:
         return loss_dict, float(loss.detach())
 
     def apply_gradients(self, global_step: int) -> float:
-        """Clips, steps and clears the gradients, counting the step outside the snapshot."""
         self.optimizer_steps += 1
 
         grad_norm = self.grad_clipper.maybe_clip(self.model, global_step)
@@ -148,36 +99,20 @@ class _StubTrainer:
 
 
 class _FlatTrainer(_StubTrainer):
-    """Trainer stub whose loss never moves, so no rung can beat the first."""
 
     def _compute_loss(self, batch) -> dict:
-        """Returns a constant loss still attached to the graph."""
         return {"total_loss": self.model.weight.reshape(()) * 0.0 + 1.0}
 
 
 class _NanTrainer(_StubTrainer):
-    """Trainer stub returning a non-finite loss on every step."""
 
     def _compute_loss(self, batch) -> dict:
-        """Returns a NaN loss attached to the graph."""
         return {"total_loss": self.model.weight.reshape(()) * 0.0 + float("nan")}
 
 
 class _ResponseTrainer(_StubTrainer):
-    """Trainer stub whose measured loss is a known function of the applied rate.
-
-    The loss is a parabola in log-multiplier with its minimum at ``optimum``,
-    plus per-batch noise that does not depend on the rate. It is the shape a
-    working range test must recover and the shape the previous selector lost to
-    noise at the bottom of the ladder.
-
-    Attributes:
-        optimum : Multiplier the loss is minimised at.
-        noise   : Amplitude of the per-batch noise added to every measurement.
-    """
 
     def __init__(self, base_lr: float, optimum: float = 10.0, noise: float = 0.0, seed: int = 0, **kwargs) -> None:
-        """Stores the response shape and seeds the noise generator."""
         super().__init__(base_lr=base_lr, **kwargs)
 
         self.optimum   = float(optimum)
@@ -185,7 +120,6 @@ class _ResponseTrainer(_StubTrainer):
         self.generator = torch.Generator().manual_seed(int(seed))
 
     def _compute_loss(self, batch) -> dict:
-        """Returns the parabolic response at the current group rate plus per-batch noise."""
         rate       = self.optimizer.param_groups[0]["lr"]
         multiplier = max(rate / self.base_lrs[0], 1e-12)
         offset     = math.log(multiplier / self.optimum)
@@ -195,13 +129,11 @@ class _ResponseTrainer(_StubTrainer):
 
 
 def _dataset(n: int = 512) -> TensorDataset:
-    """Returns a dataset of fixed unit-variance targets the probe loader draws from."""
     generator = torch.Generator().manual_seed(7)
     return TensorDataset(torch.randn(n, 1, generator=generator))
 
 
 def _test(trainer, **overrides) -> LrRangeTest:
-    """Builds a range test over the stub trainer with short-ladder defaults."""
     settings = dict(
         trainer           = trainer,
         dataset           = _dataset(),
@@ -223,7 +155,6 @@ def _test(trainer, **overrides) -> LrRangeTest:
 
 
 def test_selection_is_the_minimum_loss_rung_over_the_safety_factor():
-    """Verifies the pick is the loss-minimum multiplier divided by the safety factor."""
     trainer = _ResponseTrainer(base_lr=0.05, optimum=10.0)
     result  = _test(trainer).run(batch_size=4)
 
@@ -235,7 +166,6 @@ def test_selection_is_the_minimum_loss_rung_over_the_safety_factor():
 
 
 def test_noise_does_not_pull_the_pick_to_the_ramp_floor():
-    """Verifies per-batch noise cannot make the first rungs win, across several seeds."""
     ladder = _test(_ResponseTrainer(base_lr=0.05))._multipliers()
     floor  = ladder[2]
 
@@ -249,7 +179,6 @@ def test_noise_does_not_pull_the_pick_to_the_ramp_floor():
 
 
 def test_every_rung_starts_from_the_same_state():
-    """Verifies the rewind restores the model before every rung and after the ramp."""
     trainer = _ResponseTrainer(base_lr=0.05, optimum=10.0)
     before  = trainer.weight
 
@@ -259,7 +188,6 @@ def test_every_rung_starts_from_the_same_state():
     original = test._rung
 
     def _record(snapshot, base_lrs, train_batches, probe_batches, multiplier, offset):
-        """Records the weight the rung starts from before delegating to the real rung."""
         snapshot.restore()
         starts.append(trainer.weight)
         return original(snapshot, base_lrs, train_batches, probe_batches, multiplier, offset)
@@ -273,7 +201,6 @@ def test_every_rung_starts_from_the_same_state():
 
 
 def test_every_rung_sees_the_same_batches():
-    """Verifies the training batches are drawn once and reused verbatim by every rung."""
     trainer = _ResponseTrainer(base_lr=0.05, optimum=10.0)
     test    = _test(trainer, rungs=12, rung_steps=2)
 
@@ -288,7 +215,6 @@ def test_every_rung_sees_the_same_batches():
 
 
 def test_gradient_accumulation_is_mirrored():
-    """Verifies a rung consumes accumulation_steps micro-batches per optimizer step."""
     trainer = _ResponseTrainer(base_lr=0.05, optimum=10.0, accumulation_steps=3)
     test    = _test(trainer, rungs=12, rung_steps=2)
 
@@ -299,7 +225,6 @@ def test_gradient_accumulation_is_mirrored():
 
 
 def test_accepted_pick_keeps_its_curve_and_selection_evidence():
-    """Verifies an accepted pick logs every rung in one table, logs the drop it cleared, and keeps the curve and statistics in the record."""
     logger = _Logger()
     test   = _test(_ResponseTrainer(base_lr=0.05, optimum=10.0), logger=logger)
     result = test.run(batch_size=4)
@@ -321,7 +246,6 @@ def test_accepted_pick_keeps_its_curve_and_selection_evidence():
 
 
 def test_refused_pick_still_keeps_its_curve_and_the_reason():
-    """Verifies a refusal leaves the full curve and the refusal reason in the record."""
     test = _test(_FlatTrainer(base_lr=0.05))
 
     assert test.run(batch_size=4) is None
@@ -331,38 +255,32 @@ def test_refused_pick_still_keeps_its_curve_and_the_reason():
 
 
 def test_monotone_increasing_response_is_rejected():
-    """Verifies a minimum on the first rung is refused instead of returned."""
     trainer = _ResponseTrainer(base_lr=0.05, optimum=1e-6)
 
     assert _test(trainer).run(batch_size=4) is None
 
 
 def test_undiverged_monotone_decreasing_response_is_rejected():
-    """Verifies a minimum on the last rung without divergence is refused."""
     trainer = _ResponseTrainer(base_lr=0.05, optimum=1e6)
 
     assert _test(trainer).run(batch_size=4) is None
 
 
 def test_flat_response_below_min_improvement_is_rejected():
-    """Verifies a loss without any response yields no selection."""
     assert _test(_FlatTrainer(base_lr=0.05)).run(batch_size=4) is None
 
 
 def test_non_finite_loss_stops_immediately_and_keeps_the_configuration():
-    """Verifies a NaN loss ends the ramp before enough rungs exist."""
     assert _test(_NanTrainer(base_lr=0.05)).run(batch_size=4) is None
 
 
 def test_clipper_gradient_explosion_marks_the_rung_diverged():
-    """Verifies a non-finite gradient norm ends the ramp rather than propagating."""
     trainer = _StubTrainer(base_lr=0.05, clipper_raises=True)
 
     assert _test(trainer).run(batch_size=4) is None
 
 
 def test_range_test_restores_the_configured_learning_rate():
-    """Verifies the optimizer leaves the ramp at the rate the trainer entered it with."""
     trainer = _ResponseTrainer(base_lr=0.05, optimum=10.0, warmup_factor=0.1)
 
     _test(trainer).run(batch_size=4)
@@ -371,7 +289,6 @@ def test_range_test_restores_the_configured_learning_rate():
 
 
 def test_warmup_scaled_group_rates_do_not_offset_the_ramp():
-    """Verifies the ramp runs on the warmup-free base rates, not the warmup-shrunk group rates."""
     plain  = _test(_ResponseTrainer(base_lr=0.05, optimum=10.0)).run(batch_size=4)
     warmed = _test(_ResponseTrainer(base_lr=0.05, optimum=10.0, warmup_factor=0.1)).run(batch_size=4)
 
@@ -383,7 +300,6 @@ def test_warmup_scaled_group_rates_do_not_offset_the_ramp():
 
 
 def test_snapshot_does_not_alias_live_parameters():
-    """Verifies the captured model state survives a later mutation of the trainer."""
     trainer  = _StubTrainer(base_lr=0.05, start=10.0)
     snapshot = TrainerStateSnapshot(trainer)
 
@@ -396,7 +312,6 @@ def test_snapshot_does_not_alias_live_parameters():
 
 
 def test_dataset_too_small_for_one_rung_is_rejected():
-    """Verifies a dataset yielding fewer batches than one rung needs fails loudly."""
     test = _test(_StubTrainer(base_lr=0.05), rung_steps=8, probe_batches=4)
     test.dataset = _dataset(n=8)
 
@@ -405,7 +320,6 @@ def test_dataset_too_small_for_one_rung_is_rejected():
 
 
 def test_ramp_definition_is_validated():
-    """Verifies that malformed ladder settings are rejected loudly."""
     trainer = _StubTrainer(base_lr=0.05)
 
     with pytest.raises(ValueError, match="scale_min"):
@@ -427,7 +341,6 @@ def test_ramp_definition_is_validated():
 
 
 def test_multiplier_ladder_is_geometric():
-    """Verifies the ladder spans the bounds geometrically with the configured rungs."""
     ladder = _test(_StubTrainer(base_lr=0.05))._multipliers()
 
     assert len(ladder) == 40

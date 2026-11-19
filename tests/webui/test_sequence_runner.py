@@ -1,9 +1,3 @@
-"""Tests of the sequence runner: DAG advance, checkpoints, skips, isolation and finalize chains.
-
-Covers block launching over the process manager, failure propagation, held
-checkpoints, the isolated workspace redirection, the persisted state file and
-resume scans, the finalize chains, and the notifier alerts on failures.
-"""
 
 from __future__ import annotations
 
@@ -24,51 +18,32 @@ from tests.webui.test_sequence_store import LEAVES, FakeResolver, SequencePaths,
 
 
 class FakeProcesses:
-    """Process-manager stand-in exposing the job table, lock and stop the runner uses.
-
-    Attributes:
-        jobs    : Job records keyed by job id, each carrying only a status.
-        lock    : Lock guarding the job table.
-        stopped : Job ids the runner asked to stop, in call order.
-    """
 
     def __init__(self) -> None:
-        """Starts with an empty job table."""
         self.jobs    = {}
         self.lock    = threading.Lock()
         self.stopped = []
 
     def finish(self, job_id: str, status: str = "finished") -> None:
-        """Moves one job to a terminal status."""
         with self.lock:
             self.jobs[job_id]["status"] = status
 
     def stop(self, job_id: str) -> dict:
-        """Records the stop request and marks the job cancelled."""
         self.stopped.append(job_id)
         self.finish(job_id, "cancelled")
         return {"ok": True}
 
 
 class FakeLauncher:
-    """Launcher stand-in that registers a running job per launch and records the call.
-
-    Attributes:
-        processes : Fake process manager the launched jobs are registered in.
-        calls     : One record per launch with the key, interpreter, overrides and detach flag.
-    """
 
     def __init__(self, processes: FakeProcesses) -> None:
-        """Stores the fake process manager and starts with no calls."""
         self.processes = processes
         self.calls     = []
 
     def preferred_interpreter(self, key: str) -> str:
-        """Returns a fixed interpreter path."""
         return "/usr/bin/python3"
 
     def execute(self, key: str, interpreter: str, overrides: dict, follow_up, detach: bool, queue: bool) -> dict:
-        """Registers a running job for the launch and returns its id."""
         job_id = f"job-{len(self.calls)}"
         self.calls.append({"key": key, "interpreter": interpreter, "overrides": overrides, "detach": detach})
         with self.processes.lock:
@@ -83,37 +58,22 @@ class FakeLauncher:
 
 
 class FakeNotifier:
-    """Notifier stand-in recording every alert the runner pushes.
-
-    Attributes:
-        alerts : Tuples of (title, body, priority) in call order.
-    """
 
     def __init__(self) -> None:
-        """Starts with no recorded alerts."""
         self.alerts = []
 
     def system_alert(self, title: str, body: str, priority: str = "high") -> None:
-        """Records one alert."""
         self.alerts.append((title, body, priority))
 
 
 class LockProbingLauncher(FakeLauncher):
-    """Launcher stand-in recording whether the runner lock is free while a block launches.
-
-    Attributes:
-        runner    : Runner whose lock is probed, wired in after construction.
-        lock_free : One flag per launch, True when the runner lock was acquirable.
-    """
 
     def __init__(self, processes: FakeProcesses) -> None:
-        """Starts with no runner wired and no probes recorded."""
         super().__init__(processes)
         self.runner    = None
         self.lock_free = []
 
     def execute(self, key: str, interpreter: str, overrides: dict, follow_up, detach: bool, queue: bool) -> dict:
-        """Probes the runner lock, then launches as the plain fake does."""
         acquired = self.runner.lock.acquire(blocking=False)
         self.lock_free.append(acquired)
         if acquired:
@@ -122,28 +82,19 @@ class LockProbingLauncher(FakeLauncher):
 
 
 class StoppingLauncher(FakeLauncher):
-    """Launcher stand-in that stops its sequence from inside the launch call.
-
-    Attributes:
-        runner      : Runner the stop is requested on, wired in after construction.
-        sequence_id : Identifier of the sequence stopped mid-launch.
-    """
 
     def __init__(self, processes: FakeProcesses) -> None:
-        """Starts with no runner and no sequence wired."""
         super().__init__(processes)
         self.runner      = None
         self.sequence_id = ""
 
     def execute(self, key: str, interpreter: str, overrides: dict, follow_up, detach: bool, queue: bool) -> dict:
-        """Stops the sequence, then launches as the plain fake does."""
         self.runner.stop_sequence(self.sequence_id)
         return super().execute(key, interpreter, overrides, follow_up, detach, queue)
 
 
 @pytest.fixture
 def rig(tmp_path, monkeypatch):
-    """Returns a store, fake backends and runner wired together, with the mail password set."""
     monkeypatch.setenv(ReportMailEntryConfig.password_env, "pw")
     store     = SequenceStore(SequencePaths(tmp_path), WebLogger(), decision_engine())
     processes = FakeProcesses()
@@ -153,7 +104,6 @@ def rig(tmp_path, monkeypatch):
 
 
 def _saved(store: SequenceStore, blocks: list, **extra) -> str:
-    """Creates a sequence holding the given blocks and returns its id."""
     sequence_id = store.create("seq")["entry"]["sequence_id"]
     result      = store.save(sequence_id, _definition(blocks, **extra))
     assert result["ok"], result
@@ -161,17 +111,14 @@ def _saved(store: SequenceStore, blocks: list, **extra) -> str:
 
 
 def _block_state(runner: SequenceRunner, sequence_id: str, block_id: str) -> dict:
-    """Returns one block's live state snapshot."""
     return runner.state(sequence_id)["blocks"][block_id]
 
 
 def _finalize(*steps: str) -> dict:
-    """Returns a finalize-switch dict with the given chain steps on and the rest off."""
     return {step: step in steps for step in FinalizeChain.STEPS}
 
 
 def test_start_launches_only_the_blocks_without_predecessors(rig):
-    """Starting launches every root block and leaves dependent blocks pending."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])])
 
@@ -183,7 +130,6 @@ def test_start_launches_only_the_blocks_without_predecessors(rig):
 
 
 def test_a_block_launches_when_its_predecessor_finishes(rig):
-    """A dependent block launches on the scan after its predecessor's job finishes."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", script="infer_backbone", predecessors=["a1"])])
 
@@ -197,7 +143,6 @@ def test_a_block_launches_when_its_predecessor_finishes(rig):
 
 
 def test_independent_blocks_launch_in_parallel(rig):
-    """Two blocks sharing one finished predecessor launch in the same scan."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"]), _block("c3", predecessors=["a1"])])
 
@@ -211,7 +156,6 @@ def test_independent_blocks_launch_in_parallel(rig):
 
 
 def test_a_checkpoint_block_holds_until_released(rig):
-    """A ready checkpoint block goes to held, does not launch, and launches on release."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"], checkpoint=True)])
 
@@ -230,7 +174,6 @@ def test_a_checkpoint_block_holds_until_released(rig):
 
 
 def test_a_held_block_is_announced_once(rig):
-    """The notifier is told when a block reaches its checkpoint, and not again on later scans."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", checkpoint=True)])
 
@@ -245,7 +188,6 @@ def test_a_held_block_is_announced_once(rig):
 
 
 def test_release_refuses_a_block_that_is_not_held(rig):
-    """Releasing a pending or unknown block is refused."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])])
 
@@ -256,7 +198,6 @@ def test_release_refuses_a_block_that_is_not_held(rig):
 
 
 def test_a_failed_block_skips_its_descendants(rig):
-    """When a job fails, every downstream block is skipped and the sequence ends failed."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"]), _block("c3", predecessors=["b2"])])
 
@@ -272,7 +213,6 @@ def test_a_failed_block_skips_its_descendants(rig):
 
 
 def test_the_dataset_is_injected_into_the_fields_each_entry_exposes(rig):
-    """Training blocks get both path fields and multi-dataset entries get base plus filter."""
     store, processes, launcher, runner = rig
     dataset     = {"dataset_path": "/data/sets/17sartom", "parameters_path": "/data/sets/17sartom/params/run_a/parameters.npy"}
     sequence_id = _saved(store, [_block("a1", overrides={"paths.dataset_path": "/old", "training.seed": "7"}), _block("b2", script="benchmark")], dataset=dataset)
@@ -287,7 +227,6 @@ def test_the_dataset_is_injected_into_the_fields_each_entry_exposes(rig):
 
 
 def test_an_empty_dataset_leaves_the_block_overrides_untouched(rig):
-    """Without a dataset selection, the stored overrides launch exactly as saved."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", overrides={"training.seed": "3"})])
 
@@ -297,7 +236,6 @@ def test_an_empty_dataset_leaves_the_block_overrides_untouched(rig):
 
 
 def test_a_block_edited_while_pending_launches_with_the_new_overrides(rig):
-    """Edits saved while a block waits are picked up at its launch."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])])
 
@@ -310,7 +248,6 @@ def test_a_block_edited_while_pending_launches_with_the_new_overrides(rig):
 
 
 def test_stop_stops_running_jobs_and_skips_waiting_blocks(rig):
-    """Stopping cancels the running blocks' jobs and skips everything not yet launched."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])])
 
@@ -325,7 +262,6 @@ def test_stop_stops_running_jobs_and_skips_waiting_blocks(rig):
 
 
 def test_clear_state_refuses_active_then_clears_a_stopped_sequence(rig):
-    """Clearing refuses while the sequence runs, drops a stopped state, and reports nothing left afterwards."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")])
 
@@ -342,7 +278,6 @@ def test_clear_state_refuses_active_then_clears_a_stopped_sequence(rig):
 
 
 def test_the_runner_lock_is_released_while_a_block_launches(tmp_path):
-    """The blocking launch call runs with the runner lock free so the API stays responsive."""
     store     = SequenceStore(SequencePaths(tmp_path), WebLogger(), decision_engine())
     processes = FakeProcesses()
     launcher  = LockProbingLauncher(processes)
@@ -355,7 +290,6 @@ def test_the_runner_lock_is_released_while_a_block_launches(tmp_path):
 
 
 def test_a_stop_landing_mid_launch_stops_the_job_it_started(tmp_path):
-    """A stop during the launch cancels the block and tears down the job the launch produced."""
     store     = SequenceStore(SequencePaths(tmp_path), WebLogger(), decision_engine())
     processes = FakeProcesses()
     launcher  = StoppingLauncher(processes)
@@ -372,7 +306,6 @@ def test_a_stop_landing_mid_launch_stops_the_job_it_started(tmp_path):
 
 
 def test_a_finished_sequence_reports_done_and_can_restart(rig):
-    """The sequence ends done after every block finishes and a restart resets the states."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])])
 
@@ -391,7 +324,6 @@ def test_a_finished_sequence_reports_done_and_can_restart(rig):
 
 
 def test_a_skip_toggled_block_is_bypassed_and_its_successors_still_run(rig):
-    """A block marked skip never launches, counts as satisfied downstream, and the sequence ends done."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", skip=True), _block("b2", script="infer_backbone", predecessors=["a1"])])
 
@@ -407,7 +339,6 @@ def test_a_skip_toggled_block_is_bypassed_and_its_successors_still_run(rig):
 
 
 def test_a_skipped_block_waits_for_its_predecessors_before_bypassing(rig):
-    """A skip mark must not unlock the chain early: the bypass lands only when the skipped block's own predecessors finish."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"], skip=True), _block("c3", script="infer_backbone", predecessors=["b2"])])
 
@@ -425,7 +356,6 @@ def test_a_skipped_block_waits_for_its_predecessors_before_bypassing(rig):
 
 
 def test_consecutive_skipped_blocks_cascade_in_order_within_one_scan(rig):
-    """Two adjacent skip marks bypass one after the other in a single scan once the block before them finishes."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"], skip=True), _block("c3", predecessors=["b2"], skip=True), _block("d4", script="infer_backbone", predecessors=["c3"])])
 
@@ -441,7 +371,6 @@ def test_consecutive_skipped_blocks_cascade_in_order_within_one_scan(rig):
 
 
 def test_skip_toggled_mid_run_bypasses_a_waiting_block(rig):
-    """Flipping skip on a pending block while the sequence runs bypasses it when its turn comes."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])])
 
@@ -456,7 +385,6 @@ def test_skip_toggled_mid_run_bypasses_a_waiting_block(rig):
 
 
 def test_skip_overrides_a_checkpoint_hold(rig):
-    """A held checkpoint block toggled to skip is bypassed on the next scan and the chain continues."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"], checkpoint=True), _block("c3", script="infer_backbone", predecessors=["b2"])])
 
@@ -473,7 +401,6 @@ def test_skip_overrides_a_checkpoint_hold(rig):
 
 
 def test_an_isolated_sequence_creates_a_workspace_and_redirects_the_run_roots(rig, tmp_path):
-    """Each isolated execution gets a fresh directory; training writes into it and inference reads from it."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True, name="My Ladder")
 
@@ -490,7 +417,6 @@ def test_an_isolated_sequence_creates_a_workspace_and_redirects_the_run_roots(ri
 
 
 def test_a_dataset_rooted_runs_dir_is_not_redirected(rig):
-    """A runs_dir whose default points at the dataset tree keeps its value under isolation."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", script="generate_dataset")], isolate=True)
 
@@ -502,7 +428,6 @@ def test_a_dataset_rooted_runs_dir_is_not_redirected(rig):
 
 
 def test_a_training_logdir_is_redirected_into_the_workspace(rig):
-    """An entry naming its run-output root logdir is isolated like one naming it paths.log_base_dir."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", script="train_jepa")], isolate=True)
 
@@ -512,7 +437,6 @@ def test_a_training_logdir_is_redirected_into_the_workspace(rig):
 
 
 def test_a_logdir_override_outside_the_runs_tree_is_kept(rig):
-    """A logdir deliberately pointing away from the runs tree survives isolation."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", script="train_jepa", overrides={"logdir": "/data/scratch_runs"})], isolate=True)
 
@@ -522,7 +446,6 @@ def test_a_logdir_override_outside_the_runs_tree_is_kept(rig):
 
 
 def test_a_runs_dir_override_outside_the_runs_tree_is_kept(rig):
-    """An explicit runs_dir override pointing elsewhere survives isolation, default notwithstanding."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", script="infer_backbone", overrides={"runs_dir": "/data/pulled_runs"})], isolate=True)
 
@@ -532,7 +455,6 @@ def test_a_runs_dir_override_outside_the_runs_tree_is_kept(rig):
 
 
 def test_each_start_gets_its_own_workspace(rig):
-    """Restarting a finished sequence creates a second directory instead of reusing the first."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")], isolate=True)
 
@@ -549,7 +471,6 @@ def test_each_start_gets_its_own_workspace(rig):
 
 
 def test_resume_reuses_the_given_workspace_instead_of_creating_one(rig, tmp_path):
-    """A resumed start runs inside the fed workspace and bypasses the blocks fed as finished."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
     workspace   = tmp_path / "runs" / "sequences" / "seq_2026-08-01_10-00-00"
@@ -566,7 +487,6 @@ def test_resume_reuses_the_given_workspace_instead_of_creating_one(rig, tmp_path
 
 
 def test_a_resume_bypass_is_not_persisted_and_a_plain_start_runs_every_block(rig, tmp_path):
-    """The bypass list dies with its execution: the stored skip toggles stay off and a fresh start replays the bypassed block."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
     workspace   = tmp_path / "runs" / "sequences" / "old"
@@ -586,7 +506,6 @@ def test_a_resume_bypass_is_not_persisted_and_a_plain_start_runs_every_block(rig
 
 
 def test_resume_refuses_a_missing_workspace(rig, tmp_path):
-    """Feeding a directory that does not exist refuses the start instead of creating it."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")], isolate=True)
 
@@ -598,7 +517,6 @@ def test_resume_refuses_a_missing_workspace(rig, tmp_path):
 
 
 def test_resume_refuses_a_workspace_outside_the_sequences_tree(rig, tmp_path):
-    """Feeding a directory outside runs/sequences refuses the start."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")], isolate=True)
     elsewhere   = tmp_path / "elsewhere"
@@ -611,7 +529,6 @@ def test_resume_refuses_a_workspace_outside_the_sequences_tree(rig, tmp_path):
 
 
 def test_the_live_state_is_mirrored_into_the_workspace(rig):
-    """An isolated execution writes its state file on start and refreshes it as blocks finish."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])], isolate=True)
 
@@ -629,7 +546,6 @@ def test_the_live_state_is_mirrored_into_the_workspace(rig):
 
 
 def test_the_state_file_write_is_staged_and_serialized_under_the_runner_lock(rig, monkeypatch):
-    """The persist pass holds the runner lock across the staging write and replaces the target in one step, leaving no staging file behind."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")], isolate=True)
     lock_free   = []
@@ -653,7 +569,6 @@ def test_the_state_file_write_is_staged_and_serialized_under_the_runner_lock(rig
 
 
 def test_a_failed_staging_write_leaves_the_state_file_intact_and_retries(rig, monkeypatch):
-    """An interrupted staging write never touches the recorded state, and the next pass rewrites it instead of caching the lost text."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")], isolate=True)
 
@@ -682,7 +597,6 @@ def test_a_failed_staging_write_leaves_the_state_file_intact_and_retries(rig, mo
 
 
 def test_a_stop_is_recorded_in_the_workspace_state_file(rig):
-    """Stopping refreshes the state file, so a later scan sees the cancelled blocks."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])], isolate=True)
 
@@ -696,7 +610,6 @@ def test_a_stop_is_recorded_in_the_workspace_state_file(rig):
 
 
 def test_resume_scan_reports_the_blocks_recorded_done(rig, tmp_path):
-    """A fresh runner, as after a server restart, reads the finished blocks from the state file."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])], isolate=True)
 
@@ -716,7 +629,6 @@ def test_resume_scan_reports_the_blocks_recorded_done(rig, tmp_path):
 
 
 def test_resume_scan_keeps_proposing_blocks_bypassed_by_an_earlier_resume(rig, tmp_path):
-    """A block the previous execution bypassed as resumed-finished stays proposed on the next resume scan."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
     workspace   = tmp_path / "runs" / "sequences" / "old"
@@ -734,7 +646,6 @@ def test_resume_scan_keeps_proposing_blocks_bypassed_by_an_earlier_resume(rig, t
 
 
 def test_resume_scan_does_not_propose_a_manually_skipped_block(rig):
-    """A block bypassed by its skip toggle never ran, so the scan leaves it out of the finished proposal."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", skip=True), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
 
@@ -751,7 +662,6 @@ def test_resume_scan_does_not_propose_a_manually_skipped_block(rig):
 
 
 def test_resume_scan_ignores_done_blocks_no_longer_in_the_sequence(rig):
-    """A block recorded done but removed from the definition is not proposed for skipping."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")], isolate=True)
 
@@ -769,7 +679,6 @@ def test_resume_scan_ignores_done_blocks_no_longer_in_the_sequence(rig):
 
 
 def test_resume_scan_reports_a_workspace_without_a_state_file(rig, tmp_path):
-    """A valid workspace holding no state file answers recorded False instead of guessing."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")], isolate=True)
     workspace   = tmp_path / "runs" / "sequences" / "bare"
@@ -783,7 +692,6 @@ def test_resume_scan_reports_a_workspace_without_a_state_file(rig, tmp_path):
 
 
 def test_resume_scan_refuses_an_invalid_workspace(rig, tmp_path):
-    """The scan applies the same workspace validation as the resumed start."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")], isolate=True)
     elsewhere   = tmp_path / "elsewhere"
@@ -794,7 +702,6 @@ def test_resume_scan_refuses_an_invalid_workspace(rig, tmp_path):
 
 
 def test_resume_refuses_an_unisolated_sequence(rig, tmp_path):
-    """A sequence with isolation off has no workspace concept, so resuming is refused."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")])
     workspace   = tmp_path / "runs" / "sequences" / "old"
@@ -807,7 +714,6 @@ def test_resume_refuses_an_unisolated_sequence(rig, tmp_path):
 
 
 def test_a_sequence_without_isolation_leaves_the_run_roots_alone(rig):
-    """With isolation off, no workspace is created and the log directory stays at its default."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1")])
 
@@ -826,7 +732,6 @@ def test_a_sequence_without_isolation_leaves_the_run_roots_alone(rig):
 
 
 def _workspace_rel(runner: SequenceRunner, sequence_id: str) -> str:
-    """Returns the runs-tree-relative path of a started sequence's workspace."""
     return Path(runner.state(sequence_id)["run_dir"]).relative_to(runner.store.paths.runs_dir).as_posix()
 
 
@@ -853,7 +758,6 @@ def _workspace_rel(runner: SequenceRunner, sequence_id: str) -> str:
 
 
 def test_start_refuses_an_empty_or_running_sequence(rig):
-    """Sequences without blocks and sequences already running are refused."""
     store, processes, launcher, runner = rig
     empty_id = store.create("empty")["entry"]["sequence_id"]
     chain_id = _saved(store, [_block("a1")])
@@ -865,7 +769,6 @@ def test_start_refuses_an_empty_or_running_sequence(rig):
 
 
 def test_start_refuses_a_mail_step_without_the_smtp_password(rig, monkeypatch):
-    """A block mailing reports blocks the start when the server environment lacks the password."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize("mail_experiment_reports"))], isolate=True)
     monkeypatch.delenv(ReportMailEntryConfig.password_env)
@@ -878,7 +781,6 @@ def test_start_refuses_a_mail_step_without_the_smtp_password(rig, monkeypatch):
 
 
 def test_a_skipped_mail_block_starts_without_the_smtp_password(rig, monkeypatch):
-    """Skip-marked mail blocks and compare-only chains do not demand the password at start."""
     store, processes, launcher, runner = rig
     blocks      = [_block("a1", finalize=_finalize("mail_experiment_reports"), skip=True), _block("b2", script="infer_backbone", finalize=_finalize("compare_trials"))]
     sequence_id = _saved(store, blocks, isolate=True)
@@ -888,19 +790,16 @@ def test_a_skipped_mail_block_starts_without_the_smtp_password(rig, monkeypatch)
 
 
 def _tune_block(block_id: str, **extra) -> dict:
-    """Returns a tuning block recording its best configuration as the model_overrides verdict."""
     return _block(block_id, script="tune", overrides={"run_tag": "tag"}, decisions=[{"path": "model_overrides", "options": [], "waiting": "", "choice": ""}], **extra)
 
 
 def _write_best_config(runner: SequenceRunner, sequence_id: str, params: dict, model: str = "unet_skip-set_pred") -> None:
-    """Writes the best-configuration file a tuning run leaves for one model inside the execution workspace."""
     path = Path(runner.state(sequence_id)["run_dir"]) / "tag" / model / "best_config.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"model": model, "trial": 7, "val_loss": 0.1, "params": params}))
 
 
 def test_a_tuning_block_records_its_best_configuration_as_the_downstream_model_overrides(rig):
-    """A finished tuning block reads its best configuration, records the verdict, and its successor launches with the stamped overrides."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_tune_block("t1"), _block("c2", script="cross_validate", predecessors=["t1"])], isolate=True)
 
@@ -927,7 +826,6 @@ def test_a_tuning_block_records_its_best_configuration_as_the_downstream_model_o
 
 
 def test_a_tuning_block_holds_its_successor_until_the_verdict_is_recorded(rig):
-    """The successor stays pending while the block is deciding, and the sequence still counts as running."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_tune_block("t1"), _block("c2", script="cross_validate", predecessors=["t1"])], isolate=True)
 
@@ -945,7 +843,6 @@ def test_a_tuning_block_holds_its_successor_until_the_verdict_is_recorded(rig):
 
 
 def test_a_tuning_block_without_a_best_configuration_fails_and_skips_its_successor(rig):
-    """A tuning run that left no best configuration fails the block instead of letting the successor run untuned."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_tune_block("t1"), _block("c2", script="cross_validate", predecessors=["t1"])], isolate=True)
 
@@ -963,7 +860,6 @@ def test_a_tuning_block_without_a_best_configuration_fails_and_skips_its_success
 
 
 def test_a_tuning_block_with_two_best_configurations_fails(rig):
-    """Two tuned models leave two best configurations, which one model_overrides verdict cannot carry."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_tune_block("t1")], isolate=True)
 
@@ -978,7 +874,6 @@ def test_a_tuning_block_with_two_best_configurations_fails(rig):
 
 
 def test_a_tuning_block_records_the_batch_size_on_its_own_axis(rig):
-    """A study that sampled the batch size stamps it downstream as training.batch_size beside the model overrides."""
     store, processes, launcher, runner = rig
     block       = _block("t1", script="tune", overrides={"run_tag": "tag"}, decisions=[{"path": "model_overrides", "options": [], "waiting": "", "choice": ""}, {"path": "training.batch_size", "options": [], "waiting": "", "choice": ""}])
     sequence_id = _saved(store, [block, _block("c2", script="cross_validate", predecessors=["t1"])], isolate=True)
@@ -997,7 +892,6 @@ def test_a_tuning_block_records_the_batch_size_on_its_own_axis(rig):
 
 
 def test_a_tuning_block_that_sampled_the_batch_without_declaring_its_axis_fails(rig):
-    """A sampled batch size with no axis to land on fails the block instead of being dropped."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_tune_block("t1")], isolate=True)
 
@@ -1011,7 +905,6 @@ def test_a_tuning_block_that_sampled_the_batch_without_declaring_its_axis_fails(
 
 
 def test_a_tuning_block_declaring_another_axis_fails_to_record(rig):
-    """A tuning block may only record model_overrides and the batch size; any other axis fails the block loudly."""
     store, processes, launcher, runner = rig
     block       = _block("t1", script="tune", overrides={"run_tag": "tag"}, decisions=[{"path": "training.epochs", "options": ["60"], "waiting": "", "choice": ""}])
     sequence_id = _saved(store, [block], isolate=True)
@@ -1025,7 +918,6 @@ def test_a_tuning_block_declaring_another_axis_fails_to_record(rig):
 
 
 def test_a_tuning_block_without_decisions_is_plainly_done(rig):
-    """A tuning block that declares no axis records nothing and counts as done as soon as its job ends."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("t1", script="tune", overrides={"run_tag": "tag"})], isolate=True)
 
@@ -1038,7 +930,6 @@ def test_a_tuning_block_without_decisions_is_plainly_done(rig):
 
 
 def test_study_progress_reads_the_workspace_snapshots(rig):
-    """A tuning block answers with the study snapshot its workers wrote under the workspace, keyed by model."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_tune_block("t1")], isolate=True)
     snapshot    = {"trials": {"complete": 40, "pruned": 5, "fail": 1, "running": 4}, "finished": 46, "target": 3999, "best": {"trial": 12, "value": 0.39, "params": {}}, "stalled": 28, "plateau_patience": 400, "trials_per_hour": 23.0, "eta_target_h": 172.1}
@@ -1052,7 +943,6 @@ def test_study_progress_reads_the_workspace_snapshots(rig):
 
 
 def test_study_progress_refuses_what_it_cannot_read(rig):
-    """An unknown block, a block without a study, and a sequence that never ran are all refused with a reason."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_tune_block("t1"), _block("b2", predecessors=["t1"])], isolate=True)
 
@@ -1065,7 +955,6 @@ def test_study_progress_refuses_what_it_cannot_read(rig):
 
 
 def _experiment_tree(run_dir: str, mode: str = "curriculum", trials: tuple = ("rung_a", "rung_b")) -> Path:
-    """Creates a trial-sweep directory with seed runs inside a workspace and returns it."""
     experiment = Path(run_dir) / mode
     for trial in trials:
         (experiment / trial / "seed0").mkdir(parents=True)
@@ -1074,7 +963,6 @@ def _experiment_tree(run_dir: str, mode: str = "curriculum", trials: tuple = ("r
 
 
 def test_a_finalize_block_chains_compare_and_mail_then_ends_done(rig):
-    """The chain runs compare_seeds, compare_trials and the mailer on the block's sweep, then the block is done."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
@@ -1104,7 +992,6 @@ def test_a_finalize_block_chains_compare_and_mail_then_ends_done(rig):
 
 
 def test_a_plain_sequence_block_finalizes_on_the_entrys_own_sweep(rig, tmp_path):
-    """Without a workspace, a block with finalize steps on chains on the sweep under its own log directory."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize("compare_trials"), overrides={"logdir": str(tmp_path / "own")})])
 
@@ -1120,7 +1007,6 @@ def test_a_plain_sequence_block_finalizes_on_the_entrys_own_sweep(rig, tmp_path)
 
 
 def test_the_chain_steps_launch_attached_in_a_detached_sequence(rig):
-    """The chain steps run attached whatever the sequence's detach flag, so a crashed step ends as failed instead of finished."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True, detach=True)
 
@@ -1135,7 +1021,6 @@ def test_the_chain_steps_launch_attached_in_a_detached_sequence(rig):
 
 
 def test_the_chain_runs_only_the_enabled_switches(rig):
-    """A block with only the trial comparison and the mailing on skips the seed comparison."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize("compare_trials", "mail_experiment_reports"))], isolate=True)
 
@@ -1157,7 +1042,6 @@ def test_the_chain_runs_only_the_enabled_switches(rig):
 
 
 def test_a_trials_mode_override_names_the_experiment_directory(rig):
-    """The chain follows the block's trials_mode override instead of the entry default."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS), overrides={"trials_mode": "patch"})], isolate=True)
 
@@ -1170,7 +1054,6 @@ def test_a_trials_mode_override_names_the_experiment_directory(rig):
 
 
 def test_the_finalize_chain_follows_an_external_logdir(rig, tmp_path):
-    """A block whose logdir deliberately points outside the runs tree finalizes on that directory, not the workspace."""
     store, processes, launcher, runner = rig
     external    = tmp_path / "scratch_runs"
     sequence_id = _saved(store, [_block("a1", finalize=_finalize("compare_trials"), overrides={"logdir": str(external)})], isolate=True)
@@ -1186,7 +1069,6 @@ def test_the_finalize_chain_follows_an_external_logdir(rig, tmp_path):
 
 
 def test_finalizing_does_not_hold_back_the_successors(rig):
-    """Successors launch as soon as the block's own job finishes, beside the running chain."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS)), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
 
@@ -1201,7 +1083,6 @@ def test_finalizing_does_not_hold_back_the_successors(rig):
 
 
 def test_a_failed_chain_step_marks_finalize_failed_and_fails_the_sequence(rig):
-    """A chain job ending failed marks the block finalize_failed, spares the successors, and fails the sequence."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS)), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
 
@@ -1223,7 +1104,6 @@ def test_a_failed_chain_step_marks_finalize_failed_and_fails_the_sequence(rig):
 
 
 def test_a_missing_experiment_directory_fails_the_chain(rig):
-    """Without the sweep directory on disk, the first chain step refuses to launch and the block ends finalize_failed."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
@@ -1238,7 +1118,6 @@ def test_a_missing_experiment_directory_fails_the_chain(rig):
 
 
 def test_finalize_refuses_an_entry_without_trials_mode(rig):
-    """A finalize block whose entry exposes no trials_mode fails at launch instead of guessing a directory."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", script="train_jepa", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
@@ -1251,7 +1130,6 @@ def test_finalize_refuses_an_entry_without_trials_mode(rig):
 
 
 def _cv_fold_tree(run_dir: str, run_tag: str) -> Path:
-    """Creates a cross-validation fold sweep with seed runs inside a workspace and returns it."""
     folds = Path(run_dir) / run_tag / "folds"
     for fold in ("unet.conv::fold_0", "unet.conv::fold_1"):
         (folds / fold / "seed0").mkdir(parents=True)
@@ -1260,7 +1138,6 @@ def _cv_fold_tree(run_dir: str, run_tag: str) -> Path:
 
 
 def test_a_cross_validation_block_finalizes_on_its_fold_sweep(rig):
-    """The chain of a cross-validation block compares the fold runs under <workspace>/<run_tag>/folds and mails that folds directory."""
     store, processes, launcher, runner = rig
     block       = _block("a1", script="cross_validate", finalize=_finalize(*FinalizeChain.STEPS), overrides={"run_tag": "cv1"})
     sequence_id = _saved(store, [block], isolate=True)
@@ -1291,7 +1168,6 @@ def test_a_cross_validation_block_finalizes_on_its_fold_sweep(rig):
 
 
 def test_finalize_refuses_a_cross_validation_block_without_run_tag(rig):
-    """A cross-validation finalize block whose run tag is left to the timestamp default fails at launch."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", script="cross_validate", finalize=_finalize("compare_trials"))], isolate=True)
 
@@ -1304,7 +1180,6 @@ def test_finalize_refuses_a_cross_validation_block_without_run_tag(rig):
 
 
 def test_stop_stops_a_running_chain_job(rig):
-    """Stopping a sequence cancels the chain job of a finalizing block."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
@@ -1319,7 +1194,6 @@ def test_stop_stops_a_running_chain_job(rig):
 
 
 def test_resume_scan_proposes_a_finalize_failed_block_for_skipping(rig):
-    """A block whose chain failed still counts as finished on resume: its own job completed."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
@@ -1338,7 +1212,6 @@ def test_resume_scan_proposes_a_finalize_failed_block_for_skipping(rig):
 
 
 def test_a_failed_job_alerts_the_block_and_the_ended_sequence(rig):
-    """A job failure pushes one block alert and one sequence-failed alert through the notifier."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])])
 
@@ -1355,7 +1228,6 @@ def test_a_failed_job_alerts_the_block_and_the_ended_sequence(rig):
 
 
 def test_a_finished_sequence_alerts_at_default_priority(rig):
-    """The sequence-finished notification carries the block count at default priority and nothing else fires."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])])
 
@@ -1371,7 +1243,6 @@ def test_a_finished_sequence_alerts_at_default_priority(rig):
 
 
 def test_a_stopped_sequence_does_not_alert(rig):
-    """A manual stop cancels the blocks without pushing any notification."""
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1"), _block("b2", predecessors=["a1"])])
 

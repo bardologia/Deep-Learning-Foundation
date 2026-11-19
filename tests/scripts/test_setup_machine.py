@@ -1,10 +1,3 @@
-"""Tests for the guided machine setup.
-
-Covers the prompter's preset, unattended and terminal paths with validation, the
-validators, and the wizard run end to end against a stub probe: the profile it
-writes, the roots it creates, the interpreter hand-over from the installer, the
-way a rerun defaults to the saved answers, and the refusal of an invalid preset.
-"""
 
 from __future__ import annotations
 
@@ -30,41 +23,19 @@ FACTS = {
 
 
 class StubProbe:
-    """Probe stand-in returning fixed facts and a fixed environment interpreter.
-
-    Attributes:
-        facts_value : Facts mapping returned by ``facts``.
-        interpreter : Path returned by ``env_interpreter``.
-    """
 
     def __init__(self, facts: dict, interpreter: Path) -> None:
-        """Stores the canned facts and interpreter."""
         self.facts_value = facts
         self.interpreter = interpreter
 
     def facts(self) -> dict:
-        """Returns the canned facts."""
         return dict(self.facts_value)
 
     def env_interpreter(self, conda_root, env_name: str):
-        """Returns the canned interpreter regardless of the environment asked for."""
         return self.interpreter
 
 
 def _setup(tmp_path: Path, logger_stub, answers: dict | None = None, assume: bool = True, saved: dict | None = None, handed: bool = True) -> MachineSetup:
-    """Builds a wizard over a temporary repository, interpreter and profile location.
-
-    Args:
-        tmp_path    : Root for the fake repository, data and profile.
-        logger_stub : Silent logger.
-        answers     : Preset answers merged over the minimal set that keeps every path under tmp_path.
-        assume      : Whether unanswered questions take their defaults.
-        saved       : Profile content already on disk before the run, or None for a first run.
-        handed      : Whether the installer hands the interpreter over, as install.sh does.
-
-    Returns:
-        A wizard with verification and the desktop launcher disabled.
-    """
     repo        = tmp_path / "repo"
     interpreter = tmp_path / "envs" / "Dune" / "bin" / "python"
     interpreter.parent.mkdir(parents=True, exist_ok=True)
@@ -82,7 +53,6 @@ def _setup(tmp_path: Path, logger_stub, answers: dict | None = None, assume: boo
 
 
 def test_prompter_prefers_presets_then_defaults_then_the_terminal(logger_stub, monkeypatch):
-    """A preset answer wins, unattended mode takes the default, and the terminal answer is validated until accepted."""
     preset = Prompter({"port": "9000"}, False, logger_stub)
     assert preset.ask("port", "Port", "8772", validate=Validators.port) == "9000"
 
@@ -99,7 +69,6 @@ def test_prompter_prefers_presets_then_defaults_then_the_terminal(logger_stub, m
 
 
 def test_prompter_refuses_an_invalid_preset_or_default(logger_stub):
-    """A bad preset or an unattended default that fails validation raises instead of being written."""
     with pytest.raises(ValueError, match="preset answer port"):
         Prompter({"port": "abc"}, False, logger_stub).ask("port", "Port", "8772", validate=Validators.port)
 
@@ -108,7 +77,6 @@ def test_prompter_refuses_an_invalid_preset_or_default(logger_stub):
 
 
 def test_prompter_choose_accepts_numbers_and_free_text(logger_stub, monkeypatch):
-    """A numbered option, a typed option and free text when nothing was detected are all accepted."""
     typed = iter(["2", "b", "free"])
     monkeypatch.setattr("builtins.input", lambda prompt: next(typed))
     prompter = Prompter({}, False, logger_stub)
@@ -119,7 +87,6 @@ def test_prompter_choose_accepts_numbers_and_free_text(logger_stub, monkeypatch)
 
 
 def test_validators(tmp_path):
-    """Each validator accepts its valid input and names the problem otherwise."""
     (tmp_path / "f").write_text("")
 
     assert Validators.existing_dir(str(tmp_path))              is None
@@ -147,7 +114,6 @@ def test_validators(tmp_path):
 
 
 def test_the_unattended_run_writes_a_complete_profile(tmp_path, logger_stub):
-    """Defaults from the probe fill every section, the roots are created and the shell twin is written."""
     setup = _setup(tmp_path, logger_stub)
     setup.run()
 
@@ -170,7 +136,6 @@ def test_the_unattended_run_writes_a_complete_profile(tmp_path, logger_stub):
 
 
 def test_the_default_roots_are_the_checkout_reference_layout(tmp_path, logger_stub):
-    """Without presets the data, runs and results roots default to the reference layout below the checkout."""
     setup = _setup(tmp_path, logger_stub)
     setup.prompter.answers = {}
     setup.run()
@@ -183,7 +148,6 @@ def test_the_default_roots_are_the_checkout_reference_layout(tmp_path, logger_st
 
 
 def test_detected_datasets_and_parameter_files_become_the_defaults(tmp_path, logger_stub):
-    """A dataset with a layout file below the data root and its extraction runs are offered and taken by default."""
     scene = tmp_path / "data" / "scene_b"
     (scene / "data").mkdir(parents=True)
     (scene / "data" / "dataset.json").write_text("{}")
@@ -199,7 +163,6 @@ def test_detected_datasets_and_parameter_files_become_the_defaults(tmp_path, log
 
 
 def test_the_handed_over_interpreter_skips_the_question_unless_a_preset_names_one(tmp_path, logger_stub):
-    """The installer's interpreter is recorded without asking; a preset or a missing hand-over goes through the question."""
     handed = _setup(tmp_path, logger_stub)
     handed.run()
     assert MachineProfile.load(tmp_path / "cfg" / "machine.json").machine["interpreter"] == str(tmp_path / "envs" / "Dune" / "bin" / "python")
@@ -216,7 +179,6 @@ def test_the_handed_over_interpreter_skips_the_question_unless_a_preset_names_on
 
 
 def test_hardware_and_notification_answers_are_stored(tmp_path, logger_stub):
-    """The GPU pool, VRAM budget, ntfy and mail answers land in their sections."""
     answers = {
         "ntfy_enabled": "yes", "ntfy_topic": "secret-topic", "ntfy_server": "https://ntfy.sh/",
         "mail_enabled": "yes", "mail_sender": "me@example.org", "mail_recipient": "you@example.org",
@@ -233,7 +195,6 @@ def test_hardware_and_notification_answers_are_stored(tmp_path, logger_stub):
 
 
 def test_a_rerun_defaults_to_the_saved_answers(tmp_path, logger_stub):
-    """An unattended rerun keeps the previously saved console port, data root and ntfy topic."""
     saved = {
         "console" : {"host": "0.0.0.0", "port": 9100},
         "roots"   : {"data": str(tmp_path / "data")},
@@ -249,7 +210,6 @@ def test_a_rerun_defaults_to_the_saved_answers(tmp_path, logger_stub):
 
 
 def test_an_invalid_preset_stops_the_run_before_anything_is_written(tmp_path, logger_stub):
-    """A rejected preset raises and leaves no profile behind."""
     with pytest.raises(ValueError, match="console_port"):
         _setup(tmp_path, logger_stub, {"console_port": "12"}).run()
 
@@ -257,7 +217,6 @@ def test_an_invalid_preset_stops_the_run_before_anything_is_written(tmp_path, lo
 
 
 def test_a_failing_nvidia_smi_is_reported_by_the_host_step(tmp_path, logger_stub, monkeypatch):
-    """The host step shows nvidia-smi's failure in the table and warns with it instead of reporting a CPU machine."""
     setup    = _setup(tmp_path, logger_stub)
     broken   = {**FACTS, "driver": "", "driver_error": "nvidia-smi exited 9: could not communicate with the NVIDIA driver", "gpus": [], "torch_index": "cpu", "torch_note": "nvidia-smi exited 9: could not communicate with the NVIDIA driver"}
     tables   = []
@@ -277,7 +236,6 @@ def test_a_failing_nvidia_smi_is_reported_by_the_host_step(tmp_path, logger_stub
 
 
 def test_a_cpu_machine_gets_the_plain_no_gpu_warning(tmp_path, logger_stub, monkeypatch):
-    """Without nvidia-smi the host step keeps the old no-GPU warning and explains the CPU wheel."""
     setup    = _setup(tmp_path, logger_stub)
     tables   = []
     warnings = []
@@ -294,7 +252,6 @@ def test_a_cpu_machine_gets_the_plain_no_gpu_warning(tmp_path, logger_stub, monk
 
 
 def test_verification_quotes_torch_when_a_detected_gpu_is_unusable(tmp_path, logger_stub, monkeypatch):
-    """The CUDA warning carries torch's own stderr explanation instead of a generic hint."""
     setup       = _setup(tmp_path, logger_stub)
     interpreter = tmp_path / "fake-python"
     warnings    = []
@@ -316,6 +273,5 @@ def test_verification_quotes_torch_when_a_detected_gpu_is_unusable(tmp_path, log
 
 
 def test_the_wizard_refuses_a_disabled_profile_location(logger_stub):
-    """Without a location the wizard cannot save, which the profile reports."""
     with pytest.raises(RuntimeError, match=MachineProfile.ENV_VAR):
         MachineProfile(None, {"machine": {}}).save()

@@ -1,10 +1,3 @@
-"""Tests that RunClassifier identifies a run's type from the config files in its meta directory.
-
-Covers the backbone, profile-autoencoder, image-autoencoder and dual run types, the routing of
-JEPA runs to the backbone type, the refusal to classify an empty run, and agreement between
-RunArtifacts filenames and the config IO classes. Also covers the per-family runners, the
-per-region scoring of a split stored as several regions and the single pass of a run scored
-on a target dataset."""
 
 from __future__ import annotations
 
@@ -20,7 +13,6 @@ from pipelines.shared.inference.run_classifier  import RunArtifacts, RunClassifi
 
 
 def _make_run(tmp_path, *filenames):
-    """Creates a run directory whose meta/ holds the named placeholder config files."""
     meta = tmp_path / "meta"
     meta.mkdir(parents=True, exist_ok=True)
     for name in filenames:
@@ -29,19 +21,16 @@ def _make_run(tmp_path, *filenames):
 
 
 def test_classify_backbone(tmp_path):
-    """A run holding only a backbone model config classifies as BACKBONE."""
     run = _make_run(tmp_path, "model_config.json")
     assert RunClassifier.classify(run) == RunType.BACKBONE
 
 
 def test_classify_profile_autoencoder(tmp_path):
-    """A run holding only a profile-autoencoder config classifies as PROFILE_AE."""
     run = _make_run(tmp_path, "profile_autoencoder_config.json")
     assert RunClassifier.classify(run) == RunType.PROFILE_AE
 
 
 def test_classify_image_autoencoder(tmp_path):
-    """A run holding only an image-autoencoder config classifies as IMAGE_AE."""
     run = _make_run(tmp_path, "image_autoencoder_config.json")
     assert RunClassifier.classify(run) == RunType.IMAGE_AE
 
@@ -49,26 +38,22 @@ def test_classify_image_autoencoder(tmp_path):
 
 
 def test_classify_dual(tmp_path):
-    """A run holding a dual model config classifies as DUAL."""
     run = _make_run(tmp_path, "dual_model_config.json")
     assert RunClassifier.classify(run) == RunType.DUAL
 
 
 def test_classify_jepa_run_routes_to_backbone(tmp_path):
-    """A backbone paired with a profile autoencoder still classifies as BACKBONE."""
     run = _make_run(tmp_path, "model_config.json", "profile_autoencoder_config.json")
     assert RunClassifier.classify(run) == RunType.BACKBONE
 
 
 def test_classify_unrecognized_run_raises(tmp_path):
-    """A run with no recognised config file raises ValueError."""
     run = _make_run(tmp_path)
     with pytest.raises(ValueError):
         RunClassifier.classify(run)
 
 
 def test_run_classifier_artifacts_match_config_io_filenames():
-    """The RunArtifacts filenames match the FILENAME of every corresponding config IO class."""
     assert BackboneModelConfigIO.FILENAME      == RunArtifacts.BACKBONE_CONFIG
     assert ProfileAutoencoderConfigIO.FILENAME == RunArtifacts.PROFILE_AE_CONFIG
     assert ImageAutoencoderConfigIO.FILENAME   == RunArtifacts.IMAGE_AE_CONFIG
@@ -76,7 +61,6 @@ def test_run_classifier_artifacts_match_config_io_filenames():
 
 
 def test_spatial_run_config_scores_a_fold_unit_over_its_recorded_block(tmp_path):
-    """A fold unit's manifest supplies the region override of the split it records."""
     from configuration.inference                       import InferenceConfig
     from pipelines.cross_validation.folds              import FoldUnitManifest
     from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
@@ -92,7 +76,6 @@ def test_spatial_run_config_scores_a_fold_unit_over_its_recorded_block(tmp_path)
 
 
 def test_spatial_run_config_keeps_an_explicit_region_override(tmp_path):
-    """An explicit region override on the entry configuration wins over the fold's recorded block."""
     from configuration.inference                       import InferenceConfig
     from pipelines.cross_validation.folds              import FoldUnitManifest
     from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
@@ -106,7 +89,6 @@ def test_spatial_run_config_keeps_an_explicit_region_override(tmp_path):
 
 
 def test_spatial_run_config_refuses_a_split_the_fold_does_not_score(tmp_path):
-    """Asking a fold unit for a split outside its recorded blocks raises instead of scoring the whole scene."""
     from configuration.inference                       import InferenceConfig
     from pipelines.cross_validation.folds              import FoldUnitManifest
     from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
@@ -119,7 +101,6 @@ def test_spatial_run_config_refuses_a_split_the_fold_does_not_score(tmp_path):
 
 
 def test_spatial_run_config_leaves_a_plain_run_alone(tmp_path):
-    """A run without a manifest gets no region override."""
     from configuration.inference                       import InferenceConfig
     from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
 
@@ -132,7 +113,6 @@ def test_spatial_run_config_leaves_a_plain_run_alone(tmp_path):
 
 
 def test_inference_layout_places_nested_families_under_their_subdirectory(tmp_path):
-    """The spatial families stamp directly under inference/ and the others under their family subdirectory."""
     from pipelines.shared.inference.run_classifier import InferenceLayout
 
     assert InferenceLayout.base(tmp_path, RunType.BACKBONE)   == tmp_path / "inference"
@@ -142,28 +122,19 @@ def test_inference_layout_places_nested_families_under_their_subdirectory(tmp_pa
 
 
 class _RecordingPipeline:
-    """Inference pipeline stand-in that records every configuration it is built with, and the region pass of each pass.
-
-    Attributes:
-        passes        : Configuration and component set of every pass, in construction order.
-        region_passes : Region pass handed to every pass, in construction order.
-    """
 
     passes        = []
     region_passes = []
 
     def __init__(self, config, components=None, region_pass=None) -> None:
-        """Records the configuration, component set and region pass of one pass."""
         _RecordingPipeline.passes.append((config, components))
         _RecordingPipeline.region_passes.append(region_pass)
 
     def run(self) -> None:
-        """Does nothing; the pass is already recorded."""
         pass
 
 
 def _write_split_regions(run: Path, test_regions) -> Path:
-    """Writes a dataset creation config whose test split holds the given region dict or list of them."""
     (run / "meta").mkdir(parents=True)
 
     split_regions = {
@@ -181,7 +152,6 @@ def _write_split_regions(run: Path, test_regions) -> Path:
     ("ImageAeInferenceRunner",   "ImageAeInferenceEntryConfig",   "pipelines.image_autoencoder.inference.pipeline",   "ImageAeInferencePipeline"),
 ])
 def test_autoencoder_runners_drive_their_pipeline_once(tmp_path, monkeypatch, runner_name, entry_name, pipeline_module, pipeline_name):
-    """The profile-AE and image-AE runners build their pipeline once on the run, with no region handling."""
     import importlib
 
     import configuration.inference                       as inference_configs
@@ -203,7 +173,6 @@ def test_autoencoder_runners_drive_their_pipeline_once(tmp_path, monkeypatch, ru
 
 
 def test_dual_runner_scores_each_stored_region_with_the_dual_components(tmp_path, monkeypatch):
-    """The dual runner goes through the split-region loop: one pass per disjoint test region, each handed the dual component set."""
     import configuration.inference                       as inference_configs
     import pipelines.backbone.inference.pipeline         as backbone_pipeline
     import pipelines.shared.inference.inference_dispatch as dispatch
@@ -230,7 +199,6 @@ def test_dual_runner_scores_each_stored_region_with_the_dual_components(tmp_path
 
 
 def test_dual_runner_scores_an_enabled_target_in_one_pass_without_the_stored_regions(tmp_path, monkeypatch):
-    """With a target dataset enabled the dual runner skips the split-region loop: one pass, no region override, no region pass."""
     import configuration.inference                       as inference_configs
     import pipelines.backbone.inference.pipeline         as backbone_pipeline
     import pipelines.shared.inference.inference_dispatch as dispatch
@@ -262,7 +230,6 @@ def test_dual_runner_scores_an_enabled_target_in_one_pass_without_the_stored_reg
 
 
 def test_split_region_loop_scores_each_disjoint_region_in_its_own_pass(tmp_path, monkeypatch):
-    """A test split stored as two disjoint regions is scored twice, each region as override under its own indexed stamp."""
     from configuration.inference                       import InferenceConfig
     from pipelines.shared.inference.inference_dispatch import SplitRegionLoop
 
@@ -288,7 +255,6 @@ def test_split_region_loop_scores_each_disjoint_region_in_its_own_pass(tmp_path,
 
 
 def test_split_region_loop_scores_a_single_region_split_once(tmp_path, monkeypatch):
-    """A split stored as one region is scored in a single pass with the configuration unchanged."""
     from configuration.inference                       import InferenceConfig
     from pipelines.shared.inference.inference_dispatch import SplitRegionLoop
 
@@ -305,7 +271,6 @@ def test_split_region_loop_scores_a_single_region_split_once(tmp_path, monkeypat
 
 
 def test_split_region_loop_keeps_an_explicit_region_override(tmp_path, monkeypatch):
-    """A configured region override is scored in a single pass without reading the stored regions."""
     from configuration.inference                       import InferenceConfig
     from pipelines.shared.inference.inference_dispatch import SplitRegionLoop
 
@@ -320,7 +285,6 @@ def test_split_region_loop_keeps_an_explicit_region_override(tmp_path, monkeypat
 
 
 def test_split_region_loop_raises_when_the_run_stores_no_split_regions(tmp_path, monkeypatch):
-    """A dataset creation config without split regions raises instead of scoring the run as one region."""
     from configuration.inference                       import InferenceConfig
     from pipelines.shared.inference.inference_dispatch import SplitRegionLoop
 

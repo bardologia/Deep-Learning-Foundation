@@ -1,10 +1,3 @@
-"""Tests for the backbone and dual training pipelines.
-
-Covers the end-to-end run on the synthetic scene (checkpoint, metadata and config
-artifacts, the overfit-check gate and its abort path, the training-label prior
-written into the conv head bias, the abort record of a dataset-stage failure) and
-the patch-squaring rule applied for backbones that only accept square inputs.
-"""
 
 from __future__ import annotations
 
@@ -30,7 +23,6 @@ pytestmark = pytest.mark.usefixtures("force_cpu")
 
 
 def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
-    """Returns a small five-Gaussian dataset config over three adjacent row split regions."""
     input_config = InputConfig(
         use_primary     = True, primary_representation        = Representation.MAG_ONLY,
         use_secondaries = True, secondaries_representation    = Representation.MAG_ONLY,
@@ -58,7 +50,6 @@ def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
 
 
 def _trainer_config(test_data_dir, params_dir, tmp_path) -> BackboneTrainerConfig:
-    """Returns a one-epoch backbone trainer config with only the param_l1 term active."""
     gaussian = GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy")
     config   = BackboneTrainerConfig(gaussian=gaussian)
 
@@ -76,7 +67,6 @@ def _trainer_config(test_data_dir, params_dir, tmp_path) -> BackboneTrainerConfi
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_end_to_end_produces_checkpoint(test_data_dir, params_dir, tmp_path):
-    """Verifies a full pipeline run writes the best checkpoint and the metadata directory."""
     dataset_config = _dataset_config(test_data_dir, params_dir)
     trainer_config = _trainer_config(test_data_dir, params_dir, tmp_path)
 
@@ -102,7 +92,6 @@ def test_training_pipeline_end_to_end_produces_checkpoint(test_data_dir, params_
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_saves_configs(test_data_dir, params_dir, tmp_path):
-    """Verifies the run writes configuration artifacts into the metadata directory."""
     dataset_config = _dataset_config(test_data_dir, params_dir)
     trainer_config = _trainer_config(test_data_dir, params_dir, tmp_path)
 
@@ -127,7 +116,6 @@ def test_training_pipeline_saves_configs(test_data_dir, params_dir, tmp_path):
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_overfit_check_gates_and_reports(test_data_dir, params_dir, tmp_path):
-    """Verifies a passing overfit check reports its sanitized overrides, leaves no checkpoints behind and lets training proceed."""
     import json
 
     from configuration.training import OverfitCheckConfig
@@ -173,7 +161,6 @@ def test_training_pipeline_overfit_check_gates_and_reports(test_data_dir, params
 
 @pytest.mark.dataset
 def test_training_pipeline_overfit_check_abort_leaves_configs(test_data_dir, params_dir, tmp_path):
-    """Verifies a failing overfit check aborts the run but still leaves the report and config artifacts."""
     from configuration.training import OverfitCheckConfig
 
     dataset_config = _dataset_config(test_data_dir, params_dir)
@@ -203,14 +190,6 @@ def test_training_pipeline_overfit_check_abort_leaves_configs(test_data_dir, par
 
 
 def _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init: bool) -> TrainingPipeline:
-    """Returns a one-epoch unet conv-head pipeline over the small three-region scene.
-
-    Args:
-        test_data_dir   : Root of the synthetic dataset.
-        params_dir      : Parameter run of the synthetic dataset.
-        tmp_path        : Directory receiving the run.
-        prior_bias_init : Whether the conv head starts at the training-label prior.
-    """
     return TrainingPipeline(
         trainer_config  = _trainer_config(test_data_dir, params_dir, tmp_path),
         dataset_config  = _dataset_config(test_data_dir, params_dir),
@@ -225,7 +204,6 @@ def _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init: b
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_starts_the_conv_head_at_the_training_label_prior(test_data_dir, params_dir, tmp_path):
-    """Verifies prior_bias_init records the training window's pixel count and, per sorted slot, the pixels where that slot is active."""
     pipeline = _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init=True)
     pipeline.run(probe_config=None)
 
@@ -249,7 +227,6 @@ def test_training_pipeline_starts_the_conv_head_at_the_training_label_prior(test
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_keeps_the_default_head_bias_when_the_prior_is_off(test_data_dir, params_dir, tmp_path):
-    """Verifies the default run writes no head prior record."""
     pipeline = _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init=False)
     pipeline.run(probe_config=None)
 
@@ -258,7 +235,6 @@ def test_training_pipeline_keeps_the_default_head_bias_when_the_prior_is_off(tes
 
 
 def test_training_pipeline_records_a_dataset_stage_abort_in_its_run_log(tmp_path, monkeypatch):
-    """Verifies an error raised before training, in the dataset stage, ends the run's own log with the traceback and an ABORTED banner instead of a bare cut-off."""
     trainer_config                   = _square_patch_trainer_config()
     trainer_config.io.logdir         = str(tmp_path)
     trainer_config.resources.enabled = False
@@ -269,7 +245,6 @@ def test_training_pipeline_records_a_dataset_stage_abort_in_its_run_log(tmp_path
     pipeline = TrainingPipeline(trainer_config=trainer_config, dataset_config=dataset_config, backbone_name="resunet", run_name="dataset_abort")
 
     def _broken_dataset_pipeline(run_directory, logger):
-        """Raises the way a dataset build fails on a missing artifact."""
         raise ValueError("dataset stage broke")
 
     monkeypatch.setattr(pipeline, "_build_dataset_pipeline", _broken_dataset_pipeline)
@@ -286,7 +261,6 @@ def test_training_pipeline_records_a_dataset_stage_abort_in_its_run_log(tmp_path
 
 
 def _square_patch_dataset_config() -> DatasetConfig:
-    """Returns a dataset config with a rectangular (64, 32) patch and (32, 16) stride."""
     splits = SplitRegions(
         train = CropRegion(0, 8, 0, 8),
         val   = CropRegion(8, 16, 0, 8),
@@ -297,12 +271,10 @@ def _square_patch_dataset_config() -> DatasetConfig:
 
 
 def _square_patch_trainer_config() -> BackboneTrainerConfig:
-    """Returns a minimal five-Gaussian backbone trainer config."""
     return BackboneTrainerConfig(gaussian=GaussianConfig(n_default_gaussians=5, x_min=-20.0, x_max=40.0, activity_threshold=1e-4))
 
 
 def test_pipeline_squares_the_patch_for_square_only_backbones():
-    """Verifies a square-only backbone widens the patch and stride to the larger axis while keeping the configured geometry on record."""
     pipeline = TrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="swin_unet")
 
     assert pipeline.dataset_config.patch.size   == (64, 64)
@@ -313,7 +285,6 @@ def test_pipeline_squares_the_patch_for_square_only_backbones():
 
 
 def test_pipeline_names_the_configured_and_effective_geometry_when_squared():
-    """Verifies the execution-table cell and the run-summary payload show configured against effective geometry for a squared patch."""
     pipeline = TrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="swin_unet")
 
     assert pipeline._patch_geometry_label()   == "configured patch (64, 32) stride (32, 16) -> effective patch (64, 64) stride (32, 32) (swin_unet needs a square input)"
@@ -321,7 +292,6 @@ def test_pipeline_names_the_configured_and_effective_geometry_when_squared():
 
 
 def test_pipeline_keeps_rectangular_patches_for_convolutional_backbones():
-    """Verifies a convolutional backbone keeps the rectangular patch and stride and reports the geometry as configured."""
     pipeline = TrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="resunet")
 
     assert pipeline.dataset_config.patch.size   == (64, 32)
@@ -332,7 +302,6 @@ def test_pipeline_keeps_rectangular_patches_for_convolutional_backbones():
 
 
 def test_dual_pipeline_squares_the_patch_when_a_trunk_is_square_only():
-    """Verifies the dual pipeline squares the patch when either trunk is square-only."""
     model_config                    = DualResUNetConfig()
     model_config.params_backbone    = "resunet"
     model_config.existence_backbone = "swin_unet"

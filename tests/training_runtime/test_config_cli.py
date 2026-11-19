@@ -1,9 +1,3 @@
-"""Tests for the dataclass-backed command line override layer.
-
-Covers leaf flattening, type coercion of CLI tokens, the source records of
-typed overrides, the rejection of stray values, resolved-config persistence
-and the argv round trip provided by ConfigCli.
-"""
 
 from __future__ import annotations
 
@@ -20,7 +14,6 @@ from tools.runtime.machine_profile import MachineProfile
 
 @dataclass
 class NestedConfig:
-    """Nested dataclass exercising float, int, bool and str coercion."""
     lr      : float = 0.01
     epochs  : int   = 10
     enabled : bool  = True
@@ -29,13 +22,11 @@ class NestedConfig:
 
 @dataclass
 class PathsConfig:
-    """Nested dataclass holding a single Path-typed field."""
     log_base_dir: Path = Path("logs")
 
 
 @dataclass
 class RootConfig:
-    """Root config combining nested sections with scalar, sequence and optional fields."""
     nested  : NestedConfig            = field(default_factory=NestedConfig)
     paths   : PathsConfig             = field(default_factory=PathsConfig)
     seed    : int                     = 42
@@ -48,12 +39,10 @@ class RootConfig:
 
 
 def _config():
-    """Returns a fresh RootConfig instance with default values."""
     return RootConfig()
 
 
 def test_leaves_flattens_nested_paths():
-    """Verifies that nested dataclass fields are flattened to dotted leaf paths."""
     leaves = dict(ConfigCli._leaves(_config()))
 
     assert leaves["nested.lr"]          == 0.01
@@ -63,7 +52,6 @@ def test_leaves_flattens_nested_paths():
 
 
 def test_apply_overrides_nested_float():
-    """Verifies that a nested float override reaches the config and the overrides map."""
     cfg = _config()
     cli = ConfigCli(cfg)
     cli.apply(["--nested.lr", "0.5"])
@@ -73,7 +61,6 @@ def test_apply_overrides_nested_float():
 
 
 def test_typed_overrides_are_recorded_with_the_value_they_replaced():
-    """Each command-line override becomes a source record holding the leaf, the previous value and the new one."""
     cfg = _config()
     cli = ConfigCli(cfg, profile=MachineProfile(None))
     cli.apply(["--seed", "7", "--paths.log_base_dir", "/tmp/run"])
@@ -89,7 +76,6 @@ def test_typed_overrides_are_recorded_with_the_value_they_replaced():
 
 
 def test_only_the_parse_of_the_process_arguments_is_recorded(monkeypatch):
-    """An explicit argv leaves the process record alone; parsing sys.argv records the instance for logs and provenance."""
     monkeypatch.setattr(ConfigCli, "parsed", None)
 
     ConfigCli(_config(), profile=MachineProfile(None)).apply(["--seed", "7"])
@@ -105,7 +91,6 @@ def test_only_the_parse_of_the_process_arguments_is_recorded(monkeypatch):
 
 
 def test_apply_override_int():
-    """Verifies that an int-typed field is coerced to int rather than str."""
     cfg = _config()
     ConfigCli(cfg).apply(["--seed", "7"])
     assert cfg.seed == 7
@@ -113,14 +98,12 @@ def test_apply_override_int():
 
 
 def test_apply_dashed_alias_maps_to_underscore_path():
-    """Verifies that a dashed flag alias resolves to the underscored leaf path."""
     cfg = _config()
     ConfigCli(cfg).apply(["--paths.log-base-dir", "/tmp/run"])
     assert cfg.paths.log_base_dir == Path("/tmp/run")
 
 
 def test_apply_bool_true_variants():
-    """Verifies that true, 1, yes and on all parse to True."""
     for token in ("true", "1", "yes", "on"):
         cfg = _config()
         cfg.nested.enabled = False
@@ -129,7 +112,6 @@ def test_apply_bool_true_variants():
 
 
 def test_apply_bool_false_variants():
-    """Verifies that false, 0, no and off all parse to False."""
     for token in ("false", "0", "no", "off"):
         cfg = _config()
         ConfigCli(cfg).apply(["--nested.enabled", token])
@@ -137,14 +119,12 @@ def test_apply_bool_false_variants():
 
 
 def test_apply_bool_invalid_raises():
-    """Verifies that a non-boolean token for a bool field raises ValueError."""
     cfg = _config()
     with pytest.raises(ValueError):
         ConfigCli(cfg).apply(["--nested.enabled", "maybe"])
 
 
 def test_apply_path_coercion():
-    """Verifies that a string token for a Path field is coerced to Path."""
     cfg = _config()
     ConfigCli(cfg).apply(["--paths.log_base_dir", "/var/x"])
     assert cfg.paths.log_base_dir == Path("/var/x")
@@ -152,21 +132,18 @@ def test_apply_path_coercion():
 
 
 def test_apply_list_literal():
-    """Verifies that a Python list literal is parsed into a list."""
     cfg = _config()
     ConfigCli(cfg).apply(["--layers", "[1, 2, 3]"])
     assert cfg.layers == [1, 2, 3]
 
 
 def test_apply_list_comma_fallback():
-    """Verifies that a comma-separated token falls back to a list of strings."""
     cfg = _config()
     ConfigCli(cfg).apply(["--layers", "a,b,c"])
     assert cfg.layers == ["a", "b", "c"]
 
 
 def test_apply_tuple_coercion():
-    """Verifies that a list literal assigned to a tuple field is coerced to tuple."""
     cfg = _config()
     ConfigCli(cfg).apply(["--betas", "[0.8, 0.99]"])
     assert cfg.betas == (0.8, 0.99)
@@ -174,14 +151,12 @@ def test_apply_tuple_coercion():
 
 
 def test_apply_optional_list_scalar_is_wrapped():
-    """Verifies that a scalar token for an optional list field is wrapped in a list."""
     cfg = _config()
     ConfigCli(cfg).apply(["--kernels", "5"])
     assert cfg.kernels == [5]
 
 
 def test_apply_optional_list_comma_matches_non_optional_list():
-    """Verifies that optional and non-optional list fields parse comma tokens identically."""
     cfg = _config()
     ConfigCli(cfg).apply(["--kernels", "3,3,5", "--layers", "3,3,5"])
     assert cfg.kernels == [3, 3, 5]
@@ -189,7 +164,6 @@ def test_apply_optional_list_comma_matches_non_optional_list():
 
 
 def test_apply_optional_tuple_coercion():
-    """Verifies that a comma token for an optional tuple field is coerced to tuple."""
     cfg = _config()
     ConfigCli(cfg).apply(["--window", "64,32"])
     assert cfg.window == (64, 32)
@@ -197,14 +171,12 @@ def test_apply_optional_tuple_coercion():
 
 
 def test_apply_dict_coercion():
-    """Verifies that a dict literal replaces the default dict value."""
     cfg = _config()
     ConfigCli(cfg).apply(["--extra", "{'b': 2}"])
     assert cfg.extra == {"b": 2}
 
 
 def test_unset_options_leave_defaults():
-    """Verifies that fields without an override keep their dataclass defaults."""
     cfg = _config()
     ConfigCli(cfg).apply([])
     assert cfg.nested.lr     == 0.01
@@ -213,14 +185,12 @@ def test_unset_options_leave_defaults():
 
 
 def test_unknown_option_rejected():
-    """Verifies that an unknown option raises ValueError."""
     cfg = _config()
     with pytest.raises(ValueError):
         ConfigCli(cfg).apply(["--does-not-exist", "5"])
 
 
 def test_stray_values_after_an_override_are_rejected():
-    """Verifies space-separated list values are refused with a message naming the option and the accepted forms."""
     cfg = _config()
     with pytest.raises(ValueError, match=r"Stray value\(s\) \['1', '2'\] after --layers"):
         ConfigCli(cfg).apply(["--layers", "0", "1", "2"])
@@ -229,7 +199,6 @@ def test_stray_values_after_an_override_are_rejected():
 
 
 def test_stray_value_after_a_switch_is_not_taken_as_its_value():
-    """Verifies a list value is refused when a value-less switch such as --trial stands before the override, instead of the stray being swallowed as the switch's value."""
     cfg = _config()
     with pytest.raises(ValueError, match=r"Stray value\(s\) \['1'\] after --layers"):
         ConfigCli(cfg).apply(["--trial", "--layers", "0", "1"])
@@ -238,7 +207,6 @@ def test_stray_value_after_a_switch_is_not_taken_as_its_value():
 
 
 def test_stray_value_is_matched_to_the_flag_it_follows():
-    """Verifies a value-taking bootstrap flag accepts only the token right after it, so a stray later on the line is still refused."""
     cfg = _config()
     with pytest.raises(ValueError, match=r"Stray value\(s\) \['1'\] after --layers"):
         ConfigCli(cfg).apply(["--gpu", "--layers", "0", "1"])
@@ -248,21 +216,18 @@ def test_stray_value_is_matched_to_the_flag_it_follows():
 
 
 def test_bootstrap_flag_values_are_not_stray():
-    """Verifies the value of a bootstrap flag passes through while a later override still applies."""
     cfg = _config()
     ConfigCli(cfg).apply(["--run-tag", "sweep_a", "--seed", "3"])
     assert cfg.seed == 3
 
 
 def test_bootstrap_flags_not_rejected():
-    """Verifies that bootstrap flags such as --gpu are ignored instead of rejected."""
     cfg = _config()
     ConfigCli(cfg).apply(["--gpu", "0", "--seed", "3"])
     assert cfg.seed == 3
 
 
 def test_multiple_overrides_applied_together():
-    """Verifies that several overrides in one argv are all applied and recorded."""
     cfg = _config()
     cli = ConfigCli(cfg)
     cli.apply(["--nested.lr", "0.2", "--nested.epochs", "50", "--seed", "99"])
@@ -274,14 +239,12 @@ def test_multiple_overrides_applied_together():
 
 
 def test_set_path_static():
-    """Verifies that set_path assigns a value at a dotted leaf path."""
     cfg = _config()
     ConfigCli.set_path(cfg, "nested.name", "changed")
     assert cfg.nested.name == "changed"
 
 
 def test_apply_overrides_classmethod():
-    """Verifies that apply_overrides assigns every entry of an override mapping."""
     cfg = _config()
     ConfigCli.apply_overrides(cfg, {"nested.lr": 0.9, "seed": 5})
     assert cfg.nested.lr == 0.9
@@ -289,7 +252,6 @@ def test_apply_overrides_classmethod():
 
 
 def test_to_mapping_serializes_path_and_tuple():
-    """Verifies that to_mapping renders Path as str and tuple as list."""
     cfg     = _config()
     mapping = ConfigCli.to_mapping(cfg)
 
@@ -299,7 +261,6 @@ def test_to_mapping_serializes_path_and_tuple():
 
 
 def test_save_and_load_resolved_round_trip(tmp_path):
-    """Verifies that a saved resolved config restores scalar values into a fresh config."""
     cfg = _config()
     cfg.nested.lr = 0.333
     cfg.seed      = 17
@@ -315,7 +276,6 @@ def test_save_and_load_resolved_round_trip(tmp_path):
 
 
 def test_load_resolved_restores_path_and_tuple_types(tmp_path):
-    """Verifies that Path and tuple field types survive a save/load round trip."""
     cfg = _config()
     cfg.paths.log_base_dir = Path("/abc")
     cfg.betas              = (0.5, 0.6)
@@ -332,13 +292,11 @@ def test_load_resolved_restores_path_and_tuple_types(tmp_path):
 
 
 def test_load_resolved_missing_file_raises():
-    """Verifies that loading a nonexistent resolved config raises FileNotFoundError."""
     with pytest.raises(FileNotFoundError):
         ConfigCli.load_resolved(_config(), Path("/nonexistent/path.json"))
 
 
 def test_load_resolved_unknown_key_raises(tmp_path):
-    """Verifies that a resolved config with an unknown leaf key raises KeyError."""
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"nested.lr": 0.1, "ghost.key": 9}))
 
@@ -347,7 +305,6 @@ def test_load_resolved_unknown_key_raises(tmp_path):
 
 
 def test_to_argv_round_trips_overrides():
-    """Verifies that overrides rendered back to argv reproduce the same config state."""
     cfg = _config()
     cli = ConfigCli(cfg)
     cli.apply(["--nested.lr", "0.25", "--nested.enabled", "false", "--betas", "[0.1, 0.2]"])

@@ -1,10 +1,3 @@
-"""Tests for the weight x-ray statistics, size-limited checks and summary.
-
-Covers the duplicate-unit and spectral checks that a size limit skips, so a
-tensor the x-ray did not test is recorded as unchecked instead of clean, the
-single-unit case that has no pair to compare, and the transposed convolutions
-whose output units sit on dim 1 of the weight.
-"""
 
 from __future__ import annotations
 
@@ -15,14 +8,12 @@ from tools.diagnostics.weight_xray_analysis import IssueDetector, ModuleTypes, W
 
 
 def _analyze(config: WeightXrayConfig, state_dict: dict) -> dict:
-    """Returns the detected reports of a state dict keyed by tensor name."""
     reports = WeightAnalyzer(config, ModuleTypes.unavailable()).analyze(state_dict)
     reports = IssueDetector(config.thresholds).run(reports, state_dict)
     return {report.name: report for report in reports}
 
 
 def test_duplicate_check_above_the_unit_limit_is_recorded_as_skipped():
-    """A weight with more output units than duplicate_max_units carries the skip reason and no pair count."""
     config = WeightXrayConfig(duplicate_max_units=4)
     torch.manual_seed(0)
 
@@ -35,7 +26,6 @@ def test_duplicate_check_above_the_unit_limit_is_recorded_as_skipped():
 
 
 def test_spectral_check_above_the_svd_limit_is_recorded_as_skipped():
-    """A matrix whose smaller side exceeds svd_max_dim has no rank statistics and names the limit."""
     config = WeightXrayConfig(svd_max_dim=2)
     torch.manual_seed(0)
 
@@ -46,7 +36,6 @@ def test_spectral_check_above_the_svd_limit_is_recorded_as_skipped():
 
 
 def test_single_output_unit_has_zero_duplicate_pairs_and_no_skip():
-    """A one-unit weight has no pair to compare, which is a zero count rather than a skipped check."""
     reports = _analyze(WeightXrayConfig(), {"head.weight": torch.randn(1, 5)})
 
     assert reports["head.weight"].duplicate_units == 0
@@ -54,12 +43,10 @@ def test_single_output_unit_has_zero_duplicate_pairs_and_no_skip():
 
 
 def _transposed_types(key: str) -> ModuleTypes:
-    """Returns module types declaring one key as a transposed-convolution weight."""
     return ModuleTypes(architecture="unet", by_key={key: "ConvTranspose2d"}, transposed={key})
 
 
 def test_transposed_convolution_reads_its_output_units_on_dim_1():
-    """An (in, out, kH, kW) weight reports out units and an in*kH*kW fan-in with module types, and the reverse without."""
     torch.manual_seed(0)
     weight = torch.randn(8, 4, 2, 2)
 
@@ -71,7 +58,6 @@ def test_transposed_convolution_reads_its_output_units_on_dim_1():
 
 
 def test_dead_output_channel_of_a_transposed_convolution_is_flagged_only_with_module_types():
-    """A zeroed output channel of an upsampler is a dead output unit on dim 1 but an ignored dead column on dim 0."""
     torch.manual_seed(0)
     weight       = torch.randn(8, 4, 2, 2)
     weight[:, 0] = 0.0
@@ -88,7 +74,6 @@ def test_dead_output_channel_of_a_transposed_convolution_is_flagged_only_with_mo
 
 
 def test_summary_counts_unchecked_tensors_separately_from_clean_ones():
-    """The summary reports how many tensors each size-limited check skipped while their severity stays ok."""
     config = WeightXrayConfig(duplicate_max_units=4, svd_max_dim=2)
     torch.manual_seed(0)
 

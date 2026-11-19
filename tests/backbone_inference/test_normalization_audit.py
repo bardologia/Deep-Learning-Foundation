@@ -1,9 +1,3 @@
-"""Tests for the normalization audit that checks input health and output clamp pressure.
-
-Input channels are scored for mean, spread and the fraction of samples beyond the
-normalized range, while predicted Gaussian parameters are scored for how often they sit
-on the amplitude ceiling, the z-axis edge or the sigma bounds.
-"""
 
 from __future__ import annotations
 
@@ -22,17 +16,6 @@ from tests.conftest import RecordingLogger
 
 
 def _run(normalized_inputs: np.ndarray, n_gaussians: int = 1, amp_max: float = 200.0, enabled: bool = True):
-    """Builds a run stub whose dataset returns fixed normalized inputs.
-
-    Args:
-        normalized_inputs : Normalized input stack of shape (n_channels, H, W).
-        n_gaussians       : Number of Gaussian slots the predictions carry.
-        amp_max           : Amplitude ceiling of the output clamp.
-        enabled           : Whether the output clamp is active.
-
-    Returns:
-        Run stub with the dataset, the slot count, the activity threshold and a z axis from -20 m to 80 m.
-    """
     clamp      = SimpleNamespace(enabled=enabled, floor=0.0, ceil=200.0, amp_max=amp_max)
     stats      = SimpleNamespace(clamp=clamp)
     normalizer = SimpleNamespace(stats=stats)
@@ -48,12 +31,10 @@ def _run(normalized_inputs: np.ndarray, n_gaussians: int = 1, amp_max: float = 2
 
 
 def _result(params_pred):
-    """Returns a result stub holding only the predicted parameter cube."""
     return SimpleNamespace(params_pred=params_pred)
 
 
 def test_input_health_reports_mean_std_and_overflow():
-    """Per-channel mean, spread, overflow fraction and the worst absolute mean are reported."""
     rng     = np.random.default_rng(0)
     ch_ok   = rng.normal(0.0, 1.0, size=(50, 40))
     ch_bad  = np.full((50, 40), 3.0)
@@ -71,7 +52,6 @@ def test_input_health_reports_mean_std_and_overflow():
 
 
 def test_output_health_counts_clamp_hits_over_active_slots():
-    """Clamp fractions count amplitude-ceiling, axis-edge and sigma-bound hits over the active slots."""
     inputs = np.zeros((1, 4, 4))
     params = np.zeros((3, 4, 4), dtype=np.float64)
 
@@ -93,7 +73,6 @@ def test_output_health_counts_clamp_hits_over_active_slots():
 
 
 def test_output_health_ignores_inactive_slots():
-    """With no active slot the clamp count is zero and the fractions are NaN."""
     inputs = np.zeros((1, 4, 4))
     params = np.zeros((3, 4, 4), dtype=np.float64)
 
@@ -107,7 +86,6 @@ def test_output_health_ignores_inactive_slots():
 
 
 def test_disabled_clamp_reports_nan_amp_ceil():
-    """A disabled clamp has no amplitude ceiling to hit, so that fraction is NaN."""
     inputs = np.zeros((1, 4, 4))
     params = np.ones((3, 4, 4), dtype=np.float64)
 
@@ -120,7 +98,6 @@ def test_disabled_clamp_reports_nan_amp_ceil():
 
 
 def test_degenerate_input_channel_raises():
-    """An input channel that is entirely NaN raises ValueError."""
     inputs = np.full((1, 4, 4), np.nan)
 
     with pytest.raises(ValueError):
@@ -128,7 +105,6 @@ def test_degenerate_input_channel_raises():
 
 
 def test_input_health_counts_non_finite_values_over_every_value_of_the_channel():
-    """NaN and inf inputs are counted per channel and pooled, over all values rather than the finite ones."""
     rng = np.random.default_rng(1)
     ch0 = rng.normal(0.0, 1.0, size=(50, 40))
     ch1 = rng.normal(0.0, 1.0, size=(50, 40))
@@ -145,7 +121,6 @@ def test_input_health_counts_non_finite_values_over_every_value_of_the_channel()
 
 
 def test_warning_lines_name_non_finite_channels_drift_and_saturation():
-    """Each crossed bound yields one line naming the channel or quantity, its value and the bound."""
     stats = {
         "norm_in_ch0_nonfinite_frac" : 0.0,
         "norm_in_ch1_nonfinite_frac" : 0.002,
@@ -168,7 +143,6 @@ def test_warning_lines_name_non_finite_channels_drift_and_saturation():
 
 
 def test_warning_lines_are_empty_inside_the_bounds():
-    """A split whose inputs are finite, centred, scaled and unsaturated yields no warning line, with or without a parameter cube."""
     stats = {"norm_in_ch0_nonfinite_frac": 0.0, "norm_in_worst_abs_mean": 0.1, "norm_in_worst_std_dev": 0.2, "norm_in_overflow_frac": 0.001}
 
     assert NormalizationAudit.warning_lines(stats) == []
@@ -176,7 +150,6 @@ def test_warning_lines_are_empty_inside_the_bounds():
 
 
 def test_pipeline_audit_warns_for_every_crossed_bound(tmp_path):
-    """The pipeline stage raises one warning per audit finding and none when every quantity is inside its bound."""
     rng = np.random.default_rng(3)
     ch0 = rng.normal(0.0, 1.0, size=(50, 40))
     ch1 = rng.normal(0.0, 1.0, size=(50, 40))

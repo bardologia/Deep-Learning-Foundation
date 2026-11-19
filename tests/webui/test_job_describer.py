@@ -1,10 +1,3 @@
-"""Tests for JobDescriber, which turns a script key and its overrides into a job label.
-
-Covers the lead phrase chosen per entry point, the fields each script contributes,
-override precedence over resolved defaults, the recorded configuration a resumed
-launch is described by, leftover overrides shown as extras, and the behaviour when
-the config resolver cannot answer.
-"""
 
 from __future__ import annotations
 
@@ -58,48 +51,31 @@ EXTRACT_LEAVES = [
 
 
 class KnownScriptPaths:
-    """Stand-in project paths answering only which script keys exist.
-
-    Attributes:
-        known : Script keys the describer should treat as recognised.
-    """
 
     def __init__(self, known: set[str]) -> None:
-        """Stores the set of recognised script keys."""
         self.known = known
 
     def has_script(self, key: str) -> bool:
-        """Returns whether the script key is one of the known entry points."""
         return key in self.known
 
 
 class StubResolver:
-    """Stand-in config resolver returning canned default leaves per script key.
-
-    Attributes:
-        leaves_by_key : Resolved config leaves keyed by script key.
-        ok            : When false, every resolution fails.
-    """
 
     def __init__(self, leaves_by_key: dict, ok: bool = True) -> None:
-        """Stores the canned leaves and whether resolution succeeds."""
         self.leaves_by_key = leaves_by_key
         self.ok            = ok
 
     def resolve(self, key: str, interpreter: str) -> dict:
-        """Returns the canned leaves for a script key, or a failure payload when unknown or disabled."""
         if not self.ok or key not in self.leaves_by_key:
             return {"ok": False, "error": "unavailable"}
         return {"ok": True, "leaves": self.leaves_by_key[key]}
 
 
 def _describer(leaves_by_key: dict, ok: bool = True) -> JobDescriber:
-    """Returns a JobDescriber backed by stub paths and resolver over the given leaves."""
     return JobDescriber(KnownScriptPaths(set(leaves_by_key)), StubResolver(leaves_by_key, ok))
 
 
 def test_backbone_defaults_read_as_single_training():
-    """Backbone defaults describe a single training naming architecture, dataset, parameter file, patch size and epochs."""
     text = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", {})
 
     assert text.startswith("single training · resunet-conv")
@@ -111,7 +87,6 @@ def test_backbone_defaults_read_as_single_training():
 
 
 def test_backbone_trials_read_as_experiment():
-    """Enabling trials switches the lead phrase to the trials experiment for the selected mode."""
     overrides = {"trials_enabled": "True", "trials_mode": "presence"}
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
 
@@ -119,7 +94,6 @@ def test_backbone_trials_read_as_experiment():
 
 
 def test_overrides_win_over_defaults():
-    """Overridden backbone, head and infer_after values replace the resolved defaults in the description."""
     overrides = {"backbone_name": "nafnet", "backbone_head": "set_pred", "infer_after": "True"}
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
 
@@ -128,7 +102,6 @@ def test_overrides_win_over_defaults():
 
 
 def test_dual_lead_names_the_selected_trunks():
-    """A dual run is described by its trunk backbone rather than the dual model name."""
     text = _describer({"train_dual": DUAL_LEAVES}).describe("train_dual", "python", {})
 
     assert text.startswith("single training · dual unet_skip")
@@ -136,7 +109,6 @@ def test_dual_lead_names_the_selected_trunks():
 
 
 def test_dual_lead_names_both_trunks_when_they_differ():
-    """Differing parameter and existence trunks are joined into one dotted trunk pair and not repeated as an extra."""
     overrides = {"existence_backbone": "local_cnn"}
     text      = _describer({"train_dual": DUAL_LEAVES}).describe("train_dual", "python", overrides)
 
@@ -145,7 +117,6 @@ def test_dual_lead_names_both_trunks_when_they_differ():
 
 
 def test_generate_dataset_shows_scene_shape_and_seed():
-    """Dataset synthesis is described by its crop, slot count and seed."""
     text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {})
 
     assert "crop [0, 1512, 0, 1024]" in text
@@ -154,14 +125,12 @@ def test_generate_dataset_shows_scene_shape_and_seed():
 
 
 def test_generate_dataset_output_override_appears():
-    """An explicit output directory override is shown as its tail."""
     text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {"synthesis.output_directory": "/data/scenes/synthetic_big"})
 
     assert "synthetic_big" in text
 
 
 def test_extract_params_empty_filter_reads_all_datasets():
-    """An empty dataset filter reads as all datasets alongside the K, lambda and mode grids."""
     text = _describer({"extract_params": EXTRACT_LEAVES}).describe("extract_params", "python", {})
 
     assert "datasets all datasets" in text
@@ -171,7 +140,6 @@ def test_extract_params_empty_filter_reads_all_datasets():
 
 
 def test_unconsumed_overrides_surface_as_extras():
-    """Overrides the describer does not fold into named fields appear verbatim as key=value extras."""
     overrides = {"training.batch_size": "512", "gpu": "2"}
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
 
@@ -180,7 +148,6 @@ def test_unconsumed_overrides_surface_as_extras():
 
 
 def test_extras_overflow_is_counted():
-    """Extras beyond the display limit are summarised as a remaining-override count."""
     overrides = {f"section.field_{i}": str(i) for i in range(6)}
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
 
@@ -188,7 +155,6 @@ def test_extras_overflow_is_counted():
 
 
 def test_resolver_failure_still_describes_from_overrides():
-    """A failed resolution still yields a description built from the overrides alone."""
     describer = _describer({"train_backbone": BACKBONE_LEAVES}, ok=False)
     text      = describer.describe("train_backbone", "python", {"backbone_name": "unet", "training.epochs": "5"})
 
@@ -197,14 +163,12 @@ def test_resolver_failure_still_describes_from_overrides():
 
 
 def test_unknown_script_describes_overrides_only():
-    """An unrecognised script key is described purely by its overrides."""
     text = _describer({}).describe("mystery_script", "python", {"alpha": "1", "beta": "two"})
 
     assert text == "alpha=1 · beta=two"
 
 
 def test_description_is_capped():
-    """An oversized override value is truncated so the description stays within the maximum length."""
     overrides = {"run_name": "x" * 500}
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
 
@@ -212,7 +176,6 @@ def test_description_is_capped():
 
 
 def test_jepa_mode_follows_selected_autoencoders():
-    """The JEPA lead lists only the components actually selected, naming each autoencoder run and its mode."""
     leaves = [
         {"path": "backbone_name",            "value": "resunet"},
         {"path": "backbone_head",            "value": "conv"},
@@ -247,7 +210,6 @@ MAIL_LEAVES = [
 
 
 def test_mail_lead_surfaces_only_the_selected_target():
-    """A dataset mailing names its own root and filter and never the roots of the other targets."""
     overrides = {"target": "datasets", "dataset_filter": "['ds_alpha']"}
     text      = _describer({"mail_experiment_reports": MAIL_LEAVES}).describe("mail_experiment_reports", "python", overrides)
 
@@ -259,7 +221,6 @@ def test_mail_lead_surfaces_only_the_selected_target():
 
 
 def test_mail_lead_names_the_selected_runs():
-    """A run mailing names the runs root and the runs it was restricted to."""
     overrides = {"target": "runs", "run_filter": "['unet_a']"}
     text      = _describer({"mail_experiment_reports": MAIL_LEAVES}).describe("mail_experiment_reports", "python", overrides)
 
@@ -270,24 +231,12 @@ def test_mail_lead_names_the_selected_runs():
 
 
 def test_mail_lead_reads_every_registered_target():
-    """Every accepted mail target has a describer entry, so no job line falls back to bare overrides."""
     from configuration.diagnostics import ReportMailEntryConfig
 
     assert tuple(JobDescriber.MAIL_TARGETS) == ReportMailEntryConfig.TARGETS
 
 
 def _recorded_cv_run(root, run_tag: str, n_folds: int, seeds: list):
-    """Writes a cross-validation run directory holding the recording a resumed launch reads.
-
-    Args:
-        root    : Directory the run is created in.
-        run_tag : Name of the run directory.
-        n_folds : Fold count written into the recording.
-        seeds   : Seed list written into the recording.
-
-    Returns:
-        Path of the run directory.
-    """
     config                    = CrossValidationConfig()
     config.run_tag            = run_tag
     config.paths.log_base_dir = root
@@ -301,7 +250,6 @@ def _recorded_cv_run(root, run_tag: str, n_folds: int, seeds: list):
 
 
 def test_a_resumed_run_is_described_by_what_it_recorded(tmp_path):
-    """A resume is described by the recorded fold count and seeds, not by the entry point defaults."""
     run_dir = _recorded_cv_run(tmp_path, "cv_recorded", n_folds=3, seeds=[1, 2])
 
     leaves     = [{"path": "folds.n_folds", "value": "10"}, {"path": "seeds", "value": "[0, 1, 2, 3, 4]"}, {"path": "resume_from", "value": ""}]
@@ -317,7 +265,6 @@ def test_a_resumed_run_is_described_by_what_it_recorded(tmp_path):
 
 
 def test_a_resume_path_that_records_nothing_keeps_the_launch_defaults(tmp_path):
-    """A resume path without a recording leaves the described fields on the entry point defaults."""
     leaves    = [{"path": "folds.n_folds", "value": "10"}, {"path": "resume_from", "value": ""}]
     describer = _describer({"cross_validate": leaves})
 
@@ -328,7 +275,6 @@ def test_a_resume_path_that_records_nothing_keeps_the_launch_defaults(tmp_path):
 
 
 def test_rescoring_is_named_only_when_completed_runs_are_not_skipped():
-    """The inference line names a rescoring pass only when skip_completed is off."""
     leaves    = [{"path": "runs_dir", "value": "/runs"}, {"path": "run_filter", "value": "[]"}, {"path": "skip_completed", "value": "True"}]
     describer = _describer({"infer_backbone": leaves})
 
@@ -337,7 +283,6 @@ def test_rescoring_is_named_only_when_completed_runs_are_not_skipped():
 
 
 def test_a_non_default_stage_is_named_and_the_full_stage_is_not():
-    """The job line names a prepare or compare stage and stays silent on a full run."""
     leaves    = [{"path": "seeds", "value": "[0]"}, {"path": "stage", "value": "full"}]
     describer = _describer({"cross_validate": leaves})
 

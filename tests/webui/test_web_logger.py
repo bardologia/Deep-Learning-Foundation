@@ -1,4 +1,3 @@
-"""Tests covering the console logger's tags, colouring and banner layout."""
 from __future__ import annotations
 
 import re
@@ -11,7 +10,6 @@ from web_logger      import WebLogger
 
 @pytest.fixture
 def plain():
-    """Returns a logger with colour disabled."""
     logger         = WebLogger()
     logger.enabled = False
     return logger
@@ -19,19 +17,16 @@ def plain():
 
 @pytest.fixture
 def coloured():
-    """Returns a logger with colour enabled."""
     logger         = WebLogger()
     logger.enabled = True
     return logger
 
 
 def _lines(capsys) -> list[str]:
-    """Returns the captured stdout lines."""
     return capsys.readouterr().out.splitlines()
 
 
 def test_every_level_prints_its_own_tag(plain, capsys):
-    """Each level prints its own tag in the order the calls were made."""
     plain.info("started")
     plain.ok("done")
     plain.warning("slow")
@@ -44,7 +39,6 @@ def test_every_level_prints_its_own_tag(plain, capsys):
 
 
 def test_a_plain_line_carries_a_timestamp_and_the_message(plain, capsys):
-    """A plain line carries a timestamp, the level tag and the message."""
     plain.info("job 1234 started")
     line = _lines(capsys)[0]
 
@@ -52,7 +46,6 @@ def test_a_plain_line_carries_a_timestamp_and_the_message(plain, capsys):
 
 
 def test_colour_is_only_emitted_for_a_terminal(plain, coloured, capsys):
-    """Escape codes are emitted only for the terminal-attached logger."""
     plain.error("crashed")
     assert "\x1b" not in _lines(capsys)[0]
 
@@ -64,7 +57,6 @@ def test_colour_is_only_emitted_for_a_terminal(plain, coloured, capsys):
 
 
 def test_a_coloured_line_survives_the_log_reader_that_strips_it(coloured, capsys):
-    """A coloured line survives the results browser's log cleaner intact."""
     coloured.warning("gpu 0 is busy")
     raw = _lines(capsys)[0]
 
@@ -75,7 +67,6 @@ def test_a_coloured_line_survives_the_log_reader_that_strips_it(coloured, capsys
 
 
 def test_the_banner_box_is_wide_enough_for_its_widest_line(plain, capsys):
-    """The banner box is sized to its widest body line."""
     plain.banner("Console", ["url  http://127.0.0.1:8772", "envs 2"])
     lines = _lines(capsys)
 
@@ -89,7 +80,6 @@ def test_the_banner_box_is_wide_enough_for_its_widest_line(plain, capsys):
 
 
 def test_a_banner_with_no_body_still_draws_its_box(plain, capsys):
-    """A banner with no body still draws a three-line box around its title."""
     plain.banner("Ready", [])
     lines = _lines(capsys)
 
@@ -98,7 +88,6 @@ def test_a_banner_with_no_body_still_draws_its_box(plain, capsys):
 
 
 def test_emitted_lines_land_in_the_ring():
-    """Every emitted line is recorded with its time, level and message."""
     logger = WebLogger()
     logger.info("hello")
     logger.error("boom")
@@ -109,7 +98,6 @@ def test_emitted_lines_land_in_the_ring():
 
 
 def test_the_ring_is_bounded_and_recent_respects_the_limit():
-    """The ring keeps at most RING_LIMIT lines and recent trims to the requested count."""
     logger = WebLogger()
     for index in range(WebLogger.RING_LIMIT + 25):
         logger.muted(f"line {index}")

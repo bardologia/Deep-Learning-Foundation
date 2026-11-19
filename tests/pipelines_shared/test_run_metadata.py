@@ -1,4 +1,3 @@
-"""Tests for the training run metadata that lays out a run directory, refuses an occupied one and writes its config files."""
 
 from __future__ import annotations
 
@@ -14,19 +13,16 @@ from tools.runtime.completion             import CompletionMarker
 
 
 def _trainer_config() -> BackboneTrainerConfig:
-    """Returns a backbone trainer config with five Gaussians over a -20 to 80 metre height axis."""
     gaussian = GaussianConfig(n_default_gaussians=5, x_min=-20.0, x_max=80.0, activity_threshold=1e-4)
 
     return BackboneTrainerConfig(gaussian=gaussian)
 
 
 def _logger(tmp_path) -> Logger:
-    """Returns a silent logger writing under tmp_path."""
     return Logger(log_dir=str(tmp_path / "logs"), name="rm_test", level="ERROR")
 
 
 def test_directory_layout_created(tmp_path):
-    """Constructing the metadata creates the run, tensorboard, docs, logs, and metadata directories."""
     meta = TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_x", logger=_logger(tmp_path))
 
     try:
@@ -40,7 +36,6 @@ def test_directory_layout_created(tmp_path):
 
 
 def test_io_logdir_wired_and_writer_kept_out_of_the_config(tmp_path):
-    """The run directory is written back onto the config while the tensorboard writer stays off it."""
     tc   = _trainer_config()
     meta = TrainingRunMetadata(tc, "unet", tmp_path, run_name="run_io", logger=_logger(tmp_path))
 
@@ -53,7 +48,6 @@ def test_io_logdir_wired_and_writer_kept_out_of_the_config(tmp_path):
 
 
 def test_save_trainer_config_roundtrip(tmp_path):
-    """The saved trainer config lands in docs and excludes the writer."""
     meta = TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_cfg", logger=_logger(tmp_path))
 
     try:
@@ -68,7 +62,6 @@ def test_save_trainer_config_roundtrip(tmp_path):
 
 
 def test_save_run_summary_payload(tmp_path):
-    """The run summary records the model name, channel counts, axis length, and run directory."""
     meta = TrainingRunMetadata(_trainer_config(), "swin", tmp_path, run_name="run_sum", logger=_logger(tmp_path))
 
     try:
@@ -85,7 +78,6 @@ def test_save_run_summary_payload(tmp_path):
 
 
 def test_context_manager_closes_writer(tmp_path):
-    """Leaving the context closes the tensorboard writer but keeps the run directory."""
     with TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_ctx", logger=_logger(tmp_path)) as meta:
         assert meta.run_directory.is_dir()
         assert meta.writer.all_writers is not None
@@ -96,7 +88,6 @@ def test_context_manager_closes_writer(tmp_path):
 
 
 def test_exit_with_an_exception_records_the_abort_in_the_owned_log(tmp_path):
-    """An exception escaping the context writes an ABORTED banner with the exception into the run's own log."""
     with pytest.raises(RuntimeError):
         with TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_abort") as meta:
             raise RuntimeError("loss is non-finite at step 3")
@@ -109,7 +100,6 @@ def test_exit_with_an_exception_records_the_abort_in_the_owned_log(tmp_path):
 
 
 def _earlier_run(tmp_path, name: str):
-    """Writes the leftovers of an earlier run named `name`: a best checkpoint, an inference stamp directory and a TensorBoard event file."""
     run_directory = tmp_path / name
 
     (run_directory / "tensorboard").mkdir(parents=True)
@@ -121,7 +111,6 @@ def _earlier_run(tmp_path, name: str):
 
 
 def test_leftovers_are_listed_relative_to_the_run_directory(tmp_path):
-    """The finder names the checkpoint, the inference directory and the event file, and sees nothing in an absent or clean directory."""
     run_directory = _earlier_run(tmp_path, "run_old")
     (run_directory / "docs").mkdir()
 
@@ -131,7 +120,6 @@ def test_leftovers_are_listed_relative_to_the_run_directory(tmp_path):
 
 
 def test_fresh_run_refuses_a_directory_holding_a_completed_run(tmp_path):
-    """Without trainer resume the constructor raises on a completed run, naming the directory and every artifact, and leaves them in place."""
     run_directory = _earlier_run(tmp_path, "run_old")
     CompletionMarker.stamp(run_directory, {"stage": "training"})
 
@@ -143,7 +131,6 @@ def test_fresh_run_refuses_a_directory_holding_a_completed_run(tmp_path):
 
 
 def test_fresh_run_deletes_an_unfinished_attempt_and_keeps_its_logs(tmp_path):
-    """Without trainer resume an unfinished attempt's artifacts are deleted with a warning, its logs stay, and only the new event file remains."""
     run_directory = _earlier_run(tmp_path, "run_old")
     (run_directory / "logs").mkdir()
     (run_directory / "logs" / "worker.log").write_text("Traceback of the killed attempt\n")
@@ -162,7 +149,6 @@ def test_fresh_run_deletes_an_unfinished_attempt_and_keeps_its_logs(tmp_path):
 
 
 def test_relaunch_after_a_killed_attempt_that_left_only_its_event_file(tmp_path):
-    """An attempt killed right after opening its writer leaves only an event file; the relaunch clears it instead of failing."""
     first = TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_killed", logger=_logger(tmp_path))
     first.writer.flush()
     first.writer.close()
@@ -177,7 +163,6 @@ def test_relaunch_after_a_killed_attempt_that_left_only_its_event_file(tmp_path)
 
 
 def test_resumed_run_keeps_the_earlier_artifacts(tmp_path):
-    """With trainer resume on the same directory is accepted and its artifacts stay in place."""
     run_directory = _earlier_run(tmp_path, "run_old")
 
     config                 = _trainer_config()
@@ -192,7 +177,6 @@ def test_resumed_run_keeps_the_earlier_artifacts(tmp_path):
 
 
 def test_run_summary_records_the_patch_geometry(tmp_path):
-    """The run summary carries the configured and effective patch geometry handed to it, and null when a run records none."""
     meta     = TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_patch", logger=_logger(tmp_path))
     geometry = {"configured_size": [64, 32], "configured_stride": [32, 16], "size": [64, 64], "stride": [32, 32], "squared": True}
 
@@ -207,7 +191,6 @@ def test_run_summary_records_the_patch_geometry(tmp_path):
 
 
 def test_run_summary_records_provenance(tmp_path):
-    """The run summary carries the provenance block and the dirty-diff slot beside the commit."""
     meta = TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_prov", logger=_logger(tmp_path))
     try:
         path    = meta.save_run_summary("unet", 2, 15, 170, n_gaussians=5, seed=1)

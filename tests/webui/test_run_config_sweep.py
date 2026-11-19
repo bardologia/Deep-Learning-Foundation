@@ -1,25 +1,3 @@
-"""Exhaustive sweep of the copy-from-run path over every entry point config.
-
-For each registered entry point this saves the real entry config the way a run
-does, reads it back through RunConfigReader, and checks the two properties the
-launch control rests on, field by field:
-
-- Parity: every stored value renders to exactly the string the script config
-  resolver produces for the same default, so copying an unmodified run yields
-  zero overrides — no phantom overrides, no missed fields.
-- Round trip: every editable field, once changed, survives the full cycle of
-  run file → reader rendering → command-line override → fresh config with the
-  original value intact, so a copied run relaunches identically.
-- Withholding: the fields naming the source run itself (run_name, resume,
-  resume_from) never reach the form, on any entry point that has them.
-
-One case also runs the real ScriptConfigResolver subprocess and compares its
-leaves against the reader, so the shared renderer is pinned against the live
-bootstrap rather than against a copy of its rules.
-
-The layout side (every leaf claimed by a launch page exactly once) is covered
-by test_launch_layout.py; together the two files pin the whole copy path.
-"""
 
 from __future__ import annotations
 
@@ -44,13 +22,11 @@ _ENTRY_KEYS = sorted(ProjectPaths.SCRIPT_DIRS)
 
 
 def _entry_config_class(key: str):
-    """Returns the entry config class of one entry point, resolved like the console does."""
     entry = ScriptConfigResolver(ProjectPaths()).entry_config(key)
     return getattr(import_module(entry["module"]), entry["class"])
 
 
 def _is_identity(path: str) -> bool:
-    """Returns whether a dotted path is one the reader withholds as the run's identity."""
     return path.rsplit(".", 1)[-1] in RunConfigReader.IDENTITY_LEAVES
 
 
@@ -67,22 +43,11 @@ _NONE_SAMPLES = {
 
 
 def _fill_optional(config, path: str):
-    """Returns a sample value for a None-valued leaf from its type annotation, or None.
-
-    A None default carries no type, so the sample comes from the field's optional
-    annotation — the same source ConfigCli's coercion uses when such a field is
-    overridden. Fields with no single concrete annotated type are left alone.
-    """
     target = ConfigCli._unwrap_optional(ConfigCli._annotation(config, path))
     return _NONE_SAMPLES.get(typing.get_origin(target) or target)
 
 
 def _mutate(value):
-    """Returns a same-type value that differs from the given leaf default, or None to skip.
-
-    Skips None-valued leaves (handled by ``_fill_optional``) and single-member
-    enums (no second member to switch to).
-    """
     if value is None:
         return None
     if isinstance(value, Enum):
@@ -110,7 +75,6 @@ def _mutate(value):
 
 
 def _saved_and_read(config, tmp_path: Path) -> dict:
-    """Saves a config the way a run does and returns the reader's whole result."""
     run_dir = tmp_path / "run"
     ConfigCli.save_resolved(config, run_dir / "docs" / "resolved_entry_config.json")
 
@@ -121,13 +85,6 @@ def _saved_and_read(config, tmp_path: Path) -> dict:
 
 @pytest.mark.parametrize("key", _ENTRY_KEYS)
 def test_default_run_copies_with_zero_overrides(key, tmp_path):
-    """An unmodified run of every entry point reads back string-equal on every field.
-
-    This is the zero-override property: the launch form marks a copied field as
-    an override only when its rendered value differs from the leaf default, so
-    any mismatch here shows up in the UI as a phantom override (or hides a real
-    one). The sweep compares every single field of the entry config.
-    """
     config = _entry_config_class(key)()
     result = _saved_and_read(config, tmp_path)
     copied = result["config"]
@@ -150,15 +107,6 @@ def test_default_run_copies_with_zero_overrides(key, tmp_path):
 
 @pytest.mark.parametrize("key", _ENTRY_KEYS)
 def test_every_changed_field_survives_the_copy_relaunch_cycle(key, tmp_path):
-    """Every editable field, once changed, round-trips through copy and relaunch.
-
-    Mutates every editable leaf of the entry config other than the withheld
-    identity fields, saves it as a run would, reads it back through the reader,
-    and checks that (a) exactly the mutated fields differ from the defaults — the copied override set is precisely the
-    run's real changes — and (b) feeding those rendered strings back through
-    the ConfigCli override parser reproduces every mutated value on a fresh
-    config, which is what launching the copied configuration does.
-    """
     config_class = _entry_config_class(key)
     source       = config_class()
 
@@ -193,11 +141,6 @@ def test_every_changed_field_survives_the_copy_relaunch_cycle(key, tmp_path):
 
 @pytest.mark.parametrize("key", ("train_backbone", "train_dual", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder"))
 def test_preflight_fields_are_part_of_the_copy_surface(key):
-    """Every training entry exposes its pretrain preflight fields to the copy path.
-
-    The preflight probes (batch-size finder, loader tuner, LR range test) must be
-    carried along when a run is copied, or a rerun silently preflights differently.
-    """
     config = _entry_config_class(key)()
     leaves = {path: value for path, value in ConfigCli._leaves(config)}
 
@@ -209,14 +152,6 @@ def test_preflight_fields_are_part_of_the_copy_surface(key):
 
 
 def test_reader_rendering_matches_the_live_resolver_bootstrap(tmp_path):
-    """The reader reproduces, field by field, what the real resolver subprocess prints.
-
-    Every other parity check in this file compares the reader against
-    ``ConfigValueRenderer`` in-process. This one runs ``ScriptConfigResolver``
-    for real — the bootstrap snippet, under an interpreter, on the live entry
-    config — so a change to the bootstrap that the renderer does not follow
-    fails here instead of silently turning copied fields into phantom overrides.
-    """
     key      = "train_backbone"
     resolved = ScriptConfigResolver(ProjectPaths()).resolve(key, sys.executable)
     assert resolved["ok"], resolved

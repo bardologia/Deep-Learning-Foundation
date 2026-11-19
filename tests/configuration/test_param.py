@@ -1,9 +1,3 @@
-"""Tests for the Gaussian parameter-extraction configuration.
-
-Covers the fit toggles and the free-parameter set they imply, the fit-mode name
-parsing, and the derived extraction paths and output directory suffix that
-encodes the number of Gaussians, the regularisation weight and the free set.
-"""
 
 from __future__ import annotations
 
@@ -25,7 +19,6 @@ from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
 
 def test_fit_config_defaults_sane():
-    """Verifies the fit defaults carry a positive Gaussian budget, sigma initialiser and sparsity weight, with a threshold fraction inside the unit interval."""
     cfg = FitConfig()
     assert cfg.k_max > 0
     assert cfg.sigma_init_divisor > 0
@@ -34,14 +27,12 @@ def test_fit_config_defaults_sane():
 
 
 def test_fit_config_asdict_round_trips():
-    """Verifies a fit config rebuilt from its own field values compares equal."""
     cfg     = FitConfig()
     payload = dataclasses.asdict(cfg)
     assert FitConfig(**payload) == cfg
 
 
 def test_fit_config_default_toggles():
-    """Verifies only sigma is fitted by default, with amplitude and mean held fixed."""
     cfg = FitConfig()
     assert cfg.fit_sigma     is True
     assert cfg.fit_amplitude is False
@@ -49,35 +40,30 @@ def test_fit_config_default_toggles():
 
 
 def test_free_parameters_default_is_sigma():
-    """Verifies the default free set is sigma alone and names the sigma Adam fitting method."""
     cfg = FitSettings()
     assert cfg.free_parameters == ("sigma",)
     assert cfg.fitting_method  == "sigma_adam"
 
 
 def test_free_parameters_all_free():
-    """Verifies enabling amplitude and mean frees all three parameters in sigma, amplitude, mean order."""
     cfg = FitSettings(fit_config=FitConfig(fit_amplitude=True, fit_mean=True))
     assert cfg.free_parameters == ("sigma", "amp", "mu")
     assert cfg.fitting_method  == "sigma_amp_mu_adam"
 
 
 def test_free_parameters_sigma_amplitude():
-    """Verifies freeing amplitude alongside sigma names the sigma-amplitude fitting method."""
     cfg = FitSettings(fit_config=FitConfig(fit_amplitude=True))
     assert cfg.free_parameters == ("sigma", "amp")
     assert cfg.fitting_method  == "sigma_amp_adam"
 
 
 def test_free_parameters_sigma_mean():
-    """Verifies freeing the mean alongside sigma names the sigma-mean fitting method."""
     cfg = FitSettings(fit_config=FitConfig(fit_mean=True))
     assert cfg.free_parameters == ("sigma", "mu")
     assert cfg.fitting_method  == "sigma_mu_adam"
 
 
 def test_free_parameters_without_sigma():
-    """Verifies fixing sigma leaves the amplitude and mean combinations with their own fitting method names."""
     amp_only = FitSettings(fit_config=FitConfig(fit_sigma=False, fit_amplitude=True))
     mu_only  = FitSettings(fit_config=FitConfig(fit_sigma=False, fit_mean=True))
     amp_mu   = FitSettings(fit_config=FitConfig(fit_sigma=False, fit_amplitude=True, fit_mean=True))
@@ -91,7 +77,6 @@ def test_free_parameters_without_sigma():
 
 
 def test_free_parameters_none_free_raises():
-    """Verifies a fit with no free parameter rejects both the free set and the fitting method."""
     cfg = FitSettings(fit_config=FitConfig(fit_sigma=False))
     with pytest.raises(ValueError):
         cfg.free_parameters
@@ -100,7 +85,6 @@ def test_free_parameters_none_free_raises():
 
 
 def test_entry_config_fit_modes_default_sweep():
-    """Verifies the default fit-mode sweep is the cumulative sigma, sigma-amplitude, sigma-amplitude-mean ladder and every mode parses."""
     cfg = ExtractParamsEntryConfig()
     assert cfg.fit_modes == ["sigma", "sigma_amp", "sigma_amp_mu"]
     for mode in cfg.fit_modes:
@@ -108,7 +92,6 @@ def test_entry_config_fit_modes_default_sweep():
 
 
 def test_fit_mode_free_flags_all_compositions():
-    """Verifies each fit-mode name maps to its sigma, amplitude and mean free flags."""
     assert FitMode.free_flags("sigma")        == (True,  False, False)
     assert FitMode.free_flags("amp")          == (False, True,  False)
     assert FitMode.free_flags("mu")           == (False, False, True)
@@ -119,27 +102,23 @@ def test_fit_mode_free_flags_all_compositions():
 
 
 def test_fit_mode_free_flags_order_insensitive():
-    """Verifies fit-mode names differing only in token order resolve to the same flags."""
     assert FitMode.free_flags("mu_amp")       == FitMode.free_flags("amp_mu")
     assert FitMode.free_flags("mu_amp_sigma") == FitMode.free_flags("sigma_amp_mu")
 
 
 def test_fit_mode_free_flags_rejects_invalid():
-    """Verifies unknown, empty, repeated and malformed fit-mode names are rejected."""
     for mode in ("quartic", "", "sigma_sigma", "sigma_quartic", "sigma+amp"):
         with pytest.raises(ValueError):
             FitMode.free_flags(mode)
 
 
 def test_fit_settings_default_factory_independent():
-    """Verifies two fit settings objects hold independent fit configs."""
     a = FitSettings()
     b = FitSettings()
     assert a.fit_config is not b.fit_config
 
 
 def test_extraction_config_paths_derived():
-    """Verifies the data, metadata, parameter and diagnostics paths derive from the processed data path."""
     cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"))
     assert cfg.data_directory            == Path("/tmp/run/data")
     assert cfg.metadata_directory        == Path("/tmp/run/meta")
@@ -148,7 +127,6 @@ def test_extraction_config_paths_derived():
 
 
 def test_extraction_config_default_suffix_encodes_fit():
-    """Verifies the default output suffix encodes the Gaussian budget, sparsity weight, sigma initialiser and free set."""
     cfg    = ExtractionConfig(processed_data_path=Path("/tmp/run"))
     suffix = cfg.output_suffix_value
     assert suffix.startswith(f"k{cfg.fit_settings.fit_config.k_max}_lam")
@@ -157,7 +135,6 @@ def test_extraction_config_default_suffix_encodes_fit():
 
 
 def test_extraction_config_suffix_encodes_free_parameters():
-    """Verifies the output subdirectory name carries the free parameters of the fit."""
     sigma_amp    = ExtractionConfig(processed_data_path=Path("/tmp/run"), fit_settings=FitSettings(fit_config=FitConfig(k_max=2, lambda_k=1e-2, sigma_init_divisor=4.0, fit_amplitude=True)))
     sigma_amp_mu = ExtractionConfig(processed_data_path=Path("/tmp/run"), fit_settings=FitSettings(fit_config=FitConfig(k_max=2, lambda_k=1e-2, sigma_init_divisor=4.0, fit_amplitude=True, fit_mean=True)))
     amp_mu       = ExtractionConfig(processed_data_path=Path("/tmp/run"), fit_settings=FitSettings(fit_config=FitConfig(k_max=2, lambda_k=1e-2, sigma_init_divisor=4.0, fit_sigma=False, fit_amplitude=True, fit_mean=True)))
@@ -168,14 +145,12 @@ def test_extraction_config_suffix_encodes_free_parameters():
 
 
 def test_extraction_config_explicit_suffix_used():
-    """Verifies an explicit suffix replaces the derived one in the output subdirectory name."""
     cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"), output_suffix="custom")
     assert cfg.output_suffix_value == "custom"
     assert cfg.output_subdir_name  == "params_custom"
 
 
 def test_extraction_config_output_directory_layout():
-    """Verifies the output directory is the named subdirectory under params."""
     cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"))
     assert cfg.output_directory.parent.name == "params"
     assert cfg.output_directory.name        == cfg.output_subdir_name
@@ -183,7 +158,6 @@ def test_extraction_config_output_directory_layout():
 
 @pytest.mark.dataset
 def test_generated_parameter_run_is_the_training_default(param_extraction_meta, params_dir):
-    """Verifies the generated parameter run directory name matches the training default."""
     cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"), output_suffix=params_dir.name.removeprefix("params_"))
 
     assert cfg.output_subdir_name              == params_dir.name
@@ -192,7 +166,6 @@ def test_generated_parameter_run_is_the_training_default(param_extraction_meta, 
 
 
 def test_extraction_discover_z_range_from_state(tmp_path):
-    """Verifies the z range is read from the preprocessing config state."""
     meta = tmp_path / "meta"
     meta.mkdir()
     (meta / "config_state.json").write_text(json.dumps({"cube_config": {"z_range": [-20.0, 80.0]}}))
@@ -202,20 +175,17 @@ def test_extraction_discover_z_range_from_state(tmp_path):
 
 
 def test_extraction_discover_z_range_override():
-    """Verifies an explicit z range overrides the stored one."""
     cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"), z_range=(0.0, 50.0))
     assert cfg.discover_z_range() == (0.0, 50.0)
 
 
 def test_extraction_discover_z_range_missing_raises(tmp_path):
-    """Verifies a missing config state raises when discovering the z range."""
     cfg = ExtractionConfig(processed_data_path=tmp_path)
     with pytest.raises(FileNotFoundError):
         cfg.discover_z_range()
 
 
 def test_extraction_discover_cube_missing_raises(tmp_path):
-    """Verifies an empty data directory raises when discovering the cube path."""
     (tmp_path / "data").mkdir()
     cfg = ExtractionConfig(processed_data_path=tmp_path)
     with pytest.raises(FileNotFoundError):
@@ -223,7 +193,6 @@ def test_extraction_discover_cube_missing_raises(tmp_path):
 
 
 def test_extract_params_entry_defaults():
-    """Verifies the extraction entry defaults sweep five Gaussians at one sparsity weight with positive worker and batch counts."""
     cfg = ExtractParamsEntryConfig()
     assert cfg.fit_k_values      == [5]
     assert cfg.fit_lambda_values == [1e-2]
@@ -234,7 +203,6 @@ def test_extract_params_entry_defaults():
 
 
 def test_extract_params_entry_fit_constants_match_fit_config_defaults():
-    """Verifies the entry fit and Adam constants match the fit and extraction config defaults."""
     entry = ExtractParamsEntryConfig()
     fit   = FitConfig()
     ext   = ExtractionConfig(processed_data_path=Path("/tmp/run"))
@@ -251,7 +219,6 @@ def test_extract_params_entry_fit_constants_match_fit_config_defaults():
 
 
 def test_extract_params_entry_default_lists_independent():
-    """Verifies two extraction entries hold independent GPU device lists."""
     a = ExtractParamsEntryConfig()
     b = ExtractParamsEntryConfig()
     a.gpu_device_ids.append(99)

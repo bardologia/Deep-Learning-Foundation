@@ -1,13 +1,3 @@
-"""Tests covering the mailing of experiment report bundles.
-
-Covers finding experiments by the trial runs they hold (trial sweeps,
-cross-validation runs and benchmark runs, wherever they sit), gathering the
-seed-aggregate report of every trial, the comparison reports, a
-cross-validation run's cross-fold report and the configuration files into a
-staging directory, writing the seed aggregates and comparisons that are
-missing, assembling the email with attachments, and the batch loop over every
-experiment.
-"""
 
 from __future__ import annotations
 
@@ -35,20 +25,6 @@ PNG_BYTES = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADU
 
 
 def _write_report(run_dir: Path, tag: str, metrics: dict | None = None, split: str = "test") -> Path:
-    """Writes a completed inference stamp with a report.md, one PNG figure, metrics and the prediction cubes under the run.
-
-    The cubes are what the seed comparison's deep-ensemble evaluation reads
-    when the mailer writes a missing seed aggregate.
-
-    Args:
-        run_dir : Run directory that receives the inference/<tag> subtree.
-        tag     : Inference stamp directory name.
-        metrics : Scalar metrics written into the stamp, a fixed pair when omitted.
-        split   : Split the completion marker records.
-
-    Returns:
-        Path of the written report.md.
-    """
     output_dir  = run_dir / "inference" / tag
     figures_dir = output_dir / "figures"
     cubes_dir   = output_dir / "cubes"
@@ -66,16 +42,6 @@ def _write_report(run_dir: Path, tag: str, metrics: dict | None = None, split: s
 
 
 def _write_aggregate(trial_dir: Path, tag: str, inference: dict) -> Path:
-    """Writes a seed-aggregate stamp as the seed comparison does: a report and a metrics file naming the averaged seeds.
-
-    Args:
-        trial_dir : Seeded trial directory receiving the inference/<tag> stamp.
-        tag       : Aggregate stamp directory name.
-        inference : Inference stamp name read for each averaged seed, by seed label.
-
-    Returns:
-        Path of the written report.md.
-    """
     output_dir = trial_dir / "inference" / tag
     output_dir.mkdir(parents=True)
 
@@ -92,23 +58,11 @@ def _write_aggregate(trial_dir: Path, tag: str, inference: dict) -> Path:
 
 
 def _make_run(run_dir: Path) -> Path:
-    """Marks a directory as a training run by giving it a meta directory."""
     (run_dir / "meta").mkdir(parents=True, exist_ok=True)
     return run_dir
 
 
 def _write_experiment(root: Path, name: str, aggregate: bool = True, comparison: bool = True) -> Path:
-    """Builds one trial sweep with a seeded trial, a single-run trial and, by default, an aggregate and a comparison.
-
-    Args:
-        root       : Directory the sweep folder is created in.
-        name       : Name of the sweep folder.
-        aggregate  : Whether the seeded trial already holds its seed-aggregate report.
-        comparison : Whether a trial-comparison stamp is written.
-
-    Returns:
-        Path of the sweep directory.
-    """
     experiment_dir = root / name
 
     seeded = experiment_dir / "trial_a"
@@ -139,7 +93,6 @@ def _write_experiment(root: Path, name: str, aggregate: bool = True, comparison:
 
 
 def _write_cv_run(root: Path, run_tag: str) -> Path:
-    """Builds a finished cross-validation run whose fold stamps also carry a report."""
     run_dir = build_finished_run(root, run_tag, n_folds=3, splits=("test",))
 
     for stamp in sorted(run_dir.glob("folds/*/inference/*")):
@@ -149,7 +102,6 @@ def _write_cv_run(root: Path, run_tag: str) -> Path:
 
 
 def _write_benchmark_run(root: Path, run_tag: str) -> Path:
-    """Builds a benchmark run with two unit runs, one comparison stamp and its pipeline files."""
     run_dir = root / run_tag
 
     for unit in ("unet-conv", "resunet-conv"):
@@ -171,7 +123,6 @@ def _write_benchmark_run(root: Path, run_tag: str) -> Path:
 
 @pytest.fixture
 def workspace(tmp_path):
-    """Returns a sequence workspace holding two trial sweeps, a cross-validation run and a benchmark run."""
     root = tmp_path / "sequences" / "plan_20260901"
     _write_experiment(root, "exp_alpha")
     _write_experiment(root, "exp_beta")
@@ -184,7 +135,6 @@ def workspace(tmp_path):
 
 @pytest.fixture
 def entry_config(workspace, tmp_path):
-    """Returns an entry config pointing at the workspace and a staging directory."""
     return ReportMailEntryConfig(
         experiments_dir = workspace,
         staging_dir     = tmp_path / "staging",
@@ -195,12 +145,10 @@ def entry_config(workspace, tmp_path):
 
 
 def _bundle(entry_config, experiment):
-    """Returns the report bundle of one experiment under the entry config's staging directory."""
     return ExperimentReportBundle(experiment, entry_config.to_config(experiment.label), RecordingLogger())
 
 
 def test_scanner_finds_every_kind_of_experiment_under_a_workspace(workspace):
-    """Verifies the scan finds the sweeps, the cross-validation run and the benchmark run, classified by their contents."""
     found = {experiment.root.name: experiment for experiment in ExperimentScanner(workspace).scan()}
 
     assert sorted(found) == ["bench", "cv1", "exp_alpha", "exp_beta"]
@@ -212,7 +160,6 @@ def test_scanner_finds_every_kind_of_experiment_under_a_workspace(workspace):
 
 
 def test_scanner_finds_experiments_at_any_depth_without_entering_runs(tmp_path):
-    """Verifies nested workspaces are searched, hidden and underscore directories skipped, and trial trees never entered."""
     runs = tmp_path / "runs"
     _write_experiment(runs / "sequences" / "ws_a", "curriculum")
     _write_experiment(runs / "sequences" / "ws_b", "patch")
@@ -227,7 +174,6 @@ def test_scanner_finds_experiments_at_any_depth_without_entering_runs(tmp_path):
 
 
 def test_scanner_goes_on_below_a_sweep_of_standalone_runs(tmp_path):
-    """Verifies a directory holding a standalone run beside a seeded sweep yields both the sweep of that run and the nested sweep."""
     family = tmp_path / "backbone"
     _write_report(_make_run(family / "smoke"), "20260101_000000")
     _write_experiment(family, "augmentation")
@@ -241,7 +187,6 @@ def test_scanner_goes_on_below_a_sweep_of_standalone_runs(tmp_path):
 
 
 def test_scanner_accepts_one_experiment_its_folds_directory_and_one_trial_as_the_root(workspace):
-    """Verifies the root may be a sweep, a run's folds directory or a single trial, each resolving to one experiment."""
     sweep = ExperimentScanner(workspace / "exp_alpha").scan()
     folds = ExperimentScanner(workspace / "cv1" / "folds").scan()
     trial = ExperimentScanner(workspace / "exp_alpha" / "trial_a").scan()
@@ -254,7 +199,6 @@ def test_scanner_accepts_one_experiment_its_folds_directory_and_one_trial_as_the
 
 
 def test_scanner_names_the_root_experiment_by_its_own_name(workspace):
-    """Verifies an experiment that is the root is named by its directory name and labelled by its parent."""
     scanner    = ExperimentScanner(workspace / "exp_alpha")
     experiment = scanner.scan()[0]
 
@@ -263,7 +207,6 @@ def test_scanner_names_the_root_experiment_by_its_own_name(workspace):
 
 
 def test_selector_lists_and_filters_experiments(workspace):
-    """Verifies the selector discovers every experiment and resolves a filter by relative name."""
     selector = ExperimentSelector(workspace, "_comparison", RecordingLogger())
 
     assert [experiment.root.name for experiment in selector.select_experiments([])]          == ["bench", "cv1", "exp_alpha", "exp_beta"]
@@ -271,7 +214,6 @@ def test_selector_lists_and_filters_experiments(workspace):
 
 
 def test_selector_raises_without_any_experiment(tmp_path):
-    """Verifies a directory without any trial run raises."""
     (tmp_path / "empty" / "notes").mkdir(parents=True)
 
     with pytest.raises(FileNotFoundError, match="No experiment found"):
@@ -279,25 +221,21 @@ def test_selector_raises_without_any_experiment(tmp_path):
 
 
 def _stage_recorded(entry_config, experiment) -> RecordingLogger:
-    """Stages one experiment's bundle and returns the logger that recorded it."""
     logger = RecordingLogger()
     ExperimentReportBundle(experiment, entry_config.to_config(experiment.label), logger).stage()
     return logger
 
 
 def _warnings(logger: RecordingLogger) -> list[str]:
-    """Returns the warning lines a recording logger holds."""
     return [message for level, message in logger.messages if level == "warning"]
 
 
 def _age(path: Path, seconds: float) -> None:
-    """Moves the modification time of a file into the past by the given number of seconds."""
     mtime = path.stat().st_mtime - seconds
     os.utime(path, (mtime, mtime))
 
 
 def test_bundle_stages_trial_reports_comparison_and_config_files(entry_config, workspace):
-    """Verifies the bundle stages one report per trial, the comparison reports and the sweep's configuration files."""
     staged = _bundle(entry_config, Experiment(workspace / "exp_alpha", workspace / "exp_alpha")).stage()
 
     assert [path.name for path in staged] == [
@@ -314,7 +252,6 @@ def test_bundle_stages_trial_reports_comparison_and_config_files(entry_config, w
 
 
 def test_bundle_rewrites_image_links_to_absolute_paths(entry_config, workspace):
-    """Verifies a staged trial report points at the original figure by absolute path."""
     staged = _bundle(entry_config, Experiment(workspace / "exp_alpha", workspace / "exp_alpha")).stage()
 
     original = (workspace / "exp_alpha" / "trial_b" / "inference" / "20260102_000000" / "figures" / "map.png").resolve()
@@ -323,7 +260,6 @@ def test_bundle_rewrites_image_links_to_absolute_paths(entry_config, workspace):
 
 
 def test_bundle_writes_the_missing_seed_aggregate_first(entry_config, tmp_path):
-    """Verifies a seeded trial without its aggregate report gets one written from its seed runs before staging."""
     experiment_dir = _write_experiment(tmp_path / "ws", "exp_bare", aggregate=False)
 
     staged = _bundle(entry_config, Experiment(experiment_dir, experiment_dir)).stage()
@@ -335,7 +271,6 @@ def test_bundle_writes_the_missing_seed_aggregate_first(entry_config, tmp_path):
 
 
 def test_bundle_logs_the_seed_aggregation_in_the_mail_log(entry_config, tmp_path):
-    """Verifies the seed comparison run for a missing aggregate logs its written report through the mail run's logger."""
     experiment_dir = _write_experiment(tmp_path / "ws", "exp_bare", aggregate=False)
 
     logger = _stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir))
@@ -346,7 +281,6 @@ def test_bundle_logs_the_seed_aggregation_in_the_mail_log(entry_config, tmp_path
 
 
 def test_bundle_writes_the_missing_trial_comparison_first(entry_config, tmp_path):
-    """Verifies a sweep without a comparison stamp gets one written over its trials before staging."""
     experiment_dir = _write_experiment(tmp_path / "ws", "exp_bare", comparison=False)
 
     staged = _bundle(entry_config, Experiment(experiment_dir, experiment_dir)).stage()
@@ -358,7 +292,6 @@ def test_bundle_writes_the_missing_trial_comparison_first(entry_config, tmp_path
 
 
 def test_bundle_regenerates_what_exists_when_asked(entry_config, workspace):
-    """Verifies the regenerate switch rewrites the seed aggregate and the comparison even when present."""
     entry_config.regenerate_reports = True
     experiment_dir = workspace / "exp_alpha"
 
@@ -369,7 +302,6 @@ def test_bundle_regenerates_what_exists_when_asked(entry_config, workspace):
 
 
 def test_bundle_names_reused_reports_and_finds_them_current(entry_config, workspace):
-    """Verifies a reused comparison and seed aggregate covering every trial and seed are named in the log without a warning."""
     experiment_dir = workspace / "exp_alpha"
     logger         = _stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir))
 
@@ -379,7 +311,6 @@ def test_bundle_names_reused_reports_and_finds_them_current(entry_config, worksp
 
 
 def test_bundle_warns_when_a_reused_comparison_predates_an_inference(entry_config, workspace):
-    """Verifies a trial inferred after the reused comparison was written is named in a staleness warning."""
     experiment_dir = workspace / "exp_alpha"
     stamp          = experiment_dir / "_comparison" / "20260103_000000"
     for path in stamp.iterdir():
@@ -391,7 +322,6 @@ def test_bundle_warns_when_a_reused_comparison_predates_an_inference(entry_confi
 
 
 def test_bundle_warns_when_a_reused_comparison_misses_a_trial_or_scored_another_split(entry_config, workspace):
-    """Verifies a reused comparison written over one trial on the val split warns about the missing trial and the split."""
     experiment_dir = workspace / "exp_alpha"
     summary        = experiment_dir / "_comparison" / "20260103_000000" / "comparison_summary.json"
     summary.write_text(json.dumps({"inference_split": "val", "trials": [{"name": "trial_a"}]}), encoding="utf-8")
@@ -403,7 +333,6 @@ def test_bundle_warns_when_a_reused_comparison_misses_a_trial_or_scored_another_
 
 
 def test_bundle_warns_when_a_reused_comparison_carries_no_summary(entry_config, workspace):
-    """Verifies a comparison stamp written before summaries existed is reused with a warning that its coverage cannot be checked."""
     experiment_dir = workspace / "exp_alpha"
     (experiment_dir / "_comparison" / "20260103_000000" / "comparison_summary.json").unlink()
 
@@ -413,7 +342,6 @@ def test_bundle_warns_when_a_reused_comparison_carries_no_summary(entry_config, 
 
 
 def test_bundle_warns_when_a_reused_seed_aggregate_misses_a_seed(entry_config, workspace):
-    """Verifies a seed run added after the reused aggregate was written is named in a warning."""
     experiment_dir = workspace / "exp_alpha"
     seed2          = _make_run(experiment_dir / "trial_a" / "seed2")
     _write_report(seed2, "20260101_000000")
@@ -428,7 +356,6 @@ def test_bundle_warns_when_a_reused_seed_aggregate_misses_a_seed(entry_config, w
 
 
 def test_bundle_warns_when_a_seed_aggregate_averages_another_split(entry_config, workspace):
-    """Verifies a seed aggregate built on one seed's val inference is mailed with a warning naming that seed and split."""
     experiment_dir = workspace / "exp_alpha"
     _write_report(experiment_dir / "trial_a" / "seed1", "20260108_000000", split="val")
     record = experiment_dir / "trial_a" / "inference" / "seed_comparison" / "metrics.json"
@@ -440,7 +367,6 @@ def test_bundle_warns_when_a_seed_aggregate_averages_another_split(entry_config,
 
 
 def test_cross_validation_bundle_warns_when_a_reused_cross_fold_report_predates_a_fold_inference(entry_config, workspace):
-    """Verifies a reused cross-fold report older than a fold's completed inference is named and warned about."""
     experiment = CrossValidationExperiment(workspace / "cv1")
     _bundle(entry_config, experiment).stage()
 
@@ -456,7 +382,6 @@ def test_cross_validation_bundle_warns_when_a_reused_cross_fold_report_predates_
 
 
 def test_bundle_requires_an_inference_report_on_a_single_run_trial(entry_config, workspace):
-    """Verifies a single-run trial without any inference report aborts, since nothing can be written for it."""
     experiment_dir = workspace / "exp_alpha"
     for path in sorted((experiment_dir / "trial_b" / "inference").rglob("*"), reverse=True):
         path.unlink() if path.is_file() else path.rmdir()
@@ -466,7 +391,6 @@ def test_bundle_requires_an_inference_report_on_a_single_run_trial(entry_config,
 
 
 def test_bundle_mails_the_report_of_the_comparison_split_and_names_its_source(entry_config, workspace):
-    """Verifies a single-run trial inferred on test and later on val mails its test report and logs the stamp it came from."""
     experiment_dir = workspace / "exp_alpha"
     _write_report(experiment_dir / "trial_b", "20260109_000000", split="val")
 
@@ -479,7 +403,6 @@ def test_bundle_mails_the_report_of_the_comparison_split_and_names_its_source(en
 
 
 def test_bundle_refuses_a_single_run_trial_inferred_only_on_another_split(entry_config, workspace):
-    """Verifies a single-run trial whose only report scored val raises, naming the split it has."""
     experiment_dir = workspace / "exp_alpha"
     stamp          = experiment_dir / "trial_b" / "inference" / "20260102_000000"
     CompletionMarker.stamp(stamp, {"stage": "inference", "split": "val"})
@@ -489,7 +412,6 @@ def test_bundle_refuses_a_single_run_trial_inferred_only_on_another_split(entry_
 
 
 def test_bundle_finds_a_report_under_a_family_sub_directory(entry_config, workspace):
-    """Verifies a single-run trial whose stamps nest under a family sub-directory mails that report."""
     experiment_dir = workspace / "exp_alpha"
     family_run     = experiment_dir / "trial_b"
     nested         = family_run / "inference" / "profile_ae"
@@ -502,7 +424,6 @@ def test_bundle_finds_a_report_under_a_family_sub_directory(entry_config, worksp
 
 
 def test_bundle_of_a_single_trial_skips_the_comparison(entry_config, workspace):
-    """Verifies an experiment of one trial stages its report and configuration without a comparison."""
     trial  = workspace / "exp_alpha" / "trial_a"
     staged = _bundle(entry_config, Experiment(trial, trial.parent, selected=[trial])).stage()
 
@@ -510,7 +431,6 @@ def test_bundle_of_a_single_trial_skips_the_comparison(entry_config, workspace):
 
 
 def test_bundle_warns_when_config_files_are_absent(entry_config, tmp_path):
-    """Verifies missing configuration files only warn, one line each."""
     experiment_dir = _write_experiment(tmp_path / "ws", "exp_alpha")
     for name in ("resolved_config.json", "train_scheduler_results.json"):
         (experiment_dir / "batch_train_logs" / name).unlink()
@@ -524,7 +444,6 @@ def test_bundle_warns_when_config_files_are_absent(entry_config, tmp_path):
 
 
 def test_cross_validation_bundle_stages_folds_comparison_cross_fold_report_and_pipeline_files(entry_config, workspace):
-    """Verifies a cross-validation run stages one report per fold, the fold comparison, the cross-fold report with its split pages, and the pipeline files."""
     staged = _bundle(entry_config, CrossValidationExperiment(workspace / "cv1")).stage()
     names  = [path.name for path in staged]
 
@@ -537,7 +456,6 @@ def test_cross_validation_bundle_stages_folds_comparison_cross_fold_report_and_p
 
 
 def test_cross_validation_bundle_keeps_an_existing_cross_fold_report(entry_config, workspace, monkeypatch):
-    """Verifies an existing cross-fold report stamp is gathered as it is unless regeneration is asked for."""
     from itertools import count
 
     from tools.runtime.run_tag import RunTag
@@ -558,7 +476,6 @@ def test_cross_validation_bundle_keeps_an_existing_cross_fold_report(entry_confi
 
 
 def test_benchmark_bundle_stages_units_its_own_comparison_and_pipeline_files(entry_config, workspace):
-    """Verifies a benchmark run stages one report per unit, its own comparison pages and the pipeline files."""
     staged = _bundle(entry_config, BenchmarkExperiment(workspace / "bench")).stage()
 
     assert [path.name for path in staged] == [
@@ -572,7 +489,6 @@ def test_benchmark_bundle_stages_units_its_own_comparison_and_pipeline_files(ent
 
 
 def test_benchmark_bundle_regenerates_its_comparison_on_the_recorded_split(entry_config, workspace):
-    """Verifies regenerating a benchmark run's comparison runs its comparison stage on the split its configuration recorded."""
     entry_config.regenerate_reports = True
     experiment = BenchmarkExperiment(workspace / "bench")
 
@@ -585,7 +501,6 @@ def test_benchmark_bundle_regenerates_its_comparison_on_the_recorded_split(entry
 
 
 def test_mailer_raises_without_the_password_variable(entry_config, monkeypatch, tmp_path):
-    """Verifies sending without the password variable raises with the variable name."""
     monkeypatch.delenv(entry_config.password_env, raising=False)
     attachment = tmp_path / "a.md"
     attachment.write_text("x", encoding="utf-8")
@@ -595,7 +510,6 @@ def test_mailer_raises_without_the_password_variable(entry_config, monkeypatch, 
 
 
 def test_mailer_dry_run_needs_no_password_and_sends_nothing(entry_config, monkeypatch, fake_smtp, tmp_path):
-    """Verifies a dry run stages the message without touching SMTP."""
     monkeypatch.delenv(entry_config.password_env, raising=False)
     entry_config.dry_run = True
     attachment = tmp_path / "a.md"
@@ -607,7 +521,6 @@ def test_mailer_dry_run_needs_no_password_and_sends_nothing(entry_config, monkey
 
 
 def test_mailer_bounds_the_submission_by_the_timeout_and_logs_its_size_and_duration(entry_config, monkeypatch, fake_smtp, tmp_path):
-    """Verifies the connection gets the configured timeout and the submission is announced with its size and closed with its duration."""
     monkeypatch.setenv(entry_config.password_env, "app-password")
     entry_config.smtp_timeout_s = 42.0
     attachment = tmp_path / "a.md"
@@ -622,15 +535,12 @@ def test_mailer_bounds_the_submission_by_the_timeout_and_logs_its_size_and_durat
 
 
 class StalledSmtp(FakeSmtp):
-    """SMTP fake whose upload times out, as a stalled connection does once the timeout expires."""
 
     def send_message(self, message):
-        """Raises the timeout a stalled upload ends in."""
         raise TimeoutError("timed out")
 
 
 def test_mailer_logs_a_stalled_submission_with_its_duration_and_raises(entry_config, monkeypatch, tmp_path):
-    """Verifies a submission that times out is logged as failed with its duration and the error propagates."""
     monkeypatch.setattr("tools.reporting.report_mailer.smtplib.SMTP_SSL", StalledSmtp)
     monkeypatch.setenv(entry_config.password_env, "app-password")
     attachment = tmp_path / "a.md"
@@ -645,7 +555,6 @@ def test_mailer_logs_a_stalled_submission_with_its_duration_and_raises(entry_con
 
 
 def test_batch_sends_one_message_per_experiment(entry_config, monkeypatch, fake_smtp):
-    """Verifies the batch mails every experiment of the workspace with its staged files attached and labelled by kind."""
     monkeypatch.setenv(entry_config.password_env, "app-password")
 
     results = ReportMailBatch(entry_config, RecordingLogger()).run()
@@ -664,7 +573,6 @@ def test_batch_sends_one_message_per_experiment(entry_config, monkeypatch, fake_
 
 
 def test_batch_dry_run_says_nothing_was_sent(entry_config, monkeypatch, fake_smtp):
-    """Verifies a dry run titles its section and closes as a staging that sent nothing, never as a mailing."""
     monkeypatch.delenv(entry_config.password_env, raising=False)
     entry_config.dry_run           = True
     entry_config.experiment_filter = ["exp_beta"]
@@ -679,24 +587,16 @@ def test_batch_dry_run_says_nothing_was_sent(entry_config, monkeypatch, fake_smt
 
 
 class TableRecordingLogger(RecordingLogger):
-    """Recording logger that also keeps every key-value table it is asked to log.
-
-    Attributes:
-        tables : One (title, rows) pair per logged key-value table.
-    """
 
     def __init__(self):
-        """Initialises empty message and table logs."""
         super().__init__()
         self.tables = []
 
     def kv_table(self, data, title=None, key_header="Field", value_header="Value"):
-        """Records the title and a copy of the rows of a key-value table."""
         self.tables.append((title, dict(data)))
 
 
 def test_batch_logs_its_settings_and_writes_a_mailing_record(entry_config, monkeypatch, fake_smtp):
-    """Verifies the batch logs its effective settings and writes a JSON record of every source it sent beside the staged files."""
     monkeypatch.setenv(entry_config.password_env, "app-password")
     entry_config.experiment_filter = ["exp_beta"]
     logger                         = TableRecordingLogger()
@@ -723,7 +623,6 @@ def test_batch_logs_its_settings_and_writes_a_mailing_record(entry_config, monke
 
 
 def test_batch_respects_the_experiment_filter(entry_config, monkeypatch, fake_smtp):
-    """Verifies the filter restricts the batch to the named experiment."""
     monkeypatch.setenv(entry_config.password_env, "app-password")
     entry_config.experiment_filter = ["exp_beta"]
 
@@ -734,7 +633,6 @@ def test_batch_respects_the_experiment_filter(entry_config, monkeypatch, fake_sm
 
 
 def test_batch_mails_the_run_whose_folds_directory_is_the_root(entry_config, workspace, monkeypatch, fake_smtp):
-    """Verifies pointing the path at a run's folds directory mails that cross-validation run under its own label."""
     monkeypatch.setenv(entry_config.password_env, "app-password")
     entry_config.experiments_dir = workspace / "cv1" / "folds"
 
@@ -745,7 +643,6 @@ def test_batch_mails_the_run_whose_folds_directory_is_the_root(entry_config, wor
 
 
 def test_same_named_sweeps_under_different_parents_do_not_collide(entry_config, tmp_path):
-    """Two 'curriculum' sweeps of different workspaces get distinct labels and staging trees."""
     first  = Experiment(tmp_path / "ws_a" / "curriculum", tmp_path / "ws_a" / "curriculum")
     second = Experiment(tmp_path / "ws_b" / "curriculum", tmp_path / "ws_b" / "curriculum")
 
@@ -756,7 +653,6 @@ def test_same_named_sweeps_under_different_parents_do_not_collide(entry_config, 
 
 
 def test_missing_seed_aggregate_averages_the_split_the_comparison_reads(entry_config, tmp_path):
-    """Verifies a seeded trial scored only on val gets a val seed aggregate when the comparison reads val, instead of failing on the default test split."""
     trial_dir = tmp_path / "ws" / "exp_val" / "trial_a"
     for seed, value in (("seed0", 0.4), ("seed1", 0.6)):
         _write_report(_make_run(trial_dir / seed), "20260101_000000", {"curve_rmse_gt": value, "activity_threshold": 1e-3}, split="val")

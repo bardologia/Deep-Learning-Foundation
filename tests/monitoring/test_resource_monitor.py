@@ -1,4 +1,3 @@
-"""Tests covering ResourceMonitor: config loading, RAM and VRAM sampling, threshold warnings, the sampling thread, and NVML device selection."""
 
 from __future__ import annotations
 
@@ -12,23 +11,7 @@ from tools.monitoring.resource_monitor import ResourceMonitor
 
 
 class FakeConfig:
-    """Stand-in monitoring config exposing every field ResourceMonitor reads.
-
-    Attributes:
-        enabled            : Whether monitoring is active.
-        poll_interval_sec  : Sampling period in seconds.
-        log_to_tensorboard : Whether samples are forwarded to the tracker.
-        warn_ram_pct       : RAM usage percentage above which a warning fires.
-        warn_vram_pct      : VRAM usage percentage above which a warning fires.
-        warn_shm_pct       : Shared-memory usage percentage above which a warning fires.
-        warn_cooldown_sec  : Minimum seconds between two warnings sharing a key.
-    """
     def __init__(self, **kwargs):
-        """Builds a config whose unspecified fields take monitor-friendly defaults.
-
-        Args:
-            **kwargs : Field overrides keyed by attribute name.
-        """
         self.enabled            = kwargs.get("enabled", True)
         self.poll_interval_sec  = kwargs.get("poll_interval_sec", 0.05)
         self.log_to_tensorboard = kwargs.get("log_to_tensorboard", True)
@@ -39,67 +22,44 @@ class FakeConfig:
 
 
 class CollectingLogger:
-    """Logger stub that stores every message it is handed.
-
-    Attributes:
-        warnings    : Warning messages received.
-        sections    : Section titles received.
-        subsections : Subsection titles received.
-        kv_tables   : Key-value tables received, each copied into a dict.
-    """
     def __init__(self):
-        """Creates the empty message buffers."""
         self.warnings    = []
         self.sections    = []
         self.subsections = []
         self.kv_tables   = []
 
     def warning(self, msg):
-        """Stores a warning message."""
         self.warnings.append(msg)
 
     def section(self, msg):
-        """Stores a section title."""
         self.sections.append(msg)
 
     def subsection(self, msg):
-        """Stores a subsection title."""
         self.subsections.append(msg)
 
     def kv_table(self, data, *args, **kwargs):
-        """Stores a copy of a key-value table."""
         self.kv_tables.append(dict(data))
 
 
 class RecordingTracker:
-    """Tracker stub recording every metrics batch it receives.
-
-    Attributes:
-        calls : Tuples of (prefix, metrics, step) in call order.
-    """
     def __init__(self):
-        """Creates the empty call buffer."""
         self.calls = []
 
     def log_metrics(self, prefix, metrics, step):
-        """Records a metrics batch together with its prefix and step."""
         self.calls.append((prefix, dict(metrics), step))
 
 
 @pytest.fixture
 def cfg():
-    """Returns a monitoring config with default thresholds and a fast poll interval."""
     return FakeConfig()
 
 
 @pytest.fixture
 def monitor(cfg):
-    """Returns a monitor wired to a collecting logger and no tracker."""
     return ResourceMonitor(cfg, logger=CollectingLogger())
 
 
 def test_load_config_reads_fields(cfg):
-    """Verifies the monitor copies enabled, interval, and thresholds off the config."""
     m = ResourceMonitor(cfg, logger=None)
 
     assert m.enabled       is True
@@ -109,13 +69,11 @@ def test_load_config_reads_fields(cfg):
 
 
 def test_missing_config_field_raises():
-    """Verifies a config missing the expected fields fails at construction."""
     with pytest.raises(AttributeError):
         ResourceMonitor(types.SimpleNamespace(), logger=None)
 
 
 def test_renamed_config_field_raises():
-    """Verifies a renamed poll-interval field is rejected by name rather than silently defaulted."""
     cfg = FakeConfig()
     cfg.poll_interval_s = cfg.poll_interval_sec
     del cfg.poll_interval_sec
@@ -125,26 +83,22 @@ def test_renamed_config_field_raises():
 
 
 def test_step_getter_default_is_zero(cfg):
-    """Verifies the default step getter reports step zero."""
     m = ResourceMonitor(cfg, logger=None)
 
     assert m.step_getter() == 0
 
 
 def test_bytes_to_gb():
-    """Verifies byte counts convert to gibibytes."""
     assert ResourceMonitor._bytes_to_gb(1024 ** 3) == 1.0
     assert ResourceMonitor._bytes_to_gb(0)         == 0.0
 
 
 def test_peak_initialised_to_zero(monitor):
-    """Verifies the peak table starts at zero for the RAM and VRAM keys."""
     assert set(monitor.peak) >= {"ram_used_gb", "ram_pct", "vram_used_gb"}
     assert all(v == 0.0 for v in monitor.peak.values())
 
 
 def test_sample_returns_cpu_mem_metrics(monitor):
-    """Verifies a sample carries RAM totals, percentage, swap, process RSS, and CPU load."""
     metrics = monitor.sample()
 
     assert metrics["ram_used_gb"]      > 0.0
@@ -157,7 +111,6 @@ def test_sample_returns_cpu_mem_metrics(monitor):
 
 
 def test_sample_includes_vram_keys(monitor):
-    """Verifies a sample always carries the VRAM keys, even without a GPU."""
     metrics = monitor.sample()
 
     assert "vram_used_gb" in metrics
@@ -166,7 +119,6 @@ def test_sample_includes_vram_keys(monitor):
 
 
 def test_sample_updates_peak(monitor):
-    """Verifies sampling raises the RAM entries of the peak table above zero."""
     monitor.sample()
 
     assert monitor.peak["ram_used_gb"] > 0.0
@@ -174,7 +126,6 @@ def test_sample_updates_peak(monitor):
 
 
 def test_peak_is_monotonic_non_decreasing(monitor):
-    """Verifies repeated sampling never lowers a recorded peak."""
     monitor.sample()
     first = monitor.peak["ram_used_gb"]
     monitor.sample()
@@ -184,7 +135,6 @@ def test_peak_is_monotonic_non_decreasing(monitor):
 
 
 def test_get_shm_usage_returns_tuple(monitor):
-    """Verifies shared-memory usage is reported as gibibytes and a percentage."""
     used, pct = monitor._get_shm_usage()
 
     assert used >= 0.0
@@ -192,7 +142,6 @@ def test_get_shm_usage_returns_tuple(monitor):
 
 
 def test_maybe_warn_respects_cooldown():
-    """Verifies a second warning under the same key is suppressed inside the cooldown."""
     cfg    = FakeConfig(warn_cooldown_sec=1000.0)
     logger = CollectingLogger()
     m      = ResourceMonitor(cfg, logger=logger)
@@ -204,7 +153,6 @@ def test_maybe_warn_respects_cooldown():
 
 
 def test_maybe_warn_distinct_keys_both_fire():
-    """Verifies warnings under different keys are not suppressed by each other."""
     cfg    = FakeConfig(warn_cooldown_sec=1000.0)
     logger = CollectingLogger()
     m      = ResourceMonitor(cfg, logger=logger)
@@ -216,7 +164,6 @@ def test_maybe_warn_distinct_keys_both_fire():
 
 
 def test_maybe_warn_after_cooldown_fires_again():
-    """Verifies a zero cooldown lets consecutive warnings under one key both fire."""
     cfg    = FakeConfig(warn_cooldown_sec=0.0)
     logger = CollectingLogger()
     m      = ResourceMonitor(cfg, logger=logger)
@@ -228,7 +175,6 @@ def test_maybe_warn_after_cooldown_fires_again():
 
 
 def test_check_warnings_triggers_on_low_thresholds():
-    """Verifies sampling emits a RAM warning once the threshold is set to zero."""
     cfg    = FakeConfig(warn_ram_pct=0.0, warn_shm_pct=0.0, warn_cooldown_sec=1000.0)
     logger = CollectingLogger()
     m      = ResourceMonitor(cfg, logger=logger)
@@ -239,7 +185,6 @@ def test_check_warnings_triggers_on_low_thresholds():
 
 
 def test_check_warnings_silent_with_high_thresholds():
-    """Verifies sampling stays silent while every threshold is unreachable."""
     cfg    = FakeConfig(warn_ram_pct=999.0, warn_shm_pct=999.0, warn_vram_pct=999.0)
     logger = CollectingLogger()
     m      = ResourceMonitor(cfg, logger=logger)
@@ -250,7 +195,6 @@ def test_check_warnings_silent_with_high_thresholds():
 
 
 def test_disabled_start_does_not_spawn_thread():
-    """Verifies a disabled monitor logs the fact and starts no sampling thread."""
     cfg    = FakeConfig(enabled=False)
     logger = CollectingLogger()
     m      = ResourceMonitor(cfg, logger=logger)
@@ -263,7 +207,6 @@ def test_disabled_start_does_not_spawn_thread():
 
 
 def test_start_stop_runs_sampling_thread():
-    """Verifies start runs a sampling thread that publishes to the tracker and stop joins it."""
     cfg     = FakeConfig(poll_interval_sec=0.02)
     tracker = RecordingTracker()
     logger  = CollectingLogger()
@@ -286,7 +229,6 @@ def test_start_stop_runs_sampling_thread():
 
 
 def test_publish_logs_to_tracker_with_step():
-    """Verifies published metrics reach the tracker under the system prefix at the current step."""
     cfg     = FakeConfig()
     tracker = RecordingTracker()
     m       = ResourceMonitor(cfg, logger=None, tracker=tracker, step_getter=lambda: 42)
@@ -297,7 +239,6 @@ def test_publish_logs_to_tracker_with_step():
 
 
 def test_publish_filters_to_tb_whitelist():
-    """Verifies only whitelisted metric keys are forwarded to the tracker."""
     cfg     = FakeConfig()
     tracker = RecordingTracker()
     m       = ResourceMonitor(cfg, logger=None, tracker=tracker, step_getter=lambda: 3)
@@ -308,7 +249,6 @@ def test_publish_filters_to_tb_whitelist():
 
 
 def test_publish_skipped_when_tb_disabled():
-    """Verifies nothing is published when TensorBoard logging is switched off."""
     cfg     = FakeConfig(log_to_tensorboard=False)
     tracker = RecordingTracker()
     m       = ResourceMonitor(cfg, logger=None, tracker=tracker)
@@ -319,7 +259,6 @@ def test_publish_skipped_when_tb_disabled():
 
 
 def test_publish_skipped_without_tracker():
-    """Verifies publishing without a tracker is a no-op rather than an error."""
     cfg = FakeConfig()
     m   = ResourceMonitor(cfg, logger=None, tracker=None)
 
@@ -327,7 +266,6 @@ def test_publish_skipped_without_tracker():
 
 
 def test_start_logs_startup_info():
-    """Verifies start logs a monitor section and an NVML availability table."""
     logger = CollectingLogger()
     m      = ResourceMonitor(FakeConfig(poll_interval_sec=0.02), logger=logger)
     m.start()
@@ -338,7 +276,6 @@ def test_start_logs_startup_info():
 
 
 def test_stop_logs_peak_metrics():
-    """Verifies stop logs the peak section and the total sample count."""
     logger = CollectingLogger()
     m      = ResourceMonitor(FakeConfig(poll_interval_sec=0.02), logger=logger)
     m.sample()
@@ -350,7 +287,6 @@ def test_stop_logs_peak_metrics():
 
 
 def test_stop_without_start_is_safe():
-    """Verifies stopping a monitor that never started leaves no thread behind."""
     m = ResourceMonitor(FakeConfig(), logger=CollectingLogger())
     m.stop()
 
@@ -358,7 +294,6 @@ def test_stop_without_start_is_safe():
 
 
 def test_context_manager_starts_and_stops():
-    """Verifies context-manager use starts the thread, samples, and joins on exit."""
     cfg     = FakeConfig(poll_interval_sec=0.02)
     tracker = RecordingTracker()
 
@@ -373,7 +308,6 @@ def test_context_manager_starts_and_stops():
 
 
 def test_run_survives_sample_exception(monkeypatch):
-    """Verifies a raising sample is reported as a warning without killing the thread."""
     cfg    = FakeConfig(poll_interval_sec=0.02)
     logger = CollectingLogger()
     m      = ResourceMonitor(cfg, logger=logger)
@@ -393,7 +327,6 @@ def test_run_survives_sample_exception(monkeypatch):
 
 
 def test_nvml_unavailable_path_has_no_gpu_handles(monkeypatch):
-    """Verifies a failed NVML init leaves no GPU handles and zeroed VRAM metrics, and keeps the failure."""
     def fail_init():
         raise RuntimeError("no nvml")
 
@@ -412,7 +345,6 @@ def test_nvml_unavailable_path_has_no_gpu_handles(monkeypatch):
 
 
 def test_nvml_failure_is_named_in_the_startup_table_and_warned_on_a_cuda_process(monkeypatch):
-    """Verifies the startup row carries the NVML error and the warning fires only when torch can see a CUDA device."""
     def fail_init():
         raise RuntimeError("driver/library version mismatch")
 
@@ -435,7 +367,6 @@ def test_nvml_failure_is_named_in_the_startup_table_and_warned_on_a_cuda_process
 
 
 def test_a_device_whose_queries_fail_is_warned_about_once(monkeypatch):
-    """Verifies a device dropping out of the NVML totals is named once, with the error, and not on every sample."""
     def broken_memory(handle):
         raise RuntimeError("GPU is lost")
 
@@ -457,7 +388,6 @@ def test_a_device_whose_queries_fail_is_warned_about_once(monkeypatch):
 
 
 def test_handles_cover_only_the_visible_devices(monkeypatch):
-    """Verifies CUDA_VISIBLE_DEVICES restricts the NVML handles to the selected index."""
     requested = []
 
     monkeypatch.setattr(rm.pynvml, "nvmlInit", lambda: None)
@@ -473,7 +403,6 @@ def test_handles_cover_only_the_visible_devices(monkeypatch):
 
 
 def test_handles_cover_every_device_when_no_selection_is_set(monkeypatch):
-    """Verifies every device is handled when CUDA_VISIBLE_DEVICES is unset."""
     monkeypatch.setattr(rm.pynvml, "nvmlInit", lambda: None)
     monkeypatch.setattr(rm.pynvml, "nvmlDeviceGetCount", lambda: 3)
     monkeypatch.setattr(rm.pynvml, "nvmlDeviceGetHandleByIndex", lambda index: f"handle{index}")
@@ -485,7 +414,6 @@ def test_handles_cover_every_device_when_no_selection_is_set(monkeypatch):
 
 
 def test_uuid_device_selection_fails_loudly(monkeypatch):
-    """Verifies a UUID-form CUDA_VISIBLE_DEVICES is rejected instead of guessed."""
     monkeypatch.setattr(rm.pynvml, "nvmlInit", lambda: None)
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-8f2a1c")
 

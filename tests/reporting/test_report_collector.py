@@ -1,8 +1,3 @@
-"""Tests covering collection of per-run inference reports into a shared folder.
-
-Covers locating the reports of a run, rewriting or embedding their image links,
-naming the collected copies, and batch collection over filtered run selections.
-"""
 
 from __future__ import annotations
 
@@ -21,16 +16,6 @@ PNG_BYTES = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADU
 
 
 def _write_report(run_dir, tag, body=None):
-    """Writes a report.md plus one PNG figure under the run's inference tag directory.
-
-    Args:
-        run_dir : Run directory that receives the inference/<tag> subtree.
-        tag     : Inference stamp directory name.
-        body    : Report body, defaulting to a heading plus a relative image link.
-
-    Returns:
-        Path of the written report.md.
-    """
     output_dir  = run_dir / "inference" / tag
     figures_dir = output_dir / "figures"
     figures_dir.mkdir(parents=True)
@@ -42,7 +27,6 @@ def _write_report(run_dir, tag, body=None):
 
 @pytest.fixture
 def run_directory(tmp_path):
-    """Returns a run directory holding two inference reports with different stamps."""
     run_dir = tmp_path / "run_demo"
     _write_report(run_dir, "20260101_000000")
     _write_report(run_dir, "20260102_000000")
@@ -50,7 +34,6 @@ def run_directory(tmp_path):
 
 
 def test_locator_picks_the_latest_report(run_directory):
-    """Verifies the locator returns only the newest inference report by default."""
     config  = ReportCollectionConfig(run_directory=run_directory)
     reports = RunReportLocator(config).locate()
 
@@ -58,7 +41,6 @@ def test_locator_picks_the_latest_report(run_directory):
 
 
 def test_locator_returns_every_report_when_latest_only_is_off(run_directory):
-    """Verifies disabling latest_only returns all inference reports in stamp order."""
     config  = ReportCollectionConfig(run_directory=run_directory, latest_only=False)
     reports = RunReportLocator(config).locate()
 
@@ -66,13 +48,11 @@ def test_locator_returns_every_report_when_latest_only_is_off(run_directory):
 
 
 def test_locator_raises_without_inference_directory(tmp_path):
-    """Verifies a run without an inference directory raises FileNotFoundError."""
     with pytest.raises(FileNotFoundError, match="inference"):
         RunReportLocator(ReportCollectionConfig(run_directory=tmp_path)).locate()
 
 
 def test_locator_raises_without_any_report(tmp_path):
-    """Verifies an inference directory without report.md raises FileNotFoundError."""
     (tmp_path / "inference" / "20260101_000000").mkdir(parents=True)
 
     with pytest.raises(FileNotFoundError, match="report.md"):
@@ -80,7 +60,6 @@ def test_locator_raises_without_any_report(tmp_path):
 
 
 def test_rewriter_points_relative_links_at_the_original_figures(run_directory):
-    """Verifies relative image links are rewritten to absolute paths of the original figures."""
     report_path = run_directory / "inference" / "20260102_000000" / "report.md"
     rewritten   = ReportImageRewriter(report_path, embed_images=False).rewrite(report_path.read_text())
 
@@ -89,7 +68,6 @@ def test_rewriter_points_relative_links_at_the_original_figures(run_directory):
 
 
 def test_rewriter_embeds_images_as_data_uris(run_directory):
-    """Verifies embedding replaces image links with base64 data URIs of the file bytes."""
     report_path = run_directory / "inference" / "20260102_000000" / "report.md"
     rewritten   = ReportImageRewriter(report_path, embed_images=True).rewrite(report_path.read_text())
 
@@ -98,7 +76,6 @@ def test_rewriter_embeds_images_as_data_uris(run_directory):
 
 
 def test_rewriter_leaves_remote_and_data_links_untouched(run_directory):
-    """Verifies remote URLs and existing data URIs pass through unchanged."""
     report_path = run_directory / "inference" / "20260102_000000" / "report.md"
     body        = "![a](https://example.org/x.png)\n![b](data:image/png;base64,AAAA)\n"
 
@@ -106,7 +83,6 @@ def test_rewriter_leaves_remote_and_data_links_untouched(run_directory):
 
 
 def test_rewriter_raises_on_a_missing_image(run_directory):
-    """Verifies a link to a missing image raises FileNotFoundError."""
     report_path = run_directory / "inference" / "20260102_000000" / "report.md"
 
     with pytest.raises(FileNotFoundError, match="missing image"):
@@ -114,7 +90,6 @@ def test_rewriter_raises_on_a_missing_image(run_directory):
 
 
 def test_collection_writes_the_report_renamed_after_the_run(run_directory, tmp_path):
-    """Verifies the collected report is named after the run directory."""
     collector = tmp_path / "collected"
     collector.mkdir()
     config = ReportCollectionConfig(run_directory=run_directory, collector_dir=collector)
@@ -126,7 +101,6 @@ def test_collection_writes_the_report_renamed_after_the_run(run_directory, tmp_p
 
 
 def test_collection_suffixes_the_inference_tag_when_collecting_all(run_directory, tmp_path):
-    """Verifies collecting every report suffixes each copy with its inference tag."""
     collector = tmp_path / "collected"
     collector.mkdir()
     config = ReportCollectionConfig(run_directory=run_directory, collector_dir=collector, latest_only=False)
@@ -139,14 +113,12 @@ def test_collection_suffixes_the_inference_tag_when_collecting_all(run_directory
 
 
 def test_selector_discovers_runs_by_inference_report(run_directory, tmp_path):
-    """Verifies the run selector finds runs by the presence of an inference report."""
     selector = ReportRunSelector(tmp_path, "inference", "report.md", RecordingLogger())
 
     assert selector.all() == [run_directory]
 
 
 def test_reports_under_a_family_subdirectory_are_found_and_collected(tmp_path):
-    """Verifies a run whose stamps sit under inference/<family>/ is offered by the selector, located and collected like a direct one."""
     _write_report(tmp_path / "run_profile", "profile_ae/20260101_000000")
     _write_report(tmp_path / "run_profile", "profile_ae/20260102_000000")
     _write_report(tmp_path / "run_direct", "20260103_000000")
@@ -164,7 +136,6 @@ def test_reports_under_a_family_subdirectory_are_found_and_collected(tmp_path):
 
 
 def test_batch_collects_filtered_runs_into_the_collector(run_directory, tmp_path):
-    """Verifies batch collection honours the run filter and writes into the collector directory."""
     collector = tmp_path / "collected"
     entry     = ReportCollectionEntryConfig(runs_dir=tmp_path, run_filter=["run_demo"], collector_dir=collector)
 
@@ -175,7 +146,6 @@ def test_batch_collects_filtered_runs_into_the_collector(run_directory, tmp_path
 
 
 def test_batch_rejects_selected_runs_sharing_a_name(tmp_path):
-    """Verifies runs whose collected names would collide raise ValueError."""
     _write_report(tmp_path / "a" / "run_x", "20260101_000000")
     _write_report(tmp_path / "b" / "run_x", "20260101_000000")
     entry = ReportCollectionEntryConfig(runs_dir=tmp_path, run_filter=["a/run_x", "b/run_x"], collector_dir=tmp_path / "collected")
@@ -185,7 +155,6 @@ def test_batch_rejects_selected_runs_sharing_a_name(tmp_path):
 
 
 def test_recollection_overwrites_the_previous_copy(run_directory, tmp_path):
-    """Verifies re-running collection overwrites the previous copy instead of adding a second file."""
     collector = tmp_path / "collected"
     entry     = ReportCollectionEntryConfig(runs_dir=tmp_path, run_filter=["run_demo"], collector_dir=collector)
 
@@ -199,7 +168,6 @@ def test_recollection_overwrites_the_previous_copy(run_directory, tmp_path):
 
 
 def test_seed_run_labels_include_the_trial_directory(tmp_path):
-    """Verifies seed runs are collected under names carrying their trial directory."""
     _write_report(tmp_path / "trial_a" / "seed0", "20260101_000000")
     _write_report(tmp_path / "trial_b" / "seed0", "20260101_000000")
     collector = tmp_path / "collected"
@@ -212,7 +180,6 @@ def test_seed_run_labels_include_the_trial_directory(tmp_path):
 
 
 def test_trial_name_filter_expands_to_the_seed_runs(tmp_path):
-    """Verifies filtering by trial name collects each of its seed runs."""
     _write_report(tmp_path / "trial_a" / "seed0", "20260101_000000")
     _write_report(tmp_path / "trial_a" / "seed1", "20260101_000000")
     collector = tmp_path / "collected"
@@ -225,7 +192,6 @@ def test_trial_name_filter_expands_to_the_seed_runs(tmp_path):
 
 
 def test_trial_name_filter_collects_the_seed_comparison_report_when_present(tmp_path):
-    """Verifies a trial with a seed-comparison report is collected as that report alone."""
     _write_report(tmp_path / "trial_a" / "seed0", "20260101_000000")
     _write_report(tmp_path / "trial_a" / "seed1", "20260101_000000")
     _write_report(tmp_path / "trial_a", "seed_comparison", body="# Seed-Comparison Report\n")

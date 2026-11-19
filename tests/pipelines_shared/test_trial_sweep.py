@@ -1,4 +1,3 @@
-"""Tests for the shared trial sweep scheduler: naming, resume-aware units and the staged inference pass."""
 
 from __future__ import annotations
 
@@ -23,54 +22,30 @@ PROFILE_ENTRY = Path("main/training/train_profile_autoencoder.py")
 
 
 class FakeStage:
-    """Records the jobs a sweep submits instead of running them on the GPU pool.
-
-    Attributes:
-        statuses  : Job status per run name, defaulting to DONE.
-        pool_file : Path reported as the GPU pool file in the configuration table.
-        submitted : One list of job names per queue submission, in submission order.
-        written   : Result payloads per written file name.
-    """
 
     def __init__(self, statuses: dict | None = None) -> None:
-        """Stores the per-run statuses the fake queue reports back."""
         self.statuses  = statuses or {}
         self.pool_file = Path("gpus.json")
         self.submitted = []
         self.written   = {}
 
     def _run_queue(self, jobs: list) -> list[dict]:
-        """Records the submitted job names and returns their configured statuses."""
         names = [job.name for job in jobs]
         self.submitted.append(names)
 
         return [{"name": name, "status": self.statuses.get(name, "DONE"), "duration_s": 60.0} for name in names]
 
     def _order_results(self, results: list[dict], names: list[str]) -> list[dict]:
-        """Returns the results unchanged, already in submission order."""
         return results
 
     def _write_results(self, results: list[dict], path: Path) -> None:
-        """Records the results under the file name they would be written to."""
         self.written[Path(path).name] = results
 
     def _log_failures(self, failed: list[dict], name_key: str = "name") -> None:
-        """Ignores the failure report, which the fake queue does not render."""
+        pass
 
 
 def _scheduler(logdir: Path, launcher_class=JepaTrainingLauncher, entry: Path = JEPA_ENTRY, mode: str = "ema", **overrides):
-    """Returns a trial scheduler built from an entry launcher and CLI overrides.
-
-    Args:
-        logdir          : Log directory the sweep roots its runs in.
-        launcher_class  : Training launcher whose trial scheduler is built.
-        entry           : Entry script the units re-invoke.
-        mode            : Trial mode the sweep runs.
-        **overrides     : Extra CLI flags appended as --key value pairs.
-
-    Returns:
-        The trial scheduler built from the assembled argv.
-    """
     argv = ["--trials_enabled", "true", "--trials_mode", mode, "--seeds", "[0]", "--logdir", str(logdir)]
 
     for key, value in overrides.items():
@@ -80,7 +55,6 @@ def _scheduler(logdir: Path, launcher_class=JepaTrainingLauncher, entry: Path = 
 
 
 def _complete_run(root: Path, name: str, inference: bool = False, split: str = "test") -> Path:
-    """Creates a completed run directory, optionally carrying a completed inference stamp."""
     run = root / name
     run.mkdir(parents=True, exist_ok=True)
     CompletionMarker.stamp(run, {})
@@ -94,7 +68,6 @@ def _complete_run(root: Path, name: str, inference: bool = False, split: str = "
 
 
 def test_sweep_name_qualifies_the_mode_with_its_entry(tmp_path):
-    """The same trial mode launched from two entries resolves to two sweep names."""
     jepa    = _scheduler(tmp_path)
     profile = _scheduler(tmp_path, ProfileAeTrainingLauncher, PROFILE_ENTRY)
 
@@ -104,17 +77,14 @@ def test_sweep_name_qualifies_the_mode_with_its_entry(tmp_path):
 
 
 def test_sweep_name_still_names_the_mode(tmp_path):
-    """Two modes of one entry keep resolving to two sweep names."""
     assert _scheduler(tmp_path, mode="amp").sweep_name == "sweep_jepa_amp"
 
 
 def test_run_directories_stay_under_the_mode_subdirectory(tmp_path):
-    """Qualifying the sweep name leaves the on-disk run tree at logdir/mode."""
     assert _scheduler(tmp_path).runs_root == tmp_path / "ema"
 
 
 def test_planned_units_keep_the_units_a_resume_reuses(tmp_path):
-    """A resumed sweep drops completed units from units() but keeps them in planned_units()."""
     root  = tmp_path / "ema"
     names = [name for name, _ in _scheduler(tmp_path).planned_units()]
 
@@ -128,7 +98,6 @@ def test_planned_units_keep_the_units_a_resume_reuses(tmp_path):
 
 
 def test_resumed_sweep_infers_over_the_reused_units_missing_inference(tmp_path):
-    """A fully resumed sweep trains nothing and still infers over the units without inference output."""
     root  = tmp_path / "ema"
     names = [name for name, _ in _scheduler(tmp_path).planned_units()]
 
@@ -151,7 +120,6 @@ def test_resumed_sweep_infers_over_the_reused_units_missing_inference(tmp_path):
 
 
 def test_resumed_sweep_without_pending_inference_launches_nothing(tmp_path):
-    """A fully resumed sweep whose units all carry inference output submits no job at all."""
     root  = tmp_path / "ema"
     names = [name for name, _ in _scheduler(tmp_path).planned_units()]
 
@@ -167,7 +135,6 @@ def test_resumed_sweep_without_pending_inference_launches_nothing(tmp_path):
 
 
 def test_resumed_inline_inference_sweep_infers_over_the_reused_units_missing_it(tmp_path):
-    """With infer_after, a resumed sweep launches inference-only jobs for the reused units whose inline inference never finished."""
     root  = tmp_path / "ema"
     names = [name for name, _ in _scheduler(tmp_path).planned_units()]
 
@@ -190,7 +157,6 @@ def test_resumed_inline_inference_sweep_infers_over_the_reused_units_missing_it(
 
 
 def test_sweep_without_inference_reports_no_split(tmp_path):
-    """A sweep with neither inference switch runs no inference pass and says so in its configuration table."""
     scheduler        = _scheduler(tmp_path)
     scheduler._stage = FakeStage()
 
@@ -202,7 +168,6 @@ def test_sweep_without_inference_reports_no_split(tmp_path):
 
 
 def test_inference_is_pending_when_the_stamp_records_another_split(tmp_path):
-    """An inference stamp scored on another split does not count as the configured split's output."""
     root  = tmp_path / "ema"
     names = [name for name, _ in _scheduler(tmp_path).planned_units()]
 
@@ -218,7 +183,6 @@ def test_inference_is_pending_when_the_stamp_records_another_split(tmp_path):
 
 
 def test_inference_covers_freshly_trained_units_and_skips_failed_ones(tmp_path):
-    """A fresh sweep infers over the units that trained and warns off the ones that failed, and its log ends in an ABORTED banner naming the failures."""
     names            = [name for name, _ in _scheduler(tmp_path).planned_units()]
     scheduler        = _scheduler(tmp_path, infer_at_end="true")
     scheduler._stage = FakeStage(statuses={names[1]: "FAILED"})
@@ -235,7 +199,6 @@ def test_inference_covers_freshly_trained_units_and_skips_failed_ones(tmp_path):
 
 
 def test_fresh_launch_into_a_root_holding_runs_warns_before_launching(tmp_path):
-    """A fresh launch (no resume_from) whose mode directory already holds a completed run warns about it and still launches every unit."""
     root  = tmp_path / "ema"
     names = [name for name, _ in _scheduler(tmp_path).planned_units()]
     _complete_run(root, names[0])
@@ -253,7 +216,6 @@ def test_fresh_launch_into_a_root_holding_runs_warns_before_launching(tmp_path):
 
 
 def test_results_file_of_an_earlier_launch_is_merged_not_replaced(tmp_path):
-    """A resumed sweep's results JSON keeps the entries of the units it did not rerun and replaces the ones it did."""
     root  = tmp_path / "ema"
     names = [name for name, _ in _scheduler(tmp_path).planned_units()]
 
@@ -275,7 +237,6 @@ def test_results_file_of_an_earlier_launch_is_merged_not_replaced(tmp_path):
 
 
 def test_run_directories_carrying_a_label_prefix_count_as_inferred(tmp_path):
-    """A completed run stored under its composed label prefix is matched by the inference check."""
     root  = tmp_path / "ema"
     names = [name for name, _ in _scheduler(tmp_path).planned_units()]
 
@@ -288,7 +249,6 @@ def test_run_directories_carrying_a_label_prefix_count_as_inferred(tmp_path):
 
 
 def test_trial_sweeps_stage_no_prepare_or_compare_job(tmp_path):
-    """A trial sweep declares neither a prepare nor a compare stage to the cluster submitter."""
     scheduler = _scheduler(tmp_path)
 
     assert scheduler.setup_argv()    is None
@@ -296,7 +256,6 @@ def test_trial_sweeps_stage_no_prepare_or_compare_job(tmp_path):
 
 
 def test_trial_argv_pins_the_unit_and_drops_the_scheduler_fields(tmp_path):
-    """The unit command carries the run name and sweep root but none of the scheduler-owned fields."""
     scheduler       = _scheduler(tmp_path, gpus="[0, 1]", poll_interval_s="1.0", **{"training.epochs": "2"})
     run_name, extra = scheduler.units()[0]
     argv            = scheduler.trial_argv(run_name, extra)
@@ -313,7 +272,6 @@ def test_trial_argv_pins_the_unit_and_drops_the_scheduler_fields(tmp_path):
 
 
 def test_seed_expanded_units_override_the_forwarded_seed_list(tmp_path):
-    """The per-unit seed wins over the seed list the scheduler forwards to every unit."""
     scheduler       = _scheduler(tmp_path, seeds="[3, 7]")
     run_name, extra = scheduler.units()[0]
     argv            = scheduler.trial_argv(run_name, extra)
@@ -330,7 +288,6 @@ def test_seed_expanded_units_override_the_forwarded_seed_list(tmp_path):
     (ProfileAeTrialScheduler, ProfileAeEntryConfig),
 ))
 def test_scheduler_fields_name_real_entry_config_fields(scheduler_class, config_class):
-    """Every field a scheduler claims exists on its entry config, so nothing is swallowed by a typo."""
     config  = config_class()
     unknown = [field for field in scheduler_class.SCHEDULER_FIELDS if not hasattr(config, field)]
 
@@ -344,7 +301,6 @@ def test_scheduler_fields_name_real_entry_config_fields(scheduler_class, config_
     (ProfileAeTrialScheduler, ProfileAeEntryConfig),
 ))
 def test_every_trial_mode_claims_its_planner_settings(scheduler_class, config_class):
-    """The trials config field each mode reads is claimed by the scheduler and never forwarded."""
     config = config_class()
 
     for mode in scheduler_class.MODE_SUBDIRS:
@@ -355,7 +311,6 @@ def test_every_trial_mode_claims_its_planner_settings(scheduler_class, config_cl
 
 
 def test_backbone_and_jepa_sweeps_do_not_share_a_mode_directory(tmp_path):
-    """The same mode launched from the backbone and the JEPA entry yields two cluster sweep names."""
     backbone = _scheduler(tmp_path, BackboneTrainingLauncher, Path("main/training/train_backbone.py"))
     jepa     = _scheduler(tmp_path)
 

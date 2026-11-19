@@ -1,8 +1,3 @@
-"""Shared fixtures for the backbone training tests.
-
-Provides the z axis, normalizers with known statistics, geometry and Gaussian
-configs, loss and model builders, parameter tensors and a scalar-recording tracker stub.
-"""
 
 from __future__ import annotations
 
@@ -27,17 +22,14 @@ X_LEN = 32
 
 
 def x_axis_tensor(length: int = X_LEN) -> torch.Tensor:
-    """Returns the z axis of shape (length,) spanning X_MIN to X_MAX, in metres."""
     return torch.linspace(X_MIN, X_MAX, length, dtype=torch.float32)
 
 
 def x_axis_numpy(length: int = X_LEN) -> np.ndarray:
-    """Returns the z axis of shape (length,) spanning X_MIN to X_MAX, in metres."""
     return np.linspace(X_MIN, X_MAX, length, dtype=np.float32)
 
 
 def identity_normalizer(n_channels: int) -> Normalizer:
-    """Returns a z-score output normalizer with zero location and unit scale on every channel."""
     strategy = ChannelStrategy(NormMethod.ZSCORE, apply_log1p=False)
     stats    = ChannelStats(
         loc        = [0.0] * n_channels,
@@ -50,7 +42,6 @@ def identity_normalizer(n_channels: int) -> Normalizer:
 
 
 def log1p_normalizer(n_gaussians: int) -> Normalizer:
-    """Returns an output normalizer applying log1p robust-IQR to amplitude and width and z-score to the centre."""
     log1p  = ChannelStrategy(NormMethod.ROBUST_IQR, apply_log1p=True)
     zscore = ChannelStrategy(NormMethod.ZSCORE,     apply_log1p=False)
 
@@ -65,7 +56,6 @@ def log1p_normalizer(n_gaussians: int) -> Normalizer:
 
 
 def zscore_normalizer(n_gaussians: int) -> Normalizer:
-    """Returns a z-score output normalizer with the same statistics as log1p_normalizer but no log1p."""
     zscore = ChannelStrategy(NormMethod.ZSCORE, apply_log1p=False)
 
     stats = ChannelStats(
@@ -79,7 +69,6 @@ def zscore_normalizer(n_gaussians: int) -> Normalizer:
 
 
 def spock_normalizer() -> Normalizer:
-    """Returns a two-Gaussian fixed-bounds output normalizer with output clamping disabled."""
     fixed = ChannelStrategy(NormMethod.FIXED_BOUNDS)
     mins  = [1e-05, -15.0, 0.01, 1e-05, 1.0, 1.0]
     maxs  = [10.0, 5.0, 5.0, 10.0, 40.0, 20.0]
@@ -99,25 +88,10 @@ def spock_normalizer() -> Normalizer:
 
 
 def gaussian_config(n_gaussians: int) -> GaussianConfig:
-    """Returns a Gaussian config with n_gaussians slots over the X_MIN to X_MAX z range."""
     return GaussianConfig(n_default_gaussians=n_gaussians, x_min=X_MIN, x_max=X_MAX, activity_threshold=1e-4)
 
 
 def build_loss(n_gaussians: int = 2, loss_cfg: LossConfig | None = None, log_all_losses: bool = False, length: int = X_LEN, sampler=None, norm_stats: Normalizer | None = None, logger=None) -> Loss:
-    """Builds a training loss over the shared axis and configs.
-
-    Args:
-        n_gaussians    : Number of Gaussian slots, setting the 3 * n_gaussians channels.
-        loss_cfg       : Loss configuration, defaulting to parameter L1 with unit weight.
-        log_all_losses : Whether every loss term is logged individually.
-        length         : Number of z bins on the axis.
-        sampler        : Optional parameter sampler fed with denormalized predictions.
-        norm_stats     : Output normalizer, defaulting to the identity normalizer.
-        logger         : Logger receiving the configuration tables and warnings, a null logger when omitted.
-
-    Returns:
-        Loss bound to a null tracker.
-    """
     n_channels = n_gaussians * 3
     loss_cfg   = loss_cfg if loss_cfg is not None else LossConfig(use_param_l1=True, weight_param_l1=1.0)
 
@@ -134,26 +108,11 @@ def build_loss(n_gaussians: int = 2, loss_cfg: LossConfig | None = None, log_all
 
 
 def param_tensor(batch: int, n_gaussians: int, height: int, width: int, seed: int) -> torch.Tensor:
-    """Returns a standard normal parameter tensor of shape (batch, 3 * n_gaussians, height, width)."""
     gen = torch.Generator().manual_seed(seed)
     return torch.randn(batch, n_gaussians * 3, height, width, generator=gen, dtype=torch.float32)
 
 
 def valid_param_tensor(batch: int, n_gaussians: int, height: int, width: int, seed: int) -> torch.Tensor:
-    """Returns a physically valid parameter tensor.
-
-    Args:
-        batch       : Number of samples.
-        n_gaussians : Number of Gaussian slots.
-        height      : Row extent, in pixels.
-        width       : Range extent, in pixels.
-        seed        : Seed of the generator drawing the parameters.
-
-    Returns:
-        Tensor of shape (batch, 3 * n_gaussians, height, width) with positive
-        amplitudes, centres inside the z range in metres and widths of at
-        least 4 metres.
-    """
     gen   = torch.Generator().manual_seed(seed)
     parts = []
 
@@ -167,7 +126,6 @@ def valid_param_tensor(batch: int, n_gaussians: int, height: int, width: int, se
 
 
 def tiny_model(in_channels: int = 2, n_gaussians: int = 2):
-    """Returns a two-level ResUNet and its model config for the given channel and slot counts."""
     out_channels = n_gaussians * 3
     return get_backbone(
         "resunet",
@@ -181,7 +139,6 @@ def tiny_model(in_channels: int = 2, n_gaussians: int = 2):
 
 
 def tiny_trainer_config(n_gaussians: int = 2, epochs: int = 1) -> BackboneTrainerConfig:
-    """Returns a backbone trainer config with resource monitoring off and parameter L1 as the complete-stage loss."""
     cfg = BackboneTrainerConfig(gaussian=gaussian_config(n_gaussians))
 
     cfg.training.epochs               = epochs
@@ -195,22 +152,13 @@ def tiny_trainer_config(n_gaussians: int = 2, epochs: int = 1) -> BackboneTraine
 
 
 class TrackerStub:
-    """Tracker recording every logged scalar instead of writing it out.
-
-    Attributes:
-        debug   : Whether debug-level logging is requested.
-        scalars : Recorded (tag, value, step) triples in logging order.
-    """
     def __init__(self) -> None:
-        """Initializes an empty scalar record with debug logging off."""
         self.debug   = False
         self.scalars = []
 
     def log_scalar(self, tag, value, step=None) -> None:
-        """Records a single scalar under its tag and step."""
         self.scalars.append((tag, float(value), step))
 
     def log_metrics(self, prefix, values, step=None) -> None:
-        """Records every value of the mapping under the prefixed tag and step."""
         for key, value in values.items():
             self.scalars.append((f"{prefix}/{key}", float(value), step))

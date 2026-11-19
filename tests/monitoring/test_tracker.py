@@ -1,4 +1,3 @@
-"""Tests covering the TensorBoard Tracker: step bookkeeping, scope tagging, scalar and histogram logging, and the null variant."""
 
 from __future__ import annotations
 
@@ -10,17 +9,14 @@ from tools.monitoring.tracker import Tracker, NullTracker
 
 
 def test_active_false_without_writer():
-    """Verifies a tracker without a writer reports itself inactive."""
     assert Tracker().active is False
 
 
 def test_active_true_with_writer():
-    """Verifies a tracker holding a writer reports itself active."""
     assert Tracker(writer=RecordingWriter()).active is True
 
 
 def test_set_step_and_advance():
-    """Verifies set_step fixes the step and advance moves it by the given amount."""
     t = Tracker()
     t.set_step(10)
 
@@ -31,7 +27,6 @@ def test_set_step_and_advance():
 
 
 def test_set_step_casts_to_int():
-    """Verifies a float step is truncated to an integer."""
     t = Tracker()
     t.set_step(3.9)
 
@@ -39,7 +34,6 @@ def test_set_step_casts_to_int():
 
 
 def test_scope_nesting_and_tagging():
-    """Verifies nested scopes prefix tags with slashes and unwind on exit."""
     t = Tracker()
 
     assert t._tag("x") == "x"
@@ -55,7 +49,6 @@ def test_scope_nesting_and_tagging():
 
 
 def test_scope_pops_on_exception():
-    """Verifies a scope is popped even when the body raises."""
     t = Tracker()
     with pytest.raises(RuntimeError):
         with t.scope("a"):
@@ -65,7 +58,6 @@ def test_scope_pops_on_exception():
 
 
 def test_resolve_step_default_and_override():
-    """Verifies step resolution falls back to the current step unless one is passed."""
     t = Tracker()
     t.set_step(7)
 
@@ -74,7 +66,6 @@ def test_resolve_step_default_and_override():
 
 
 def test_log_scalar_records_exact_value():
-    """Verifies a scalar reaches the writer with its tag, value, and current step."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.set_step(3)
@@ -84,7 +75,6 @@ def test_log_scalar_records_exact_value():
 
 
 def test_log_scalar_casts_to_float():
-    """Verifies integer scalars are cast to float before the write."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.log_scalar("n", 4, step=1)
@@ -96,7 +86,6 @@ def test_log_scalar_casts_to_float():
 
 
 def test_log_scalar_explicit_step_overrides():
-    """Verifies an explicit step wins over the tracker's current step."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.set_step(100)
@@ -106,7 +95,6 @@ def test_log_scalar_explicit_step_overrides():
 
 
 def test_log_scalar_uses_scope_in_tag():
-    """Verifies the active scope is prefixed onto the scalar tag."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     with t.scope("train"):
@@ -116,7 +104,6 @@ def test_log_scalar_uses_scope_in_tag():
 
 
 def test_log_metrics_prefixes_and_records_all():
-    """Verifies every metric in a batch is written under the shared prefix and step."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.log_metrics("sys", {"a": 1.0, "b": 2.0}, step=5)
@@ -129,7 +116,6 @@ def test_log_metrics_prefixes_and_records_all():
 
 
 def test_log_metrics_skips_unconvertible():
-    """Verifies metrics that cannot become floats are dropped instead of raising."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.log_metrics("sys", {"good": 3.0, "bad": "not_a_number", "none": None}, step=0)
@@ -140,7 +126,6 @@ def test_log_metrics_skips_unconvertible():
 
 
 def test_log_histogram_records_float32_array():
-    """Verifies histogram values are flattened to a float32 array with automatic binning."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.log_histogram("weights", [[1, 2], [3, 4]], step=2)
@@ -155,7 +140,6 @@ def test_log_histogram_records_float32_array():
 
 
 def test_log_histogram_drops_non_finite_values_and_counts_them():
-    """Verifies NaN and Inf entries leave the histogram and are counted under a diagnostics scalar at the same step."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.log_histogram("param_hist/mu", [1.0, np.nan, np.inf, 2.0, -np.inf], step=3)
@@ -169,7 +153,6 @@ def test_log_histogram_drops_non_finite_values_and_counts_them():
 
 
 def test_log_histogram_of_nothing_finite_logs_an_empty_marker_instead():
-    """Verifies an empty array, or one with no finite value, logs no histogram but a diagnostics/<tag>_empty scalar."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.log_histogram("grad", [], step=1)
@@ -183,7 +166,6 @@ def test_log_histogram_of_nothing_finite_logs_an_empty_marker_instead():
 
 
 def test_log_histogram_of_finite_values_logs_no_diagnostics():
-    """Verifies a healthy histogram leaves the diagnostics charts absent, so their appearance alone is the signal."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.log_histogram("weights", [0.5, 0.25], step=1)
@@ -193,7 +175,6 @@ def test_log_histogram_of_finite_values_logs_no_diagnostics():
 
 
 def test_log_figure_delegates_with_close():
-    """Verifies figures are forwarded unchanged with the close flag set."""
     w = RecordingWriter()
     t = Tracker(writer=w)
 
@@ -209,7 +190,6 @@ def test_log_figure_delegates_with_close():
 
 
 def test_log_layout_forwards_the_custom_scalars_layout():
-    """Verifies a layout reaches the writer as a plain dictionary once."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.log_layout({"Loss": {"Total loss by stage": ["Multiline", ["loss/train$", "loss/val$"]]}})
@@ -218,7 +198,6 @@ def test_log_layout_forwards_the_custom_scalars_layout():
 
 
 def test_inactive_tracker_records_nothing():
-    """Verifies logging on a writer-less tracker is a silent no-op."""
     t = Tracker()
     t.log_scalar("loss", 1.0)
     t.log_metrics("sys", {"a": 1.0})
@@ -227,7 +206,6 @@ def test_inactive_tracker_records_nothing():
 
 
 def test_flush_and_close_delegate():
-    """Verifies flush and close are forwarded to the writer once each."""
     w = RecordingWriter()
     t = Tracker(writer=w)
     t.flush()
@@ -238,14 +216,12 @@ def test_flush_and_close_delegate():
 
 
 def test_flush_and_close_noop_without_writer():
-    """Verifies flush and close are safe without a writer."""
     t = Tracker()
     t.flush()
     t.close()
 
 
 def test_null_tracker_is_inactive():
-    """Verifies NullTracker is an inactive Tracker that accepts every call."""
     nt = NullTracker()
 
     assert nt.active is False

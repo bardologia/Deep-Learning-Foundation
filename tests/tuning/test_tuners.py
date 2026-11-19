@@ -1,13 +1,3 @@
-"""Tests for parameter sampling, search-space selection, stop rules, best-config persistence and the Tuner.
-
-Covers float, categorical and indexed categorical sampling and decoding, the
-rejection of an unknown dimension type, the search groups a study may switch
-on, the trial target, plateau and time-budget stop rules and the reason a
-worker's run ended, the per-trial progress record and study snapshot, failing
-trials, the discard of a finished trial's checkpoints, convergence on a
-synthetic objective, best-config writing and the trial configs the backbone
-Tuner materializes.
-"""
 
 from __future__ import annotations
 
@@ -45,13 +35,11 @@ INDEXED_SPACE = {
 
 
 def test_sampler_float_respects_bounds_and_log():
-    """Verifies that sampled floats stay inside their bounds and keep the log flag."""
     space   = FLOAT_SPACE
     sampler = ParamSampler()
     seen    = {"encoder_lr": [], "dropout": []}
 
     def objective(trial):
-        """Records the sampled parameters and returns a constant loss."""
         s = sampler.sample(trial, space)
         seen["encoder_lr"].append(s["encoder_lr"])
         seen["dropout"].append(s["dropout"])
@@ -68,12 +56,10 @@ def test_sampler_float_respects_bounds_and_log():
 
 
 def test_sampler_categorical_only_from_choices():
-    """Verifies that categorical samples come only from the declared choices."""
     sampler = ParamSampler()
     seen    = []
 
     def objective(trial):
-        """Records the sampled activation and returns a constant loss."""
         seen.append(sampler.sample(trial, CATEGORICAL_SPACE)["activation"])
         return 0.0
 
@@ -85,12 +71,10 @@ def test_sampler_categorical_only_from_choices():
 
 
 def test_sampler_indexed_categorical_stores_index_returns_value():
-    """Verifies that indexed categoricals store an index but hand back the choice value."""
     sampler = ParamSampler()
     sampled = {}
 
     def objective(trial):
-        """Records the sampled parameters and returns a constant loss."""
         sampled.update(sampler.sample(trial, INDEXED_SPACE))
         return 0.0
 
@@ -103,7 +87,6 @@ def test_sampler_indexed_categorical_stores_index_returns_value():
 
 
 def test_sampler_rejects_an_unknown_parameter_type():
-    """Verifies that a dimension with an undeclared type raises instead of being left out of the sample."""
     trial = optuna.create_study().ask()
 
     with pytest.raises(ValueError, match="Unknown search space parameter type 'int' for parameter 'depth'"):
@@ -111,7 +94,6 @@ def test_sampler_rejects_an_unknown_parameter_type():
 
 
 def test_sampler_decode_roundtrips_indexed_categorical():
-    """Verifies that decoding turns a stored index back into the choice value."""
     sampler = ParamSampler()
     params  = {"features__idx": 2, "encoder_lr": 0.001}
     decoded = sampler.decode(params, INDEXED_SPACE)
@@ -122,7 +104,6 @@ def test_sampler_decode_roundtrips_indexed_categorical():
 
 
 def test_sampler_decode_rejects_an_index_the_space_no_longer_holds():
-    """Verifies that an index for a parameter absent from the space raises KeyError."""
     sampler = ParamSampler()
 
     with pytest.raises(KeyError, match="renamed_features"):
@@ -133,7 +114,6 @@ def test_sampler_decode_rejects_an_index_the_space_no_longer_holds():
 
 
 def test_sampler_decode_passes_through_plain_params():
-    """Verifies that non-indexed parameters pass through decoding unchanged."""
     sampler = ParamSampler()
     decoded = sampler.decode({"activation": "gelu", "dropout": 0.1}, CATEGORICAL_SPACE)
 
@@ -141,7 +121,6 @@ def test_sampler_decode_passes_through_plain_params():
 
 
 def test_search_space_joins_the_switched_on_groups(tune_cfg):
-    """Both model groups by default, one group when the other is off, and the batch size as a categorical when asked."""
     assert SearchSpace.of(UNetConfig, tune_cfg) == {**UNetConfig.tunable_lr_params(), **UNetConfig.tunable_arch_params()}
 
     tune_cfg.search_arch = False
@@ -156,17 +135,13 @@ def test_search_space_joins_the_switched_on_groups(tune_cfg):
 
 
 def test_search_space_refuses_nothing_to_search_and_empty_groups(tune_cfg):
-    """Every group off, an empty batch list and a class declaring nothing of a switched-on group all fail loudly."""
     class ArchOnly:
-        """Config stand-in declaring architecture parameters only."""
         @classmethod
         def tunable_lr_params(cls):
-            """Declares no learning-rate parameter."""
             return {}
 
         @classmethod
         def tunable_arch_params(cls):
-            """Declares one categorical architecture parameter."""
             return {"activation": {"type": "categorical", "choices": ["relu", "gelu"]}}
 
     tune_cfg.search_lr   = False
@@ -188,7 +163,6 @@ def test_search_space_refuses_nothing_to_search_and_empty_groups(tune_cfg):
 
 
 def _study_with_values(values):
-    """Returns a minimising study holding one finished trial per value, pruned where the value is None."""
     study = optuna.create_study(direction="minimize")
 
     for value in values:
@@ -201,7 +175,6 @@ def _study_with_values(values):
 
 
 def test_plateau_stop_counts_finished_trials_since_the_last_counted_improvement(fake_logger):
-    """Pruned trials count towards the patience, and a gain below the margin does not reset it."""
     rule = StudyPlateauStop(patience=3, min_delta=0.05, logger=fake_logger)
 
     assert rule.stalled(_study_with_values([1.0, 0.9, 0.95, None, 0.92])) == 3
@@ -211,7 +184,6 @@ def test_plateau_stop_counts_finished_trials_since_the_last_counted_improvement(
 
 
 def test_plateau_stop_ends_a_study_after_the_patience_without_progress(fake_logger):
-    """A constant objective stops the study after the first trial plus the patience, and the rule says so with the anchor and reference."""
     study = optuna.create_study(direction="minimize", sampler=optuna.samplers.RandomSampler(seed=0))
     rule  = StudyPlateauStop(patience=4, min_delta=0.0, logger=fake_logger)
 
@@ -223,7 +195,6 @@ def test_plateau_stop_ends_a_study_after_the_patience_without_progress(fake_logg
 
 
 def test_plateau_stop_keeps_running_while_the_best_keeps_improving(fake_logger):
-    """An objective improving beyond the margin on every trial never trips the rule."""
     study = optuna.create_study(direction="minimize", sampler=optuna.samplers.RandomSampler(seed=0))
     rule  = StudyPlateauStop(patience=3, min_delta=0.01, logger=fake_logger)
 
@@ -235,7 +206,6 @@ def test_plateau_stop_keeps_running_while_the_best_keeps_improving(fake_logger):
 
 
 def test_target_stop_logs_the_stop_once_the_completed_count_reaches_the_target(fake_logger):
-    """The target rule stops the worker at the completed count, says so, and reports the target as reached from then on."""
     study = optuna.create_study(direction="minimize", sampler=optuna.samplers.RandomSampler(seed=0))
     rule  = StudyTargetStop(target=3, logger=fake_logger)
 
@@ -250,7 +220,6 @@ def test_target_stop_logs_the_stop_once_the_completed_count_reaches_the_target(f
 
 
 def test_target_stop_counts_pruned_trials_as_the_scheduler_does_but_not_failed_ones(fake_logger):
-    """A study of one completed, one pruned and one failed trial has reached a target of two and not one of three."""
     study = _study_with_values([0.5, None])
     study.add_trial(optuna.trial.create_trial(state=TrialState.FAIL))
 
@@ -259,7 +228,6 @@ def test_target_stop_counts_pruned_trials_as_the_scheduler_does_but_not_failed_o
 
 
 def test_stop_rules_name_the_rule_that_ended_the_run(fake_logger, tune_cfg):
-    """The reason follows Optuna's order: a fired target or plateau, then a used-up share, then the time budget, and anything else is an error."""
     tune_cfg.plateau_patience = 2
     tune_cfg.time_budget_h    = 1.0
     rules = StudyStopRules(tune_cfg, fake_logger)
@@ -280,7 +248,6 @@ def test_stop_rules_name_the_rule_that_ended_the_run(fake_logger, tune_cfg):
 
 
 def test_optimize_records_the_stop_reason_in_the_snapshot_and_the_worker_tally(fake_logger, tune_cfg, tmp_path):
-    """Running a study under the rules writes the reason into study_progress.json and the worker's tally names its trials, best value and reason."""
     tune_cfg.n_trials = 3
     rules    = StudyStopRules(tune_cfg, fake_logger)
     progress = StudyProgress(tmp_path, {"x": {"type": "float", "low": 0.0, "high": 1.0}}, rules, fake_logger)
@@ -302,7 +269,6 @@ def test_optimize_records_the_stop_reason_in_the_snapshot_and_the_worker_tally(f
 
 
 def test_study_progress_snapshot_counts_states_best_stall_and_rate(fake_logger, tune_cfg, tmp_path):
-    """The snapshot reports the state counts, the best completed trial decoded, the stall count (failed trials do not count) and a positive finishing rate."""
     tune_cfg.plateau_patience = 3
     space    = {"dropout": {"type": "float", "low": 0.0, "high": 0.5}, "features": {"type": "indexed_categorical", "choices": [[32, 64], [64, 128]]}}
     progress = StudyProgress(tmp_path, space, StudyStopRules(tune_cfg, fake_logger), fake_logger)
@@ -326,12 +292,10 @@ def test_study_progress_snapshot_counts_states_best_stall_and_rate(fake_logger, 
 
 
 def test_study_progress_names_the_epoch_a_pruned_trial_was_cut_at(fake_logger, tune_cfg, tmp_path):
-    """The progress line of a pruned trial says at which epoch the pruner cut it."""
     progress = StudyProgress(tmp_path, {}, StudyStopRules(tune_cfg, fake_logger), fake_logger)
     study    = optuna.create_study(direction="minimize", pruner=optuna.pruners.ThresholdPruner(upper=1.0))
 
     def objective(trial):
-        """Reports two good epochs and a third the pruner rejects."""
         for epoch, val_loss in enumerate((0.9, 0.8, 4.0)):
             TrialPruning.report(trial, val_loss, epoch, fake_logger)
         return 0.0
@@ -343,7 +307,6 @@ def test_study_progress_names_the_epoch_a_pruned_trial_was_cut_at(fake_logger, t
 
 
 def test_study_progress_rate_ignores_the_idle_gap_before_a_resume(fake_logger, tune_cfg, tmp_path):
-    """Trials finished three days before this launch count towards the study's age, not towards the rate or the time to the target."""
     progress = StudyProgress(tmp_path, {}, StudyStopRules(tune_cfg, fake_logger), fake_logger)
     study    = optuna.create_study(direction="minimize")
     past     = datetime.now() - timedelta(days=3)
@@ -368,7 +331,6 @@ def test_study_progress_rate_ignores_the_idle_gap_before_a_resume(fake_logger, t
 
 
 def test_study_progress_callback_logs_one_line_and_writes_the_snapshot(fake_logger, tune_cfg, tmp_path):
-    """After every trial the callback appends one record to the log and rewrites study_progress.json."""
     space    = {"x": {"type": "float", "low": 0.0, "high": 1.0}}
     progress = StudyProgress(tmp_path, space, StudyStopRules(tune_cfg, fake_logger), fake_logger)
     study    = optuna.create_study(direction="minimize", sampler=optuna.samplers.RandomSampler(seed=0))
@@ -387,15 +349,11 @@ def test_study_progress_callback_logs_one_line_and_writes_the_snapshot(fake_logg
 
 
 def test_a_failing_trial_is_recorded_as_failed_and_the_worker_goes_on(fake_logger, tune_cfg, tmp_path, monkeypatch):
-    """A trial raising a divergence or device error ends as FAIL, is logged, the next trial still runs, and both carry the worker's index."""
     class FlakyPipeline:
-        """Training pipeline stub failing on the first trial only."""
         def __init__(self, *args, **kwargs):
-            """Records the trial number."""
             self.number = kwargs["trial"].number
 
         def run(self):
-            """Raises the trainer's divergence error once, then returns a loss."""
             if self.number == 0:
                 raise FloatingPointError("train loss is non-finite at step 7")
             return None, None, 0.4
@@ -426,7 +384,6 @@ def test_a_failing_trial_is_recorded_as_failed_and_the_worker_goes_on(fake_logge
 
 
 def test_a_failed_trial_without_an_exception_says_optuna_rejected_its_value(fake_logger, tune_cfg, tmp_path):
-    """A NaN objective fails the trial without an exception, and the progress line says so instead of naming no reason."""
     progress = StudyProgress(tmp_path, {}, StudyStopRules(tune_cfg, fake_logger), fake_logger)
     study    = optuna.create_study(direction="minimize")
 
@@ -436,7 +393,6 @@ def test_a_failed_trial_without_an_exception_says_optuna_rejected_its_value(fake
 
 
 def test_stop_rules_follow_the_tuning_settings(tune_cfg, fake_logger):
-    """The target stop is always on, the plateau stop and the timeout follow their settings."""
     rules = StudyStopRules(tune_cfg, fake_logger)
 
     assert [type(rule) for rule in rules.callbacks()] == [StudyTargetStop]
@@ -460,12 +416,10 @@ def test_stop_rules_follow_the_tuning_settings(tune_cfg, fake_logger):
 
 
 def _never_called(trial):
-    """Objective that fails the test when a worker runs a trial it should not."""
     raise AssertionError("the worker ran a trial although the study was already at its stop")
 
 
 def test_a_worker_attaching_to_a_study_at_its_target_runs_no_trial(fake_logger, tune_cfg, tmp_path):
-    """A study that already holds the target's completed trials ends the attaching worker at once, with a warning and the target as its reason."""
     tune_cfg.n_trials = 2
     rules    = StudyStopRules(tune_cfg, fake_logger)
     progress = StudyProgress(tmp_path, {}, rules, fake_logger)
@@ -481,7 +435,6 @@ def test_a_worker_attaching_to_a_study_at_its_target_runs_no_trial(fake_logger, 
 
 
 def test_a_worker_attaching_to_a_plateaued_study_runs_no_trial(fake_logger, tune_cfg, tmp_path):
-    """A study whose best value has stalled past the patience ends the attaching worker at once with the plateau as its reason."""
     tune_cfg.n_trials         = 50
     tune_cfg.plateau_patience = 2
     rules    = StudyStopRules(tune_cfg, fake_logger)
@@ -493,7 +446,6 @@ def test_a_worker_attaching_to_a_plateaued_study_runs_no_trial(fake_logger, tune
 
 
 def test_trial_checkpoints_discard_removes_weights_at_any_depth(fake_logger, tmp_path):
-    """Every .pt file under the trial's run directory goes, other files stay, and the freed bytes are returned."""
     run_dir = tmp_path / "run"
     (run_dir / "checkpoints").mkdir(parents=True)
     (run_dir / "best_model.pt").write_bytes(b"x" * 10)
@@ -509,17 +461,13 @@ def test_trial_checkpoints_discard_removes_weights_at_any_depth(fake_logger, tmp
 
 
 def test_tuner_discards_the_checkpoints_of_a_pruned_trial(fake_logger, tune_cfg, tmp_path, monkeypatch):
-    """A trial that is pruned out of its training call still has the weights it wrote deleted."""
     class PrunedPipeline:
-        """Training pipeline stub that writes a checkpoint into its log directory and then reports pruning."""
         def __init__(self, *args, **kwargs):
-            """Writes one checkpoint file under the trainer's log directory."""
             self.logdir = Path(kwargs["trainer_config"].io.logdir)
             (self.logdir / "run").mkdir(parents=True)
             (self.logdir / "run" / "last.pt").write_bytes(b"x" * 8)
 
         def run(self):
-            """Raises the pruning signal as the trial trainer does."""
             raise optuna.TrialPruned()
 
     monkeypatch.setattr(trial_mod, "TrialPipeline", PrunedPipeline)
@@ -543,7 +491,6 @@ def test_tuner_discards_the_checkpoints_of_a_pruned_trial(fake_logger, tune_cfg,
 
 
 def test_trial_checkpoints_keep_leaves_the_files(fake_logger, tmp_path):
-    """With the keep switch on nothing is deleted and nothing is freed."""
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "best_model.pt").write_bytes(b"x" * 10)
@@ -553,13 +500,11 @@ def test_trial_checkpoints_keep_leaves_the_files(fake_logger, tmp_path):
 
 
 def test_study_minimizes_synthetic_quadratic_to_known_optimum():
-    """Verifies that TPE sampling over the sampler finds the synthetic optimum."""
     space   = {"x": {"type": "float", "low": -10.0, "high": 10.0}}
     sampler = ParamSampler()
     optimum = 3.0
 
     def objective(trial):
-        """Returns the squared distance of the sampled x from the optimum."""
         s = sampler.sample(trial, space)
         return (s["x"] - optimum) ** 2
 
@@ -571,7 +516,6 @@ def test_study_minimizes_synthetic_quadratic_to_known_optimum():
 
 
 def test_best_config_writer_returns_none_without_trials(tmp_path):
-    """Verifies that no file is written when the study has no completed trials."""
     study  = optuna.create_study(direction="minimize")
     writer = BestConfigWriter("unet", FLOAT_SPACE, tmp_path / "best.json")
 
@@ -580,11 +524,9 @@ def test_best_config_writer_returns_none_without_trials(tmp_path):
 
 
 def test_best_config_writer_persists_decoded_best(tmp_path):
-    """Verifies that the written payload holds the decoded best parameters."""
     sampler = ParamSampler()
 
     def objective(trial):
-        """Returns the first element of the sampled feature list as the loss."""
         s = sampler.sample(trial, INDEXED_SPACE)
         return float(s["features"][0])
 
@@ -606,13 +548,11 @@ def test_best_config_writer_persists_decoded_best(tmp_path):
 
 
 def test_best_config_writer_callback_writes_during_optimize(tmp_path):
-    """Verifies that the writer used as an Optuna callback writes during optimization."""
     sampler = ParamSampler()
     path    = tmp_path / "best.json"
     writer  = BestConfigWriter("unet", FLOAT_SPACE, path)
 
     def objective(trial):
-        """Returns the sampled dropout as the loss."""
         return sampler.sample(trial, FLOAT_SPACE)["dropout"]
 
     study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=0))
@@ -622,7 +562,6 @@ def test_best_config_writer_callback_writes_during_optimize(tmp_path):
 
 
 def test_tuner_space_is_union_of_lr_and_arch_params(fake_logger, tune_cfg, tmp_path):
-    """Verifies that the tuner space is the LR and architecture union and names the output file."""
     tuner = Tuner(
         model_name          = "unet",
         model_config_cls    = UNetConfig,
@@ -640,7 +579,6 @@ def test_tuner_space_is_union_of_lr_and_arch_params(fake_logger, tune_cfg, tmp_p
 
 
 def test_tuner_space_follows_the_switched_on_groups(fake_logger, tune_cfg, tmp_path):
-    """With the architecture group off the tuner's space holds the rates alone."""
     tune_cfg.search_arch = False
 
     tuner = Tuner(
@@ -659,7 +597,6 @@ def test_tuner_space_follows_the_switched_on_groups(fake_logger, tune_cfg, tmp_p
 
 
 def test_tuner_apply_params_sets_attrs_from_sampled(fake_logger, tune_cfg, tmp_path):
-    """Verifies that sampled parameters are assigned onto the model config."""
     tuner = Tuner(
         model_name          = "unet",
         model_config_cls    = UNetConfig,
@@ -674,7 +611,6 @@ def test_tuner_apply_params_sets_attrs_from_sampled(fake_logger, tune_cfg, tmp_p
     cfg = UNetConfig()
 
     def objective(trial):
-        """Applies the sampled parameters to the config and returns a constant loss."""
         tuner._apply_params(trial, cfg)
         return 0.0
 
@@ -687,17 +623,13 @@ def test_tuner_apply_params_sets_attrs_from_sampled(fake_logger, tune_cfg, tmp_p
 
 
 def test_tuner_run_optimizes_with_injected_objective(fake_logger, tune_cfg, tmp_path, monkeypatch):
-    """Verifies that the tuner drives the study toward the synthetic optimum and saves the best config."""
     optimum_dropout = 0.0
 
     class FakePipeline:
-        """Training pipeline stub whose loss is driven by the sampled model config."""
         def __init__(self, *args, **kwargs):
-            """Stores the model config handed to the pipeline."""
             self.model_config = kwargs["model_config"]
 
         def run(self):
-            """Returns a loss increasing with the distance of dropout from the optimum."""
             loss = abs(self.model_config.dropout - optimum_dropout) + 0.01 * self.model_config.encoder_lr
             return None, None, float(loss)
 
@@ -723,17 +655,13 @@ def test_tuner_run_optimizes_with_injected_objective(fake_logger, tune_cfg, tmp_
 
 
 def test_tuner_puts_a_sampled_batch_on_the_loader_and_rescales_the_optimizer(fake_logger, tune_cfg, tmp_path, monkeypatch):
-    """A sampled batch size lands on the dataset config and the optimizer scale follows the batch rule, not on the model."""
     captured = {}
 
     class CapturePipeline:
-        """Training pipeline stub capturing its keyword arguments."""
         def __init__(self, *args, **kwargs):
-            """Records the construction keyword arguments."""
             captured.update(kwargs)
 
         def run(self):
-            """Returns a fixed validation loss."""
             return None, None, 0.5
 
     monkeypatch.setattr(trial_mod, "TrialPipeline", CapturePipeline)
@@ -765,17 +693,13 @@ def test_tuner_puts_a_sampled_batch_on_the_loader_and_rescales_the_optimizer(fak
 
 
 def test_tuner_objective_materializes_trial_config(fake_logger, tune_cfg, tmp_path, monkeypatch):
-    """Verifies that the trial pipeline receives the run name, seed and epoch budget."""
     captured = {}
 
     class CapturePipeline:
-        """Training pipeline stub capturing its keyword arguments."""
         def __init__(self, *args, **kwargs):
-            """Records the construction keyword arguments."""
             captured.update(kwargs)
 
         def run(self):
-            """Returns a fixed validation loss of 0.5."""
             return None, None, 0.5
 
     monkeypatch.setattr(trial_mod, "TrialPipeline", CapturePipeline)
@@ -813,44 +737,32 @@ def test_tuner_objective_materializes_trial_config(fake_logger, tune_cfg, tmp_pa
 
 
 class _FakeIO:
-    """IO section stub carrying the log directory."""
     def __init__(self):
-        """Initialises an empty log directory."""
         self.logdir = ""
 
 
 class _FakeTrainingLoop:
-    """Training loop section stub carrying the epoch budget."""
     def __init__(self):
-        """Initialises the epoch budget to zero."""
         self.epochs = 0
 
 
 class _FakeScheduler:
-    """Scheduler section stub carrying the epoch budget."""
     def __init__(self):
-        """Initialises the epoch budget to zero."""
         self.epochs = 0
 
 
 class _FakeEarlyStop:
-    """Early stopping section stub carrying the patience."""
     def __init__(self):
-        """Initialises the patience to zero."""
         self.patience = 0
 
 
 class _FakeOptimizer:
-    """Optimizer section stub carrying the learning-rate scale."""
     def __init__(self):
-        """Initialises the scale to one."""
         self.lr_scale = 1.0
 
 
 class _FakeTrainerConfig:
-    """Trainer config stub with the sections the tuner rewrites per trial."""
     def __init__(self):
-        """Builds the training, scheduler, early stopping, IO, optimizer, curriculum and gaussian sections."""
         from configuration.dataset.gaussian import GaussianConfig
         from configuration.training import LossConfig, LossCurriculumConfig
 
@@ -864,9 +776,7 @@ class _FakeTrainerConfig:
 
 
 class _FakeDatasetConfig:
-    """Dataset config stub carrying an augmentation section and a batch size."""
     def __init__(self):
-        """Builds the default augmentation section and the reference batch."""
         from configuration.dataset import AugmentationConfig
 
         self.augmentation = AugmentationConfig()

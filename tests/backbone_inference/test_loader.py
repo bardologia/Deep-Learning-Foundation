@@ -1,10 +1,3 @@
-"""Tests for loading a trained backbone run back into an inference session.
-
-Covers checkpoint reading and z-axis coercion, the numpy-facing model wrapper,
-the inference output-path layout, rebuilding every registered backbone from its saved
-configuration, slot-count validation, the refusal of an unloaded cube, and a full
-real-data run assembly.
-"""
 
 from __future__ import annotations
 
@@ -28,15 +21,6 @@ from tests.models_backbone._helpers    import SMALL_OVERRIDES, WINDOW
 
 
 def _write_fake_checkpoint(path: Path, z_axis: np.ndarray) -> dict:
-    """Writes a minimal checkpoint holding two dummy tensors and the z axis.
-
-    Args:
-        path   : Destination file of the checkpoint.
-        z_axis : Z axis in metres, as numpy array or torch tensor.
-
-    Returns:
-        The checkpoint dictionary that was written.
-    """
     state = {
         "weight" : torch.zeros(2, 2),
         "bias"   : torch.zeros(2),
@@ -53,7 +37,6 @@ def _write_fake_checkpoint(path: Path, z_axis: np.ndarray) -> dict:
 
 
 def test_load_checkpoint_missing_file_raises(tmp_path):
-    """A missing checkpoint file raises FileNotFoundError."""
     loader = RunLoader.__new__(RunLoader)
 
     with pytest.raises(FileNotFoundError, match="Checkpoint not found for inference"):
@@ -61,7 +44,6 @@ def test_load_checkpoint_missing_file_raises(tmp_path):
 
 
 def test_load_checkpoint_numpy_x_axis(tmp_path):
-    """A numpy z axis is returned as float32 alongside the epoch and loss metadata."""
     z_axis    = np.linspace(-20.0, 80.0, 32).astype(np.float32)
     ckpt_path = tmp_path / "best_model.pt"
     _write_fake_checkpoint(ckpt_path, z_axis)
@@ -79,7 +61,6 @@ def test_load_checkpoint_numpy_x_axis(tmp_path):
 
 
 def test_load_checkpoint_torch_tensor_x_axis(tmp_path):
-    """A torch z axis is converted to a float32 numpy array."""
     z_axis    = torch.linspace(-20.0, 80.0, 16)
     ckpt_path = tmp_path / "ckpt.pt"
     _write_fake_checkpoint(ckpt_path, z_axis)
@@ -94,7 +75,6 @@ def test_load_checkpoint_torch_tensor_x_axis(tmp_path):
 
 
 def test_load_checkpoint_uses_weights_only_false(tmp_path):
-    """Non-tensor checkpoint entries survive the load, so unpickling is not restricted to weights."""
     z_axis    = np.arange(8, dtype=np.float32)
     ckpt_path = tmp_path / "obj.pt"
     ckpt      = {
@@ -115,11 +95,8 @@ def test_load_checkpoint_uses_weights_only_false(tmp_path):
 
 
 def test_model_wrapper_identity_no_normalizer():
-    """Without a normalizer the wrapper returns the raw model output as a numpy array."""
     class _Echo(torch.nn.Module):
-        """Module returning twice its input."""
         def forward(self, x):
-            """Returns 2 * x, of the same shape as x."""
             return x * 2.0
 
     wrapper = ModelWrapper(_Echo(), "cpu")
@@ -130,10 +107,8 @@ def test_model_wrapper_identity_no_normalizer():
 
 
 def test_model_wrapper_denormalize_passthrough_without_clamp():
-    """Denormalization is the identity when no normalizer and no amplitude ceiling are configured."""
     class _Echo(torch.nn.Module):
         def forward(self, x):
-            """Returns x unchanged."""
             return x
 
     wrapper = ModelWrapper(_Echo(), "cpu", z_axis=None, amp_max=None, normalizer=None)
@@ -143,7 +118,6 @@ def test_model_wrapper_denormalize_passthrough_without_clamp():
 
 
 def test_inference_metadata_paths_with_output_subdir(tmp_path):
-    """Output, figures and figure-file paths hang off the configured inference subdirectory."""
     cfg  = InferenceConfig(run_directory=tmp_path, output_subdir="my_run", device="cpu")
     meta = InferenceMetadata(cfg)
 
@@ -153,7 +127,6 @@ def test_inference_metadata_paths_with_output_subdir(tmp_path):
 
 
 def test_inference_metadata_create_dirs(tmp_path):
-    """Creating the directories materialises the output, figures, animations, logs and cube folders."""
     cfg  = InferenceConfig(run_directory=tmp_path, output_subdir="run0", device="cpu")
     meta = InferenceMetadata(cfg)
     meta.create_dirs()
@@ -167,7 +140,6 @@ def test_inference_metadata_create_dirs(tmp_path):
 
 @pytest.mark.parametrize("name", sorted(BACKBONE_MODEL_REGISTRY))
 def test_build_model_reconstructs_every_registry_backbone(name, tmp_path):
-    """Every registered backbone rebuilds from its saved configuration and reproduces the trained output."""
     in_channels  = 2
     out_channels = 6
     meta_dir     = tmp_path / "meta"
@@ -207,7 +179,6 @@ def test_build_model_reconstructs_every_registry_backbone(name, tmp_path):
 
 
 def test_persisted_n_gaussians_is_authoritative(tmp_path):
-    """The persisted slot count is taken from the run summary and validated against the output channels."""
     loader = RunLoader(tmp_path, logger=None)
 
     assert loader._persisted_n_gaussians({"out_channels": 15, "n_gaussians": 5}) == 5
@@ -216,7 +187,6 @@ def test_persisted_n_gaussians_is_authoritative(tmp_path):
 
 
 def test_persisted_n_gaussians_missing_raises(tmp_path):
-    """A run summary without a slot count raises KeyError."""
     loader = RunLoader(tmp_path, logger=None)
 
     with pytest.raises(KeyError, match="n_gaussians"):
@@ -224,7 +194,6 @@ def test_persisted_n_gaussians_missing_raises(tmp_path):
 
 
 def test_out_channels_inconsistent_with_n_gaussians_raises(tmp_path):
-    """An output-channel count that is not three times the slot count raises ValueError."""
     loader = RunLoader(tmp_path, logger=None)
 
     with pytest.raises(ValueError, match="24"):
@@ -232,7 +201,6 @@ def test_out_channels_inconsistent_with_n_gaussians_raises(tmp_path):
 
 
 def test_absent_cube_refuses_every_use(tmp_path):
-    """Shape access, indexing and array conversion all raise when the cube was not loaded."""
     absent = AbsentCube(tmp_path)
 
     with pytest.raises(ValueError, match="load_cube=False"):
@@ -247,7 +215,6 @@ def test_absent_cube_refuses_every_use(tmp_path):
 
 @pytest.mark.dataset
 def test_load_refuses_a_checkpoint_axis_that_differs_from_the_dataset_axis(tmp_path, test_data_dir, params_dir):
-    """A checkpoint trained on another z range with the same bin count is refused, so no z metric is reported in the wrong units."""
     run_dir   = build_run_directory(tmp_path, test_data_dir, params_dir)
     ckpt_path = run_dir / "best_model.pt"
 
@@ -260,25 +227,17 @@ def test_load_refuses_a_checkpoint_axis_that_differs_from_the_dataset_axis(tmp_p
 
 
 class _TableLogger(SilentLogger):
-    """Logger stub recording every key-value table it is asked to print.
-
-    Attributes:
-        tables : Field-to-value mappings in emission order.
-    """
 
     def __init__(self):
-        """Starts with no recorded table."""
         self.tables = []
 
     def kv_table(self, data, title=None, **kwargs):
-        """Records the table fields, discarding the title."""
         self.tables.append(dict(data))
 
 
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_full_run_load_logs_the_effective_checkpoint_and_split_values(tmp_path, test_data_dir, params_dir):
-    """The [Model] and [Split] tables name the one-based checkpoint epoch, both z axes, the region, its source and the effective batch size before any pass runs."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
     logger  = _TableLogger()
 

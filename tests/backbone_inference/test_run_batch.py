@@ -1,9 +1,3 @@
-"""Tests for the shared per-run analysis orchestrator and its batch driver.
-
-Covers the provenance record and completion marker every analysis pass writes, the
-warning and figure cleanup when a pass replaces an earlier result, and the refusal of
-an output subdirectory that resolves to the run directory itself.
-"""
 
 from __future__ import annotations
 
@@ -27,32 +21,17 @@ CHECKPOINT_META = {"epoch": 41, "best_val_loss": 0.125, "best_epoch": 37}
 
 
 class _StubRun(AnalysisRun):
-    """Analysis stub that loads no model and writes one summary, one figure and one report.
-
-    Attributes:
-        fail : Whether the analysis step raises after writing its figure.
-    """
 
     SUMMARY_FILENAME = "stub.json"
 
     def __init__(self, run_dir: Path, config, logger, fail: bool = False) -> None:
-        """Binds the stub to a run directory.
-
-        Args:
-            run_dir : Directory of the run under analysis.
-            config  : Analysis configuration.
-            logger  : Logger receiving the result line.
-            fail    : Whether the analysis step raises after writing its figure.
-        """
         super().__init__(run_dir, config, logger)
         self.fail = fail
 
     def _load_run(self):
-        """Returns a run stand-in carrying only the checkpoint metadata."""
         return SimpleNamespace(checkpoint_meta=dict(CHECKPOINT_META))
 
     def _analyse(self, run) -> AnalysisOutcome:
-        """Writes the figure, the summary and the report, raising in between when asked to fail."""
         FileIO.ensure_dirs(self.output_dir / "plots")
         (self.output_dir / "plots" / "fresh.png").write_bytes(b"png")
 
@@ -67,7 +46,6 @@ class _StubRun(AnalysisRun):
 
 
 class _StubBatch(RunBatch):
-    """Batch driver applying the analysis stub to every selected run."""
 
     SELECTOR_ACTION = "stub"
     SECTION_TITLE   = "Stub analysis"
@@ -75,12 +53,10 @@ class _StubBatch(RunBatch):
 
 
 def _config() -> ActivationXrayConfig:
-    """Returns an analysis configuration writing into the 'stub' subdirectory."""
     return ActivationXrayConfig(output_subdir="stub")
 
 
 def test_pass_records_config_provenance_and_completion(tmp_path):
-    """A finished pass leaves the resolved config, the checkpoint provenance and a completion marker naming the analysis."""
     logger  = RecordingLogger()
     outcome = _StubRun(tmp_path, _config(), logger).run()
 
@@ -99,7 +75,6 @@ def test_pass_records_config_provenance_and_completion(tmp_path):
 
 
 def test_replacing_a_complete_result_warns_and_clears_its_figures(tmp_path):
-    """A second pass names the earlier result's checkpoint in a warning and removes the figures it left."""
     _StubRun(tmp_path, _config(), RecordingLogger()).run()
     stale = tmp_path / "stub" / "plots" / "stale.png"
     stale.write_bytes(b"old")
@@ -116,7 +91,6 @@ def test_replacing_a_complete_result_warns_and_clears_its_figures(tmp_path):
 
 
 def test_failed_pass_leaves_no_completion_marker(tmp_path):
-    """A pass that raises clears the earlier marker, so the directory reads as unfinished."""
     _StubRun(tmp_path, _config(), RecordingLogger()).run()
 
     with pytest.raises(RuntimeError, match="analysis failed"):
@@ -126,7 +100,6 @@ def test_failed_pass_leaves_no_completion_marker(tmp_path):
 
 
 def test_replacing_an_unfinished_result_says_so(tmp_path):
-    """A summary left without a completion marker is reported as an unfinished earlier result."""
     output = tmp_path / "stub"
     output.mkdir()
     FileIO.save_json({"value": 0}, output / "stub.json")
@@ -140,7 +113,6 @@ def test_replacing_an_unfinished_result_says_so(tmp_path):
 
 
 def test_output_subdir_resolving_to_the_run_is_refused(tmp_path):
-    """An empty output subdirectory would clear the run's own completion marker and is refused."""
     with pytest.raises(ValueError, match="resolves to the run directory"):
         _StubRun(tmp_path, ActivationXrayConfig(output_subdir=""), RecordingLogger())
 
@@ -148,7 +120,6 @@ def test_output_subdir_resolving_to_the_run_is_refused(tmp_path):
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_activation_xray_pass_on_a_real_run_is_stamped(tmp_path, test_data_dir, params_dir):
-    """An x-ray pass over a real run writes its summary next to the provenance of the loaded checkpoint and a completion marker."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
     config  = ActivationXrayConfig(batch_size=2, max_batches=1, make_plots=False)
 
@@ -164,7 +135,6 @@ def test_activation_xray_pass_on_a_real_run_is_stamped(tmp_path, test_data_dir, 
 
 
 def test_batch_counts_runs_times_each_and_closes_with_a_summary(tmp_path):
-    """The batch numbers each run k/N, times it, and ends with a summary table and a tally of replaced results."""
     runs = tmp_path / "runs"
     for name in ("first", "second"):
         (runs / name).mkdir(parents=True)
@@ -187,24 +157,16 @@ def test_batch_counts_runs_times_each_and_closes_with_a_summary(tmp_path):
 
 
 class _TableLogger(RecordingLogger):
-    """Recording logger that keeps the rows of every key-value table.
-
-    Attributes:
-        tables : Pairs of a table title and its rows.
-    """
 
     def __init__(self) -> None:
-        """Starts with no recorded tables."""
         super().__init__()
         self.tables = []
 
     def kv_table(self, data, title=None, **kwargs):
-        """Records the title and a copy of the rows."""
         self.tables.append((title, dict(data)))
 
 
 def test_config_table_tags_the_values_the_machine_profile_rewrote():
-    """Every config leaf is listed, and the defaults the machine profile rewrote carry the profile tag."""
     logger = _TableLogger()
     config = ActivationXrayConfig(runs_dir=Path("/data/runs"))
 

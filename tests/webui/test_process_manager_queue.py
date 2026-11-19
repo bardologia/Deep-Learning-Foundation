@@ -1,9 +1,3 @@
-"""Tests for the console launch queue, history pruning and stream fan-out.
-
-Covers serialised execution of queued jobs, cancellation and stop_all, follow-up
-chaining, notifier callbacks, the blocker reported on the queued event, and the
-JobStream drop marker for slow viewers.
-"""
 from __future__ import annotations
 
 import signal
@@ -24,7 +18,6 @@ WRITER     = "import pathlib, sys\npathlib.Path('order.txt').open('a').write(pat
 
 @pytest.fixture
 def manager(make_manager):
-    """Returns a process manager with short-lived, failing, long and argv-dumping fake scripts."""
     return make_manager({
         "sleep_ok"   : SLEEP_OK,
         "sleep_fail" : SLEEP_FAIL,
@@ -36,7 +29,6 @@ def manager(make_manager):
 
 
 def test_enqueue_idle_starts_immediately(manager):
-    """Enqueueing on an idle console starts the job at once instead of queueing it."""
     result = manager.enqueue("sleep_ok", sys.executable)
 
     assert result["ok"]
@@ -45,7 +37,6 @@ def test_enqueue_idle_starts_immediately(manager):
 
 
 def test_enqueue_waits_for_running_job(manager):
-    """A job enqueued while another runs waits, then runs after the predecessor finishes."""
     running = manager.launch("sleep_ok", sys.executable)
     queued  = manager.enqueue("sleep_ok", sys.executable)
 
@@ -58,7 +49,6 @@ def test_enqueue_waits_for_running_job(manager):
 
 
 def test_queued_job_starts_after_predecessor_fails(manager):
-    """A queued job starts even when its predecessor exits non-zero."""
     failing = manager.launch("sleep_fail", sys.executable)
     queued  = manager.enqueue("sleep_ok", sys.executable)
 
@@ -67,7 +57,6 @@ def test_queued_job_starts_after_predecessor_fails(manager):
 
 
 def test_queued_jobs_run_in_order(manager, tmp_path):
-    """Two queued jobs execute in enqueue order."""
     manager.launch("sleep_ok", sys.executable)
     first  = manager.enqueue("writer_a", sys.executable)
     second = manager.enqueue("writer_b", sys.executable)
@@ -78,7 +67,6 @@ def test_queued_jobs_run_in_order(manager, tmp_path):
 
 
 def test_queued_launch_keeps_overrides(manager, tmp_path):
-    """Overrides given at enqueue time reach the command line when the job finally starts."""
     manager.launch("sleep_ok", sys.executable)
     queued = manager.enqueue("args_dump", sys.executable, {"training.seed": "7"})
 
@@ -87,7 +75,6 @@ def test_queued_launch_keeps_overrides(manager, tmp_path):
 
 
 def test_cancelled_queued_job_is_skipped(manager, tmp_path):
-    """Stopping a queued job marks it cancelled and skips it without blocking the rest."""
     manager.launch("sleep_ok", sys.executable)
     first  = manager.enqueue("writer_a", sys.executable)
     second = manager.enqueue("writer_b", sys.executable)
@@ -101,7 +88,6 @@ def test_cancelled_queued_job_is_skipped(manager, tmp_path):
 
 
 def test_stop_racing_a_queue_advance_stops_the_started_process(manager, monkeypatch):
-    """A stop landing after the advance popped the job to pending signals the spawned process instead of leaving it cancelled on paper."""
     manager.launch("sleep_long", sys.executable)
     queued = manager.enqueue("sleep_long", sys.executable)
     job_id = queued["job_id"]
@@ -141,7 +127,6 @@ def test_stop_racing_a_queue_advance_stops_the_started_process(manager, monkeypa
 
 
 def test_stop_on_a_pending_job_that_never_spawns_still_succeeds(manager, monkeypatch):
-    """A stop on a pending job whose spawn fails reports ok without signalling anything."""
     manager.launch("sleep_long", sys.executable)
     queued = manager.enqueue("sleep_long", sys.executable)
     job_id = queued["job_id"]
@@ -174,7 +159,6 @@ def test_stop_on_a_pending_job_that_never_spawns_still_succeeds(manager, monkeyp
 
 
 def test_stop_all_purges_queue(manager):
-    """stop_all kills the running job and cancels the queued one without a pid."""
     running = manager.launch("sleep_long", sys.executable)
     queued  = manager.enqueue("sleep_ok", sys.executable)
 
@@ -187,13 +171,11 @@ def test_stop_all_purges_queue(manager):
 
 
 def test_stop_all_finishes_when_the_history_drops_a_job_mid_stop(manager, monkeypatch):
-    """stop_all terminates cleanly when the job record disappears from history mid-stop."""
     running = manager.launch("sleep_long", sys.executable)
     job_id  = running["job_id"]
     signals = manager._signal_group
 
     def signal_then_prune(pid, sig):
-        """Drops the job record from history, then forwards the signal to the real handler."""
         with manager.lock:
             manager.jobs.pop(job_id, None)
         signals(pid, sig)
@@ -205,7 +187,6 @@ def test_stop_all_finishes_when_the_history_drops_a_job_mid_stop(manager, monkey
 
 
 def test_queue_respects_follow_up_chain(manager, tmp_path):
-    """A follow-up job runs after its parent and before the next queue entry finishes the chain."""
     manager.launch("sleep_ok", sys.executable)
     parent = manager.enqueue("writer_a", sys.executable, follow_up="args_dump")
     last   = manager.enqueue("writer_b", sys.executable)
@@ -222,7 +203,6 @@ def test_queue_respects_follow_up_chain(manager, tmp_path):
 
 
 def test_the_stored_request_keeps_the_follow_up_key_unless_detached(manager):
-    """The retry request remembers the follow-up script of an attached launch and drops it for a detached one."""
     attached = manager.enqueue("sleep_ok", sys.executable, follow_up="args_dump")
     detached = manager.enqueue("sleep_ok", sys.executable, follow_up="args_dump", detach=True)
 
@@ -233,7 +213,6 @@ def test_the_stored_request_keeps_the_follow_up_key_unless_detached(manager):
 
 
 def test_resolve_follow_up_leaves_a_cancelled_follow_up_alone(manager):
-    """A follow-up cancelled between the parent's exit and its resolution never starts."""
     parent    = manager.launch("sleep_long", sys.executable, follow_up="args_dump")
     follow_id = job_record(manager, parent["job_id"])["follow_up"]
 
@@ -250,7 +229,6 @@ def test_resolve_follow_up_leaves_a_cancelled_follow_up_alone(manager):
 
 
 def test_resolve_follow_up_claims_the_record_as_pending_before_starting(manager, monkeypatch):
-    """The follow-up leaves the scheduled status in the same lock hold as the re-check, so a stop can no longer cancel a job that is already starting."""
     parent    = manager.launch("sleep_long", sys.executable, follow_up="args_dump")
     follow_id = job_record(manager, parent["job_id"])["follow_up"]
 
@@ -266,13 +244,11 @@ def test_resolve_follow_up_claims_the_record_as_pending_before_starting(manager,
 
 
 def test_enqueue_rejects_missing_script(manager):
-    """Enqueueing an unknown script name is rejected."""
     result = manager.enqueue("missing", sys.executable)
     assert result == {"ok": False, "error": "script not found"}
 
 
 def test_notifications_fire_on_start_and_finish_for_direct_and_queued(manager):
-    """Start and finish notifications fire in order for both directly launched and queued jobs."""
     events = []
     manager.notifier.job_started  = lambda record: events.append(("started", record["script"]))
     manager.notifier.job_finished = lambda record: events.append(("finished", record["script"]))
@@ -285,7 +261,6 @@ def test_notifications_fire_on_start_and_finish_for_direct_and_queued(manager):
 
 
 def test_the_console_history_drops_the_oldest_ended_jobs(manager):
-    """Pruning keeps the running job and the newest ended jobs up to HISTORY_LIMIT."""
     manager.HISTORY_LIMIT = 2
 
     live = manager.launch("sleep_long", sys.executable)["job_id"]
@@ -304,7 +279,6 @@ def test_the_console_history_drops_the_oldest_ended_jobs(manager):
 
 
 def test_a_viewer_that_falls_behind_is_truncated_with_a_marker(manager, monkeypatch):
-    """A subscriber over the queue limit gets a truncation marker and still receives the end event."""
     monkeypatch.setattr(JobStream, "QUEUE_LIMIT", 4)
     stream = JobStream(manager.logger)
     sub    = stream.subscribe()
@@ -324,7 +298,6 @@ def test_a_viewer_that_falls_behind_is_truncated_with_a_marker(manager, monkeypa
 
 
 def test_the_queued_event_names_the_job_holding_the_queue(manager):
-    """The queued event names the running job that blocks the queue."""
     running = manager.launch("sleep_long", sys.executable)
     queued  = manager.enqueue("sleep_ok", sys.executable)
 
@@ -340,7 +313,6 @@ def test_the_queued_event_names_the_job_holding_the_queue(manager):
 
 
 def test_an_adopted_process_is_named_as_the_queue_blocker(manager):
-    """An adopted process is reported as the queue blocker with its script and pid."""
     manager.jobs["adopted1"] = {"job_id": "adopted1", "script": "train_backbone", "status": "running", "pid": 4242, "adopted": True}
 
     queued  = manager.enqueue("sleep_ok", sys.executable)
@@ -354,7 +326,6 @@ def test_an_adopted_process_is_named_as_the_queue_blocker(manager):
 
 
 def test_runtime_env_drops_an_inherited_cuda_mask(manager, monkeypatch):
-    """A CUDA_VISIBLE_DEVICES mask inherited from the server's shell never reaches a child job."""
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
     env = manager._runtime_env(sys.executable)
 

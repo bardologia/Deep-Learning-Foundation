@@ -1,4 +1,3 @@
-"""Tests for LruCache eviction order, capacity validation and thread safety."""
 
 from __future__ import annotations
 
@@ -10,7 +9,6 @@ from lru_cache import LruCache
 
 
 def test_a_missing_key_reads_as_none():
-    """An unknown key reads as None and does not grow the cache."""
     cache = LruCache(2)
 
     assert cache.get("nothing") is None
@@ -18,7 +16,6 @@ def test_a_missing_key_reads_as_none():
 
 
 def test_the_oldest_untouched_entry_is_evicted_first():
-    """Insertion past the capacity evicts the least recently accessed key."""
     cache = LruCache(2)
 
     cache.put("a", 1)
@@ -33,7 +30,6 @@ def test_the_oldest_untouched_entry_is_evicted_first():
 
 
 def test_reputting_a_key_refreshes_it_without_growing_the_cache():
-    """Writing an existing key replaces its value and leaves the size unchanged."""
     cache = LruCache(2)
 
     cache.put("a", 1)
@@ -44,13 +40,11 @@ def test_reputting_a_key_refreshes_it_without_growing_the_cache():
 
 
 def test_a_capacity_below_one_is_refused():
-    """Constructing a cache with a non-positive capacity raises ValueError."""
     with pytest.raises(ValueError, match="at least one entry"):
         LruCache(0)
 
 
 def test_concurrent_writers_never_exceed_the_capacity():
-    """Parallel writers leave the cache holding exactly its capacity in entries."""
     cache   = LruCache(8)
     workers = [threading.Thread(target=lambda index=index: [cache.put(f"{index}-{n}", n) for n in range(200)]) for index in range(8)]
 
@@ -63,7 +57,6 @@ def test_concurrent_writers_never_exceed_the_capacity():
 
 
 def test_clearing_drops_every_entry_and_keeps_the_cache_usable():
-    """clear() empties the cache, makes former keys read as None and leaves it writable."""
     cache = LruCache(2)
 
     cache.put("a", 1)

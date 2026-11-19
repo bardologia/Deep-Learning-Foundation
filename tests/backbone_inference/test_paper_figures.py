@@ -1,9 +1,3 @@
-"""Tests for collecting inference figures of several runs into a paper figure pack.
-
-The pack copies matched figures under stable ``run__group__name`` filenames, writes a
-manifest, takes the most recent inference stamp of each run, and refuses to run when any
-requested glob pattern matches nothing.
-"""
 
 from __future__ import annotations
 
@@ -20,16 +14,6 @@ from tests.conftest import RecordingLogger, SilentLogger
 
 
 def _stamp(run: Path, stamp: str, split: str | None = "test") -> Path:
-    """Writes an inference stamp with a metrics file and a report under a run, completed unless split is None.
-
-    Args:
-        run   : Run directory receiving the inference/<stamp> subtree.
-        stamp : Timestamp of the inference output directory.
-        split : Split recorded in the completion marker, or None to leave the stamp unfinished.
-
-    Returns:
-        Path of the stamp's figures directory.
-    """
     figures = run / "inference" / stamp / "figures"
     figures.mkdir(parents=True)
 
@@ -43,16 +27,6 @@ def _stamp(run: Path, stamp: str, split: str | None = "test") -> Path:
 
 
 def _run_with_figures(base: Path, name: str, stamp: str = "20260101_000000") -> Path:
-    """Creates a run directory holding one completed inference stamp with pixel-map and profile figures.
-
-    Args:
-        base  : Runs directory the run is created under.
-        name  : Name of the run directory.
-        stamp : Timestamp of the inference output directory.
-
-    Returns:
-        Path of the created run directory.
-    """
     run     = base / name
     figures = _stamp(run, stamp)
 
@@ -67,7 +41,6 @@ def _run_with_figures(base: Path, name: str, stamp: str = "20260101_000000") -> 
 
 
 def _config(base: Path, out: Path, runs: list[str]) -> PaperFigurePackConfig:
-    """Returns a figure-pack configuration over the given runs directory, run filter and output directory."""
     return PaperFigurePackConfig(
         runs_dir   = base,
         run_filter = runs,
@@ -77,7 +50,6 @@ def _config(base: Path, out: Path, runs: list[str]) -> PaperFigurePackConfig:
 
 
 def test_pack_copies_stable_names_and_writes_a_manifest(tmp_path, monkeypatch):
-    """Figures of two runs are copied under run-prefixed names and listed in the manifest."""
     _run_with_figures(tmp_path / "runs", "run_a")
     _run_with_figures(tmp_path / "runs", "run_b")
     out = tmp_path / "figures"
@@ -95,7 +67,6 @@ def test_pack_copies_stable_names_and_writes_a_manifest(tmp_path, monkeypatch):
 
 
 def test_pack_takes_the_vector_figures_of_the_paper_style(tmp_path):
-    """An extension-agnostic pattern also picks up the PDF variants of a figure."""
     run = _run_with_figures(tmp_path / "runs", "run_a")
     (run / "inference" / "20260101_000000" / "figures" / "profiles" / "best_02.pdf").write_bytes(b"pdf-prof")
 
@@ -111,7 +82,6 @@ def test_pack_takes_the_vector_figures_of_the_paper_style(tmp_path):
 
 
 def test_pack_raises_when_one_pattern_matches_nothing(tmp_path):
-    """A pattern group with no matches raises even when the other patterns matched."""
     _run_with_figures(tmp_path / "runs", "run_a")
     config          = _config(tmp_path / "runs", tmp_path / "figures", ["run_a"])
     config.patterns = ["pixel_maps/*", "stratified/*"]
@@ -121,7 +91,6 @@ def test_pack_raises_when_one_pattern_matches_nothing(tmp_path):
 
 
 def test_pack_without_matches_raises(tmp_path):
-    """A pack whose only pattern matches nothing raises FileNotFoundError."""
     _run_with_figures(tmp_path / "runs", "run_a")
     config          = _config(tmp_path / "runs", tmp_path / "figures", ["run_a"])
     config.patterns = ["does_not_exist/*.png"]
@@ -131,7 +100,6 @@ def test_pack_without_matches_raises(tmp_path):
 
 
 def test_pack_uses_latest_completed_inference_stamp(tmp_path):
-    """Figures are taken from the most recent stamp completed on the split, skipping newer unfinished and other-split stamps."""
     run = _run_with_figures(tmp_path / "runs", "run_a", stamp="20260101_000000")
 
     late = _stamp(run, "20260601_000000")
@@ -159,7 +127,6 @@ def test_pack_uses_latest_completed_inference_stamp(tmp_path):
 
 
 def test_repacking_warns_about_overwrites_and_keeps_earlier_entries(tmp_path):
-    """A second pack over fewer runs names the figures it overwrote, keeps the other run's manifest entries and flags files with no recorded source."""
     _run_with_figures(tmp_path / "runs", "run_a")
     _run_with_figures(tmp_path / "runs", "run_b")
     out = tmp_path / "figures"

@@ -1,10 +1,3 @@
-"""Tests for the shared BaseTrainer optimizer and state helpers.
-
-Covers AdamW construction from parameter groups, learning rate updates,
-state capture, cache clearing, the CPU-fallback warning, the param-group
-table, the DDP scope of the logged metrics, the warning of an evaluation
-without a finite batch and the abstract and no-op hooks.
-"""
 
 from __future__ import annotations
 
@@ -19,12 +12,10 @@ from tools.training.vram_reservation import VramReservation
 
 
 class TrainerShim:
-    """Bare object standing in for a trainer instance in unbound method calls."""
     pass
 
 
 def _shim(model, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01):
-    """Returns a trainer shim carrying a model and an optimizer config section."""
     shim        = TrainerShim()
     shim.model  = model
     shim.config = SimpleNamespace(optimizer=SimpleNamespace(betas=betas, eps=eps, weight_decay=weight_decay))
@@ -32,7 +23,6 @@ def _shim(model, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01):
 
 
 def test_build_optimizer_applies_defaults_and_is_adamw():
-    """Verifies that the optimizer is AdamW and inherits the config defaults."""
     model = torch.nn.Linear(4, 2)
     shim  = _shim(model, betas=(0.85, 0.95), eps=1e-7, weight_decay=0.05)
 
@@ -48,7 +38,6 @@ def test_build_optimizer_applies_defaults_and_is_adamw():
 
 
 def test_build_optimizer_does_not_override_explicit_group_values():
-    """Verifies that values set explicitly on a parameter group are not overwritten."""
     model = torch.nn.Linear(4, 2)
     shim  = _shim(model, weight_decay=0.99)
 
@@ -59,7 +48,6 @@ def test_build_optimizer_does_not_override_explicit_group_values():
 
 
 def test_update_optimizer_sets_lrs_and_logs(tracker):
-    """Verifies that new rates are written to the groups and logged per group name."""
     model = torch.nn.Linear(4, 2)
     shim  = _shim(model)
 
@@ -75,7 +63,6 @@ def test_update_optimizer_sets_lrs_and_logs(tracker):
 
 
 def test_capture_state_contains_model_and_axis():
-    """Verifies that captured state holds the epoch, model parameters and x axis."""
     model = torch.nn.Linear(3, 1)
     shim  = TrainerShim()
     shim.model  = model
@@ -89,14 +76,12 @@ def test_capture_state_contains_model_and_axis():
 
 
 def test_clear_cuda_cache_runs_on_cpu():
-    """Verifies that cache clearing is safe on a CPU device."""
     shim = TrainerShim()
     shim.vram_reservation = VramReservation(enabled=False, keep_free_gb=1.0, device=torch.device("cpu"), logger=None)
     BaseTrainer._clear_cuda_cache(shim)
 
 
 def test_clear_cuda_cache_does_not_touch_the_reservation():
-    """Verifies that cache clearing does not call into the VRAM reservation."""
     shim = TrainerShim()
     shim.vram_reservation = SimpleNamespace()
 
@@ -104,13 +89,10 @@ def test_clear_cuda_cache_does_not_touch_the_reservation():
 
 
 def test_eval_step_delegates_to_compute_loss():
-    """Verifies that the evaluation step returns whatever _compute_loss produced."""
     sentinel = {"total_loss": torch.tensor(1.0)}
 
     class Shim(TrainerShim):
-        """Trainer shim whose loss computation returns a fixed sentinel dict."""
         def _compute_loss(self, batch):
-            """Returns the sentinel loss dictionary."""
             return sentinel
 
     shim   = Shim()
@@ -119,7 +101,6 @@ def test_eval_step_delegates_to_compute_loss():
 
 
 def test_abstract_methods_raise_not_implemented():
-    """Verifies that the abstract trainer hooks raise NotImplementedError."""
     shim = TrainerShim()
     with pytest.raises(NotImplementedError):
         BaseTrainer._build_param_groups(shim)
@@ -130,7 +111,6 @@ def test_abstract_methods_raise_not_implemented():
 
 
 def test_no_op_hooks_return_none():
-    """Verifies that the optional lifecycle hooks default to returning None."""
     shim = TrainerShim()
     assert BaseTrainer._log_init_banner(shim)             is None
     assert BaseTrainer._on_optimizer_step(shim)           is None
@@ -139,7 +119,6 @@ def test_no_op_hooks_return_none():
 
 
 def test_cpu_device_is_warned_with_the_mask_and_the_amp_consequence(recording_logger, monkeypatch):
-    """Verifies a CPU device raises a warning naming the CUDA mask and that AMP becomes CPU bfloat16 autocast."""
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
 
     shim        = TrainerShim()
@@ -157,7 +136,6 @@ def test_cpu_device_is_warned_with_the_mask_and_the_amp_consequence(recording_lo
 
 
 def test_cuda_device_is_not_warned(recording_logger):
-    """Verifies a CUDA device produces no fallback warning."""
     shim        = TrainerShim()
     shim.device = torch.device("cuda")
     shim.logger = recording_logger
@@ -168,7 +146,6 @@ def test_cuda_device_is_not_warned(recording_logger):
 
 
 def test_param_group_table_separates_the_base_rate_from_the_warmup_start_rate():
-    """Verifies the param-group table prints the base LR after lr_scale and the warmup-scaled step-0 LR in separate columns."""
     tables = []
     model  = torch.nn.Linear(4, 2)
     shim   = _shim(model)
@@ -188,7 +165,6 @@ def test_param_group_table_separates_the_base_rate_from_the_warmup_start_rate():
 
 
 def test_evaluate_without_a_finite_batch_warns_that_the_loss_is_nan(recording_logger):
-    """Verifies an evaluation in which every batch is non-finite warns that its loss is NaN instead of returning NaN silently."""
     shim = TrainerShim()
 
     shim.model                   = torch.nn.Linear(2, 1)
@@ -213,14 +189,12 @@ def test_evaluate_without_a_finite_batch_warns_that_the_loss_is_nan(recording_lo
 
 
 def test_nonfinite_detail_says_when_every_weighted_term_is_finite():
-    """Verifies the non-finite clause states that no weighted term is at fault when every component is finite."""
     detail = BaseTrainer._nonfinite_detail(TrainerShim(), {"components": {"param": torch.tensor(1.0)}}, batch=None)
 
     assert detail == "; non-finite terms: none (every weighted term is finite)"
 
 
 def test_ddp_scope_names_the_rank_local_diagnostics(recording_logger):
-    """Verifies a DDP run's loop row and one info line say the per-term diagnostics cover this rank's shard only."""
     shim             = TrainerShim()
     shim.logger      = recording_logger
     shim.distributed = SimpleNamespace(active=True, rank=0, world_size=2)
@@ -236,7 +210,6 @@ def test_ddp_scope_names_the_rank_local_diagnostics(recording_logger):
 
 
 def test_ddp_scope_is_silent_without_ddp(recording_logger):
-    """Verifies a single-process run prints 'off' and no DDP scope line."""
     shim             = TrainerShim()
     shim.logger      = recording_logger
     shim.distributed = SimpleNamespace(active=False)

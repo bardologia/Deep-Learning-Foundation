@@ -1,16 +1,3 @@
-"""Byte-match test between the planner run names and the experiment-builder preview.
-
-The launch page previews the run names of a trial sweep in the browser, while
-the scheduler names the actual run directories in Python. The two must agree
-exactly, so this module runs the real builder script under node against the
-same config payload the browser receives and compares the names it produces
-with the ones the planners plan.
-
-Every trial mode of both schedulers is compared, and the comparison runs under
-sweep settings that make each mode plannable and that push awkward values
-through the naming: exponent-scale weights, which Python renders with ``:g``,
-and coupled run folders that only become arm names once sanitized.
-"""
 
 from __future__ import annotations
 
@@ -67,7 +54,6 @@ SWEEP_OVERRIDES = {
 
 @pytest.fixture(scope="module")
 def dataset(tmp_path_factory):
-    """Returns a dataset root whose layout file lists the synthetic channels, for the dataset-path override."""
     root   = tmp_path_factory.mktemp("dataset")
     layout = root / Layout.LAYOUT_RELPATH
     (root / "meta").mkdir()
@@ -78,29 +64,10 @@ def dataset(tmp_path_factory):
 
 
 def _sweep_argv(key: str, dataset: Path) -> list[str]:
-    """Returns the sweep settings both sides are compared under.
-
-    Args:
-        key     : Script key of the page.
-        dataset : Dataset root for the path override.
-
-    Returns:
-        The command-line overrides of the page, dataset path included.
-    """
     return SWEEP_OVERRIDES[key] + ["--paths.dataset_path", str(dataset)]
 
 
 def _payload(entry_config, key: str, argv: list[str]) -> dict:
-    """Builds the leaf payload the launch page receives for one entry config.
-
-    Args:
-        entry_config : Entry configuration class of the launch page.
-        key          : Script key of the page.
-        argv         : Command-line overrides applied before the leaves are rendered.
-
-    Returns:
-        The payload dict with the page key and its rendered config leaves.
-    """
     config = ConfigCli(entry_config()).apply(argv)
     leaves = []
 
@@ -119,17 +86,6 @@ def _payload(entry_config, key: str, argv: list[str]) -> dict:
 
 
 def _builder_names(entry_config, key: str, argv: list[str], tmp_path: Path) -> dict:
-    """Returns the run names the experiment builder previews, keyed by trial mode.
-
-    Args:
-        entry_config : Entry configuration class of the launch page.
-        key          : Script key of the page.
-        argv         : Command-line overrides the payload is rendered under.
-        tmp_path     : Directory the payload file is written into.
-
-    Returns:
-        Mapping from trial-mode key to the previewed run-name list.
-    """
     payload_path = tmp_path / f"{key}.json"
     payload_path.write_text(json.dumps(_payload(entry_config, key, argv)))
 
@@ -140,16 +96,6 @@ def _builder_names(entry_config, key: str, argv: list[str], tmp_path: Path) -> d
 
 
 def _planner_names(launcher, argv: list[str], mode: str) -> list[str]:
-    """Returns the run names the scheduler's planner plans for one trial mode.
-
-    Args:
-        launcher : Training launcher of the entry.
-        argv     : Command-line overrides the sweep is planned under.
-        mode     : Trial mode to plan.
-
-    Returns:
-        The planned run names, without the model label the preview prefixes.
-    """
     scheduler = launcher.build_scheduler([*argv, "--trials_enabled", "true", "--trials_mode", mode, "--seeds", "[0]"])
 
     return [run_name for run_name, _ in scheduler.planner().plan()]
@@ -162,7 +108,6 @@ CASES = [(ProfileAeEntryConfig, "train_profile_autoencoder", ProfileAeTrainingLa
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is required to run the experiment-builder script")
 @pytest.mark.parametrize(("entry_config", "key", "launcher_class", "scheduler", "entry"), CASES)
 def test_preview_names_match_the_planner_names(entry_config, key, launcher_class, scheduler, entry, dataset, tmp_path):
-    """Every trial mode previews exactly the run names its planner plans, suffix for suffix."""
     argv      = _sweep_argv(key, dataset)
     previewed = _builder_names(entry_config, key, argv, tmp_path)
     launcher  = launcher_class(entry_script=Path(entry))
@@ -183,7 +128,6 @@ def test_preview_names_match_the_planner_names(entry_config, key, launcher_class
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is required to run the experiment-builder script")
 @pytest.mark.parametrize(("entry_config", "key", "launcher_class", "scheduler", "entry"), CASES)
 def test_every_scheduler_mode_is_offered(entry_config, key, launcher_class, scheduler, entry, dataset, tmp_path):
-    """The builder offers a mode for every trial mode the scheduler can run."""
     previewed = _builder_names(entry_config, key, _sweep_argv(key, dataset), tmp_path)
     missing   = sorted(mode for mode in scheduler.MODE_SUBDIRS if mode not in previewed)
 

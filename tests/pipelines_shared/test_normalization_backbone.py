@@ -1,4 +1,3 @@
-"""Tests for backbone input and output normalization, the leaky output clamp, and fitted statistics."""
 
 from __future__ import annotations
 
@@ -17,7 +16,6 @@ from tools.monitoring.logger                   import Logger
 
 
 def _zscore_stats() -> Stats:
-    """Returns input statistics with three plain z-score phase channels."""
     input_stats = ChannelStats(
         loc        = [1.0, -2.0, 0.0],
         scale      = [3.0, 0.5, 2.0],
@@ -30,7 +28,6 @@ def _zscore_stats() -> Stats:
 
 
 def _log1p_stats() -> Stats:
-    """Returns input statistics with two log1p z-score magnitude channels."""
     input_stats = ChannelStats(
         loc        = [0.5, 1.2],
         scale      = [0.8, 1.5],
@@ -43,7 +40,6 @@ def _log1p_stats() -> Stats:
 
 
 def test_zscore_roundtrip_numpy():
-    """Normalizing then denormalizing a numpy input recovers the original values."""
     norm = Normalizer(_zscore_stats())
     x    = np.random.default_rng(0).standard_normal((3, 5, 5)).astype(np.float32)
 
@@ -53,7 +49,6 @@ def test_zscore_roundtrip_numpy():
 
 
 def test_zscore_normalized_output_matches_formula():
-    """Z-score normalization equals the per-channel (x - loc) / scale formula."""
     norm = Normalizer(_zscore_stats())
     x    = np.random.default_rng(1).standard_normal((3, 4, 4)).astype(np.float32)
 
@@ -64,7 +59,6 @@ def test_zscore_normalized_output_matches_formula():
 
 
 def test_log1p_roundtrip_numpy():
-    """Normalizing then denormalizing a log1p magnitude input recovers the original values."""
     norm = Normalizer(_log1p_stats())
     x    = np.abs(np.random.default_rng(2).standard_normal((2, 6, 6))).astype(np.float32) * 10.0
 
@@ -74,7 +68,6 @@ def test_log1p_roundtrip_numpy():
 
 
 def test_log1p_inputs_are_not_clipped_by_the_output_clamp():
-    """Large log1p inputs survive the round trip untouched in both numpy and torch."""
     norm = Normalizer(_log1p_stats())
     x    = np.full((2, 3, 3), 1500.0, dtype=np.float32)
 
@@ -88,7 +81,6 @@ def test_log1p_inputs_are_not_clipped_by_the_output_clamp():
 
 
 def test_torch_and_numpy_normalization_agree():
-    """The torch and numpy input-normalization paths produce the same values."""
     norm = Normalizer(_zscore_stats())
     x    = np.random.default_rng(3).standard_normal((3, 4, 4)).astype(np.float32)
 
@@ -99,7 +91,6 @@ def test_torch_and_numpy_normalization_agree():
 
 
 def test_batched_4d_normalization_roundtrip():
-    """A batched (batch, channel, height, width) tensor round-trips through the normalizer."""
     norm = Normalizer(_zscore_stats())
     x    = torch.randn(2, 3, 5, 5)
 
@@ -109,7 +100,6 @@ def test_batched_4d_normalization_roundtrip():
 
 
 def test_missing_output_stats_raises():
-    """Normalizing outputs without fitted output statistics raises ValueError."""
     norm = Normalizer(_zscore_stats())
 
     with pytest.raises(ValueError):
@@ -117,14 +107,6 @@ def test_missing_output_stats_raises():
 
 
 def _mixed_output_stats(clamp: OutputClampConfig | None = None) -> Stats:
-    """Returns output statistics with clampable amplitude and sigma channels and an unclamped mu channel.
-
-    Args:
-        clamp : Output clamp configuration, defaulting to the enabled clamp.
-
-    Returns:
-        Stats holding only the mixed output channel statistics.
-    """
     log1p  = ChannelStrategy(NormMethod.ROBUST_IQR, apply_log1p=True)
     zscore = ChannelStrategy(NormMethod.ZSCORE)
 
@@ -139,7 +121,6 @@ def _mixed_output_stats(clamp: OutputClampConfig | None = None) -> Stats:
 
 
 def test_nonlog_clampable_channel_is_bounded_for_extreme_outputs():
-    """An extreme normalized amplitude denormalizes to a finite, bounded physical value."""
     norm = Normalizer(_mixed_output_stats())
 
     x       = torch.zeros(1, 3, 2, 2)
@@ -152,7 +133,6 @@ def test_nonlog_clampable_channel_is_bounded_for_extreme_outputs():
 
 
 def test_nonlog_clampable_channel_is_identity_in_range():
-    """Inside its range a clampable channel denormalizes by the plain affine formula."""
     norm = Normalizer(_mixed_output_stats())
 
     x       = torch.zeros(1, 3, 2, 2)
@@ -165,7 +145,6 @@ def test_nonlog_clampable_channel_is_identity_in_range():
 
 
 def test_mu_channel_bypasses_the_output_clamp():
-    """The mu channel stays affine for both negative and very large normalized values."""
     norm = Normalizer(_mixed_output_stats())
 
     x       = torch.zeros(1, 3, 2, 2)
@@ -182,7 +161,6 @@ def test_mu_channel_bypasses_the_output_clamp():
 
 
 def test_clamp_disabled_leaves_nonlog_channels_affine():
-    """With the clamp disabled an out-of-range amplitude denormalizes affinely."""
     norm = Normalizer(_mixed_output_stats(clamp=OutputClampConfig(enabled=False)))
 
     x       = torch.zeros(1, 3, 2, 2)
@@ -194,7 +172,6 @@ def test_clamp_disabled_leaves_nonlog_channels_affine():
 
 
 def test_extreme_out_of_range_values_backpropagate_finite_gradients():
-    """The leaky clamp keeps gradients finite and non-zero for far out-of-range outputs."""
     norm = Normalizer(_mixed_output_stats())
 
     x       = torch.zeros(1, 3, 2, 2)
@@ -210,7 +187,6 @@ def test_extreme_out_of_range_values_backpropagate_finite_gradients():
 
 
 def test_output_denormalization_torch_and_numpy_agree():
-    """The torch and numpy output-denormalization paths produce the same values."""
     norm = Normalizer(_mixed_output_stats())
 
     x       = np.zeros((1, 3, 2, 2), dtype=np.float32)
@@ -225,7 +201,6 @@ def test_output_denormalization_torch_and_numpy_agree():
 
 
 def _window_dataset(derived, parameters) -> tuple[PatchDataset, InputConfig, OutputConfig]:
-    """Returns a train PatchDataset over a 24x24 window of the scene with its input and output configs."""
     window  = np.ascontiguousarray(np.asarray(derived[:4, :24, :24]))
     primary = window[:1]
     inputs  = np.concatenate([primary, window], axis=0)
@@ -249,7 +224,6 @@ def _window_dataset(derived, parameters) -> tuple[PatchDataset, InputConfig, Out
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameters, param_extraction_meta, tmp_path):
-    """Statistics fitted on a real 24x24 window are finite, positive in scale, and round-trip."""
     ds, ic, oc = _window_dataset(derived, parameters)
 
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_real", level="ERROR")
@@ -279,7 +253,6 @@ def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameter
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_compute_logs_the_effective_clamp_and_the_pool_sizes(data_dir, derived, parameters, param_extraction_meta, tmp_path):
-    """The fitting log states the effective clamp, so a disabled clamp is visible on the training side, and the per-slot active pixel counts."""
     ds, ic, oc = _window_dataset(derived, parameters)
 
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_clamp", level="ERROR")
@@ -298,7 +271,6 @@ def test_compute_logs_the_effective_clamp_and_the_pool_sizes(data_dir, derived, 
 
 
 def test_fit_input_rejects_a_nan_in_a_pool(logger_stub):
-    """A NaN or Inf in a sampled input pool is refused by group with its non-finite count instead of fitting NaN statistics."""
     strategies = {"chan/mag": NormalizationConfig().strategy("input", "chan/mag")}
     collected  = {"chan/mag": np.array([1.0, 2.0, np.nan, 3.0, np.inf])}
 
@@ -307,7 +279,6 @@ def test_fit_input_rejects_a_nan_in_a_pool(logger_stub):
 
 
 def test_fit_output_rejects_a_nan_in_a_role_pool():
-    """A NaN among the active amplitudes is refused by role instead of fitting NaN statistics."""
     pools = {"out/amp": np.array([1.0, np.nan]), "out/mu": np.array([1.0, 2.0]), "out/sigma": np.array([1.0, 2.0])}
 
     with pytest.raises(ValueError, match=r"Output roles \['out/amp'\] fit a non-finite location or scale; non-finite samples per pool: \{'out/amp': 1\}"):
@@ -315,7 +286,6 @@ def test_fit_output_rejects_a_nan_in_a_role_pool():
 
 
 def test_output_stats_table_reports_sample_counts_and_clampable_roles(tmp_path):
-    """The output table carries the pooled sample count per role and labels the clamp column clampable, since it describes the role, not the run's clamp setting."""
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_table", level="ERROR")
     pools  = {"out/amp": np.array([1.0, 2.0, 3.0]), "out/mu": np.array([1.0, 2.0, 3.0]), "out/sigma": np.array([1.0, 2.0, 3.0])}
 
@@ -330,19 +300,16 @@ def test_output_stats_table_reports_sample_counts_and_clampable_roles(tmp_path):
 
 
 def test_clamp_rows_describe_the_effective_clamp():
-    """The clamp rows say disabled for a switched-off clamp and name the bounds, leaks and amplitude ceiling otherwise."""
     assert Stats.clamp_rows(OutputClampConfig(enabled=False))["Output clamp"] == "disabled"
     assert Stats.clamp_rows(OutputClampConfig(floor=0.0, ceil=50.0, amp_max=20.0)) == {"Output clamp": "0.0 to 50.0", "Clamp leak": 0.1, "Param leak": 0.1, "Amp max": 20.0}
 
 
 def _fixed_bounds_output_config() -> OutputConfig:
-    """Returns an output config whose amplitude, mean, and sigma use fixed-bounds normalization."""
     norm = NormalizationConfig(out_amp="fixed_bounds", out_mu="fixed_bounds", out_sigma="fixed_bounds")
     return OutputConfig(output_strategies={key: norm.strategy("output", key) for key in ("out/amp", "out/mu", "out/sigma")})
 
 
 def test_fixed_bounds_output_stats_resolve_per_slot():
-    """Fixed-bounds output statistics expand into per-slot loc, scale, method, and clampable flags."""
     pools = {"out/amp": np.array([1.0]), "out/mu": np.array([1.0]), "out/sigma": np.array([1.0])}
     stats = StatsComputer._fit_output(logger=None, role_pools=pools, output_config=_fixed_bounds_output_config(), n_gaussians=2)
 
@@ -353,7 +320,6 @@ def test_fixed_bounds_output_stats_resolve_per_slot():
 
 
 def test_fixed_bounds_output_stats_reject_mismatched_gaussian_count():
-    """Bounds covering two slots raise ValueError when three Gaussians are requested."""
     pools = {"out/amp": np.array([1.0]), "out/mu": np.array([1.0]), "out/sigma": np.array([1.0])}
 
     with pytest.raises(ValueError, match="exactly 9 entries"):
@@ -361,7 +327,6 @@ def test_fixed_bounds_output_stats_reject_mismatched_gaussian_count():
 
 
 def test_fixed_bounds_normalization_matches_the_legacy_formula():
-    """Fixed-bounds normalization is (x - min) / (max - min) and inverts exactly."""
     pools = {"out/amp": np.array([1.0]), "out/mu": np.array([1.0]), "out/sigma": np.array([1.0])}
     stats = StatsComputer._fit_output(logger=None, role_pools=pools, output_config=_fixed_bounds_output_config(), n_gaussians=2)
     norm  = Normalizer(Stats(input_stats=None, output_stats=stats))
@@ -378,7 +343,6 @@ def test_fixed_bounds_normalization_matches_the_legacy_formula():
 
 
 def test_fixed_input_presets_are_data_free_constants():
-    """Fixed input presets return constants without data, and fixed bounds are rejected for inputs."""
     assert ChannelStrategy(NormMethod.FIXED_LOG1P, apply_log1p=True).fit(np.array([])) == (0.0, 1.0)
 
     loc, scale = ChannelStrategy(NormMethod.FIXED_ANGLE_01).fit(np.array([]))

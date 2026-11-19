@@ -1,8 +1,3 @@
-"""Tests for the per-pixel failure-mode classification of predicted Gaussian mixtures.
-
-Checks that `FailureModes` labels each pixel as ok, missed, hallucinated, position,
-width or amplitude, and that the miss rate rises for closely spaced components.
-"""
 
 from __future__ import annotations
 
@@ -23,16 +18,6 @@ H, W = 10, 8
 
 
 def _params(slots: list[tuple[float, float, float]], H_: int = H, W_: int = W) -> np.ndarray:
-    """Builds a constant parameter cube from a list of (amplitude, mu, sigma) slots.
-
-    Args:
-        slots : One (amplitude, mu in metres, sigma in metres) triple per Gaussian slot.
-        H_    : Row extent of the cube.
-        W_    : Range extent of the cube.
-
-    Returns:
-        Parameter cube of shape (3 * n_slots, H_, W_) with every pixel carrying the same slots.
-    """
     cube = np.zeros((len(slots) * 3, H_, W_), dtype=np.float64)
 
     for k, (amp, mu, sigma) in enumerate(slots):
@@ -44,12 +29,10 @@ def _params(slots: list[tuple[float, float, float]], H_: int = H, W_: int = W) -
 
 
 def _mode_name(mode_map: np.ndarray, row: int = 0, col: int = 0) -> str:
-    """Returns the failure-mode label at one pixel of the mode map."""
     return FailureModes.MODES[int(mode_map[row, col])]
 
 
 def test_perfect_prediction_is_ok_everywhere():
-    """An exact prediction yields mode 0 everywhere and zero miss and hallucination rates."""
     gt   = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
     pred = gt.copy()
 
@@ -62,7 +45,6 @@ def test_perfect_prediction_is_ok_everywhere():
 
 
 def test_missing_component_is_flagged():
-    """Dropping one of two ground-truth components is labelled \"missed\" with a 0.5 miss rate."""
     gt   = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
     pred = _params([(1.0, 10.0, 3.0), (0.0, 0.0, 0.0)])
 
@@ -73,7 +55,6 @@ def test_missing_component_is_flagged():
 
 
 def test_hallucinated_component_is_flagged():
-    """Predicting a component absent from the ground truth is labelled \"hallucinated\"."""
     gt   = _params([(1.0, 10.0, 3.0), (0.0, 0.0, 0.0)])
     pred = _params([(1.0, 10.0, 3.0), (2.0, 60.0, 4.0)])
 
@@ -84,7 +65,6 @@ def test_hallucinated_component_is_flagged():
 
 
 def test_position_shift_within_tolerance_is_flagged_as_position():
-    """A matched component displaced by 3 m is labelled \"position\"."""
     gt   = _params([(1.0, 10.0, 3.0)])
     pred = _params([(1.0, 13.0, 3.0)])
 
@@ -94,7 +74,6 @@ def test_position_shift_within_tolerance_is_flagged_as_position():
 
 
 def test_width_and_amplitude_errors_are_flagged():
-    """A doubled sigma is labelled \"width\" and an inflated amplitude is labelled \"amplitude\"."""
     gt         = _params([(1.0, 10.0, 3.0)])
     pred_width = _params([(1.0, 10.0, 6.0)])
     pred_amp   = _params([(2.5, 10.0, 3.0)])
@@ -107,7 +86,6 @@ def test_width_and_amplitude_errors_are_flagged():
 
 
 def test_missed_takes_priority_over_matched_errors():
-    """A missed component outranks a position error on the same pixel."""
     gt   = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
     pred = _params([(1.0, 13.0, 3.0), (0.0, 0.0, 0.0)])
 
@@ -117,7 +95,6 @@ def test_missed_takes_priority_over_matched_errors():
 
 
 def test_far_prediction_counts_as_miss_plus_hallucination():
-    """A component predicted 40 m away counts as both a miss and a hallucination."""
     gt   = _params([(1.0, 10.0, 3.0)])
     pred = _params([(1.0, 50.0, 3.0)])
 
@@ -129,7 +106,6 @@ def test_far_prediction_counts_as_miss_plus_hallucination():
 
 
 def test_miss_by_separation_rises_for_close_components():
-    """The miss rate binned by component separation is higher for close pairs than for far pairs."""
     H_, W_ = 40, 30
     gt   = np.zeros((6, H_, W_))
     pred = np.zeros((6, H_, W_))
@@ -156,7 +132,6 @@ def test_miss_by_separation_rises_for_close_components():
 
 
 def test_miss_by_separation_status_reports_the_computed_bins():
-    """A profile that binned the separations records how many bins it computed over how many two-component pixels."""
     H_, W_ = 40, 30
     gt     = np.zeros((6, H_, W_))
 
@@ -174,7 +149,6 @@ def test_miss_by_separation_status_reports_the_computed_bins():
 
 
 def test_miss_by_separation_status_names_why_the_profile_was_skipped():
-    """Too few two-component pixels, or separations without spread, leave the rows empty with a status naming the reason."""
     single = _params([(1.0, 10.0, 3.0)])
     paired = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
 
@@ -187,7 +161,6 @@ def test_miss_by_separation_status_names_why_the_profile_was_skipped():
 
 
 def test_pipeline_stage_records_and_logs_why_the_separation_profile_is_missing(tmp_path):
-    """The failure-mode stage stores failure_sep_status in metrics.json and logs it, so a missing section 5.8 has a stated reason."""
     gt = _params([(1.0, 10.0, 3.0)])
 
     config = InferenceConfig(run_directory=tmp_path, output_subdir="failure", device="cpu", save_cubes=False)

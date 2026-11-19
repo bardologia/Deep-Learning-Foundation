@@ -1,4 +1,3 @@
-"""Tests for resuming a training run or sweep from a pasted path with the configuration it recorded."""
 
 from __future__ import annotations
 
@@ -16,7 +15,6 @@ from tests.conftest import RecordingLogger
 
 
 def _recorded(path: Path, **leaves) -> Path:
-    """Writes a backbone entry recording at the path with the given leaf values."""
     config = BackboneEntryConfig()
     for key, value in leaves.items():
         ConfigCli.set_path(config, key, value)
@@ -24,14 +22,12 @@ def _recorded(path: Path, **leaves) -> Path:
 
 
 def _launch(resume_from: str, *argv: str) -> tuple:
-    """Returns the launch config and its CLI for a resume of the path with the given overrides."""
     cli    = ConfigCli(BackboneEntryConfig())
     config = cli.apply(["--resume_from", resume_from, *argv])
     return config, cli
 
 
 def test_a_run_reads_its_own_recording(tmp_path):
-    """A pasted run directory is the run kind and loads docs/resolved_entry_config.json."""
     run = tmp_path / "label_myrun"
     _recorded(ResolvedEntryConfigWriter.path_for(run), **{"training.epochs": 7})
 
@@ -47,7 +43,6 @@ def test_a_run_reads_its_own_recording(tmp_path):
 
 
 def test_a_unit_without_its_own_recording_reads_the_sweep_recording(tmp_path):
-    """A fresh unit handed its directory by a sweep reads the sweep's recording found above it."""
     root = tmp_path / "ema"
     SweepRecording.write(root, BackboneEntryConfig(training=BackboneEntryConfig().training.__class__(epochs=9)))
     (root / "rung_a").mkdir()
@@ -62,7 +57,6 @@ def test_a_unit_without_its_own_recording_reads_the_sweep_recording(tmp_path):
 
 
 def test_a_unit_prefers_its_own_recording_over_the_sweep_one(tmp_path):
-    """A unit that already recorded its own configuration reads that, not the sweep recording above it."""
     root = tmp_path / "ema"
     _recorded(SweepRecording.path(root), **{"training.epochs": 9})
     _recorded(ResolvedEntryConfigWriter.path_for(root / "rung_a" / "seed0"), **{"training.epochs": 2})
@@ -75,7 +69,6 @@ def test_a_unit_prefers_its_own_recording_over_the_sweep_one(tmp_path):
 
 
 def test_a_seed_sweep_reads_its_recording_and_takes_the_seeds_from_the_launch(tmp_path):
-    """A sweep root, or one of its seed runs, is the seed sweep kind and reads the sweep recording."""
     root = tmp_path / "label_exp"
     (root / "seed0").mkdir(parents=True)
     _recorded(SweepRecording.path(root), **{"training.epochs": 11, "seeds": [0, 1, 2]})
@@ -91,7 +84,6 @@ def test_a_seed_sweep_reads_its_recording_and_takes_the_seeds_from_the_launch(tm
 
 
 def test_a_seed_sweep_without_a_recording_reads_its_first_seed_run(tmp_path):
-    """A sweep launched before recordings existed is read through its first seed run, with the per-unit fields from the launch."""
     root = tmp_path / "label_exp"
     _recorded(ResolvedEntryConfigWriter.path_for(root / "seed1"), **{"training.epochs": 5, "seeds": [1], "seed": 1, "run_name": "exp/seed1"})
     _recorded(ResolvedEntryConfigWriter.path_for(root / "seed0"), **{"training.epochs": 5, "seeds": [0], "seed": 0, "run_name": "exp/seed0"})
@@ -108,7 +100,6 @@ def test_a_seed_sweep_without_a_recording_reads_its_first_seed_run(tmp_path):
 
 
 def test_a_trial_sweep_reads_the_sweep_recording_above_any_unit(tmp_path):
-    """A trial sweep launch reads batch_train_logs/resolved_config.json found at or above the pasted unit."""
     root = tmp_path / "patch"
     _recorded(SweepRecording.path(root), **{"training.epochs": 3, "trials_enabled": True, "trials_mode": "patch"})
     (root / "rung_a" / "seed0").mkdir(parents=True)
@@ -124,7 +115,6 @@ def test_a_trial_sweep_reads_the_sweep_recording_above_any_unit(tmp_path):
 
 
 def test_a_sweep_root_is_a_trial_sweep_without_the_launch_saying_so(tmp_path):
-    """A pasted sweep root is recognised from its own recording, so the sweep settings need not be retyped."""
     root = tmp_path / "patch"
     _recorded(SweepRecording.path(root), **{"training.epochs": 3, "trials_enabled": True, "trials_mode": "patch"})
     (root / "rung_a").mkdir(parents=True)
@@ -142,7 +132,6 @@ def test_a_sweep_root_is_a_trial_sweep_without_the_launch_saying_so(tmp_path):
 
 
 def test_a_run_inside_a_trial_sweep_stays_a_run(tmp_path):
-    """A unit directory below a sweep root resumes that unit, not the whole sweep, even though the sweep recorded itself."""
     root = tmp_path / "patch"
     _recorded(SweepRecording.path(root), **{"training.epochs": 3, "trials_enabled": True})
     unit = root / "rung_a"
@@ -157,7 +146,6 @@ def test_a_run_inside_a_trial_sweep_stays_a_run(tmp_path):
 
 
 def test_hardware_and_typed_overrides_win_over_the_recording(tmp_path):
-    """The GPU fields follow the launch and a typed override replaces the recorded value, both reported."""
     run = tmp_path / "run"
     _recorded(ResolvedEntryConfigWriter.path_for(run), **{"training.epochs": 7, "gpus": [5, 6], "gpu": 5})
 
@@ -174,7 +162,6 @@ def test_hardware_and_typed_overrides_win_over_the_recording(tmp_path):
 
 
 def test_a_directory_without_any_recording_keeps_the_launch_settings(tmp_path):
-    """A run that recorded nothing resumes from the launch configuration, and the report warns about it."""
     run = tmp_path / "bare_run"
     run.mkdir()
 
@@ -191,7 +178,6 @@ def test_a_directory_without_any_recording_keeps_the_launch_settings(tmp_path):
 
 
 def test_a_path_without_a_parent_directory_is_refused(tmp_path):
-    """A resume path whose parent does not exist cannot be created, so it is refused."""
     launch, cli = _launch(str(tmp_path / "nope" / "unit"))
 
     with pytest.raises(FileNotFoundError, match="no parent directory"):
@@ -199,7 +185,6 @@ def test_a_path_without_a_parent_directory_is_refused(tmp_path):
 
 
 def test_sweep_recording_keeps_the_earlier_configuration_when_it_changes(tmp_path):
-    """Recording a different configuration moves the previous one into the history directory."""
     root = tmp_path / "sweep"
     first  = BackboneEntryConfig()
     second = BackboneEntryConfig()
@@ -216,7 +201,6 @@ def test_sweep_recording_keeps_the_earlier_configuration_when_it_changes(tmp_pat
 
 
 def test_launcher_returns_the_config_untouched_without_a_resume_path(tmp_path):
-    """Without resume_from the launcher hands the parsed configuration back as it is."""
     cli    = ConfigCli(BackboneEntryConfig())
     config = cli.apply([])
 
@@ -224,7 +208,6 @@ def test_launcher_returns_the_config_untouched_without_a_resume_path(tmp_path):
 
 
 def test_launcher_logs_the_resume_into_the_resumed_directory(tmp_path):
-    """The resume report lands in the resumed run's logs directory."""
     run = tmp_path / "run"
     _recorded(ResolvedEntryConfigWriter.path_for(run), **{"training.epochs": 7})
 

@@ -1,4 +1,3 @@
-"""Tests covering model inspection, parameter totals and training documentation emission."""
 
 from __future__ import annotations
 
@@ -11,14 +10,12 @@ from tools.monitoring.logger          import Logger
 
 
 def _loader(in_channels: int = 2, n_gaussians: int = 2, hw: int = 16) -> DataLoader:
-    """Returns a two-sample loader pairing images of shape (in_channels, hw, hw) with parameter targets of shape (3 * n_gaussians, hw, hw)."""
     imgs = torch.randn(2, in_channels, hw, hw)
     tgt  = torch.randn(2, n_gaussians * 3, hw, hw)
     return DataLoader(TensorDataset(imgs, tgt), batch_size=1)
 
 
 def test_inspector_totals_report_all_parameters(tmp_path):
-    """Totals report the model parameter count, its trainable share and a positive size in megabytes."""
     model, model_cfg = tiny_model()
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="docs", level="ERROR")
 
@@ -34,7 +31,6 @@ def test_inspector_totals_report_all_parameters(tmp_path):
 
 
 def test_inspector_records_shapes_after_run(tmp_path):
-    """A forward pass marks layer records as visited and fills their input shapes."""
     model, model_cfg = tiny_model()
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="docs", level="ERROR")
 
@@ -49,7 +45,6 @@ def test_inspector_records_shapes_after_run(tmp_path):
 
 
 def test_inspector_to_markdown_structure(tmp_path):
-    """The rendered markdown carries the title, the parameter totals and the model class name."""
     model, model_cfg = tiny_model()
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="docs", level="ERROR")
 
@@ -64,7 +59,6 @@ def test_inspector_to_markdown_structure(tmp_path):
 
 
 def test_inspector_save_markdown_writes_file(tmp_path):
-    """Saving writes a non-empty markdown file at the returned path."""
     model, model_cfg = tiny_model()
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="docs", level="ERROR")
 
@@ -79,7 +73,6 @@ def test_inspector_save_markdown_writes_file(tmp_path):
 
 
 def test_training_docs_emit_writes_documentation(tmp_path):
-    """Emitting with documentation enabled writes the model document under the run directory."""
     model, model_cfg = tiny_model()
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="docs", level="ERROR")
 
@@ -90,7 +83,6 @@ def test_training_docs_emit_writes_documentation(tmp_path):
 
 
 def test_training_docs_disabled_writes_nothing(tmp_path):
-    """Emitting with documentation disabled creates no docs directory."""
     model, model_cfg = tiny_model()
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="docs", level="ERROR")
 
@@ -101,7 +93,6 @@ def test_training_docs_disabled_writes_nothing(tmp_path):
 
 
 def test_layer_record_own_params_sums_trainable_and_frozen():
-    """A layer record counts its own parameters and reports none frozen for a trainable module."""
     conv   = torch.nn.Conv2d(2, 4, 3)
     record = LayerRecord("conv", conv)
 

@@ -1,4 +1,3 @@
-"""Tests for the ONNX export of trained backbone runs."""
 
 from __future__ import annotations
 
@@ -18,7 +17,6 @@ from tests.conftest                    import SilentLogger
 
 @pytest.fixture
 def run_root(tmp_path, test_data_dir, params_dir) -> Path:
-    """Returns a runs root holding one complete backbone run."""
     root = tmp_path / "runs"
     root.mkdir()
     build_run_directory(root, test_data_dir, params_dir)
@@ -27,7 +25,6 @@ def run_root(tmp_path, test_data_dir, params_dir) -> Path:
 
 
 def _entry(root: Path, **overrides) -> OnnxExportEntryConfig:
-    """Returns an export entry pointed at the runs root."""
     entry          = OnnxExportEntryConfig(**overrides)
     entry.runs_dir = root
 
@@ -36,7 +33,6 @@ def _entry(root: Path, **overrides) -> OnnxExportEntryConfig:
 
 @pytest.mark.dataset
 def test_export_writes_a_checkable_graph_and_manifest(run_root):
-    """The exported graph passes the ONNX checker and the manifest ties it to the checkpoint."""
     paths = OnnxRunExporter(_entry(run_root), SilentLogger()).run()
 
     assert len(paths) == 1
@@ -53,7 +49,6 @@ def test_export_writes_a_checkable_graph_and_manifest(run_root):
 
 @pytest.mark.dataset
 def test_export_dynamic_batch_axis(run_root):
-    """With dynamic_batch on, the input's leading dimension is symbolic."""
     paths = OnnxRunExporter(_entry(run_root), SilentLogger()).run()
 
     model = onnx.load(str(paths[0]))
@@ -63,7 +58,6 @@ def test_export_dynamic_batch_axis(run_root):
 
 
 def test_export_raises_without_runs(tmp_path):
-    """An empty runs root fails loudly."""
     root = tmp_path / "runs"
     root.mkdir()
 

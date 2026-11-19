@@ -1,19 +1,3 @@
-"""Tests for the sequence editor's start, stop and release actions and its block drawer fetches.
-
-Each action posts to the sequence router and repaints the board when the reply
-lands. A second click while the first request is in flight posted the same
-action again, so the second start or release raced the first and came back as
-an error toast. The editor now ignores clicks while an action is in flight.
-
-Opening a block drawer fetched the script's resolved configuration and the
-model list again on every open. The editor now keeps each successful reply for
-the page session and retries a failed one on the next open.
-
-Both live in the browser, so this module runs the real editor module under node
-against a stub DOM and a stub router that answers on the next tick. A static
-check also resolves every private call the editor makes, since a call to a
-method dropped in a port stopped the whole page from rendering an open sequence.
-"""
 
 from __future__ import annotations
 
@@ -32,11 +16,6 @@ ACTIONS = ("start", "stop", "release")
 
 
 def _probe() -> dict:
-    """Returns the action click counts and the drawer fetch counts the harness recorded.
-
-    Returns:
-        Mapping of each action to its ``concurrent`` and ``after`` post counts, the guard flag left behind and the errors the clicks raised, plus a ``drawer`` entry with the configuration and model GET counts over one failed and three later opens.
-    """
     result = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True, timeout=60)
 
     assert result.returncode == 0, result.stderr
@@ -45,7 +24,6 @@ def _probe() -> dict:
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is required to run the sequence editor")
 def test_overlapping_clicks_post_each_action_once():
-    """Three clicks on start, stop or release while the first request is in flight post that action once."""
     outcomes = _probe()
 
     for action in ACTIONS:
@@ -54,7 +32,6 @@ def test_overlapping_clicks_post_each_action_once():
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is required to run the sequence editor")
 def test_the_guard_lifts_once_the_action_lands():
-    """A click after the reply has landed posts again, so the guard never locks the editor, and no click raises."""
     outcomes = _probe()
 
     for action in ACTIONS:
@@ -65,7 +42,6 @@ def test_the_guard_lifts_once_the_action_lands():
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is required to run the sequence editor")
 def test_the_drawer_fetches_a_script_config_and_model_list_once():
-    """After a failed first open, three drawer opens fetch the configuration and the model list once more in total."""
     drawer = _probe()["drawer"]
 
     assert drawer["failed"] is True
@@ -74,7 +50,6 @@ def test_the_drawer_fetches_a_script_config_and_model_list_once():
 
 
 def test_every_private_call_in_the_sequence_editor_resolves():
-    """Each ``this._name(`` call in sequences.js names a method the board, the editor or the ConfigForm base defines."""
     js      = WEBUI_ROOT / "static" / "js"
     source  = (js / "sequences.js").read_text()
     pattern = re.compile(r"^  (?:static )?(?:async )?(_\w+)\(", re.M)

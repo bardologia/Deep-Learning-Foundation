@@ -1,8 +1,3 @@
-"""Tests for global gradient norm computation and clipping policies.
-
-Covers fixed and adaptive clipping thresholds, per-parameter-group norm
-logging, non-finite gradient detection and resume of the histogram cadence.
-"""
 
 from __future__ import annotations
 
@@ -16,7 +11,6 @@ from tools.training.gradients import GradientClipper
 
 
 def _grad_config(mode="fixed", max_grad_norm=1.0, window=5, percentile=90.0, mean_std_k=2.0, epsilon=1e-6, hist_freq=10):
-    """Returns a namespace holding a gradient_clipper section with the given settings."""
     return SimpleNamespace(
         gradient_clipper=SimpleNamespace(
             clip_mode           = mode,
@@ -31,7 +25,6 @@ def _grad_config(mode="fixed", max_grad_norm=1.0, window=5, percentile=90.0, mea
 
 
 def _model_with_grads(grad_values):
-    """Returns a bias-free linear model whose weight gradient holds `grad_values`."""
     model = torch.nn.Linear(len(grad_values), 1, bias=False)
     with torch.no_grad():
         model.weight.grad = torch.tensor([grad_values], dtype=torch.float32)
@@ -39,14 +32,12 @@ def _model_with_grads(grad_values):
 
 
 def test_global_norm_matches_l2(logger, tracker):
-    """Verifies that the global norm of gradients (3, 4) is the L2 norm 5."""
     model = _model_with_grads([3.0, 4.0])
     norm  = GradientClipper.global_norm(model)
     assert norm == pytest.approx(5.0)
 
 
 def test_global_norm_combines_multiple_params():
-    """Verifies that gradients spread over several parameters are combined into one norm."""
     model = torch.nn.Sequential(torch.nn.Linear(1, 1, bias=True))
     with torch.no_grad():
         model[0].weight.grad = torch.tensor([[3.0]])
@@ -56,13 +47,11 @@ def test_global_norm_combines_multiple_params():
 
 
 def test_global_norm_zero_when_no_grads():
-    """Verifies that a model without gradients reports a global norm of zero."""
     model = torch.nn.Linear(2, 1)
     assert GradientClipper.global_norm(model) == 0.0
 
 
 def test_fixed_clip_scales_gradients_to_threshold(logger, tracker):
-    """Verifies that fixed clipping rescales the gradients to the configured threshold."""
     config = _grad_config(mode="fixed", max_grad_norm=2.5, epsilon=0.0)
     clip   = GradientClipper(config, logger, tracker)
 
@@ -74,7 +63,6 @@ def test_fixed_clip_scales_gradients_to_threshold(logger, tracker):
 
 
 def test_fixed_clip_leaves_small_gradients_untouched(logger, tracker):
-    """Verifies that gradients below the threshold are left at their original norm."""
     config = _grad_config(mode="fixed", max_grad_norm=100.0, epsilon=0.0)
     clip   = GradientClipper(config, logger, tracker)
 
@@ -85,7 +73,6 @@ def test_fixed_clip_leaves_small_gradients_untouched(logger, tracker):
 
 
 def test_disabled_mode_returns_norm_without_clipping(logger, tracker):
-    """Verifies that disabled mode reports the norm without rescaling gradients."""
     config = _grad_config(mode="disabled")
     clip   = GradientClipper(config, logger, tracker)
 
@@ -97,7 +84,6 @@ def test_disabled_mode_returns_norm_without_clipping(logger, tracker):
 
 
 def test_adaptive_percentile_returns_none_before_window_full(logger, tracker):
-    """Verifies that no adaptive threshold is produced until the history window is full."""
     config = _grad_config(mode="adaptive_percentile", window=5)
     clip   = GradientClipper(config, logger, tracker)
 
@@ -106,7 +92,6 @@ def test_adaptive_percentile_returns_none_before_window_full(logger, tracker):
 
 
 def test_adaptive_percentile_threshold_value(logger, tracker):
-    """Verifies that the adaptive percentile threshold matches numpy's percentile."""
     config = _grad_config(mode="adaptive_percentile", window=5, percentile=50.0)
     clip   = GradientClipper(config, logger, tracker)
 
@@ -117,7 +102,6 @@ def test_adaptive_percentile_threshold_value(logger, tracker):
 
 
 def test_adaptive_mean_std_threshold_value(logger, tracker):
-    """Verifies that the mean-std threshold is mean plus k standard deviations."""
     config = _grad_config(mode="adaptive_mean_std", window=4, mean_std_k=2.0)
     clip   = GradientClipper(config, logger, tracker)
 
@@ -129,7 +113,6 @@ def test_adaptive_mean_std_threshold_value(logger, tracker):
 
 
 def test_adaptive_uses_only_last_window(logger, tracker):
-    """Verifies that only the last `adaptive_window` norms enter the threshold."""
     config = _grad_config(mode="adaptive_mean_std", window=2, mean_std_k=0.0)
     clip   = GradientClipper(config, logger, tracker)
 
@@ -140,7 +123,6 @@ def test_adaptive_uses_only_last_window(logger, tracker):
 
 
 def test_maybe_clip_no_threshold_returns_norm_unchanged(logger, tracker):
-    """Verifies that clipping is skipped and the norm returned when no threshold exists."""
     config = _grad_config(mode="adaptive_percentile", window=10)
     clip   = GradientClipper(config, logger, tracker)
 
@@ -152,7 +134,6 @@ def test_maybe_clip_no_threshold_returns_norm_unchanged(logger, tracker):
 
 
 def test_record_appends_history(logger, tracker):
-    """Verifies that recorded norms are appended to the history list."""
     config = _grad_config()
     clip   = GradientClipper(config, logger, tracker)
 
@@ -163,7 +144,6 @@ def test_record_appends_history(logger, tracker):
 
 
 def test_record_logs_histogram_on_freq(logger, tracker):
-    """Verifies that a gradient norm histogram is logged on the configured cadence."""
     config = _grad_config(hist_freq=3)
     clip   = GradientClipper(config, logger, tracker)
 
@@ -174,7 +154,6 @@ def test_record_logs_histogram_on_freq(logger, tracker):
 
 
 def test_histogram_cadence_survives_a_resume(logger, tracker):
-    """Verifies that the record counter is restored so the histogram cadence continues."""
     config = _grad_config(hist_freq=3)
     source = GradientClipper(config, logger, tracker)
 
@@ -198,7 +177,6 @@ def test_histogram_cadence_survives_a_resume(logger, tracker):
 
 
 def test_load_state_dict_rejects_a_state_without_the_record_counter(logger, tracker):
-    """Verifies that a state dict lacking the record counter raises KeyError."""
     clip = GradientClipper(_grad_config(), logger, tracker)
 
     with pytest.raises(KeyError):
@@ -206,7 +184,6 @@ def test_load_state_dict_rejects_a_state_without_the_record_counter(logger, trac
 
 
 def test_check_gradients_detects_nan(logger, tracker):
-    """Verifies that a NaN gradient is reported as a non-finite gradient."""
     config = _grad_config()
     clip   = GradientClipper(config, logger, tracker)
 
@@ -215,7 +192,6 @@ def test_check_gradients_detects_nan(logger, tracker):
 
 
 def test_check_gradients_clean_returns_false(logger, tracker):
-    """Verifies that finite gradients are not reported as non-finite."""
     config = _grad_config()
     clip   = GradientClipper(config, logger, tracker)
 
@@ -224,7 +200,6 @@ def test_check_gradients_clean_returns_false(logger, tracker):
 
 
 def test_fixed_clip_logs_norm_and_ratio(logger, tracker):
-    """Verifies that fixed clipping logs norm and clip ratio but no adaptive threshold."""
     config = _grad_config(mode="fixed", max_grad_norm=2.5, epsilon=0.0)
     clip   = GradientClipper(config, logger, tracker)
 
@@ -238,7 +213,6 @@ def test_fixed_clip_logs_norm_and_ratio(logger, tracker):
 
 
 def test_per_group_norms_logged_for_multiple_groups(logger, tracker):
-    """Verifies that per-group gradient norms are logged when several groups exist."""
     model = torch.nn.Linear(2, 1, bias=True)
     with torch.no_grad():
         model.weight.grad = torch.tensor([[3.0, 4.0]])
@@ -260,7 +234,6 @@ def test_per_group_norms_logged_for_multiple_groups(logger, tracker):
 
 
 def test_per_group_norms_skipped_for_single_group(logger, tracker):
-    """Verifies that per-group norms are omitted when there is a single group."""
     model = _model_with_grads([3.0, 4.0])
 
     param_groups = [{"params": list(model.parameters()), "name": "main"}]
@@ -275,7 +248,6 @@ def test_per_group_norms_skipped_for_single_group(logger, tracker):
 
 
 def test_adaptive_clip_logs_threshold(logger, tracker):
-    """Verifies that adaptive clipping logs the threshold it derived from history."""
     config = _grad_config(mode="adaptive_percentile", window=2, percentile=50.0, epsilon=0.0)
     clip   = GradientClipper(config, logger, tracker)
 

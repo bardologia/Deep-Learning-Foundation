@@ -1,9 +1,3 @@
-"""Tests that the webui model libraries stay in step with the model registries.
-
-Covers registry coverage of config classes and note files, the completeness of every
-model card, the architecture field lists derived from the config dataclasses, and the
-markdown stripping applied to the model notes.
-"""
 
 from __future__ import annotations
 
@@ -29,25 +23,21 @@ LIBRARIES = [ProfileAutoencoderModelLibrary, ImageAutoencoderModelLibrary, JepaM
 
 
 def _model_keys(collected: list) -> list:
-    """Returns the model keys across every collected family."""
     return [model["key"] for family in collected for model in family["models"]]
 
 
 @pytest.mark.parametrize("library_class,registry", REGISTERED)
 def test_config_classes_cover_the_registry(library_class, registry):
-    """The library names a config class for exactly the registered models."""
     assert set(library_class.CONFIG_CLASSES) == set(registry)
 
 
 @pytest.mark.parametrize("library_class,registry", REGISTERED)
 def test_note_files_cover_the_registry(library_class, registry):
-    """The library names a note file for exactly the registered models."""
     assert set(library_class.NOTE_FILES) == set(registry)
 
 
 @pytest.mark.parametrize("library_class,registry", REGISTERED)
 def test_families_cover_the_registry_exactly_once(library_class, registry):
-    """The collected families list every registered model once and nothing else."""
     keys = _model_keys(library_class().collect())
 
     assert sorted(keys) == sorted(set(keys))
@@ -56,7 +46,6 @@ def test_families_cover_the_registry_exactly_once(library_class, registry):
 
 @pytest.mark.parametrize("library_class,registry", REGISTERED)
 def test_every_config_class_exists_on_its_module(library_class, registry):
-    """Every config class the library names is present on its configuration module."""
     missing = [name for name in library_class.CONFIG_CLASSES.values() if not hasattr(library_class.CONFIG_MODULE, name)]
 
     assert not missing, f"config classes named by the library but absent from the module: {missing}"
@@ -64,7 +53,6 @@ def test_every_config_class_exists_on_its_module(library_class, registry):
 
 @pytest.mark.parametrize("library_class", LIBRARIES)
 def test_every_model_resolves_a_note(library_class):
-    """Every model with a declared note file resolves to a readable note."""
     library = library_class()
     missing = [key for key in library_class.NOTE_FILES if library.note(key) is None]
 
@@ -73,7 +61,6 @@ def test_every_model_resolves_a_note(library_class):
 
 @pytest.mark.parametrize("library_class", LIBRARIES)
 def test_the_families_name_exactly_one_recommended_model(library_class):
-    """Each family marks exactly one model as recommended."""
     for family in library_class().collect():
         recommended = [model["key"] for model in family["models"] if model["recommended"]]
 
@@ -82,7 +69,6 @@ def test_the_families_name_exactly_one_recommended_model(library_class):
 
 @pytest.mark.parametrize("library_class", LIBRARIES)
 def test_every_model_card_is_filled_in(library_class):
-    """Every family carries a name and blurb and every model card field is non-empty."""
     for family in library_class().collect():
         assert family["family"] and family["blurb"]
 
@@ -93,12 +79,10 @@ def test_every_model_card_is_filled_in(library_class):
 
 @pytest.mark.parametrize("library_class", LIBRARIES)
 def test_an_unknown_key_has_no_note(library_class):
-    """An unregistered model key resolves to no note."""
     assert library_class().note("no_such_model") is None
 
 
 def test_a_note_links_every_sibling_model():
-    """A resolved note carries its key, title, markdown body and links to every sibling note."""
     library = ProfileAutoencoderModelLibrary()
     note    = library.note("mlp_ae")
 
@@ -109,7 +93,6 @@ def test_a_note_links_every_sibling_model():
 
 
 def test_the_profile_library_reads_the_embedding_norm_attribute():
-    """The profile library labels normalization from the embedding_norm field and activation from the config activation."""
     labels = {model["key"]: model for family in ProfileAutoencoderModelLibrary().collect() for model in family["models"]}
     config = profile_autoencoder.MlpAutoencoderConfig()
 
@@ -119,7 +102,6 @@ def test_the_profile_library_reads_the_embedding_norm_attribute():
 
 
 def test_the_image_library_reads_the_plain_normalization_attribute():
-    """The image library labels normalization from the plain normalization field."""
     labels = {model["key"]: model for family in ImageAutoencoderModelLibrary().collect() for model in family["models"]}
     config = image_autoencoder.Conv2dImageAutoencoderConfig()
 
@@ -129,7 +111,6 @@ def test_the_image_library_reads_the_plain_normalization_attribute():
 
 @pytest.mark.parametrize("library_class,registry", REGISTERED)
 def test_every_label_is_resolved_from_a_real_config(library_class, registry):
-    """Every model card carries non-empty activation and normalization labels."""
     for family in library_class().collect():
         for model in family["models"]:
             assert model["activation"],    f"{model['key']} has no activation label"
@@ -137,17 +118,6 @@ def test_every_label_is_resolved_from_a_real_config(library_class, registry):
 
 
 def _expected_arch_names(library, config_class, key) -> list:
-    """Returns the config field names an architecture panel should expose for one model.
-
-    Args:
-        library      : Model library supplying the exclusion lists.
-        config_class : Architecture config dataclass of the model.
-        key          : Registry key of the model, used for per-model exclusions.
-
-    Returns:
-        Names of the scalar and scalar-sequence fields left after exclusion, in
-        dataclass declaration order.
-    """
     config   = config_class()
     excluded = set(library.ARCH_EXCLUDED) | set(library.ARCH_EXCLUDED_BY_MODEL.get(key, ()))
     names    = []
@@ -168,7 +138,6 @@ def _expected_arch_names(library, config_class, key) -> list:
 
 @pytest.mark.parametrize("library_class,registry", REGISTERED)
 def test_arch_fields_cover_every_scalar_and_sequence_config_field(library_class, registry):
-    """The exposed architecture entries match the scalar and sequence config fields in declaration order."""
     library = library_class()
 
     for family in library.collect():
@@ -180,7 +149,6 @@ def test_arch_fields_cover_every_scalar_and_sequence_config_field(library_class,
 
 @pytest.mark.parametrize("library_class,registry", REGISTERED)
 def test_every_string_arch_option_list_contains_its_default(library_class, registry):
-    """Every architecture entry offering options includes its own default among them."""
     for family in library_class().collect():
         for model in family["models"]:
             for entry in model["arch"]:
@@ -189,7 +157,6 @@ def test_every_string_arch_option_list_contains_its_default(library_class, regis
 
 
 def test_the_profile_arch_exposes_the_embedding_and_hides_derived_and_lr_fields():
-    """The profile architecture exposes the embedding size, its presets, norm options and hint while hiding dataset-derived and per-group optimiser fields."""
     arch = {model["key"]: {entry["name"]: entry for entry in model["arch"]} for family in ProfileAutoencoderModelLibrary().collect() for model in family["models"]}
     mlp  = profile_autoencoder.MlpAutoencoderConfig()
 
@@ -208,7 +175,6 @@ def test_the_profile_arch_exposes_the_embedding_and_hides_derived_and_lr_fields(
 
 
 def test_the_image_arch_hides_the_dataset_derived_channels_and_the_unread_fields():
-    """The image architecture hides the dataset-derived channel count and every field a given model does not read."""
     arch = {model["key"]: {entry["name"]: entry for entry in model["arch"]} for family in ImageAutoencoderModelLibrary().collect() for model in family["models"]}
 
     for key in arch:
@@ -226,20 +192,13 @@ def test_the_image_arch_hides_the_dataset_derived_channels_and_the_unread_fields
 
 
 class TempNoteLibrary(ModelNoteLibrary):
-    """Note library reading from a temporary directory.
-
-    Attributes:
-        directory : Directory holding the markdown note files.
-    """
 
     NOTE_FILES = {"demo": "Demo Model.md", "other": "Other Model.md"}
 
     def __init__(self, directory: Path) -> None:
-        """Stores the directory the notes are read from."""
         self.directory = directory
 
     def _notes_dir(self) -> Path:
-        """Returns the temporary directory holding the notes."""
         return self.directory
 
 
@@ -264,19 +223,16 @@ The receptive field is 41 pixels. This claim was flagged in the audit.
 
 @pytest.fixture
 def temp_notes(tmp_path):
-    """Returns a note library over a temporary directory holding the demo note."""
     (tmp_path / "Demo Model.md").write_text(NOTE)
     return TempNoteLibrary(tmp_path)
 
 
 def test_a_missing_note_file_yields_nothing(temp_notes):
-    """A declared note whose file is absent and an unknown key both resolve to None."""
     assert temp_notes.note("other")  is None
     assert temp_notes.note("absent") is None
 
 
 def test_an_operational_heading_takes_its_whole_subtree_with_it(temp_notes):
-    """Stripping an operational section removes its nested headings and body while keeping later sections."""
     markdown = temp_notes.note("demo")["markdown"]
 
     assert "## Correction"     not in markdown
@@ -287,7 +243,6 @@ def test_an_operational_heading_takes_its_whole_subtree_with_it(temp_notes):
 
 
 def test_dated_parentheticals_and_flagged_sentences_are_removed(temp_notes):
-    """Dated parentheticals and audit-flagged sentences are dropped while the surrounding prose survives."""
     markdown = temp_notes.note("demo")["markdown"]
 
     assert "(reviewed 2026-07-03)"  not in markdown
@@ -297,5 +252,4 @@ def test_dated_parentheticals_and_flagged_sentences_are_removed(temp_notes):
 
 
 def test_stripping_never_leaves_a_run_of_blank_lines(temp_notes):
-    """The stripped markdown never contains consecutive blank lines."""
     assert "\n\n\n" not in temp_notes.note("demo")["markdown"]

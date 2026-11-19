@@ -1,8 +1,3 @@
-"""Tests the revision provenance recorded beside run outputs.
-
-Covers how GitState judges a checkout clean or dirty, the working-tree state
-saved with a dirty run, the unavailable report outside a checkout, the unknown
-tree reported when git status times out, and the fields RunProvenance gathers."""
 
 from __future__ import annotations
 
@@ -15,13 +10,11 @@ from tools.runtime.git_state import GitState, RunProvenance
 
 
 def _git(repo, *args):
-    """Runs one git command with a throwaway identity inside the given repository."""
     subprocess.run(["git", "-c", "user.email=test@example.org", "-c", "user.name=test", *args], cwd=repo, check=True, capture_output=True)
 
 
 @pytest.fixture
 def checkout(tmp_path, monkeypatch):
-    """Returns a one-commit git repository that GitState is pointed at."""
     _git(tmp_path, "init", "-q")
     (tmp_path / "tracked.py").write_text("value = 1\n")
     _git(tmp_path, "add", "tracked.py")
@@ -31,7 +24,6 @@ def checkout(tmp_path, monkeypatch):
 
 
 def test_commit_returns_a_hash_or_a_reasoned_unavailable():
-    """The commit string of this checkout is either a 12-character hash (annotated or not) or an unavailable notice."""
     commit = GitState.commit()
 
     assert isinstance(commit, str) and commit
@@ -39,7 +31,6 @@ def test_commit_returns_a_hash_or_a_reasoned_unavailable():
 
 
 def test_clean_checkout_reports_the_bare_hash(checkout):
-    """Verifies a checkout without changes reports a 12-character hash and nothing else."""
     commit = GitState.commit()
 
     assert len(commit) == 12
@@ -47,7 +38,6 @@ def test_clean_checkout_reports_the_bare_hash(checkout):
 
 
 def test_untracked_files_do_not_make_the_checkout_dirty(checkout):
-    """Verifies untracked outputs inside the checkout leave it clean, and the dirty state still lists them."""
     (checkout / "notes.md").write_text("scratch\n")
 
     state = GitState.dirty_state()
@@ -57,7 +47,6 @@ def test_untracked_files_do_not_make_the_checkout_dirty(checkout):
 
 
 def test_tracked_changes_make_the_checkout_dirty(checkout):
-    """Verifies an uncommitted edit to a tracked file is reported by the commit and carried as a diff by the dirty state."""
     (checkout / "tracked.py").write_text("value = 2\n")
 
     state = GitState.dirty_state()
@@ -68,7 +57,6 @@ def test_tracked_changes_make_the_checkout_dirty(checkout):
 
 
 def test_dirty_state_contract():
-    """The dirty state always carries the dirty flag, the diff text and the untracked list, and a clean tree carries no diff."""
     state = GitState.dirty_state()
 
     assert set(state) == {"dirty", "diff", "untracked"}
@@ -81,7 +69,6 @@ def test_dirty_state_contract():
 
 
 def test_dirty_state_agrees_with_the_commit_annotation():
-    """The dirty flag and the '(dirty working tree)' suffix of commit() tell the same story."""
     commit = GitState.commit()
     state  = GitState.dirty_state()
 
@@ -90,7 +77,6 @@ def test_dirty_state_agrees_with_the_commit_annotation():
 
 
 def test_outside_a_checkout_the_commit_is_unavailable(tmp_path, monkeypatch):
-    """Verifies a directory that is not a checkout yields an unavailable report naming the reason."""
     monkeypatch.setattr(GitState, "REPO_ROOT", tmp_path)
 
     assert GitState.commit().startswith("unavailable (")
@@ -98,7 +84,6 @@ def test_outside_a_checkout_the_commit_is_unavailable(tmp_path, monkeypatch):
 
 
 def test_commit_reads_a_named_checkout(checkout, tmp_path_factory):
-    """A checkout other than this repository is read by path with the same clean and dirty annotations."""
     other = tmp_path_factory.mktemp("other")
 
     _git(other, "init", "-q")
@@ -119,12 +104,10 @@ def test_commit_reads_a_named_checkout(checkout, tmp_path_factory):
 
 
 def test_status_timeout_reports_an_unknown_working_tree(checkout, monkeypatch):
-    """A git status that times out on a slow checkout reports the commit with an unknown tree state instead of raising."""
     calls = []
     real  = GitState._git
 
     def _slow_status(*args, repo_root=None):
-        """Records the git subcommand and times out on status."""
         calls.append(args[0])
         if args[0] == "status":
             raise subprocess.TimeoutExpired(cmd="git status", timeout=10)
@@ -137,7 +120,6 @@ def test_status_timeout_reports_an_unknown_working_tree(checkout, monkeypatch):
 
 
 def test_provenance_carries_the_sources_of_the_parsed_command_line(monkeypatch):
-    """Verifies the configuration sources are None without a parsed command line and the ConfigCli mapping with one."""
     from dataclasses import dataclass
 
     from tools.runtime.config_cli      import ConfigCli
@@ -145,7 +127,6 @@ def test_provenance_carries_the_sources_of_the_parsed_command_line(monkeypatch):
 
     @dataclass
     class EntryConfig:
-        """One-leaf config standing in for an entry configuration."""
         seed : int = 1
 
     monkeypatch.setattr(ConfigCli, "parsed", None)
@@ -163,7 +144,6 @@ def test_provenance_carries_the_sources_of_the_parsed_command_line(monkeypatch):
 
 
 def test_provenance_reads_only_imported_libraries(monkeypatch):
-    """Verifies RunProvenance reports None for a library the process never imported."""
     import sys
 
     monkeypatch.delitem(sys.modules, "torch", raising=False)

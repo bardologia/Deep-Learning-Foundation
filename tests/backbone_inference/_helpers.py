@@ -1,9 +1,3 @@
-"""Shared fixtures that assemble a miniature backbone run directory for inference tests.
-
-The helpers persist the dataset configuration, channel statistics, model
-configuration and a small U-Net checkpoint so that the loader and the end-to-end
-inference pipeline can be exercised against the synthetic test scene.
-"""
 
 from __future__ import annotations
 
@@ -32,16 +26,6 @@ SECONDARY_LABELS = ("CH01", "CH02", "CH03", "CH04")
 
 
 def dataset_config(test_data_dir, params_dir) -> DatasetConfig:
-    """Builds a 96x96-per-split dataset configuration over the synthetic test scene.
-
-    Args:
-        test_data_dir : Preprocessing run directory holding the channel stack.
-        params_dir    : Directory containing ``parameters.npy`` with the Gaussian labels.
-
-    Returns:
-        A dataset configuration with disjoint train/val/test crop regions, 64x64
-        patches at stride 32 and the four secondary channels of ``SECONDARY_LABELS``.
-    """
     return DatasetConfig(
         preprocessing_run_directory = test_data_dir,
         parameters_path             = params_dir / "parameters.npy",
@@ -60,7 +44,6 @@ def dataset_config(test_data_dir, params_dir) -> DatasetConfig:
 
 
 def _persist_stats(meta_dir, in_channels: int) -> None:
-    """Writes identity z-score channel statistics for the given input width into the meta directory."""
     zscore = ChannelStrategy(NormMethod.ZSCORE)
 
     stats = Stats(
@@ -84,7 +67,6 @@ def _persist_stats(meta_dir, in_channels: int) -> None:
 
 
 def _persist_model(run_dir, meta_dir, in_channels: int) -> None:
-    """Saves a two-level U-Net configuration and its ``best_model.pt`` checkpoint with the scene's z axis."""
     config                   = BACKBONE_CONFIG_REGISTRY["unet"]()
     config.in_channels       = in_channels
     config.out_channels      = 3 * N_GAUSSIANS
@@ -104,18 +86,6 @@ def _persist_model(run_dir, meta_dir, in_channels: int) -> None:
 
 
 def build_run_directory(tmp_path, test_data_dir, params_dir):
-    """Assembles a complete backbone run directory that inference can load.
-
-    Args:
-        tmp_path      : Directory the run is created under.
-        test_data_dir : Preprocessing run directory holding the channel stack.
-        params_dir    : Directory containing ``parameters.npy`` with the Gaussian labels.
-
-    Returns:
-        Path of the run directory, populated with the dataset metadata, the run
-        summary, the trainer configuration, the channel statistics and a trained
-        U-Net checkpoint.
-    """
     run_dir  = tmp_path / "run_unet_e2e"
     meta_dir = run_dir / "meta"
     meta_dir.mkdir(parents=True)
@@ -134,17 +104,8 @@ def build_run_directory(tmp_path, test_data_dir, params_dir):
 
 
 class StageLogger(RecordingLogger):
-    """Recording logger that also keeps the timer labels, table titles, progress totals and advances it is handed.
-
-    Attributes:
-        timers   : Labels of the timed blocks, in entry order.
-        tables   : Titles of the key-value tables.
-        totals   : Totals of the progress tasks added.
-        advances : Summed progress advances over every task.
-    """
 
     def __init__(self) -> None:
-        """Starts with no recorded timers, tables, progress totals or advances."""
         super().__init__()
         self.timers   = []
         self.tables   = []
@@ -152,29 +113,23 @@ class StageLogger(RecordingLogger):
         self.advances = 0
 
     def kv_table(self, data, title=None, **kwargs):
-        """Records the title of a key-value table."""
         self.tables.append(title)
 
     @contextlib.contextmanager
     def timer(self, label: str):
-        """Records the label of a timed block and yields control."""
         self.timers.append(label)
         yield
 
     @contextlib.contextmanager
     def track(self, transient: bool = False):
-        """Yields a progress stub whose task totals and advances are recorded."""
         stage = self
 
         class _Progress:
-            """Progress stub recording the total of every added task and every advance."""
             def add_task(self, description, total=None, **kwargs):
-                """Records the task total and returns a fixed task id."""
                 stage.totals.append(total)
                 return 0
 
             def advance(self, task, advance=1, **kwargs):
-                """Adds the advance to the recorded sum."""
                 stage.advances += advance
 
         yield _Progress()

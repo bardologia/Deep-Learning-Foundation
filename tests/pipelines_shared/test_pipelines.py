@@ -1,4 +1,3 @@
-"""Tests for the backbone and profile dataset pipelines and their normalization-stats persistence."""
 
 from __future__ import annotations
 
@@ -22,17 +21,14 @@ from tools.monitoring.logger                        import Logger
 
 
 def _logger(tmp_path, name) -> Logger:
-    """Returns a silent logger writing under tmp_path."""
     return Logger(log_dir=str(tmp_path / "logs"), name=name, level="ERROR")
 
 
 def _activity_threshold(test_data_dir, params_dir) -> float:
-    """Returns the activity threshold the test parameter run was generated with."""
     return GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy").activity_threshold
 
 
 def _backbone_config(test_data_dir, params_dir) -> DatasetConfig:
-    """Returns a backbone dataset config over three contiguous row splits of the test data."""
     ic = InputConfig(
         use_primary=True,        primary_representation=Representation.MAG_ONLY,
         use_secondaries=True,    secondaries_representation=Representation.MAG_ONLY,
@@ -63,7 +59,6 @@ def _backbone_config(test_data_dir, params_dir) -> DatasetConfig:
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_writes_metadata_and_stats(test_data_dir, params_dir, tmp_path):
-    """The backbone pipeline writes its metadata files and returns normalized datasets and loaders."""
     config   = _backbone_config(test_data_dir, params_dir)
     pipeline = DatasetPipeline(config, tmp_path, _activity_threshold(test_data_dir, params_dir), logger=_logger(tmp_path, "bb_pipe"), seed=0)
 
@@ -84,11 +79,9 @@ def test_backbone_pipeline_writes_metadata_and_stats(test_data_dir, params_dir, 
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_train_order_reproducible(test_data_dir, params_dir, tmp_path):
-    """Two runs with the same seed yield the same first training batch."""
     torch.use_deterministic_algorithms(False)
 
     def _first_batch(run_dir):
-        """Returns the first training batch of a backbone pipeline run seeded at 7 under run_dir."""
         config   = _backbone_config(test_data_dir, params_dir)
         pipeline = DatasetPipeline(config, run_dir, _activity_threshold(test_data_dir, params_dir), logger=_logger(run_dir, "bb_repro"), seed=7)
         loaders  = pipeline.run()
@@ -104,7 +97,6 @@ def test_backbone_pipeline_train_order_reproducible(test_data_dir, params_dir, t
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_rectangular_patches_yield_rectangular_batches(test_data_dir, params_dir, tmp_path):
-    """A rectangular patch config produces batches with matching rectangular spatial extent."""
     config       = _backbone_config(test_data_dir, params_dir)
     config.patch = PatchConfig(size=(8, 16), stride=(4, 8))
 
@@ -120,7 +112,6 @@ def test_backbone_pipeline_rectangular_patches_yield_rectangular_batches(test_da
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_announces_each_crop_read_by_split_and_region(test_data_dir, params_dir, tmp_path):
-    """Every crop read is announced before it starts and its [Crop Loaded] table names the split, the region index and the coordinates."""
     config               = _backbone_config(test_data_dir, params_dir)
     config.split_regions = SplitRegions(
         train = [CropRegion(1000, 1012, 500, 524), CropRegion(1012, 1024, 500, 524)],
@@ -147,7 +138,6 @@ def test_backbone_pipeline_announces_each_crop_read_by_split_and_region(test_dat
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, params_dir, tmp_path):
-    """Disabling the primary and secondary groups loads only the derived channel layers."""
     full    = _backbone_config(test_data_dir, params_dir)
     trimmed = _backbone_config(test_data_dir, params_dir)
 
@@ -176,7 +166,6 @@ def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, pa
 
 @pytest.mark.dataset
 def test_backbone_pipeline_rejects_rot90_with_rectangular_patch(test_data_dir, params_dir, tmp_path):
-    """Enabling 90-degree rotation with a rectangular patch raises ValueError."""
     config                      = _backbone_config(test_data_dir, params_dir)
     config.patch                = PatchConfig(size=(8, 16), stride=(4, 8))
     config.augmentation.p_rot90 = 0.5
@@ -188,7 +177,6 @@ def test_backbone_pipeline_rejects_rot90_with_rectangular_patch(test_data_dir, p
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_profile_pipeline_runs_and_returns_normalizer(test_data_dir, params_dir, tmp_path):
-    """The profile pipeline writes its stats file and returns loaders, height axis, and normalizer."""
     config = ProfileDatasetConfig(
         preprocessing_run_directory = test_data_dir,
         activity_threshold          = _activity_threshold(test_data_dir, params_dir),
@@ -225,9 +213,7 @@ def test_profile_pipeline_runs_and_returns_normalizer(test_data_dir, params_dir,
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_profile_pipeline_train_order_reproducible(test_data_dir, params_dir, tmp_path):
-    """Two profile runs with the same seed yield the same first training batch."""
     def _first_batch(run_dir):
-        """Returns the first training batch of a profile pipeline run seeded at 3 under run_dir."""
         config = ProfileDatasetConfig(
             preprocessing_run_directory = test_data_dir,
             activity_threshold          = _activity_threshold(test_data_dir, params_dir),
@@ -254,7 +240,6 @@ def test_profile_pipeline_train_order_reproducible(test_data_dir, params_dir, tm
 
 
 def _stats(scale: float) -> Stats:
-    """Returns single-channel input and output statistics with the given z-score scale."""
     channels = ChannelStats(
         loc        = [0.0],
         scale      = [scale],
@@ -267,7 +252,6 @@ def _stats(scale: float) -> Stats:
 
 
 def _resumable_pipeline(run_dir, resume: bool) -> DatasetPipeline:
-    """Returns a bare DatasetPipeline wired only with the run directory, resume flag, and logger."""
     pipeline                        = DatasetPipeline.__new__(DatasetPipeline)
     pipeline.training_run_directory = run_dir
     pipeline.resume                 = resume
@@ -279,7 +263,6 @@ def _resumable_pipeline(run_dir, resume: bool) -> DatasetPipeline:
 
 
 def test_resumed_run_keeps_matching_normalization_stats(tmp_path):
-    """A resumed run accepts statistics identical to the stored ones."""
     pipeline = _resumable_pipeline(tmp_path, resume=True)
 
     _stats(2.0).save(tmp_path / "meta")
@@ -291,7 +274,6 @@ def test_resumed_run_keeps_matching_normalization_stats(tmp_path):
 
 
 def test_resumed_run_refuses_to_overwrite_different_stats(tmp_path):
-    """A resumed run raises ValueError when the recomputed statistics differ from the stored ones."""
     pipeline = _resumable_pipeline(tmp_path, resume=True)
 
     _stats(2.0).save(tmp_path / "meta")
@@ -301,7 +283,6 @@ def test_resumed_run_refuses_to_overwrite_different_stats(tmp_path):
 
 
 def test_fresh_run_overwrites_normalization_stats(tmp_path):
-    """A fresh run replaces any statistics left on disk."""
     pipeline = _resumable_pipeline(tmp_path, resume=False)
 
     _stats(2.0).save(tmp_path / "meta")
@@ -313,7 +294,6 @@ def test_fresh_run_overwrites_normalization_stats(tmp_path):
 
 
 def _resumable_profile_pipeline(run_dir, resume: bool) -> ProfileDatasetPipeline:
-    """Returns a bare ProfileDatasetPipeline wired only with the run directory, resume flag, and logger."""
     pipeline                        = ProfileDatasetPipeline.__new__(ProfileDatasetPipeline)
     pipeline.training_run_directory = run_dir
     pipeline.resume                 = resume
@@ -325,7 +305,6 @@ def _resumable_profile_pipeline(run_dir, resume: bool) -> ProfileDatasetPipeline
 
 
 def test_resumed_profile_run_keeps_matching_stats(tmp_path):
-    """A resumed profile run accepts statistics identical to the stored ones."""
     pipeline = _resumable_profile_pipeline(tmp_path, resume=True)
 
     ProfileStats(loc=0.5, scale=2.0).save(tmp_path / "meta")
@@ -337,7 +316,6 @@ def test_resumed_profile_run_keeps_matching_stats(tmp_path):
 
 
 def test_resumed_profile_run_refuses_to_overwrite_different_stats(tmp_path):
-    """A resumed profile run raises ValueError when the recomputed statistics differ from the stored ones."""
     pipeline = _resumable_profile_pipeline(tmp_path, resume=True)
 
     ProfileStats(loc=0.5, scale=2.0).save(tmp_path / "meta")
@@ -347,7 +325,6 @@ def test_resumed_profile_run_refuses_to_overwrite_different_stats(tmp_path):
 
 
 def test_fresh_profile_run_overwrites_stats(tmp_path):
-    """A fresh profile run replaces any statistics left on disk."""
     pipeline = _resumable_profile_pipeline(tmp_path, resume=False)
 
     ProfileStats(loc=0.5, scale=2.0).save(tmp_path / "meta")
@@ -359,23 +336,19 @@ def test_fresh_profile_run_overwrites_stats(tmp_path):
 
 
 class _CapturingDatasetPipeline:
-    """DatasetPipeline stand-in recording its construction keywords."""
 
     captured = {}
 
     def __init__(self, *args, **kwargs):
-        """Records the keywords and exposes the profile length the callers read."""
         type(self).captured = kwargs
         self.profile_length = 16
         self.layout         = SimpleNamespace(profile_length=16)
 
     def run(self):
-        """Returns an empty loader/dataset payload."""
         return None, None, None, {}
 
 
 def test_backbone_preparation_threads_the_training_resume_flag(tmp_path, monkeypatch):
-    """BackboneDatasetPreparation hands the trainer's resume flag to the dataset pipeline."""
     import pipelines.backbone.dataset.pipeline as module
     monkeypatch.setattr(module, "DatasetPipeline", _CapturingDatasetPipeline)
 

@@ -1,11 +1,3 @@
-"""Tests for per-unit log access inside a fan-out job.
-
-Covers resolution of a unit and its log file from the progress snapshot, the
-flattened per-unit transcript served by job_log, the job log route answering
-the job's own log, one unit's log or a 400 for an unparseable unit index, and
-the unit stream that replays a finished log or follows a running one until the
-unit, the viewer or the parent job stops it.
-"""
 from __future__ import annotations
 
 import json
@@ -28,23 +20,19 @@ from tests.webui.conftest import SLEEP_LONG, FakeHandler, wait_for_status
 
 @pytest.fixture
 def manager(make_manager):
-    """Returns a process manager whose train_backbone script is a long sleep."""
     return make_manager({"train_backbone": SLEEP_LONG})
 
 
 def _progress_path(manager: ProcessManager, job_id: str) -> Path:
-    """Returns the progress file path derived from the job's GPU pool file."""
     with manager.lock:
         return GpuProgressFile.resolve(Path(manager.jobs[job_id]["overrides"]["gpus_file"]))
 
 
 def _unit(name: str, log: Path, status: str, gpu: int | None = None, returncode: int | None = None) -> dict:
-    """Builds one unit registry entry with the given name, log path, status, GPU index and return code."""
     return {"name": name, "log": str(log), "status": status, "gpu": gpu, "duration_s": None, "returncode": returncode}
 
 
 def _write_snapshot(manager: ProcessManager, job_id: str, units: list[dict]) -> Path:
-    """Writes a progress snapshot carrying `units` and returns its path."""
     path = _progress_path(manager, job_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"total": len(units), "done": 0, "failed": 0, "queued": 0, "running": [], "units": units}))
@@ -52,7 +40,6 @@ def _write_snapshot(manager: ProcessManager, job_id: str, units: list[dict]) -> 
 
 
 def _launch_with_units(manager: ProcessManager, tmp_path: Path, units: list[dict]) -> str:
-    """Launches train_backbone, waits for it to run, writes the unit snapshot and returns the job id."""
     job_id = manager.launch("train_backbone", sys.executable)["job_id"]
     assert wait_for_status(manager, job_id, "running")
     _write_snapshot(manager, job_id, units)
@@ -60,7 +47,6 @@ def _launch_with_units(manager: ProcessManager, tmp_path: Path, units: list[dict
 
 
 def _request_log(manager: ProcessManager, path: str) -> FakeHandler:
-    """Routes a GET of `path` through a request router serving the job router over `manager` and returns the answered handler."""
     router  = RequestRouter(WebLogger(), [JobRouter(None, manager, None, None)])
     handler = FakeHandler("GET", path)
 
@@ -69,15 +55,6 @@ def _request_log(manager: ProcessManager, path: str) -> FakeHandler:
 
 
 def _collect(stream, timeout: float = 6.0) -> list[dict]:
-    """Drains a stream until its end event or the timeout.
-
-    Args:
-        stream  : JobStream-like object to subscribe to.
-        timeout : Maximum wait in seconds.
-
-    Returns:
-        The events received, in order.
-    """
     sub      = stream.subscribe()
     events   = []
     deadline = time.monotonic() + timeout
@@ -96,7 +73,6 @@ def _collect(stream, timeout: float = 6.0) -> list[dict]:
 
 
 def test_unit_entry_resolves_the_unit_and_its_log_path(manager, tmp_path):
-    """unit_entry returns the registry entry and the resolved log path of a unit."""
     log    = tmp_path / "stage" / "a" / "worker.log"
     job_id = _launch_with_units(manager, tmp_path, [_unit("a", log, "done", gpu=1, returncode=0)])
 
@@ -110,7 +86,6 @@ def test_unit_entry_resolves_the_unit_and_its_log_path(manager, tmp_path):
 
 
 def test_unit_entry_rejects_an_out_of_range_index(manager, tmp_path):
-    """unit_entry rejects indices beyond the registry and negative indices."""
     job_id = _launch_with_units(manager, tmp_path, [_unit("a", tmp_path / "a.log", "queued")])
 
     assert "out of range" in manager.unit_entry(job_id, 5)["error"]
@@ -120,7 +95,6 @@ def test_unit_entry_rejects_an_out_of_range_index(manager, tmp_path):
 
 
 def test_unit_entry_rejects_a_snapshot_without_units(manager, tmp_path):
-    """unit_entry reports a snapshot that carries no unit registry."""
     job_id = manager.launch("train_backbone", sys.executable)["job_id"]
     assert wait_for_status(manager, job_id, "running")
 
@@ -134,7 +108,6 @@ def test_unit_entry_rejects_a_snapshot_without_units(manager, tmp_path):
 
 
 def test_unit_entry_before_any_snapshot_explains_itself(manager, tmp_path):
-    """unit_entry reports that no progress snapshot has been written yet."""
     job_id = manager.launch("train_backbone", sys.executable)["job_id"]
     assert wait_for_status(manager, job_id, "running")
 
@@ -144,7 +117,6 @@ def test_unit_entry_before_any_snapshot_explains_itself(manager, tmp_path):
 
 
 def test_job_log_serves_a_unit_log_flattened(manager, tmp_path):
-    """job_log with a unit index serves that unit's log with carriage returns and ANSI codes removed."""
     log = tmp_path / "stage" / "a" / "worker.log"
     log.parent.mkdir(parents=True)
     log.write_text("epoch 1\r\x1b[31mepoch 2\x1b[0m\n")
@@ -162,7 +134,6 @@ def test_job_log_serves_a_unit_log_flattened(manager, tmp_path):
 
 
 def test_job_log_for_a_unit_without_a_file_is_unavailable(manager, tmp_path):
-    """job_log reports a unit whose log file does not exist yet as unavailable."""
     job_id = _launch_with_units(manager, tmp_path, [_unit("a", tmp_path / "missing.log", "queued")])
 
     data = manager.job_log(job_id, unit=0)
@@ -175,7 +146,6 @@ def test_job_log_for_a_unit_without_a_file_is_unavailable(manager, tmp_path):
 
 
 def test_log_route_without_a_unit_answers_the_job_log(manager, tmp_path):
-    """GET /api/jobs/<id>/log without a unit parameter answers the job's own log, here a pipe with no log file."""
     job_id = _launch_with_units(manager, tmp_path, [_unit("a", tmp_path / "a.log", "queued")])
 
     handler = _request_log(manager, f"/api/jobs/{job_id}/log")
@@ -190,7 +160,6 @@ def test_log_route_without_a_unit_answers_the_job_log(manager, tmp_path):
 
 
 def test_log_route_with_a_unit_answers_that_unit_log(manager, tmp_path):
-    """GET /api/jobs/<id>/log?unit=0 answers the flattened log of the first fan-out unit."""
     log = tmp_path / "stage" / "a" / "worker.log"
     log.parent.mkdir(parents=True)
     log.write_text("epoch 1\r\x1b[31mepoch 2\x1b[0m\n")
@@ -209,7 +178,6 @@ def test_log_route_with_a_unit_answers_that_unit_log(manager, tmp_path):
 
 
 def test_log_route_refuses_an_unparseable_unit_index(manager, tmp_path):
-    """GET /api/jobs/<id>/log?unit=abc answers 400 naming the index instead of reading any log."""
     job_id = _launch_with_units(manager, tmp_path, [_unit("a", tmp_path / "a.log", "queued")])
 
     handler = _request_log(manager, f"/api/jobs/{job_id}/log?unit=abc")
@@ -221,7 +189,6 @@ def test_log_route_refuses_an_unparseable_unit_index(manager, tmp_path):
 
 
 def test_unit_stream_of_a_finished_unit_replays_the_log_and_ends(manager, tmp_path):
-    """A finished unit's stream replays the log, then emits the status and end events."""
     log = tmp_path / "stage" / "a" / "worker.log"
     log.parent.mkdir(parents=True)
     log.write_text("all done here\n")
@@ -244,7 +211,6 @@ def test_unit_stream_of_a_finished_unit_replays_the_log_and_ends(manager, tmp_pa
 
 
 def test_unit_stream_of_an_unstarted_unit_ends_immediately(manager, tmp_path):
-    """A unit that never started emits only unit, a missing status and end."""
     job_id = _launch_with_units(manager, tmp_path, [_unit("a", tmp_path / "missing.log", "queued")])
 
     opened = manager.unit_stream(job_id, 0)
@@ -257,7 +223,6 @@ def test_unit_stream_of_an_unstarted_unit_ends_immediately(manager, tmp_path):
 
 
 def test_unit_stream_follows_a_running_unit_until_stopped(manager, tmp_path):
-    """A running unit's stream delivers appended lines until the viewer sets the stop event."""
     log = tmp_path / "stage" / "a" / "worker.log"
     log.parent.mkdir(parents=True)
     log.write_text("first line\n")
@@ -268,7 +233,6 @@ def test_unit_stream_follows_a_running_unit_until_stopped(manager, tmp_path):
     sub    = opened["stream"].subscribe()
 
     def next_event(timeout: float = 6.0) -> dict:
-        """Returns the next event from the subscription, waiting up to `timeout` seconds."""
         return sub.get(timeout=timeout)
 
     assert next_event()["type"] == "unit"
@@ -290,7 +254,6 @@ def test_unit_stream_follows_a_running_unit_until_stopped(manager, tmp_path):
 
 
 def test_unit_stream_ends_when_the_parent_job_stops(manager, tmp_path):
-    """A unit stream ends when the parent job is stopped."""
     log = tmp_path / "stage" / "a" / "worker.log"
     log.parent.mkdir(parents=True)
     log.write_text("running output\n")

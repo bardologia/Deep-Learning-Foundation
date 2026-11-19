@@ -1,9 +1,3 @@
-"""Tests for benchmark trial collection and comparison reporting.
-
-Covers how TrialCollector reads training and inference artefacts off disk, how
-BenchmarkSeedCollector folds per-seed runs into one record with dispersion, and
-how ComparisonReport renders leaderboards, metric tables and the summary JSON.
-"""
 
 from __future__ import annotations
 
@@ -25,13 +19,11 @@ from tests.conftest import RecordingLogger
 
 
 def _write_json(path: Path, payload) -> None:
-    """Writes a JSON payload to path, creating parent directories."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_trial_record_has_inference_reflects_inference_dir(tmp_path):
-    """Verifies has_inference is False until an inference directory is attached."""
     record = TrialRecord(name="unet", run_dir=tmp_path)
     assert record.has_inference is False
 
@@ -40,7 +32,6 @@ def test_trial_record_has_inference_reflects_inference_dir(tmp_path):
 
 
 def test_collector_raises_without_training_dir(tmp_path, logger_stub):
-    """Verifies a run without a training directory aborts instead of yielding an empty comparison."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
@@ -49,7 +40,6 @@ def test_collector_raises_without_training_dir(tmp_path, logger_stub):
 
 
 def test_collector_warns_about_unfinished_runs_and_missing_artifacts(tmp_path):
-    """Verifies a run without checkpoint, completion marker, configs or index entry is warned about per gap, with the status line and the summary saying so."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
@@ -73,7 +63,6 @@ def test_collector_warns_about_unfinished_runs_and_missing_artifacts(tmp_path):
 
 
 def test_collector_reads_the_checkpoint_at_the_run_root_only(tmp_path, logger_stub):
-    """Verifies a second best_model.pt below pretrain/ is neither read nor an error, the run's own checkpoint standing for it."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
@@ -89,7 +78,6 @@ def test_collector_reads_the_checkpoint_at_the_run_root_only(tmp_path, logger_st
 
 
 def test_collector_parses_parameters_from_model_doc(tmp_path, logger_stub):
-    """Verifies the parameter count is parsed out of the trial's model_doc.md."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
@@ -105,7 +93,6 @@ def test_collector_parses_parameters_from_model_doc(tmp_path, logger_stub):
 
 
 def test_collector_falls_back_to_size_match_parameters(tmp_path, logger_stub):
-    """Verifies size_match.json supplies the parameter count when no model doc exists."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "size_match.json", {"unet": {"parameters": 999}})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
@@ -118,7 +105,6 @@ def test_collector_falls_back_to_size_match_parameters(tmp_path, logger_stub):
 
 
 def test_collector_reads_checkpoint_with_weights_only_false(tmp_path, logger_stub):
-    """Verifies checkpoint fields load through torch.load for non-tensor payloads and the epoch count comes from the completion marker."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
@@ -145,7 +131,6 @@ def test_collector_reads_checkpoint_with_weights_only_false(tmp_path, logger_stu
 
 
 def test_collector_omits_epoch_count_without_completion_marker(tmp_path, logger_stub):
-    """Verifies n_train_epochs is absent from the checkpoint summary when no completion marker was stamped."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
@@ -161,7 +146,6 @@ def test_collector_omits_epoch_count_without_completion_marker(tmp_path, logger_
 
 
 def test_collector_attaches_inference_metrics_and_media(tmp_path, logger_stub):
-    """Verifies metrics, figures, animations and the report path of a completed inference are attached to the record."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
@@ -188,7 +172,6 @@ def test_collector_attaches_inference_metrics_and_media(tmp_path, logger_stub):
 
 
 def test_collector_ignores_inference_of_another_split(tmp_path, logger_stub):
-    """Verifies only the inference directory matching the requested split is selected."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
@@ -207,7 +190,6 @@ def test_collector_ignores_inference_of_another_split(tmp_path, logger_stub):
 
 
 def test_collector_ignores_inference_without_completion_marker(tmp_path, logger_stub):
-    """Verifies an inference directory lacking a completion marker is not treated as inference."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
@@ -221,7 +203,6 @@ def test_collector_ignores_inference_without_completion_marker(tmp_path, logger_
 
 
 def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
-    """Verifies per-seed runs collapse into one model record with mean metrics, mean duration and the seed dispersion standard deviation."""
     pipe = tmp_path / "pipeline"
     pipe.mkdir(parents=True)
     _write_json(pipe / "size_match.json", {"unet": {"parameters": 100, "overrides": {}}})
@@ -253,7 +234,6 @@ def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
 
 
 def test_model_of_strips_head_stem_loss_component_and_seed():
-    """Verifies the model key is recovered from run names carrying head, matching, K, augmentation, presence, loss component and seed segments."""
     assert TrialCollector._model_of("unet-conv-K_3-hv-A__moments/seed3")            == "unet"
     assert TrialCollector._model_of("resunet-multihead-K_3-hv-A__mse_curve")                 == "resunet-multihead"
     assert TrialCollector._model_of("unet-set_pred-K_5-noaug-none__param_l1/seed0")          == "unet-set_pred"
@@ -265,7 +245,6 @@ def test_model_of_strips_head_stem_loss_component_and_seed():
 
 
 def test_size_match_attaches_to_every_component(tmp_path, logger_stub):
-    """Verifies a single size-match entry is attached to every loss-component variant of the same model."""
     pipe = tmp_path / "pipeline"
     pipe.mkdir(parents=True)
     _write_json(pipe / "size_match.json", {"unet": {"parameters": 12345, "overrides": {}}})
@@ -283,7 +262,6 @@ def test_size_match_attaches_to_every_component(tmp_path, logger_stub):
 
 
 def test_seed_collector_single_run_is_identity(tmp_path, logger_stub):
-    """Verifies a model with one run passes through unaggregated and reports no dispersion."""
     pipe = tmp_path / "pipeline"
     pipe.mkdir(parents=True)
     _write_json(pipe / "size_match.json", {})
@@ -298,7 +276,6 @@ def test_seed_collector_single_run_is_identity(tmp_path, logger_stub):
 
 
 def test_metric_table_annotates_seed_dispersion(tmp_path, logger_stub):
-    """Verifies the metric table appends a plus-minus dispersion term when seed dispersion is supplied."""
     records = _records_with_metrics(tmp_path)
     report  = ComparisonReport(
         records         = records,
@@ -317,7 +294,6 @@ def test_metric_table_annotates_seed_dispersion(tmp_path, logger_stub):
 
 
 def test_summary_json_includes_seed_dispersion(tmp_path, logger_stub):
-    """Verifies the summary JSON carries seed dispersion only for models that were swept."""
     records = _records_with_metrics(tmp_path)
     report  = ComparisonReport(
         records         = records,
@@ -338,7 +314,6 @@ def test_summary_json_includes_seed_dispersion(tmp_path, logger_stub):
 
 
 def _records_with_metrics(out_dir):
-    """Returns two trial records with attached inference metrics, unet dominating resunet."""
     a = TrialRecord(name="unet", run_dir=out_dir / "unet")
     b = TrialRecord(name="resunet", run_dir=out_dir / "resunet")
 
@@ -352,7 +327,6 @@ def _records_with_metrics(out_dir):
 
 
 def _report(records, out_dir, logger_stub, rank=True):
-    """Returns a ComparisonReport over the given records with unet as reference."""
     return ComparisonReport(
         records         = records,
         out_dir         = out_dir,
@@ -364,7 +338,6 @@ def _report(records, out_dir, logger_stub, rank=True):
 
 
 def test_leaderboard_ranks_better_model_first(tmp_path, logger_stub):
-    """Verifies the dominant model appears above the weaker one in the leaderboard."""
     records = _records_with_metrics(tmp_path)
     report  = _report(records, tmp_path, logger_stub)
 
@@ -376,7 +349,6 @@ def test_leaderboard_ranks_better_model_first(tmp_path, logger_stub):
 
 
 def test_leaderboard_dominant_model_has_lower_mean_rank(tmp_path, logger_stub):
-    """Verifies the dominant model carries the lower mean rank column value."""
     records = _records_with_metrics(tmp_path)
     report  = _report(records, tmp_path, logger_stub)
 
@@ -390,7 +362,6 @@ def test_leaderboard_dominant_model_has_lower_mean_rank(tmp_path, logger_stub):
 
 
 def test_leaderboard_empty_without_metrics(tmp_path, logger_stub):
-    """Verifies the leaderboard states that no inference metrics are available."""
     records = [TrialRecord(name="unet", run_dir=tmp_path / "unet")]
     report  = _report(records, tmp_path, logger_stub)
 
@@ -400,7 +371,6 @@ def test_leaderboard_empty_without_metrics(tmp_path, logger_stub):
 
 
 def test_metric_table_bolds_best_value(tmp_path, logger_stub):
-    """Verifies the best value of a metric is emphasised in the metric table."""
     records = _records_with_metrics(tmp_path)
     report  = _report(records, tmp_path, logger_stub)
 
@@ -410,7 +380,6 @@ def test_metric_table_bolds_best_value(tmp_path, logger_stub):
 
 
 def test_metric_table_does_not_bold_in_fold_mode(tmp_path, logger_stub):
-    """Verifies no emphasis is applied when model ranking is disabled."""
     records = _records_with_metrics(tmp_path)
     report  = _report(records, tmp_path, logger_stub, rank=False)
 
@@ -420,7 +389,6 @@ def test_metric_table_does_not_bold_in_fold_mode(tmp_path, logger_stub):
 
 
 def test_capacity_table_renders_defaults_marker(tmp_path, logger_stub):
-    """Verifies the capacity table prints the parameter count and marks unscaled models as defaults."""
     record = TrialRecord(name="unet", run_dir=tmp_path / "unet", parameters=1000)
     report = _report([record], tmp_path, logger_stub)
 
@@ -431,7 +399,6 @@ def test_capacity_table_renders_defaults_marker(tmp_path, logger_stub):
 
 
 def test_write_all_round_trips_summary_json(tmp_path, logger_stub):
-    """Verifies write_all emits the summary JSON plus the overview and metrics markdown files."""
     records = _records_with_metrics(tmp_path)
     out_dir = tmp_path / "comparison"
     report  = _report(records, out_dir, logger_stub)
@@ -449,7 +416,6 @@ def test_write_all_round_trips_summary_json(tmp_path, logger_stub):
 
 
 def test_training_table_shows_seed_counts_under_a_sweep(tmp_path, logger_stub):
-    """Verifies the training table gains a Seeds column carrying the seed count under a sweep."""
     records = _records_with_metrics(tmp_path)
     report  = ComparisonReport(
         records         = records,
@@ -467,7 +433,6 @@ def test_training_table_shows_seed_counts_under_a_sweep(tmp_path, logger_stub):
 
 
 def test_training_table_shows_used_over_total_when_a_seed_dropped_out(tmp_path, logger_stub):
-    """Verifies the Seeds cell reads used/total when the least-covered metric mean rests on fewer seeds than the model holds."""
     records = _records_with_metrics(tmp_path)
     report  = ComparisonReport(
         records         = records,
@@ -484,7 +449,6 @@ def test_training_table_shows_used_over_total_when_a_seed_dropped_out(tmp_path, 
 
 
 def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_path, logger_stub):
-    """Verifies training status is reconstructed from completion markers, marking unstamped runs PARTIAL."""
     pipe = tmp_path / "pipeline"
     pipe.mkdir(parents=True)
     _write_json(pipe / "size_match.json", {})
@@ -502,15 +466,6 @@ def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_p
 
 
 def _seeded_benchmark_run(tmp_path: Path, seed_metrics: dict) -> Path:
-    """Writes a benchmark run with one unet seed per entry, stamping a test inference for the seeds given metrics.
-
-    Args:
-        tmp_path     : Directory the run is created in.
-        seed_metrics : Metric payload per seed directory name, None for a seed without inference.
-
-    Returns:
-        The run directory.
-    """
     pipe = tmp_path / "pipeline"
     pipe.mkdir(parents=True)
     _write_json(pipe / "size_match.json", {})
@@ -529,7 +484,6 @@ def _seeded_benchmark_run(tmp_path: Path, seed_metrics: dict) -> Path:
 
 
 def test_seed_collector_warns_about_a_seed_without_metrics_and_records_the_seeds_used(tmp_path, recording_logger):
-    """A seed whose inference never produced metrics is named in a warning and the dispersion records how many seeds each mean used."""
     run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}, "seed3": None})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
@@ -544,7 +498,6 @@ def test_seed_collector_warns_about_a_seed_without_metrics_and_records_the_seeds
 
 
 def test_seed_collector_names_a_metric_that_is_non_finite_in_one_seed(tmp_path, recording_logger):
-    """A metric that is NaN in one seed is averaged over the others and the warning names the metric and the seeds the means cover."""
     run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0, "overall_r2_gt": 0.5}, "seed2": {"curve_rmse_gt": 4.0, "overall_r2_gt": float("nan")}})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
@@ -556,7 +509,6 @@ def test_seed_collector_names_a_metric_that_is_non_finite_in_one_seed(tmp_path, 
 
 
 def test_seed_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path, recording_logger):
-    """A metric no seed reports as finite disappears from the model mean with a warning naming it."""
     run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0, "overall_r2_gt": float("nan")}, "seed2": {"curve_rmse_gt": 4.0, "overall_r2_gt": float("nan")}})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
@@ -567,7 +519,6 @@ def test_seed_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path
 
 
 def test_seed_collector_stays_quiet_when_every_seed_scored(tmp_path, recording_logger):
-    """Seeds that all carry finite metrics produce no coverage warning and a full n_used."""
     run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
@@ -578,7 +529,6 @@ def test_seed_collector_stays_quiet_when_every_seed_scored(tmp_path, recording_l
 
 
 def test_seed_collector_keeps_the_per_run_records_beside_the_aggregates(tmp_path, recording_logger):
-    """The per-seed records stay available after aggregation, so the comparison can check them against the plan."""
     run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": None})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
@@ -590,7 +540,6 @@ def test_seed_collector_keeps_the_per_run_records_beside_the_aggregates(tmp_path
 
 
 def test_seed_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directory(tmp_path, recording_logger):
-    """A seed a resume matched to a renamed directory keeps its stored status and duration, so the model stays DONE."""
     run_dir = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}})
 
     results = FileIO.load_json(run_dir / "pipeline" / "training_results.json")

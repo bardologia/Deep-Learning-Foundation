@@ -1,10 +1,3 @@
-"""Tests for the loss-scale probe used to calibrate per-term loss weights.
-
-Covers how the probe forces terms on, honours per-term overrides from the entry config,
-reports suggested weights relative to a reference term, filters outlier ratios, logs the
-batches it measured, states that exit_after trains nothing, and is refused in fan-outs
-that would mark every probe-only unit DONE.
-"""
 
 from __future__ import annotations
 
@@ -25,7 +18,6 @@ from tests.backbone_training._helpers import gaussian_config, identity_normalize
 
 
 def _loader(in_channels: int = 2, n_gaussians: int = 2, n: int = 4, hw: int = 12) -> DataLoader:
-    """Returns a loader of random (n, in_channels, hw, hw) inputs and (n, 3*n_gaussians, hw, hw) targets."""
     gen  = torch.Generator().manual_seed(0)
     imgs = torch.randn(n, in_channels, hw, hw, generator=gen)
     tgt  = torch.randn(n, n_gaussians * 3, hw, hw, generator=gen)
@@ -33,13 +25,6 @@ def _loader(in_channels: int = 2, n_gaussians: int = 2, n: int = 4, hw: int = 12
 
 
 def _probe(probe_cfg: LossScaleProbeConfig, n_channels: int = 6, logger=None) -> LossScaleProbe:
-    """Returns a loss-scale probe wired to an identity normalizer over n_channels parameter channels.
-
-    Args:
-        probe_cfg  : Probe configuration under test.
-        n_channels : Number of output parameter channels.
-        logger     : Logger receiving the report; a null logger when omitted, which suits the configuration-only tests.
-    """
     return LossScaleProbe(
         probe_cfg    = probe_cfg,
         loss_cfg     = LossConfig(),
@@ -51,19 +36,16 @@ def _probe(probe_cfg: LossScaleProbeConfig, n_channels: int = 6, logger=None) ->
 
 @pytest.fixture
 def probe_logger(tmp_path):
-    """Yields a file logger under tmp_path for the tests that run the probe, and closes it afterwards."""
     logger = Logger(log_dir=str(tmp_path / "logs"), name="loss_probe_test")
     yield logger
     logger.close()
 
 
 def _log_text(tmp_path) -> str:
-    """Returns the contents of the probe test log file."""
     return (tmp_path / "logs" / "loss_probe_test.log").read_text(encoding="utf-8")
 
 
 def test_probe_forces_all_terms_on_with_unit_weight():
-    """Verifies the probe enables every sweepable loss term at unit weight."""
     probe = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=False))
 
     assert probe.loss_cfg.use_mse_curve    is True
@@ -72,7 +54,6 @@ def test_probe_forces_all_terms_on_with_unit_weight():
 
 
 def test_entry_config_forwards_the_per_term_probe_overrides():
-    """Verifies the entry config's probe block reaches the runner's resolved probe config intact."""
     config                      = BackboneEntryConfig()
     config.probe.enabled        = True
     config.probe.enabled_losses = {"use_moments": False}
@@ -85,7 +66,6 @@ def test_entry_config_forwards_the_per_term_probe_overrides():
 
 
 def test_probe_respects_enabled_losses_override():
-    """Verifies a per-term override switches that term off while leaving the rest enabled."""
     overrides = {"use_moments": False}
     probe     = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=False, enabled_losses=overrides))
 
@@ -98,7 +78,6 @@ def test_probe_respects_enabled_losses_override():
 
 
 def test_probe_runs_and_reports_suggested_weights(probe_logger):
-    """Verifies the probe returns suggested weights with the reference term pinned at one."""
     model, _ = tiny_model(in_channels=2, n_gaussians=2)
     loader   = _loader()
     probe    = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, reference="param_l1", exit_after=False), logger=probe_logger)
@@ -112,7 +91,6 @@ def test_probe_runs_and_reports_suggested_weights(probe_logger):
 
 
 def test_probe_logs_the_measured_batch_count_and_duration(tmp_path, probe_logger):
-    """Verifies the probe announces the effective batch budget, not the configured one, and closes with the measured count and elapsed time."""
     model, _ = tiny_model(in_channels=2, n_gaussians=2)
     loader   = _loader()
     probe    = _probe(LossScaleProbeConfig(enabled=True, n_batches=1000, exit_after=False), logger=probe_logger)
@@ -127,7 +105,6 @@ def test_probe_logs_the_measured_batch_count_and_duration(tmp_path, probe_logger
 
 
 def test_probe_exit_after_warns_that_nothing_trained(tmp_path, probe_logger):
-    """Verifies exit_after still exits cleanly but first states that no training ran and no run artifacts were written."""
     model, _ = tiny_model(in_channels=2, n_gaussians=2)
     probe    = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=True), logger=probe_logger)
 
@@ -140,7 +117,6 @@ def test_probe_exit_after_warns_that_nothing_trained(tmp_path, probe_logger):
 
 
 def test_launcher_refuses_a_probe_only_trial_sweep(tmp_path):
-    """Verifies a trial sweep with the probe enabled and exit_after left on is refused before any unit is planned."""
     launcher = BackboneTrainingLauncher(entry_script=Path("/entry/train_backbone.py"))
 
     with pytest.raises(ValueError, match="probe.exit_after=True would end every unit of the patch trial sweep"):
@@ -148,7 +124,6 @@ def test_launcher_refuses_a_probe_only_trial_sweep(tmp_path):
 
 
 def test_launcher_refuses_a_probe_only_seed_fanout(tmp_path):
-    """Verifies a multi-seed fan-out with the probe enabled and exit_after left on is refused before any seed job is queued."""
     launcher = BackboneTrainingLauncher(entry_script=Path("/entry/train_backbone.py"))
 
     with pytest.raises(ValueError, match="2-seed fan-out"):
@@ -156,7 +131,6 @@ def test_launcher_refuses_a_probe_only_seed_fanout(tmp_path):
 
 
 def test_probe_disabled_returns_empty():
-    """Verifies a disabled probe returns no suggestions."""
     model, _ = tiny_model(in_channels=2, n_gaussians=2)
     loader   = _loader()
     probe    = _probe(LossScaleProbeConfig(enabled=False, exit_after=False))
@@ -165,7 +139,6 @@ def test_probe_disabled_returns_empty():
 
 
 def test_probe_suggested_weights_finite_for_positive_terms(probe_logger):
-    """Verifies the suggested weights for positive-valued terms are finite."""
     model, _ = tiny_model(in_channels=2, n_gaussians=2)
     loader   = _loader()
     probe    = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=False), logger=probe_logger)
@@ -177,7 +150,6 @@ def test_probe_suggested_weights_finite_for_positive_terms(probe_logger):
 
 
 def test_probe_iqr_filter_drops_outlier():
-    """Verifies the IQR filter removes a far-outlier ratio."""
     values   = [1.0, 1.1, 0.9, 1.05, 100.0]
     filtered = LossScaleProbe._iqr_filter(values)
 
@@ -186,7 +158,6 @@ def test_probe_iqr_filter_drops_outlier():
 
 
 def test_probe_iqr_filter_keeps_short_lists():
-    """Verifies the IQR filter passes lists too short to estimate quartiles through unchanged."""
     values = [1.0, 2.0, 3.0]
 
     assert LossScaleProbe._iqr_filter(values) == values

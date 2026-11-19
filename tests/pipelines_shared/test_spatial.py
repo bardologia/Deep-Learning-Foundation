@@ -1,4 +1,3 @@
-"""Tests for the patch grid geometry, padding modes, and patch extraction."""
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ from pipelines.backbone.dataset.spatial import GridInfo, Patcher
 
 
 def test_grid_count_no_padding_exact_tiling():
-    """A patch size dividing the image exactly tiles it without padding."""
     patcher = Patcher.build(spatial_size=(64, 64), patch_size=(32, 32), stride=(32, 32))
 
     assert patcher.grid.number_of_patches == 4
@@ -17,7 +15,6 @@ def test_grid_count_no_padding_exact_tiling():
 
 
 def test_grid_count_with_overlap_and_padding():
-    """Overlapping strides on a non-dividing image pad up to cover it."""
     patcher = Patcher.build(spatial_size=(50, 50), patch_size=(32, 32), stride=(16, 16))
     grid    = patcher.grid
 
@@ -28,14 +25,12 @@ def test_grid_count_with_overlap_and_padding():
 
 
 def test_single_patch_when_image_smaller_than_patch():
-    """An image smaller than the patch yields a single padded patch."""
     patcher = Patcher.build(spatial_size=(10, 10), patch_size=(32, 32), stride=(16, 16))
 
     assert patcher.grid.number_of_patches == 1
 
 
 def test_extract_preserves_patch_shape():
-    """Every extracted patch keeps the channel count and the configured patch size."""
     array   = np.arange(3 * 40 * 40, dtype=np.float32).reshape(3, 40, 40)
     patcher = Patcher.build(spatial_size=(40, 40), patch_size=(16, 16), stride=(16, 16))
 
@@ -45,7 +40,6 @@ def test_extract_preserves_patch_shape():
 
 
 def test_extract_interior_patch_matches_source_slice():
-    """An unpadded patch equals the corresponding slice of the source array."""
     array   = np.arange(50 * 50, dtype=np.float32).reshape(50, 50)
     patcher = Patcher.build(spatial_size=(50, 50), patch_size=(32, 32), stride=(16, 16))
 
@@ -57,7 +51,6 @@ def test_extract_interior_patch_matches_source_slice():
 
 
 def test_extract_covers_every_pixel_when_unpadded():
-    """Exact tiling touches every pixel of the image at least once."""
     H = W   = 64
     array   = np.zeros((H, W), dtype=np.int64)
     patcher = Patcher.build(spatial_size=(H, W), patch_size=(32, 32), stride=(32, 32))
@@ -70,7 +63,6 @@ def test_extract_covers_every_pixel_when_unpadded():
 
 
 def test_reflective_padding_mode_recorded():
-    """Requesting symmetric padding records the symmetric mode on every padded patch."""
     patcher = Patcher.build(spatial_size=(50, 50), patch_size=(32, 32), stride=(16, 16), use_symmetric_padding=True)
     modes   = {coord[4][4] for coord in patcher._patch_coords if coord[4] is not None}
 
@@ -78,7 +70,6 @@ def test_reflective_padding_mode_recorded():
 
 
 def test_constant_padding_mode_recorded():
-    """Disabling symmetric padding records the constant mode on every padded patch."""
     patcher = Patcher.build(spatial_size=(50, 50), patch_size=(32, 32), stride=(16, 16), use_symmetric_padding=False)
     modes   = {coord[4][4] for coord in patcher._patch_coords if coord[4] is not None}
 
@@ -86,7 +77,6 @@ def test_constant_padding_mode_recorded():
 
 
 def test_gridinfo_as_dict_roundtrip_fields():
-    """The grid dictionary carries the patch count, sizes, and per-axis padding totals."""
     grid = GridInfo(
         n_v=2, n_h=3, pad_top=1, pad_bot=1, pad_left=0, pad_right=2,
         patch_size=(16, 16), stride=(8, 8), spatial_size=(30, 40),
@@ -102,7 +92,6 @@ def test_gridinfo_as_dict_roundtrip_fields():
 
 
 def test_rectangular_patch_exact_tiling():
-    """A rectangular patch dividing the image exactly tiles it without padding."""
     patcher = Patcher.build(spatial_size=(64, 96), patch_size=(32, 48), stride=(32, 48))
     grid    = patcher.grid
 
@@ -113,7 +102,6 @@ def test_rectangular_patch_exact_tiling():
 
 
 def test_rectangular_patch_extract_preserves_shape():
-    """Rectangular patches keep the channel count and the configured rectangular size."""
     array   = np.arange(3 * 40 * 60, dtype=np.float32).reshape(3, 40, 60)
     patcher = Patcher.build(spatial_size=(40, 60), patch_size=(16, 24), stride=(8, 12))
 
@@ -123,7 +111,6 @@ def test_rectangular_patch_extract_preserves_shape():
 
 
 def test_rectangular_patch_covers_every_pixel():
-    """Overlapping rectangular patches touch every pixel of the image at least once."""
     H, W    = 50, 70
     array   = np.zeros((H, W), dtype=np.int64)
     patcher = Patcher.build(spatial_size=(H, W), patch_size=(16, 32), stride=(8, 16))
@@ -136,7 +123,6 @@ def test_rectangular_patch_covers_every_pixel():
 
 
 def test_anisotropic_stride_on_square_patch():
-    """A square patch with per-axis strides yields different vertical and horizontal counts."""
     patcher = Patcher.build(spatial_size=(64, 64), patch_size=(32, 32), stride=(16, 32))
     grid    = patcher.grid
 
@@ -146,7 +132,6 @@ def test_anisotropic_stride_on_square_patch():
 
 
 def test_rectangular_patch_interior_matches_source_slice():
-    """Exactly tiled rectangular patches are unpadded and equal their source slices."""
     array   = np.arange(48 * 80, dtype=np.float32).reshape(48, 80)
     patcher = Patcher.build(spatial_size=(48, 80), patch_size=(16, 40), stride=(16, 40))
 

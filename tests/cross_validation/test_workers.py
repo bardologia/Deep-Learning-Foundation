@@ -1,4 +1,3 @@
-"""Tests for the cross-validation fold workers and the fold result collector."""
 
 from __future__ import annotations
 
@@ -30,7 +29,6 @@ from tests.conftest import RecordingLogger, make_file_logger
 
 
 def worker_config(test_data_dir: Path, training_type: str = "backbone") -> CrossValidationConfig:
-    """Returns a cross-validation config bound to the real dataset and parameter run."""
     config                       = CrossValidationConfig(training_type=training_type)
     config.paths.dataset_path    = test_data_dir
     config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
@@ -39,15 +37,6 @@ def worker_config(test_data_dir: Path, training_type: str = "backbone") -> Cross
 
 
 def jepa_worker_config(test_data_dir: Path, tmp_path: Path) -> CrossValidationConfig:
-    """Returns a JEPA cross-validation config coupled to a stand-in profile-autoencoder run.
-
-    Args:
-        test_data_dir : Root of the real preprocessed dataset.
-        tmp_path      : Directory receiving the stand-in autoencoder run and the fold outputs.
-
-    Returns:
-        The configuration, carrying the conv head a coupled profile encoder requires.
-    """
     from configuration.architectures                import GruAutoencoderConfig
     from pipelines.shared.config.config_persistence import ProfileAutoencoderConfigIO
 
@@ -63,16 +52,6 @@ def jepa_worker_config(test_data_dir: Path, tmp_path: Path) -> CrossValidationCo
 
 
 def stamp_split_inference(base: Path, split: str, metrics: dict) -> Path:
-    """Creates a completion-stamped inference directory holding the given metrics.
-
-    Args:
-        base    : Inference base directory of the fold.
-        split   : Split name recorded in the completion payload.
-        metrics : Metric payload written to metrics.json.
-
-    Returns:
-        The stamped directory.
-    """
     stamp = base / f"stamp_{split}"
     stamp.mkdir(parents=True)
 
@@ -83,16 +62,6 @@ def stamp_split_inference(base: Path, split: str, metrics: dict) -> Path:
 
 
 def build_run_dir(tmp_path: Path, fold_names: list[str], inference_folds: dict[str, dict]) -> Path:
-    """Builds a cross-validation run directory with fold folders and stamped inference.
-
-    Args:
-        tmp_path        : Parent directory of the synthetic run.
-        fold_names      : Fold directory names created under folds/.
-        inference_folds : Per-fold mapping of split name to metric payload.
-
-    Returns:
-        The run directory.
-    """
     run_dir = tmp_path / "run"
 
     (run_dir / "pipeline").mkdir(parents=True)
@@ -110,7 +79,6 @@ def build_run_dir(tmp_path: Path, fold_names: list[str], inference_folds: dict[s
 
 
 def test_collector_points_at_folds_subdir(tmp_path):
-    """Verifies the collector reads training runs from the folds subdirectory."""
     run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
     collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
 
@@ -119,7 +87,6 @@ def test_collector_points_at_folds_subdir(tmp_path):
 
 
 def test_collector_collects_every_fold(tmp_path):
-    """Verifies every fold yields a base record and a split record."""
     names     = [FoldNaming.name(i) for i in range(5)]
     run_dir   = build_run_dir(tmp_path, names, {})
     collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
@@ -132,7 +99,6 @@ def test_collector_collects_every_fold(tmp_path):
 
 
 def test_collector_attaches_training_results(tmp_path):
-    """Verifies the training result payload is attached to the base records."""
     run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
     collector = FoldCollector(run_dir=run_dir, splits=[], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
 
@@ -143,7 +109,6 @@ def test_collector_attaches_training_results(tmp_path):
 
 
 def test_collector_split_view_loads_metrics_when_present(tmp_path):
-    """Verifies a stamped split directory supplies the metrics and inference directory."""
     run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {"fold_0": {"test": {"curve_rmse_gt": 2.5}}})
     collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
 
@@ -156,7 +121,6 @@ def test_collector_split_view_loads_metrics_when_present(tmp_path):
 
 
 def test_collector_reads_autoencoder_metrics_under_the_family_subdir(tmp_path):
-    """Verifies autoencoder metrics are read from the family inference subdirectory."""
     run_dir = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
 
     for name in ("fold_0", "fold_1"):
@@ -171,7 +135,6 @@ def test_collector_reads_autoencoder_metrics_under_the_family_subdir(tmp_path):
 
 
 def test_collector_split_view_empty_when_metrics_absent(tmp_path):
-    """Verifies a fold without stamped inference yields empty metrics and no figures."""
     run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {"fold_0": {"test": {"curve_rmse_gt": 2.5}}})
     collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
 
@@ -184,7 +147,6 @@ def test_collector_split_view_empty_when_metrics_absent(tmp_path):
 
 
 def test_collector_aggregates_seeds_per_fold(tmp_path):
-    """Verifies per-seed fold runs are averaged into one record with a seed dispersion."""
     names     = ["fold_0/seed1", "fold_0/seed2", "fold_1/seed1", "fold_1/seed2"]
     inference = {
         "fold_0/seed1": {"test": {"curve_rmse_gt": 2.0}},
@@ -208,7 +170,6 @@ def test_collector_aggregates_seeds_per_fold(tmp_path):
 
 
 def test_collector_multiple_splits_independent(tmp_path):
-    """Verifies each split keeps its own metrics for the same fold."""
     run_dir = build_run_dir(
         tmp_path,
         ["fold_0", "fold_1"],
@@ -224,7 +185,6 @@ def test_collector_multiple_splits_independent(tmp_path):
 
 @pytest.mark.dataset
 def test_cross_validation_worker_fold_name(test_data_dir):
-    """Verifies the worker derives the plain fold name from the fold index."""
     worker = CrossValidationWorker(worker_config(test_data_dir), run_tag="rt")
 
     assert worker.fold_name(0) == "fold_0"
@@ -233,7 +193,6 @@ def test_cross_validation_worker_fold_name(test_data_dir):
 
 @pytest.mark.dataset
 def test_training_worker_dispatches_to_backbone(test_data_dir, tmp_path, monkeypatch):
-    """Verifies a backbone run dispatches to the backbone trainer with the planned split regions and the composed run name."""
     config                    = worker_config(test_data_dir, "backbone")
     config.paths.log_base_dir = tmp_path
     worker                    = FoldTrainingWorker(config, run_tag="rt")
@@ -241,7 +200,6 @@ def test_training_worker_dispatches_to_backbone(test_data_dir, tmp_path, monkeyp
     captured = {}
 
     def fake_backbone(self, fold_index, seed, split_regions, run_name):
-        """Records the fold index, seed, split regions and run name passed to the backbone run."""
         captured["fold"]     = fold_index
         captured["seed"]     = seed
         captured["regions"]  = split_regions
@@ -259,7 +217,6 @@ def test_training_worker_dispatches_to_backbone(test_data_dir, tmp_path, monkeyp
 
 @pytest.mark.dataset
 def test_training_worker_writes_the_unit_manifest_before_training(test_data_dir, tmp_path, monkeypatch):
-    """Verifies the worker records the fold, seed and scored regions in the unit directory before the pipeline runs."""
     from pipelines.cross_validation.folds             import FoldUnitManifest
     from pipelines.shared.orchestration.unit_manifest import UnitManifest
 
@@ -285,7 +242,6 @@ def test_training_worker_writes_the_unit_manifest_before_training(test_data_dir,
 
 @pytest.mark.dataset
 def test_training_worker_leaves_a_finished_unit_alone(test_data_dir, tmp_path, monkeypatch):
-    """Verifies a unit that already completed is not trained again, which a repeated dispatch relies on."""
     config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     worker                    = FoldTrainingWorker(config, run_tag="rt")
@@ -304,7 +260,6 @@ def test_training_worker_leaves_a_finished_unit_alone(test_data_dir, tmp_path, m
 
 @pytest.mark.dataset
 def test_training_worker_trains_into_the_directory_the_scheduler_hands_over(test_data_dir, tmp_path, monkeypatch):
-    """Verifies an explicit run name replaces the composed one, so a unit found by its manifest keeps its directory."""
     config                    = worker_config(test_data_dir, "backbone")
     config.paths.log_base_dir = tmp_path
     worker                    = FoldTrainingWorker(config, run_tag="rt")
@@ -320,7 +275,6 @@ def test_training_worker_trains_into_the_directory_the_scheduler_hands_over(test
 
 @pytest.mark.dataset
 def test_training_worker_passes_planned_split_regions(test_data_dir, tmp_path, monkeypatch):
-    """Verifies the split regions handed to training are the guarded regions of the fold plan."""
     config                    = worker_config(test_data_dir, "backbone")
     config.paths.log_base_dir = tmp_path
     worker                    = FoldTrainingWorker(config, run_tag="rt")
@@ -337,7 +291,6 @@ def test_training_worker_passes_planned_split_regions(test_data_dir, tmp_path, m
 
 @pytest.mark.dataset
 def test_training_worker_dispatch_routes_by_type(test_data_dir, tmp_path, monkeypatch):
-    """Verifies each training type routes to its own training method."""
     from configuration.architectures                import GruAutoencoderConfig
     from pipelines.shared.config.config_persistence import ProfileAutoencoderConfigIO
 
@@ -350,7 +303,6 @@ def test_training_worker_dispatch_routes_by_type(test_data_dir, tmp_path, monkey
     monkeypatch.setattr(FoldTrainingWorker, "_run_image_autoencoder",   lambda self, i, seed, sr, run_name: seen.update(kind="image_ae"),  raising=True)
 
     def rooted(training_type: str) -> CrossValidationConfig:
-        """Returns a worker config of the family writing under the temporary directory."""
         config                    = worker_config(test_data_dir, training_type)
         config.paths.log_base_dir = tmp_path
         return config
@@ -378,7 +330,6 @@ def test_training_worker_dispatch_routes_by_type(test_data_dir, tmp_path, monkey
 
 @pytest.mark.dataset
 def test_training_worker_rejects_unknown_type(test_data_dir):
-    """Verifies an unrecognised training type is rejected."""
     config               = worker_config(test_data_dir)
     config.training_type = "bogus"
 
@@ -388,7 +339,6 @@ def test_training_worker_rejects_unknown_type(test_data_dir):
 
 @pytest.mark.dataset
 def test_dual_fold_run_name_carries_trunks_and_routing(test_data_dir):
-    """Verifies a dual fold run name carries both trunks, the routing tag and the fold index."""
     worker = FoldTrainingWorker(worker_config(test_data_dir, "dual"), run_tag="rt")
 
     name = worker.fold_run_name(1, None)
@@ -400,7 +350,6 @@ def test_dual_fold_run_name_carries_trunks_and_routing(test_data_dir):
 
 @pytest.mark.dataset
 def test_dual_model_config_binds_both_trunks(test_data_dir):
-    """Verifies the dual model config binds the parameter and existence trunks and inputs."""
     config                          = worker_config(test_data_dir, "dual")
     config.dual.existence_backbone  = "unet"
     config.dual.existence_input     = ["derived"]
@@ -414,7 +363,6 @@ def test_dual_model_config_binds_both_trunks(test_data_dir):
 
 @pytest.mark.dataset
 def test_dual_model_config_rejects_trunk_keys_in_model_overrides(test_data_dir):
-    """Verifies trunk keys passed through model_overrides are rejected."""
     config                  = worker_config(test_data_dir, "dual")
     config.model_overrides  = {"params_backbone": "unet"}
 
@@ -424,7 +372,6 @@ def test_dual_model_config_rejects_trunk_keys_in_model_overrides(test_data_dir):
 
 @pytest.mark.dataset
 def test_ae_fold_entry_carries_the_cross_validated_profile_augmentation(test_data_dir):
-    """Verifies the profile-augmentation recipe of the sweep reaches the fold entry config."""
     config                                  = worker_config(test_data_dir, "profile_autoencoder")
     config.autoencoder.profile_augmentation = ProfileAugmentationConfig(p_flip=0.25, p_shift=0.75, max_shift=7, p_amp_scale=0.4, p_noise=0.6, noise_std=0.02)
 
@@ -435,7 +382,6 @@ def test_ae_fold_entry_carries_the_cross_validated_profile_augmentation(test_dat
 
 @pytest.mark.dataset
 def test_ae_fold_entry_carries_the_cross_validated_learning_rates(test_data_dir):
-    """Verifies the encoder and decoder learning rates and weight decays of the sweep reach the fold entry config."""
     config                        = worker_config(test_data_dir, "profile_autoencoder")
     config.autoencoder.encoder_lr = 1.5e-3
     config.autoencoder.decoder_lr = 2.5e-3
@@ -449,7 +395,6 @@ def test_ae_fold_entry_carries_the_cross_validated_learning_rates(test_data_dir)
 
 @pytest.mark.dataset
 def test_ae_fold_pipeline_samples_with_the_cross_validated_profile_augmentation(test_data_dir, tmp_path):
-    """Verifies the forwarded augmentation reaches the profile dataset every fold trains on."""
     from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
 
     config                                  = worker_config(test_data_dir, "profile_autoencoder")
@@ -468,7 +413,6 @@ def test_ae_fold_pipeline_samples_with_the_cross_validated_profile_augmentation(
 
 @pytest.mark.dataset
 def test_jepa_fold_entry_carries_the_cross_validated_input_channels(test_data_dir, tmp_path):
-    """Verifies the channel set the sweep records reaches the JEPA fold entry config."""
     config       = jepa_worker_config(test_data_dir, tmp_path)
     config.input = InputConfig(use_primary=True, use_secondaries=False, use_derived=False, use_aux=True)
 
@@ -479,7 +423,6 @@ def test_jepa_fold_entry_carries_the_cross_validated_input_channels(test_data_di
 
 @pytest.mark.dataset
 def test_jepa_fold_entry_carries_the_cross_validated_curriculum(test_data_dir, tmp_path):
-    """Verifies the JEPA loss curriculum of the sweep reaches the fold entry config."""
     config                 = jepa_worker_config(test_data_dir, tmp_path)
     config.jepa.curriculum = JepaCurriculumConfig(enabled=True, swap_epoch=4, reset_lr=True, reset_warmup=True, reset_optimizer=True)
 
@@ -490,7 +433,6 @@ def test_jepa_fold_entry_carries_the_cross_validated_curriculum(test_data_dir, t
 
 @pytest.mark.dataset
 def test_jepa_fold_pipeline_trains_on_the_cross_validated_channels_and_curriculum(test_data_dir, tmp_path):
-    """Verifies both forwarded settings reach the dataset and trainer configs of the fold."""
     from pipelines.jepa.training.pipeline import TrainingPipeline
 
     config                 = jepa_worker_config(test_data_dir, tmp_path)
@@ -511,7 +453,6 @@ def test_jepa_fold_pipeline_trains_on_the_cross_validated_channels_and_curriculu
 
 @pytest.mark.dataset
 def test_inference_worker_builds_run_directory(test_data_dir, tmp_path, monkeypatch):
-    """Verifies the inference worker points the pipeline at the fold run directory and split."""
     config                       = worker_config(test_data_dir)
     config.paths.log_base_dir    = tmp_path
     config.inference_splits      = ["test"]
@@ -520,14 +461,11 @@ def test_inference_worker_builds_run_directory(test_data_dir, tmp_path, monkeypa
     captured = {}
 
     class FakePipeline:
-        """Inference pipeline stub recording its configuration and run call."""
         def __init__(self, inference_config, components=None):
-            """Records the inference configuration and component overrides."""
             captured["config"]     = inference_config
             captured["components"] = components
 
         def run(self):
-            """Records that the pipeline ran."""
             captured["ran"] = True
 
     monkeypatch.setattr(pipeline_module, "InferencePipeline", FakePipeline, raising=True)
@@ -546,7 +484,6 @@ def test_inference_worker_builds_run_directory(test_data_dir, tmp_path, monkeypa
 
 @pytest.mark.dataset
 def test_inference_worker_runs_every_configured_split(test_data_dir, tmp_path, monkeypatch):
-    """Verifies inference runs once per configured split in order."""
     config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     config.inference_splits   = ["val", "test"]
@@ -555,13 +492,10 @@ def test_inference_worker_runs_every_configured_split(test_data_dir, tmp_path, m
     ran = []
 
     class FakePipeline:
-        """Inference pipeline stub recording the split it was configured with."""
         def __init__(self, inference_config, components=None):
-            """Stores the split of the inference configuration."""
             self.split = inference_config.split
 
         def run(self):
-            """Records the split as having run."""
             ran.append(self.split)
 
     monkeypatch.setattr(pipeline_module, "InferencePipeline", FakePipeline, raising=True)
@@ -573,7 +507,6 @@ def test_inference_worker_runs_every_configured_split(test_data_dir, tmp_path, m
 
 @pytest.mark.dataset
 def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_path, monkeypatch):
-    """Verifies a split already stamped complete is skipped when resuming."""
     config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     config.inference_splits   = ["val", "test"]
@@ -586,13 +519,10 @@ def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_pat
     ran = []
 
     class FakePipeline:
-        """Inference pipeline stub recording the split it was configured with."""
         def __init__(self, inference_config, components=None):
-            """Stores the split of the inference configuration."""
             self.split = inference_config.split
 
         def run(self):
-            """Records the split as having run."""
             ran.append(self.split)
 
     monkeypatch.setattr(pipeline_module, "InferencePipeline", FakePipeline, raising=True)
@@ -605,29 +535,18 @@ def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_pat
 
 @pytest.mark.dataset
 def test_inference_worker_routes_autoencoders_to_their_pipelines(test_data_dir, tmp_path, monkeypatch):
-    """Verifies autoencoder folds route to their own inference pipelines."""
     import pipelines.image_autoencoder.inference.pipeline   as image_ae_module
     import pipelines.profile_autoencoder.inference.pipeline as profile_ae_module
 
     seen = {}
 
     def fake(kind, module, attribute):
-        """Installs a pipeline stub in place of the given module attribute.
-
-        Args:
-            kind      : Label recorded when the stub is constructed.
-            module    : Module whose attribute is replaced.
-            attribute : Name of the pipeline class to replace.
-        """
         class FakePipeline:
-            """Inference pipeline stub recording its kind, configuration and run call."""
             def __init__(self, config):
-                """Records the kind label and the inference configuration."""
                 seen["kind"]   = kind
                 seen["config"] = config
 
             def run(self):
-                """Records that the pipeline ran."""
                 seen["ran"] = True
 
         monkeypatch.setattr(module, attribute, FakePipeline, raising=True)
@@ -657,7 +576,6 @@ def test_inference_worker_routes_autoencoders_to_their_pipelines(test_data_dir, 
 
 @pytest.mark.dataset
 def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path, monkeypatch):
-    """Verifies the backbone fold trainer inherits the entry curriculum, geometry origin, run name and prior-bias flag."""
     config                    = worker_config(test_data_dir, "backbone")
     config.paths.log_base_dir = tmp_path
     config.prior_bias_init    = True
@@ -666,9 +584,7 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path
     captured = {}
 
     class _FakePipeline:
-        """Backbone training pipeline stub recording its constructor arguments."""
         def __init__(self, trainer_config, dataset_config, backbone_name, model_config, seed, run_name, overfit_check, prior_bias_init):
-            """Records the trainer and dataset configs, the run name, the overfit check and the prior-bias flag."""
             captured["trainer_config"]  = trainer_config
             captured["dataset_config"]  = dataset_config
             captured["run_name"]        = run_name
@@ -676,7 +592,6 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path
             captured["prior_bias_init"] = prior_bias_init
 
         def run(self, probe_config=None):
-            """Accepts an optional probe config and does nothing."""
             pass
 
     monkeypatch.setattr(backbone_pipeline_module, "TrainingPipeline", _FakePipeline, raising=True)
@@ -698,7 +613,6 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path
 
 
 def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_path):
-    """Verifies missing training results are rebuilt from the per-fold completion markers."""
     run_dir = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
     (run_dir / "pipeline" / "training_results.json").unlink()
 
@@ -713,7 +627,6 @@ def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_p
 
 
 def test_collector_warns_when_a_seed_has_no_metrics_and_records_the_coverage(tmp_path):
-    """A seed without a scored split is named in a warning, and the fold's dispersion records how many seeds the mean used."""
     names     = ["fold_0/seed1", "fold_0/seed2", "fold_1/seed1", "fold_1/seed2"]
     inference = {
         "fold_0/seed1": {"test": {"curve_rmse_gt": 2.0}},
@@ -737,7 +650,6 @@ def test_collector_warns_when_a_seed_has_no_metrics_and_records_the_coverage(tmp
 
 
 def test_collector_marks_a_fold_partial_and_names_the_seed_that_did_not_finish(tmp_path):
-    """A seed whose training did not end DONE turns its fold PARTIAL in the dispersion and is named in a warning."""
     names   = ["fold_0/seed1", "fold_0/seed2"]
     run_dir = build_run_dir(tmp_path, names, {})
 
@@ -756,7 +668,6 @@ def test_collector_marks_a_fold_partial_and_names_the_seed_that_did_not_finish(t
 
 
 def test_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path):
-    """A metric no seed of a fold reports as a finite value is dropped from the fold mean with a warning naming it."""
     names     = ["fold_0/seed1", "fold_0/seed2"]
     inference = {
         "fold_0/seed1": {"test": {"curve_rmse_gt": 2.0, "overall_r2_gt": float("nan")}},
@@ -774,7 +685,6 @@ def test_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path):
 
 
 def test_collector_stays_quiet_when_every_seed_contributed(tmp_path):
-    """Folds whose seeds all finished, scored and left a checkpoint produce no coverage warning."""
     import torch
 
     names     = ["fold_0/seed1", "fold_0/seed2"]
@@ -796,7 +706,6 @@ def test_collector_stays_quiet_when_every_seed_contributed(tmp_path):
 
 
 def test_collector_names_a_metric_non_finite_in_every_fold_once_per_split(tmp_path):
-    """A metric that every fold drops as non-finite is named once for its split as omitted from the cross-fold aggregate; one finite in some fold is not."""
     names     = ["fold_0", "fold_1"]
     inference = {
         "fold_0": {"test": {"curve_rmse_gt": 2.0, "overall_r2_gt": float("nan"), "curve_mae_gt": float("nan")}},
@@ -815,7 +724,6 @@ def test_collector_names_a_metric_non_finite_in_every_fold_once_per_split(tmp_pa
 
 
 def test_collector_sees_autoencoder_inference_under_the_family_subdir_and_counts_every_split(tmp_path):
-    """An autoencoder fold run scored under its family subdirectory is collected as inferred, and each configured split gets one coverage line naming the runs it misses."""
     run_dir = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
 
     for name in ("fold_0", "fold_1"):
@@ -836,7 +744,6 @@ def test_collector_sees_autoencoder_inference_under_the_family_subdir_and_counts
 
 @pytest.mark.dataset
 def test_training_worker_refuses_a_finished_unit_when_resume_is_off(test_data_dir, tmp_path, monkeypatch):
-    """With resume off a fold unit that already completed makes the worker exit instead of training over it or claiming it trained."""
     config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     config.resume             = False
@@ -857,7 +764,6 @@ def test_training_worker_refuses_a_finished_unit_when_resume_is_off(test_data_di
 
 
 def test_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directory(tmp_path):
-    """A unit a resume matched to a renamed directory keeps its stored status and duration, since its result follows its worker log."""
     run_dir = build_run_dir(tmp_path, ["fold_0/seed1", "fold_1/seed1"], {})
 
     results = FileIO.load_json(run_dir / "pipeline" / "training_results.json")

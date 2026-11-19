@@ -1,4 +1,3 @@
-"""Tests for the DDP fan-out that launches one training rank per local GPU."""
 
 from __future__ import annotations
 
@@ -15,7 +14,6 @@ from tools.training.distributed           import DistributedContext
 
 
 def _config(tmp_path, **overrides) -> BackboneEntryConfig:
-    """Returns an unrolled entry config with a tmp logdir and two GPUs."""
     config        = BackboneEntryConfig()
     config.logdir = tmp_path / "runs"
     config.gpus   = [0, 1]
@@ -29,29 +27,23 @@ def _config(tmp_path, **overrides) -> BackboneEntryConfig:
 
 
 class _Runner:
-    """Runner stub composing run names exactly like the unrolled entry."""
 
     def __init__(self, config):
-        """Stores the entry config."""
         self.config = config
 
     def _resolve_run_name(self) -> str:
-        """Returns the explicit run name, mirroring TrainingRunMetadata.resolve_name."""
         return self.config.run_name
 
 
 class _LabellingRunner(_Runner):
-    """Runner stub prefixing a descriptive label, as every non-unrolled entry does."""
 
     LABEL = "resunet_set_pred"
 
     def _resolve_run_name(self) -> str:
-        """Returns the label joined to the configured run name."""
         return f"{self.LABEL}_{self.config.run_name}"
 
 
 def test_validate_rejects_fewer_than_two_distinct_gpus(tmp_path):
-    """One device, or a repeated device, cannot form a rank group."""
     with pytest.raises(ValueError, match="at least two distinct devices"):
         DdpFanout.for_runner(_config(tmp_path, gpus=[0]), {}, Path("train.py"), _Runner)
 
@@ -60,7 +52,6 @@ def test_validate_rejects_fewer_than_two_distinct_gpus(tmp_path):
 
 
 def test_validate_rejects_an_indivisible_batch(tmp_path):
-    """A global batch with a remainder across the ranks is rejected."""
     config = _config(tmp_path, gpus=[0, 1, 2])
 
     with pytest.raises(ValueError, match="does not divide across 3 DDP ranks"):
@@ -68,7 +59,6 @@ def test_validate_rejects_an_indivisible_batch(tmp_path):
 
 
 def test_validate_rejects_enabled_pretrain_probes(tmp_path):
-    """Rank-local probe outcomes could diverge, so enabled probes are refused."""
     config = _config(tmp_path)
     config.pretrain.find_lr = True
 
@@ -77,7 +67,6 @@ def test_validate_rejects_enabled_pretrain_probes(tmp_path):
 
 
 def test_for_runner_composes_a_fresh_run_name(tmp_path):
-    """Without resume_from the fan-out names the run through the runner's scheme."""
     fanout = DdpFanout.for_runner(_config(tmp_path, run_name="gamma_ddp"), {}, Path("train.py"), _Runner)
 
     assert fanout.run_name == "gamma_ddp"
@@ -86,7 +75,6 @@ def test_for_runner_composes_a_fresh_run_name(tmp_path):
 
 
 def test_for_runner_resumes_an_existing_run_directory(tmp_path):
-    """resume_from repoints the logdir, switches the unit resume on and hands every rank its existing directory."""
     target = tmp_path / "elsewhere" / "old_run"
     (target / "ddp" / "rank1").mkdir(parents=True)
 
@@ -103,7 +91,6 @@ def test_for_runner_resumes_an_existing_run_directory(tmp_path):
 
 
 def test_resume_rejects_a_run_with_fewer_mirrors_than_ranks(tmp_path):
-    """Resuming with more GPUs than the run trained on refuses instead of desynchronising."""
     target = tmp_path / "elsewhere" / "old_run"
     (target / "ddp" / "rank1").mkdir(parents=True)
 
@@ -115,7 +102,6 @@ def test_resume_rejects_a_run_with_fewer_mirrors_than_ranks(tmp_path):
 
 
 def test_resume_rejects_a_run_with_more_mirrors_than_ranks(tmp_path):
-    """Resuming with fewer GPUs than the run trained on refuses instead of dropping a trained rank."""
     target = tmp_path / "elsewhere" / "old_run"
     (target / "ddp" / "rank1").mkdir(parents=True)
     (target / "ddp" / "rank2").mkdir(parents=True)
@@ -125,7 +111,6 @@ def test_resume_rejects_a_run_with_more_mirrors_than_ranks(tmp_path):
 
 
 def test_resume_rejects_a_run_without_ddp_mirrors(tmp_path):
-    """A run that never trained data-parallel cannot be resumed as a rank group."""
     target = tmp_path / "elsewhere" / "old_run"
     target.mkdir(parents=True)
 
@@ -134,13 +119,11 @@ def test_resume_rejects_a_run_without_ddp_mirrors(tmp_path):
 
 
 def test_for_runner_rejects_a_missing_resume_directory(tmp_path):
-    """resume_from pointing at nothing raises instead of silently starting fresh."""
     with pytest.raises(FileNotFoundError, match="not an existing run directory"):
         DdpFanout.for_runner(_config(tmp_path, resume_from=str(tmp_path / "missing")), {}, Path("train.py"), _Runner)
 
 
 def test_rank_overrides_isolate_the_secondary_ranks(tmp_path):
-    """Rank 0 owns the canonical run directory; other ranks land in its ddp subtree."""
     fanout = DdpFanout.for_runner(_config(tmp_path, run_name="gamma_ddp"), {"training.epochs": 3, "gpus": [0, 1]}, Path("train.py"), _Runner)
 
     zero = fanout._rank_overrides(0)
@@ -160,7 +143,6 @@ def test_rank_overrides_isolate_the_secondary_ranks(tmp_path):
 
 
 def test_rank_overrides_carry_the_bare_name_a_labelling_entry_composes(tmp_path):
-    """An entry that prefixes a label gets the bare name back, so it re-composes the predicted directory."""
     fanout = DdpFanout.for_runner(_config(tmp_path, run_name="ddp_run"), {}, Path("train.py"), _LabellingRunner)
 
     assert fanout.run_name              == "resunet_set_pred_ddp_run"
@@ -170,7 +152,6 @@ def test_rank_overrides_carry_the_bare_name_a_labelling_entry_composes(tmp_path)
 
 
 def test_resume_hands_the_ranks_their_directories_whatever_the_label(tmp_path):
-    """A resumed run keeps its directory and mirrors as they are named, with no label to recompose."""
     target = tmp_path / "elsewhere" / "other_model_old_run"
     (target / "ddp" / "other_model_rank1").mkdir(parents=True)
 
@@ -182,7 +163,6 @@ def test_resume_hands_the_ranks_their_directories_whatever_the_label(tmp_path):
 
 
 def test_mirrors_are_matched_by_their_rank_suffix(tmp_path):
-    """Mirror directories are recognised by the rank they end in, whatever prefix their naming scheme added."""
     target = tmp_path / "run"
     (target / "ddp" / "resunet_rank1").mkdir(parents=True)
     (target / "ddp" / "rank2").mkdir(parents=True)
@@ -194,7 +174,6 @@ def test_mirrors_are_matched_by_their_rank_suffix(tmp_path):
 
 
 def test_environment_stamps_the_group_coordinates():
-    """The child environment carries rank, world size and rendezvous port."""
     environment = DistributedContext.environment(rank=1, world_size=2, master_port=29777)
 
     assert environment[DistributedContext.RANK_VAR]  == "1"
@@ -203,7 +182,6 @@ def test_environment_stamps_the_group_coordinates():
 
 
 def test_launch_restores_the_inherited_cuda_mask(tmp_path, monkeypatch):
-    """A rank's environment carries the pre-pin mask, not the parent's single-device pin."""
     monkeypatch.setenv("MLTEMPLATE_INHERITED_CUDA_MASK", "")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
 
@@ -251,7 +229,6 @@ run_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _stub_fanout(tmp_path, mode: str, monkeypatch) -> DdpFanout:
-    """Returns a fast-polling fan-out whose entry script is a stub with the given mode."""
     entry = tmp_path / "entry.py"
     entry.write_text(_STUB_ENTRY)
     (tmp_path / "mode.txt").write_text(mode)
@@ -262,7 +239,6 @@ def _stub_fanout(tmp_path, mode: str, monkeypatch) -> DdpFanout:
 
 
 def test_run_sequences_rank_zero_before_the_others(tmp_path, monkeypatch):
-    """Rank zero settles the run directory, then every rank finishes its work."""
     fanout = _stub_fanout(tmp_path, "train", monkeypatch)
     fanout.run()
 
@@ -272,7 +248,6 @@ def test_run_sequences_rank_zero_before_the_others(tmp_path, monkeypatch):
 
 
 def test_run_skips_when_rank_zero_reuses_a_complete_run(tmp_path, monkeypatch):
-    """A rank zero that exits cleanly before the sentinel launches no other rank."""
     fanout = _stub_fanout(tmp_path, "skip", monkeypatch)
     fanout.run()
 
@@ -280,7 +255,6 @@ def test_run_skips_when_rank_zero_reuses_a_complete_run(tmp_path, monkeypatch):
 
 
 def test_run_propagates_an_early_rank_zero_failure(tmp_path, monkeypatch):
-    """A rank zero failing before the sentinel aborts the fan-out."""
     fanout = _stub_fanout(tmp_path, "fail", monkeypatch)
 
     with pytest.raises(SystemExit, match="rank 0 failed with exit code 2"):
@@ -290,7 +264,6 @@ def test_run_propagates_an_early_rank_zero_failure(tmp_path, monkeypatch):
 
 
 def test_run_terminates_the_group_when_a_secondary_rank_fails(tmp_path, monkeypatch):
-    """A secondary rank exiting non-zero mid-run tears the still-training ranks down, and the fan-out log ends in an ABORTED banner naming the failure."""
     fanout = _stub_fanout(tmp_path, "rank_fail", monkeypatch)
 
     started = time.monotonic()
@@ -307,7 +280,6 @@ def test_run_terminates_the_group_when_a_secondary_rank_fails(tmp_path, monkeypa
 
 
 def test_rank_logs_append_to_an_earlier_launch(tmp_path, monkeypatch):
-    """A relaunched fan-out keeps the earlier launch's rank log above the new output instead of truncating it."""
     fanout = _stub_fanout(tmp_path, "train", monkeypatch)
     fanout.log_dir.mkdir(parents=True)
     (fanout.log_dir / "rank1.log").write_text("earlier launch\n", encoding="utf-8")
@@ -318,7 +290,6 @@ def test_rank_logs_append_to_an_earlier_launch(tmp_path, monkeypatch):
 
 
 def test_run_publishes_a_progress_unit_per_secondary_rank(tmp_path, monkeypatch):
-    """The fan-out writes the per-unit progress registry the console's sub-run selector reads."""
     fanout = _stub_fanout(tmp_path, "train", monkeypatch)
     fanout.run()
 
@@ -335,7 +306,6 @@ def test_run_publishes_a_progress_unit_per_secondary_rank(tmp_path, monkeypatch)
 
 
 def test_progress_marks_a_failed_rank(tmp_path, monkeypatch):
-    """A secondary rank exiting non-zero lands in the registry as failed with its exit code."""
     fanout = _stub_fanout(tmp_path, "rank_fail", monkeypatch)
 
     with pytest.raises(SystemExit, match="rank 1 failed"):
@@ -349,7 +319,6 @@ def test_progress_marks_a_failed_rank(tmp_path, monkeypatch):
 
 
 def test_progress_follows_a_configured_pool_path(tmp_path, monkeypatch):
-    """With gpus_file set, the registry lands beside that pool path, where the console looks."""
     entry = tmp_path / "entry.py"
     entry.write_text(_STUB_ENTRY)
     (tmp_path / "mode.txt").write_text("train")
@@ -366,7 +335,6 @@ def test_progress_follows_a_configured_pool_path(tmp_path, monkeypatch):
 
 
 def test_skipped_run_writes_no_progress_file(tmp_path, monkeypatch):
-    """A rank zero that reuses a complete run publishes no registry, so the console shows only the pipeline."""
     fanout = _stub_fanout(tmp_path, "skip", monkeypatch)
     fanout.run()
 
@@ -374,7 +342,6 @@ def test_skipped_run_writes_no_progress_file(tmp_path, monkeypatch):
 
 
 def test_run_clears_a_completed_mirror_so_the_rank_rejoins(tmp_path, monkeypatch):
-    """A mirror left complete would skip training and stall the rendezvous, so its marker goes."""
     fanout = _stub_fanout(tmp_path, "train", monkeypatch)
     mirror = fanout.ddp_dir / "rank1"
     mirror.mkdir(parents=True)
