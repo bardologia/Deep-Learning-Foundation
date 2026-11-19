@@ -16,9 +16,6 @@ class UNetPlusPlus(nn.Module, OutputHeadsMixin):
         self.config = config
 
         feature_sizes = config.features
-        if len(feature_sizes) != 4:
-            raise ValueError("features must contain exactly 4 channel sizes")
-
         level_0, level_1, level_2, level_3 = feature_sizes
         bottleneck_width = level_3 * config.bottleneck_factor
         dropout          = config.dropout

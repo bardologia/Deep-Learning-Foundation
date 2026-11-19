@@ -63,19 +63,7 @@ class UNETR(nn.Module, OutputHeadsMixin):
         config      = config or UNETRConfig()
         self.config = config
 
-        if config.patch_size <= 0:
-            raise ValueError("patch_size must be a positive integer")
-        if config.image_size % config.patch_size != 0:
-            raise ValueError("image_size must be divisible by patch_size")
-        if config.transformer_layers < 4:
-            raise ValueError("transformer_layers must be at least 4 to collect four skip connections")
-        if len(config.decoder_features) != 4:
-            raise ValueError("decoder_features must contain exactly four feature sizes")
-
         decoder_scale = 2 ** len(config.decoder_features)
-        if config.patch_size < decoder_scale or config.patch_size % decoder_scale != 0:
-            raise ValueError(f"patch_size ({config.patch_size}) must be a multiple of 2 ** len(decoder_features) ({decoder_scale}); the decoder ladder already upsamples the token grid by {decoder_scale} and a smaller or indivisible patch would land the decoder off the input resolution")
-
         self.patch_embedding = PatchEmbedding(
             in_channels   = config.in_channels,
             embedding_dim = config.embedding_dim,

@@ -117,9 +117,6 @@ class SegFormerLite(nn.Module, OutputHeadsMixin):
 
         dims     = config.embedding_dims
         n_stages = len(dims)
-        if not (len(config.depths) == len(config.num_heads) == len(config.sr_ratios) == n_stages):
-            raise ValueError("embedding_dims, depths, num_heads, and sr_ratios must have the same length")
-
         kernel_sizes = [7] + [3] * (n_stages - 1)
         strides      = [4] + [2] * (n_stages - 1)
 

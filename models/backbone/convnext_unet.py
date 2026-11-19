@@ -30,9 +30,6 @@ class ConvNeXtUNet(nn.Module, OutputHeadsMixin):
             config = ConvNeXtUNetConfig()
         self.config = config
 
-        if len(config.features) == 0:
-            raise ValueError("features must contain at least one channel size")
-
         feature_sizes       = config.features
         n_stages            = len(feature_sizes)
         bottleneck_channels = feature_sizes[-1] * config.bottleneck_factor

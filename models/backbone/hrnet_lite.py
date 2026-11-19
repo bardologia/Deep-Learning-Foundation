@@ -73,9 +73,6 @@ class HRNetLite(nn.Module, OutputHeadsMixin):
             config = HRNetLiteConfig()
         self.config = config
 
-        if config.n_branches < 2:
-            raise ValueError("n_branches must be at least 2")
-
         base            = config.base_channels
         branch_channels = [base * (2 ** index) for index in range(config.n_branches)]
 

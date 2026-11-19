@@ -14,9 +14,6 @@ class UNetBackbone(nn.Module, OutputHeadsMixin):
         super().__init__()
         self.config = config
 
-        if len(config.features) == 0:
-            raise ValueError("features must contain at least one channel size")
-
         feature_sizes       = config.features
         bottleneck_channels = feature_sizes[-1] * config.bottleneck_factor
 

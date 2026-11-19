@@ -76,13 +76,6 @@ class NAFNet(nn.Module, OutputHeadsMixin):
         super().__init__()
         self.config = config if config is not None else NAFNetConfig()
 
-        if len(self.config.enc_blocks) != len(self.config.dec_blocks):
-            raise ValueError(f"enc_blocks ({self.config.enc_blocks}) and dec_blocks ({self.config.dec_blocks}) must have the same number of stages")
-        if len(self.config.enc_blocks) == 0:
-            raise ValueError("enc_blocks must contain at least one stage")
-        if (self.config.width * self.config.dw_expand) % 2 != 0 or (self.config.width * self.config.ffn_expand) % 2 != 0:
-            raise ValueError(f"width ({self.config.width}) times dw_expand ({self.config.dw_expand}) and ffn_expand ({self.config.ffn_expand}) must be even; SimpleGate splits channels in half")
-
         width = self.config.width
         self.intro = nn.Conv2d(self.config.in_channels, width, kernel_size=3, padding=1)
 

@@ -40,9 +40,6 @@ class FPNNet(nn.Module, OutputHeadsMixin):
             config = FPNNetConfig()
         self.config = config
 
-        if len(config.features) < 2:
-            raise ValueError("features must contain at least two channel sizes")
-
         feature_sizes    = config.features
         pyramid_channels = config.pyramid_channels
 

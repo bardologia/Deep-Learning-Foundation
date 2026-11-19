@@ -20,8 +20,6 @@ class WindowAttention(nn.Module):
         attention_dropout: float = 0.0,
     ):
         super().__init__()
-        if embedding_dim % num_heads != 0:
-            raise ValueError(f"embedding_dim ({embedding_dim}) must be divisible by num_heads ({num_heads})")
         self.window_size = window_size
         self.num_heads   = num_heads
         self.head_dim    = embedding_dim // num_heads
@@ -302,15 +300,6 @@ class SwinUNet(nn.Module, OutputHeadsMixin):
             config = SwinUNetConfig()
         self.config = config
 
-        if config.patch_size <= 0:
-            raise ValueError("patch_size must be a positive integer")
-        if config.window_size <= 0:
-            raise ValueError("window_size must be a positive integer")
-        if len(config.depths) == 0:
-            raise ValueError("depths must contain at least one stage")
-        if len(config.depths) != len(config.num_heads):
-            raise ValueError("depths and num_heads must have the same length")
-
         self.patch_embed = nn.Sequential(
             nn.Conv2d(
                 in_channels  = config.in_channels,
@@ -323,11 +312,6 @@ class SwinUNet(nn.Module, OutputHeadsMixin):
 
         num_stages = len(config.depths)
         dims       = [config.embedding_dim * (2 ** i) for i in range(num_stages)]
-        for stage_index, (dim, heads) in enumerate(zip(dims, config.num_heads)):
-            if dim % heads != 0:
-                raise ValueError(
-                    f"Stage {stage_index}: embedding dim ({dim}) must be divisible by num_heads ({heads})"
-                )
 
         total_depth = sum(config.depths)
         dpr         = [x.item() for x in torch.linspace(0, config.stochastic_depth_rate, total_depth)]

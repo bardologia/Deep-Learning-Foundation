@@ -58,9 +58,6 @@ class DeepLabV3Plus(nn.Module, OutputHeadsMixin):
             config = DeepLabV3PlusConfig()
         self.config = config
 
-        if len(config.features) < 2:
-            raise ValueError("features must contain at least two channel sizes")
-
         feature_sizes      = config.features
         aspp_channels      = feature_sizes[-1] // 2
         low_level_channels = max(feature_sizes[0] // 2, 16)

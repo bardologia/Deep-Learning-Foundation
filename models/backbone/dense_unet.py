@@ -70,9 +70,6 @@ class DenseUNet(nn.Module, OutputHeadsMixin):
             config = DenseUNetConfig()
         self.config = config
 
-        if len(config.block_layers) == 0:
-            raise ValueError("block_layers must contain at least one entry")
-
         growth        = config.growth_rate
         stem_channels = 3 * growth
 

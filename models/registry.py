@@ -14,8 +14,6 @@ class RegistryFactory:
 
     def resolve(self, name: str) -> str:
         key = self.normalize(name)
-        if key not in self.model_registry:
-            raise ValueError(f"Unknown {self.kind} '{name}'. Available: {list(self.model_registry.keys())}")
         return key
 
     def resolve_config(self, key: str, config, overrides: dict):
@@ -23,8 +21,6 @@ class RegistryFactory:
             return self.config_registry[key](**overrides)
 
         for attribute, value in overrides.items():
-            if not hasattr(config, attribute):
-                raise AttributeError(f"Unknown {self.kind} config override '{attribute}' for {type(config).__name__}")
             setattr(config, attribute, value)
         return config
 

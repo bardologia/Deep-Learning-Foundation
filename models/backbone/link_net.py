@@ -114,13 +114,6 @@ class LinkNet(nn.Module, OutputHeadsMixin):
             config = LinkNetConfig()
         self.config = config
 
-        if len(config.features) == 0:
-            raise ValueError("features must contain at least one channel size")
-        if config.initial_kernel_size <= 0:
-            raise ValueError("initial_kernel_size must be a positive integer")
-        if config.decoder_bottleneck_ratio <= 0:
-            raise ValueError("decoder_bottleneck_ratio must be a positive integer")
-
         feature_sizes = config.features
         kernel_size   = config.initial_kernel_size
         padding       = kernel_size // 2

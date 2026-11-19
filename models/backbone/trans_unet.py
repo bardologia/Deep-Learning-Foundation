@@ -16,11 +16,6 @@ class TransUNet(nn.Module, OutputHeadsMixin):
             config = TransUNetConfig()
         self.config = config
 
-        if len(config.cnn_features) == 0:
-            raise ValueError("cnn_features must contain at least one channel size")
-        if config.patch_size <= 0:
-            raise ValueError("patch_size must be a positive integer")
-
         cnn_features        = config.cnn_features
         bottleneck_channels = cnn_features[-1] * config.bottleneck_factor
 
@@ -73,11 +68,6 @@ class TransUNet(nn.Module, OutputHeadsMixin):
 
         cnn_downsample  = 2 ** len(cnn_features)
         bottleneck_size = config.image_size // cnn_downsample
-        if bottleneck_size < 1:
-            raise ValueError(f"image_size ({config.image_size}) is too small for {len(cnn_features)} CNN downsampling stages (downsample factor {cnn_downsample})")
-        if config.patch_size > bottleneck_size:
-            raise ValueError(f"patch_size ({config.patch_size}) cannot exceed bottleneck feature size ({bottleneck_size} = {config.image_size} // {cnn_downsample})")
-
         self.expected_grid_size = bottleneck_size // config.patch_size
         num_patches             = self.expected_grid_size ** 2
         self.positional_embedding = nn.Parameter(

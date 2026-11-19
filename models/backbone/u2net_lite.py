@@ -13,8 +13,6 @@ class RSU(nn.Module):
 
     def __init__(self, height: int, input_channels: int, mid_channels: int, output_channels: int, dropout: float, activation: str, normalization: str, bias: bool):
         super().__init__()
-        if height < 2:
-            raise ValueError(f"RSU height must be at least 2; got {height}")
         self.height = height
 
         self.conv_in = ConvNormAct(input_channels, output_channels, dilation=1, activation=activation, normalization=normalization, bias=bias)
@@ -101,11 +99,6 @@ class U2NetLite(nn.Module, OutputHeadsMixin):
         if config is None:
             config = U2NetLiteConfig()
         self.config = config
-
-        if len(config.features) != 4:
-            raise ValueError(f"features must contain exactly four channel sizes; got {len(config.features)}")
-        if len(config.rsu_heights) != 3:
-            raise ValueError(f"rsu_heights must contain exactly three nested-U depths, one per encoder and mirrored decoder stage; got {len(config.rsu_heights)}")
 
         f0, f1, f2, f3 = config.features
         heights        = config.rsu_heights

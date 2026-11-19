@@ -76,11 +76,6 @@ class AttentionUNet(nn.Module, OutputHeadsMixin):
             config = AttentionUNetConfig()
         self.config = config
 
-        if len(config.features) == 0:
-            raise ValueError("features must contain at least one channel size")
-        if config.attention_intermediate_ratio <= 0:
-            raise ValueError("attention_intermediate_ratio must be greater than 0")
-
         feature_sizes       = config.features
         bottleneck_channels = feature_sizes[-1] * config.bottleneck_factor
 

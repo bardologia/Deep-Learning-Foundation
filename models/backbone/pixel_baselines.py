@@ -14,9 +14,6 @@ class PixelMLPNet(nn.Module, OutputHeadsMixin):
         super().__init__()
         self.config = config if config is not None else PixelMLPNetConfig()
 
-        if len(self.config.features) == 0:
-            raise ValueError("features must contain at least one channel size")
-
         layers   = []
         channels = self.config.in_channels
         for feature_size in self.config.features:
@@ -46,13 +43,7 @@ class LocalCNN(nn.Module, OutputHeadsMixin):
         super().__init__()
         self.config = config if config is not None else LocalCNNConfig()
 
-        if len(self.config.features) == 0:
-            raise ValueError("features must contain at least one channel size")
-
         kernels = self.config.block_kernels if self.config.block_kernels is not None else [3] * len(self.config.features)
-        if len(kernels) != len(self.config.features):
-            raise ValueError(f"block_kernels has {len(kernels)} entries but features has {len(self.config.features)}; every block needs exactly one kernel size")
-
         blocks   = []
         channels = self.config.in_channels
         for feature_size, kernel_size in zip(self.config.features, kernels):

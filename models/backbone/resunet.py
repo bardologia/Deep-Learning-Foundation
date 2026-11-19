@@ -15,11 +15,6 @@ class ResUNetBackbone(nn.Module, OutputHeadsMixin):
         self.config          = config
         self.downsample_mode = downsample
 
-        if len(config.features) == 0:
-            raise ValueError("features must contain at least one channel size")
-        if downsample not in ("stride", "maxpool"):
-            raise ValueError(f"Unknown downsample mode '{downsample}'. Available: stride, maxpool")
-
         feature_sizes       = config.features
         bottleneck_channels = feature_sizes[-1] * config.bottleneck_factor
 
