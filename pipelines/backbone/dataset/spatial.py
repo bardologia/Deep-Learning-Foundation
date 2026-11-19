@@ -1,8 +1,3 @@
-"""Spatial handling of the backbone dataset: crop loading and patch grids.
-
-Cropper reads the per-split slices out of the memory-mapped preprocessing artifacts,
-GridInfo describes the resulting patch grid and Patcher cuts padded patches from it.
-"""
 
 from __future__ import annotations
 
@@ -20,25 +15,8 @@ from pipelines.shared.dataset.dataset_spatial import Layout
 
 
 class Cropper:
-    """Loads the input stack, targets and optional aux field of one crop region.
-
-    Attributes:
-        layout            : Layout resolving the preprocessing artifact paths and the global crop.
-        split_regions     : Crop regions of the train, validation and test splits.
-        secondary_indices : Indices of the selected secondary channels, or None for all channels.
-        secondary_labels  : Labels of the selected secondary channels, or None for all channels.
-    """
 
     def __init__(self, layout: Layout, split_regions: SplitRegions, logger: Logger, secondary_labels=None, input_config=None) -> None:
-        """Resolves the secondary selection and validates the split regions against the artifacts.
-
-        Args:
-            layout           : Layout of the preprocessing run to crop from.
-            split_regions    : Crop regions of the splits, checked to sit inside the global crop.
-            logger           : Logger receiving the crop tables.
-            secondary_labels : Labels of the secondary channels to keep, or None to keep all.
-            input_config     : Input configuration deciding which artifact groups are read; when None, every group is treated as enabled.
-        """
         self.layout            = layout
         self.split_regions     = split_regions
         self.logger            = logger
@@ -54,18 +32,12 @@ class Cropper:
         self.logger.metrics_table(split_regions.region_rows(), ["Split", "Crop", "Rows", "Cols"])
 
     def _resolve_labels(self, secondary_labels) -> list | None:
-        """Returns the pass labels of the selected secondaries, or None when all are kept."""
         if self.secondary_indices is None:
             return None
         secondaries = self.layout.channel_labels[1:]
         return [secondaries[index] for index in self.secondary_indices]
 
     def _validate_parameters_extent(self) -> None:
-        """Checks the parameter artifact covers exactly the preprocessing global crop.
-
-        Raises:
-            ValueError : If the parameter array's spatial shape differs from the global crop extent, meaning the extraction belongs to another crop.
-        """
         parameters_path = self.layout.artifact_path("parameters")
         parameters      = np.load(str(parameters_path), mmap_mode="r", allow_pickle=False)
         expected        = (self.layout.global_crop.row_size, self.layout.global_crop.col_size)
@@ -74,42 +46,18 @@ class Cropper:
             raise ValueError(f"Parameters artifact {parameters_path} has spatial shape {tuple(parameters.shape[-2:])} but the preprocessing global crop is {expected} (row, col); the parameter extraction does not belong to this dataset crop.")
 
     def _to_local_slices(self, region: CropRegion) -> Tuple[slice, slice]:
-        """Returns the row and column slices of a region inside the global crop arrays."""
         return region.local_slices(self.layout.global_crop)
 
     def _select_channels(self, array: np.ndarray, row_slice: slice, col_slice: slice) -> np.ndarray:
-        """Crops an artifact and keeps only the selected secondary channels.
-
-        Args:
-            array    : Artifact of shape (channels, row, col) over the global crop.
-            row_slice : Row slice of the region.
-            col_slice : Range slice of the region.
-
-        Returns:
-            The cropped array of shape (selected_passes, region_row, region_range).
-        """
         if self.secondary_indices is None:
             return array[..., row_slice, col_slice]
 
         return np.stack([array[index, row_slice, col_slice] for index in self.secondary_indices])
 
     def _group_enabled(self, flag: str) -> bool:
-        """Returns whether an input group is enabled, treating a missing config as all-enabled."""
         return getattr(self.input_config, flag) if self.input_config is not None else True
 
     def _group_view(self, artifact: str, flag: str, row_slice: slice, col_slice: slice) -> Optional[np.ndarray]:
-        """Memory-maps one artifact group and returns its cropped, chan-selected view.
-
-        Args:
-            artifact : Artifact name in the preprocessing layout.
-            flag     : Name of the input-config flag gating this group.
-            row_slice : Row slice of the region.
-            col_slice : Range slice of the region.
-
-        Returns:
-            The cropped array of shape (selected_passes, region_row, region_range), or
-            None when the group is disabled.
-        """
         if not self._group_enabled(flag):
             return None
 
@@ -118,18 +66,6 @@ class Cropper:
         return self._select_channels(array, row_slice, col_slice)
 
     def _stack_inputs(self, row_slice: slice, col_slice: slice) -> Tuple[np.ndarray, int, int, int]:
-        """Assembles the complex input stack of one region from the enabled groups.
-
-        Args:
-            row_slice : Row slice of the region.
-            col_slice : Range slice of the region.
-
-        Returns:
-            A tuple of the complex stack of shape (layers, region_row, region_col),
-            ordered primary, secondaries, derived, and the number of primary,
-            secondary and derived layers it holds. The stack is empty, with zero
-            layers, when no complex group is enabled, as an aux-only input selects.
-        """
         n_primary = 1 if self._group_enabled("use_primary") else 0
         if n_primary:
             primary      = np.load(str(self.layout.artifact_path("primary")), mmap_mode="r", allow_pickle=False)
@@ -166,17 +102,6 @@ class Cropper:
         return inputs_split, n_primary, n_secondaries, n_derived
 
     def _load_targets(self, row_slice: slice, col_slice: slice) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-        """Loads the ground-truth parameters and, when enabled, the Aux of one region.
-
-        Args:
-            row_slice : Row slice of the region.
-            col_slice : Range slice of the region.
-
-        Returns:
-            A pair of the parameter array of shape (3 * gaussians, region_row,
-            region_range) and the float32 Aux of shape (region_row, region_range) in
-            metres, or None when the Aux channel is disabled.
-        """
         parameters       = np.load(str(self.layout.artifact_path("parameters")), mmap_mode="r", allow_pickle=False)
         parameters_split = np.ascontiguousarray(parameters[..., row_slice, col_slice])
 
@@ -189,33 +114,10 @@ class Cropper:
         return parameters_split, aux_split
 
     def _load_cube(self, row_slice: slice, col_slice: slice) -> np.ndarray:
-        """Loads the magnitude of the reference cube over one region.
-
-        Args:
-            row_slice : Row slice of the region.
-            col_slice : Column slice of the region.
-
-        Returns:
-            Float32 array of shape (z_bins, region_rows, region_cols).
-        """
         cube = np.load(str(self.layout.artifact_path("cube_full")), mmap_mode="r", allow_pickle=False)
         return np.ascontiguousarray(np.abs(cube[:, row_slice, col_slice]).astype(np.float32))
 
     def _log_crop(self, region: CropRegion, label: Optional[str], read_seconds: float, inputs_split: np.ndarray, aux_split: Optional[np.ndarray], parameters_split: np.ndarray, cube_split: Optional[np.ndarray], n_primary: int, n_secondaries: int, n_derived: int) -> None:
-        """Reports the region, read time, shapes and memory footprint of the loaded crop.
-
-        Args:
-            region           : Crop region that was read, in preprocessing global coordinates.
-            label            : Split and region index quoted in the section title, such as "train 1/2", or None for an unlabelled crop.
-            read_seconds     : Wall time the reads out of the memory-mapped artifacts took, in seconds.
-            inputs_split     : Assembled complex stack of the region.
-            aux_split        : Loaded aux field, or None when disabled.
-            parameters_split : Loaded ground-truth parameters of the region.
-            cube_split       : Loaded cube magnitude, or None when not requested.
-            n_primary        : Number of primary layers in the stack.
-            n_secondaries    : Number of secondary layers in the stack.
-            n_derived        : Number of derived layers in the stack.
-        """
         self.logger.section("[Crop Loaded]" if label is None else f"[Crop Loaded: {label}]")
         self.logger.kv_table({
             "Region"           : f"row {region.row_start}:{region.row_end}, col {region.col_start}:{region.col_end}",
@@ -231,18 +133,6 @@ class Cropper:
         })
 
     def load_split(self, region: CropRegion, load_cube: bool = False, label: Optional[str] = None) -> dict[str, np.ndarray]:
-        """Loads every array a dataset part needs for one crop region.
-
-        Args:
-            region    : Crop region in preprocessing global coordinates.
-            load_cube : Whether to also load the reference cube magnitude.
-            label     : Split and region index quoted in the [Crop Loaded] title, such as "train 1/2", or None for an unlabelled crop.
-
-        Returns:
-            Dictionary with the complex "inputs" stack, the "aux" (or None), the
-            "parameters", the "cube" (or None), the layer counts "n_primary",
-            "n_secondaries" and "n_derived", and the "secondary_labels".
-        """
         row_slice, col_slice = self._to_local_slices(region)
         start                = time.perf_counter()
 
@@ -266,20 +156,6 @@ class Cropper:
 
 @dataclass
 class GridInfo:
-    """Geometry of the patch grid laid over one crop region.
-
-    Attributes:
-        n_v                   : Number of patch rows along row.
-        n_h                   : Number of patch columns along range.
-        pad_top               : Padding added above the region, in pixels.
-        pad_bot               : Padding added below the region, in pixels.
-        pad_left              : Padding added left of the region, in pixels.
-        pad_right             : Padding added right of the region, in pixels.
-        patch_size            : Patch extent as (rows, cols) in pixels.
-        stride                : Grid step as (rows, cols) in pixels.
-        spatial_size          : Region extent as (rows, cols) in pixels, before padding.
-        use_symmetric_padding : Whether border patches are mirror-padded instead of zero-padded.
-    """
 
     n_v                   : int
     n_h                   : int
@@ -294,27 +170,22 @@ class GridInfo:
 
     @property
     def padding_vertical(self) -> int:
-        """Returns the total row padding in pixels."""
         return self.pad_top + self.pad_bot
 
     @property
     def padding_horizontal(self) -> int:
-        """Returns the total range padding in pixels."""
         return self.pad_left + self.pad_right
 
     @property
     def number_of_patches(self) -> int:
-        """Returns the number of patches on the grid."""
         return self.n_v * self.n_h
 
     @property
     def padded_size(self) -> Tuple[int, int]:
-        """Returns the (rows, cols) extent of the region once padded."""
         H, W = self.spatial_size
         return (H + self.padding_vertical, W + self.padding_horizontal)
 
     def as_dict(self) -> dict:
-        """Returns the grid geometry as a JSON-ready dictionary, including the patch count."""
         return {
             "n_v"                   : self.n_v,
             "n_h"                   : self.n_h,
@@ -331,38 +202,13 @@ class GridInfo:
 
 
 class Patcher:
-    """Cuts padded patches out of a region array following a precomputed grid.
-
-    Attributes:
-        grid : Geometry of the patch grid this patcher realizes.
-    """
 
     def __init__(self, grid: GridInfo, patch_coords: list) -> None:
-        """Stores the grid geometry and the per-patch slice and padding specification.
-
-        Args:
-            grid         : Geometry of the patch grid.
-            patch_coords : One entry per patch, each a tuple of the clipped row start and stop, the clipped range start and stop, and either None or a (top, bottom, left, right, mode) padding specification.
-        """
         self.grid          = grid
         self._patch_coords = patch_coords
 
     @classmethod
     def build(cls, spatial_size : Tuple[int, int], patch_size : Tuple[int, int], stride : Tuple[int, int], use_symmetric_padding : bool = True) -> "Patcher":
-        """Lays a strided patch grid over a region and precomputes every patch slice.
-
-        The grid covers the whole region; the leftover extent is padded symmetrically
-        around the region so no pixel is dropped at the borders.
-
-        Args:
-            spatial_size          : Region extent as (rows, cols) in pixels.
-            patch_size            : Patch extent as (rows, cols) in pixels.
-            stride                : Grid step as (rows, cols) in pixels.
-            use_symmetric_padding : Whether border patches are mirror-padded rather than zero-padded.
-
-        Returns:
-            A Patcher holding the resulting GridInfo and patch coordinates.
-        """
         ph, pw = patch_size
         sv, sh = stride
         H, W   = spatial_size
@@ -418,16 +264,6 @@ class Patcher:
         return cls(grid, patch_coords)
 
     def extract(self, array: np.ndarray, idx: int) -> np.ndarray:
-        """Cuts one patch out of a region array, padding it at the borders when needed.
-
-        Args:
-            array : Region array whose last two axes are (rows, cols).
-            idx   : Patch index on the grid.
-
-        Returns:
-            A contiguous array with the same leading axes and spatial shape equal to the
-            configured patch size.
-        """
         v0c, v1c, h0c, h1c, pw_spec = self._patch_coords[idx]
         sub                         = np.ascontiguousarray(array[..., v0c:v1c, h0c:h1c])
 

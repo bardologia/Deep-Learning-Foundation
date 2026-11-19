@@ -1,9 +1,3 @@
-"""Attribution of a backbone's predictions to its input channels and tracks.
-
-Combines a cheap gradient attribution on probe windows with a causal occlusion test
-that zeroes single channels or whole tracks, compares the two rankings by Spearman
-correlation and writes the figures and markdown report.
-"""
 
 from __future__ import annotations
 
@@ -24,22 +18,9 @@ from tools.reporting.plotting                        import PlotBase
 
 
 class ChannelLabeler:
-    """Derives a human-readable label for every input channel of a run."""
 
     @staticmethod
     def build(run) -> list[str]:
-        """Builds the per-channel labels in the order the input tensor stacks them.
-
-        Args:
-            run : Loaded run exposing the dataset input configuration, the secondary labels and the input channel count.
-
-        Returns:
-            One label per input channel, naming the primary, each secondary track, each
-            derived channel and the aux field.
-
-        Raises:
-            ValueError : If the derived label count differs from the run's channel count.
-        """
         input_config = run.dataset.input_config
         labels       = []
 
@@ -67,21 +48,9 @@ class ChannelLabeler:
 
 
 class ChannelGroups:
-    """Maps the input channels onto the primary, secondaries, derived channels and aux field groups."""
 
     @staticmethod
     def build(run) -> dict[str, list[int]]:
-        """Returns the channel indices of each enabled input group.
-
-        Args:
-            run : Loaded run exposing the dataset input configuration and the secondary count.
-
-        Returns:
-            Channel indices keyed by group name, in stacking order.
-
-        Raises:
-            ValueError : If the input configuration enables no group at all.
-        """
         input_config = run.dataset.input_config
         offset       = 0
         groups       = {}
@@ -112,18 +81,6 @@ class ChannelGroups:
 
     @staticmethod
     def of_channels(groups: dict[str, list[int]], n_channels: int) -> list[str]:
-        """Inverts the group map into a per-channel group name.
-
-        Args:
-            groups     : Channel indices keyed by group name.
-            n_channels : Total number of input channels that must be covered.
-
-        Returns:
-            The group name of each channel, in channel order.
-
-        Raises:
-            ValueError : If any channel belongs to no group.
-        """
         by_channel = {}
         for group, channels in groups.items():
             for channel in channels:
@@ -137,24 +94,9 @@ class ChannelGroups:
 
 
 class TrackChannels:
-    """Groups the input channels by the acquisition track they come from."""
 
     @staticmethod
     def build(run) -> list[list[int]]:
-        """Returns the channel indices contributed by each secondary track.
-
-        A track owns both its secondary channels and its derived channels, so
-        occluding the returned indices removes that acquisition entirely.
-
-        Args:
-            run : Loaded run exposing the dataset input configuration and the secondary count.
-
-        Returns:
-            One list of channel indices per secondary track.
-
-        Raises:
-            ValueError : If neither secondaries nor derived channels are enabled, leaving no track-owned channel to drop.
-        """
         input_config = run.dataset.input_config
         offset       = 0
 
@@ -183,47 +125,14 @@ class TrackChannels:
 
 
 class GradientAttribution:
-    """Attributes the model output to its input channels through input gradients.
-
-    Attributes:
-        model  : Model to differentiate.
-        window : Side of the probe windows, in pixels; the gradient targets the centre pixel.
-    """
 
     FAMILIES = ("amp", "mu", "sigma")
 
     def __init__(self, model, window: int) -> None:
-        """Stores the model and the probe-window size.
-
-        Args:
-            model  : Model whose input gradients are taken.
-            window : Side of the square probe windows in pixels.
-        """
         self.model  = model
         self.window = int(window)
 
     def channel_importance(self, windows: torch.Tensor) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, dict[str, int]]]:
-        """Measures the share of output sensitivity carried by each input channel.
-
-        For every probe window and every output family, the absolute gradient of the
-        summed centre-pixel prediction is accumulated per channel and normalized into a
-        share, then averaged over the windows. A probe whose gradient mass is zero
-        carries no share and is left out of that family's mean; the kept probes are
-        counted.
-
-        Args:
-            windows : Probe windows of shape (probes, channels, window, window) in normalized input units.
-
-        Returns:
-            A pair of the attribution and the probe counts. Per output family ("amp",
-            "mu", "sigma"), the attribution holds the mean gradient "share", its
-            "share_std" across probes and the "grad_x_input" share, each an array of
-            shape (channels,), and the counts hold how many probes entered the "share"
-            and the "grad_x_input" mean.
-
-        Raises:
-            ValueError : If a gradient is non-finite, naming the probe and family, or if the gradient vanishes for every output family, meaning the output does not depend on the input.
-        """
         half       = self.window // 2
         device     = ModelDevice.of(self.model)
         n_channels = windows.shape[1]
@@ -273,18 +182,6 @@ class GradientAttribution:
 
     @classmethod
     def combined(cls, importance: dict[str, dict[str, np.ndarray]], key: str) -> np.ndarray:
-        """Averages one attribution quantity across the output families.
-
-        Args:
-            importance : Per-family attribution as returned by channel_importance.
-            key        : Quantity to combine, "share" or "grad_x_input".
-
-        Returns:
-            Array of shape (channels,) averaged over the families that carry finite values.
-
-        Raises:
-            ValueError : If no family carries a finite value for that quantity.
-        """
         stacked = np.stack([importance[family][key] for family in cls.FAMILIES])
         live    = ~np.all(np.isnan(stacked), axis=1)
 
@@ -295,41 +192,13 @@ class GradientAttribution:
 
 
 class ChannelOcclusion:
-    """Measures how much the predicted profile shifts when input channels are zeroed.
-
-    Attributes:
-        model    : Model being evaluated.
-        renderer : Renderer turning predicted Gaussian parameters into height profiles.
-        on_pass  : Zero-argument callable invoked after every occluded forward pass, driving the progress bar.
-    """
 
     def __init__(self, model, renderer: PredictionCurves, on_pass) -> None:
-        """Stores the model, the curve renderer and the progress callback.
-
-        Args:
-            model    : Model to evaluate.
-            renderer : Renderer producing the profiles the shift is measured on.
-            on_pass  : Zero-argument callable invoked after every occluded forward pass.
-        """
         self.model    = model
         self.renderer = renderer
         self.on_pass  = on_pass
 
     def deltas(self, loader, max_batches: int, channel_sets: list[list[int]]) -> np.ndarray:
-        """Returns the mean curve MSE increase caused by zeroing each channel set.
-
-        Args:
-            loader       : Dataloader supplying the evaluation batches.
-            max_batches  : Number of batches to average over.
-            channel_sets : Channel index sets to zero, one occlusion per set.
-
-        Returns:
-            Array of shape (len(channel_sets),) holding the mean squared profile
-            difference against the unoccluded prediction.
-
-        Raises:
-            ValueError : If the loader yields no batch within the budget.
-        """
         totals = np.zeros(len(channel_sets), dtype=np.float64)
         count  = 0
 
@@ -357,7 +226,6 @@ class ChannelOcclusion:
 
 
 class InputAttributionPlots(PlotBase):
-    """Figures of the channel and track attribution, coloured by input group."""
 
     GROUP_COLORS = {
         "primary"     : PlotBase.OKABE_ITO[0],
@@ -367,21 +235,6 @@ class InputAttributionPlots(PlotBase):
     }
 
     def channel_bars(self, values: np.ndarray, stds: np.ndarray | None, labels: list[str], channel_groups: list[str], xlabel: str, title: str, path: Path, percent: bool = True) -> Path:
-        """Draws a sorted horizontal bar chart of a per-channel attribution quantity.
-
-        Args:
-            values         : Attribution value of each channel, shape (channels,); non-finite entries are drawn as zero and annotated "n/a".
-            stds           : Matching spread of shape (channels,) drawn as error bars, or None.
-            labels         : Channel labels, in channel order.
-            channel_groups : Group name of each channel, driving the bar colour.
-            xlabel         : Axis label naming the quantity and its unit.
-            title          : Figure title.
-            path           : Output path of the figure.
-            percent        : Whether the values are shares to be shown as percentages.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         finite = np.where(np.isfinite(values), values, 0.0)
@@ -413,16 +266,6 @@ class InputAttributionPlots(PlotBase):
         return self._save(fig, path)
 
     def track_bars(self, values: np.ndarray, track_labels: list[str], path: Path) -> Path:
-        """Draws the curve MSE increase caused by occluding each whole track.
-
-        Args:
-            values       : Occlusion delta of each track, shape (tracks,).
-            track_labels : Track labels, in track order.
-            path         : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         order = np.argsort(values)
@@ -445,18 +288,6 @@ class InputAttributionPlots(PlotBase):
         return self._save(fig, path)
 
     def agreement_scatter(self, gradient: np.ndarray, occlusion: np.ndarray, labels: list[str], rho: float, path: Path) -> Path:
-        """Scatters the gradient channel ranking against the occlusion ranking.
-
-        Args:
-            gradient  : Combined gradient attribution of each channel, shape (channels,).
-            occlusion : Occlusion delta of each channel, shape (channels,).
-            labels    : Channel labels, in channel order.
-            rho       : Spearman correlation between the two rankings, shown in the title.
-            path      : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         grad_rank = RankCorrelation.ranks(gradient)
@@ -480,25 +311,11 @@ class InputAttributionPlots(PlotBase):
 
 
 class InputAttributionRun(AnalysisRun):
-    """Runs the gradient and occlusion attribution on a single training run."""
 
     SUMMARY_FILENAME = "input_attribution.json"
     REPORT_FILENAME  = "input_attribution.md"
 
     def _gradient_importance(self, run) -> tuple[dict[str, dict[str, np.ndarray]], dict]:
-        """Assembles the probe windows of the split and runs the gradient attribution on them.
-
-        Families that left probes out of their share for a zero gradient are warned
-        about once each.
-
-        Args:
-            run : Loaded run bundling the model and the dataset.
-
-        Returns:
-            A pair of the per-family attribution, as returned by
-            GradientAttribution.channel_importance, and the probe record holding the
-            total "n_probes" and the per-family "kept" counts.
-        """
         probes  = ProbeWindows(run, self.config.window)
         centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
@@ -511,28 +328,11 @@ class InputAttributionRun(AnalysisRun):
         return importance, {"n_probes": len(centers), "kept": kept}
 
     def _warn_dropped_probes(self, kept: dict[str, dict[str, int]], n_probes: int) -> None:
-        """Warns once per output family whose share or gradient-times-input mean left probes out for a zero gradient.
-
-        Args:
-            kept     : Per family, the probes kept in the "share" and the "grad_x_input" mean.
-            n_probes : Number of probe windows attributed.
-        """
         for family, counts in kept.items():
             if counts["share"] < n_probes or counts["grad_x_input"] < n_probes:
                 self.logger.warning(f"{self.run_dir.name}: gradient attribution of {family}: {n_probes - counts['share']}/{n_probes} probes had a zero gradient (share over {counts['share']}, gradient x input over {counts['grad_x_input']} probes)")
 
     def _occlusion(self, run, per_track: list[list[int]] | None) -> tuple[np.ndarray, np.ndarray | None] | tuple[None, None]:
-        """Runs the single-channel and whole-track occlusion tests when enabled.
-
-        Args:
-            run       : Loaded run bundling the model and the dataloader.
-            per_track : Channel indices of each track, or None when no track owns channels.
-
-        Returns:
-            A pair of the per-channel deltas of shape (channels,) and the per-track deltas
-            of shape (tracks,), the latter None when no track set was given. Both are None
-            when occlusion is disabled.
-        """
         if not self.config.occlude:
             return None, None
 
@@ -555,20 +355,6 @@ class InputAttributionRun(AnalysisRun):
         return channel_deltas, track_deltas
 
     def _render_figures(self, labels, groups_by_channel, importance, occlusion, track_deltas, track_labels, spearman) -> dict[str, Path]:
-        """Renders the per-family, gradient-times-input, occlusion, agreement and track figures.
-
-        Args:
-            labels            : Channel labels, in channel order.
-            groups_by_channel : Group name of each channel.
-            importance        : Per-family gradient attribution.
-            occlusion         : Per-channel occlusion deltas, or None when occlusion is disabled.
-            track_deltas      : Per-track occlusion deltas, or None.
-            track_labels      : Track labels, in track order.
-            spearman          : Rank correlation between gradient and occlusion, or None.
-
-        Returns:
-            Figure paths keyed by figure name.
-        """
         plots   = InputAttributionPlots()
         figures = {}
 
@@ -604,23 +390,6 @@ class InputAttributionRun(AnalysisRun):
         return figures
 
     def _write_report(self, run, labels, groups_by_channel, importance, probes, occlusion, track_deltas, track_labels, spearman, figures) -> Path:
-        """Writes the markdown report of the attribution.
-
-        Args:
-            run               : Loaded run, used for the backbone name in the title.
-            labels            : Channel labels, in channel order.
-            groups_by_channel : Group name of each channel.
-            importance        : Per-family gradient attribution.
-            probes            : Probe record with the total probe count and the probes each family kept.
-            occlusion         : Per-channel occlusion deltas, or None.
-            track_deltas      : Per-track occlusion deltas, or None.
-            track_labels      : Track labels, in track order.
-            spearman          : Rank correlation between gradient and occlusion, or None.
-            figures           : Figure paths keyed by figure name.
-
-        Returns:
-            Path of the written report.
-        """
         kept = ", ".join(f"{family} {probes['kept'][family]['share']}" for family in GradientAttribution.FAMILIES)
 
         doc = MarkdownDoc(title=f"Input attribution: {run.backbone_name}")
@@ -669,16 +438,6 @@ class InputAttributionRun(AnalysisRun):
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
     def _analyse(self, run) -> AnalysisOutcome:
-        """Attributes this run's predictions to its input channels and tracks.
-
-        Args:
-            run : Loaded run bundling the model, the dataloader and the dataset.
-
-        Returns:
-            The outcome whose payload holds the backbone name, the split, the channel
-            labels and groups, the per-family gradient attribution, the occlusion deltas
-            per channel and per secondary, and the gradient-occlusion Spearman correlation.
-        """
         labels             = ChannelLabeler.build(run)
         groups             = ChannelGroups.build(run)
         groups_by_channel  = ChannelGroups.of_channels(groups, run.in_channels)
@@ -717,7 +476,6 @@ class InputAttributionRun(AnalysisRun):
 
 
 class InputAttributionBatch(RunBatch):
-    """Runs the input attribution over every run matching the configured filter."""
 
     SELECTOR_ACTION = "attribute"
     SECTION_TITLE   = "Input attribution"

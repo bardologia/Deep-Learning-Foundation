@@ -1,9 +1,3 @@
-"""Staged orchestration of a k-fold cross-validation experiment.
-
-Sequences fold training, per-split inference, and the cross-fold report, and
-supports running only the prepare or compare stage when the units themselves
-are dispatched to a cluster.
-"""
 
 from __future__ import annotations
 
@@ -16,40 +10,17 @@ from pipelines.shared.orchestration.staged_pipeline import StagedPipeline
 
 
 class CrossValidationPipeline(StagedPipeline):
-    """Runs the training, inference, and reporting stages of cross-validation.
-
-    Attributes:
-        factory   : Builds the fold planner and per-fold configs.
-        inherited : Warmup curriculum fields the entry copied from typed complete-stage overrides, mapped to the copied values.
-    """
 
     LOGGER_NAME = "cross_validation_pipeline"
     STAGES      = ("full", "prepare", "compare")
 
     def __init__(self, config: CrossValidationConfig, entry_script: Path, resumed=None, inherited: dict | None = None) -> None:
-        """Binds the pipeline to its configuration and entry script.
-
-        Args:
-            config       : Cross-validation configuration.
-            entry_script : Entry point the stages re-invoke for each unit.
-            resumed      : Resumed-run description logged when the pipeline starts, or None for a fresh run.
-            inherited    : Warmup curriculum fields the entry's curriculum inheritance copied from the complete stage, mapped to their values, or None when it copied none.
-        """
         super().__init__(config, entry_script, resumed=resumed)
         self.factory   = FoldConfigFactory(config)
         self.inherited = dict(inherited or {})
 
     @classmethod
     def validate_sweep(cls, config: CrossValidationConfig) -> None:
-        """Checks the training family, stage, and inference splits are valid.
-
-        Args:
-            config : Cross-validation configuration to validate.
-
-        Raises:
-            ValueError : If the training family is unsupported.
-            SystemExit : If the stage is unknown or a requested inference split has no fold-specific region.
-        """
         FoldFamily.validate(config.training_type)
 
         if config.stage not in cls.STAGES:
@@ -60,25 +31,16 @@ class CrossValidationPipeline(StagedPipeline):
             raise SystemExit(f"unknown inference split(s) {unknown}; each fold only holds an inference region for {', '.join(FoldPlanner.INFERENCE_SPLITS)}")
 
     def _validate_sweep(self) -> None:
-        """Validates this pipeline's own configuration."""
         self._begin_stage("validation")
         self.validate_sweep(self.config)
 
     def _log_inherited(self) -> None:
-        """Logs the warmup curriculum fields copied from typed complete-stage overrides, which the configuration records without saying where they came from."""
         if not self.inherited:
             return
 
         self.logger.kv_table({f"curriculum.warmup.{name}": repr(value) for name, value in self.inherited.items()}, title=f"{len(self.inherited)} warmup field(s) inherited from the complete stage")
 
     def _log_unit_status(self) -> None:
-        """Logs what every fold x seed unit already holds on disk, and which directories no unit claims.
-
-        A full run gets the same table from its training stage; this is the
-        prepare stage's version, so a resume can be inspected before anything
-        is launched. The stage itself warns about the run directories no unit
-        claims while it reconciles.
-        """
         self._begin_stage("prepare")
 
         stage = FoldTrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, logger=self.logger)
@@ -86,11 +48,6 @@ class CrossValidationPipeline(StagedPipeline):
         stage.status_report().log(self.logger, "Unit status")
 
     def _run_training(self) -> list[dict]:
-        """Trains every fold x seed unit and records the stage status.
-
-        Returns:
-            One result dictionary per unit, each carrying a `status` key.
-        """
         self._begin_stage("training")
 
         stage   = FoldTrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, logger=self.logger)
@@ -101,11 +58,6 @@ class CrossValidationPipeline(StagedPipeline):
         return results
 
     def _run_inference(self) -> list[dict]:
-        """Runs inference on every unit and split, or skips when none are configured.
-
-        Returns:
-            One result dictionary per unit, empty when inference is skipped.
-        """
         self._begin_stage("inference")
 
         if not self.config.runs_inference():
@@ -121,14 +73,6 @@ class CrossValidationPipeline(StagedPipeline):
         return results
 
     def _run_reports(self, planner: FoldPlanner) -> Path:
-        """Collects the fold runs and writes the cross-fold reports.
-
-        Args:
-            planner : Planner describing the fold blocks, embedded in the report.
-
-        Returns:
-            Directory the reports were written to.
-        """
         self._begin_stage("reports")
 
         stage   = CrossValidationReportStage(config=self.config, run_tag=self.run_tag, planner=planner, logger=self.logger)
@@ -138,16 +82,6 @@ class CrossValidationPipeline(StagedPipeline):
         return out_dir
 
     def _execute(self) -> None:
-        """Runs the configured stage of the cross-validation experiment.
-
-        The 'prepare' stage validates and logs the fold plan and the status
-        of every unit on disk, 'compare' writes the reports from
-        already-finished folds, and 'full' runs training, inference, and
-        reporting in sequence.
-
-        Raises:
-            PartialRun : If a full run ends with failed units, after the reports are written.
-        """
         self._validate_sweep()
 
         planner = self.factory.planner()

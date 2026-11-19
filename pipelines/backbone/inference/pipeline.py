@@ -1,13 +1,3 @@
-"""Orchestrates the end-to-end inference pass over a trained backbone run.
-
-Loads the run, stitches predictions into cubes, then layers on the optional evaluations
-(curve-parameter extraction, embeddings, label quality, the SSIM sweep against the raw
-cube, flip consistency, stratified errors, failure modes, presence calibration and the
-normalization audit), rewriting metrics.json after each so a crashed run keeps whatever
-finished. Figures, animations and the markdown report close the pass. A pass whose
-configuration enables a target dataset scores the run on that foreign scene instead of
-its own split and stamps under the run's cross-dataset tree.
-"""
 
 from __future__ import annotations
 
@@ -42,14 +32,6 @@ from tools.runtime.git_state                           import GitState
 
 @dataclass(frozen=True)
 class InferenceComponents:
-    """Swappable pieces that specialise the pipeline for a model family.
-
-    Attributes:
-        loader_cls              : Loader class rebuilding the run from its persisted artifacts.
-        predictor_cls           : Predictor class stitching per-patch outputs into cubes.
-        param_space             : Whether the model predicts Gaussian parameters rather than curves.
-        embedding_evaluator_cls : Evaluator producing per-pixel embedding maps, or None.
-    """
 
     loader_cls              : Type[RunLoader] = RunLoader
     predictor_cls           : Type[Predictor] = Predictor
@@ -58,27 +40,8 @@ class InferenceComponents:
 
 
 class InferencePipeline:
-    """Runs the full inference, evaluation and reporting sequence for one backbone run.
-
-    Attributes:
-        config      : Inference configuration selecting the run, split, device and every optional evaluation.
-        components  : Loader, predictor and evaluator classes specialising the pipeline.
-        region_pass : Position of this pass inside a split stored as several regions, recorded in the completion marker and metrics.json, or None for a single-pass split.
-        target      : Foreign dataset the run is scored on, recorded in the completion marker and metrics.json, or None when the run is scored on its own split.
-    """
 
     def __init__(self, config: InferenceConfig, components: InferenceComponents | None = None, region_pass: RegionPass | None = None) -> None:
-        """Stores the configuration, the component set (defaulting to the backbone components), the region pass and the checked target dataset.
-
-        Args:
-            config      : Inference configuration.
-            components  : Component overrides, or None for the plain backbone set.
-            region_pass : Region pass of a split scored region by region, or None when the split is scored in one pass.
-
-        Raises:
-            ValueError        : If an enabled target conflicts with the split or a region override, or names an invalid crop.
-            FileNotFoundError : If an enabled target's dataset or label cube is missing.
-        """
 
         self.config      = config
         self.components  = components if components is not None else InferenceComponents()
@@ -86,18 +49,6 @@ class InferencePipeline:
         self.target      = TargetDataset.of(config)
 
     def _setup(self, cfg: InferenceConfig) -> tuple[InferenceMetadata, Logger, Plotter]:
-        """Creates the output directories, records the resolved configuration, seeds NumPy and builds the logger and plotters.
-
-        The configuration the stamp is scored with, including the effective region
-        override, is written to inference_config.json inside the stamp, so two stamps of
-        one run can be told apart and reproduced from what they store.
-
-        Args:
-            cfg : Inference configuration.
-
-        Returns:
-            Tuple of run metadata, logger and plotter bundle.
-        """
 
         meta = InferenceMetadata(cfg, self.target)
         meta.create_dirs()
@@ -121,15 +72,6 @@ class InferencePipeline:
         return meta, logger, plotter
 
     def _setup_rows(self, cfg: InferenceConfig, meta: InferenceMetadata) -> dict:
-        """Returns the table logged when the pass starts, naming the run, split, region, device, settings and components.
-
-        Args:
-            cfg  : Inference configuration.
-            meta : Output metadata of the pass.
-
-        Returns:
-            Ordered mapping of row label to value.
-        """
 
         evaluator = self.components.embedding_evaluator_cls
 
@@ -152,15 +94,6 @@ class InferencePipeline:
         }
 
     def _load_run(self, cfg: InferenceConfig, logger: Logger):
-        """Loads the trained run for the configured split.
-
-        Args:
-            cfg    : Inference configuration naming the run, split, device and checkpoint.
-            logger : Logger passed to the loader.
-
-        Returns:
-            The loaded run container.
-        """
 
         loader = self.components.loader_cls(cfg.run_directory, logger=logger)
         return loader.load(
@@ -174,16 +107,6 @@ class InferencePipeline:
         )
 
     def _build_embedding_evaluator(self, cfg: InferenceConfig, run, logger: Logger):
-        """Builds the embedding evaluator, or returns None when the component set declares none.
-
-        Args:
-            cfg    : Inference configuration supplying the stitching window.
-            run    : Loaded run.
-            logger : Logger passed to the evaluator.
-
-        Returns:
-            The evaluator instance, or None.
-        """
 
         if self.components.embedding_evaluator_cls is None:
             return None
@@ -191,18 +114,6 @@ class InferencePipeline:
         return self.components.embedding_evaluator_cls(run, logger, window_kind=cfg.stitch_window)
 
     def _predict(self, cfg: InferenceConfig, meta: InferenceMetadata, run, evaluator, logger: Logger):
-        """Runs the predictor over the split and stitches the patch outputs into cubes.
-
-        Args:
-            cfg       : Inference configuration supplying the stitching window, cube dtype and worker count.
-            meta      : Run metadata resolving the cube output directory.
-            run       : Loaded run.
-            evaluator : Embedding evaluator to attach, or None.
-            logger    : Logger passed to the predictor.
-
-        Returns:
-            The populated `Result` container.
-        """
 
         evaluator_kwargs = {} if evaluator is None else {"embedding_evaluator": evaluator}
 
@@ -221,23 +132,11 @@ class InferencePipeline:
 
     @staticmethod
     def _equal_indices(n_total: int, n_slices: int) -> np.ndarray:
-        """Returns up to `n_slices` unique indices spread evenly across the central 10-90% of an axis."""
 
         n_slices = max(1, min(n_slices, n_total))
         return np.unique(np.linspace(n_total * 0.1, n_total * 0.9, n_slices).round().astype(int))
 
     def _compute_slice_indices(self, cfg: InferenceConfig, n_z: int, n_rows: int, n_cols: int) -> dict:
-        """Builds the slice-index arrays used by both the metric sweep and the figure composer.
-
-        Args:
-            cfg    : Inference configuration supplying the per-axis slice counts.
-            n_z    : Number of z bins.
-            n_rows : Number of row samples.
-            n_cols : Number of column samples.
-
-        Returns:
-            Mapping with the plotted subset per axis ("slice_z_idx", "slice_col_idx", "slice_row_idx") and the full index range per axis ("all_z_idx", "all_col_idx", "all_row_idx").
-        """
 
         return {
             "slice_z_idx"   : self._equal_indices(n_z,    cfg.n_z_slices),
@@ -249,24 +148,6 @@ class InferencePipeline:
         }
 
     def _extract_curve_params(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, logger: Logger) -> None:
-        """Refits Gaussians to the predicted curves so curve-space runs unlock the parameter analyses.
-
-        Does nothing for parameter-space models, and is skipped when the configuration
-        disables extraction. The same extractor is also run on the GT curves against the
-        exact GT parameters, which gives the extraction error floor every extracted
-        parameter metric has to be read against.
-
-        Args:
-            cfg       : Inference configuration supplying the prominence fraction and worker count.
-            meta      : Run metadata resolving the cube output directory.
-            run       : Loaded run supplying the Gaussian count.
-            result    : Inference result, updated in place with the extracted parameters and floor.
-            z_axis_np : Z axis in metres, of shape (n_z,).
-            logger    : Logger for the section headings and result lines.
-
-        Raises:
-            ValueError : If the predictor produced no GT parameter cube to measure the floor against.
-        """
 
         if self.components.param_space:
             return
@@ -306,20 +187,6 @@ class InferencePipeline:
 
     @staticmethod
     def _extraction_floor(result, reference_params: np.ndarray, z_axis_np: np.ndarray, n_gaussians: int, cpu_workers: int, active_amp_thr: float, logger: Logger) -> dict:
-        """Scores the extractor's own refit of the GT curves against the exact GT parameters.
-
-        Args:
-            result           : Inference result supplying the GT curves, per-pixel maps and GT parameters.
-            reference_params : Parameters the extractor recovered from the GT curves, of shape (3 * K, rows, cols).
-            z_axis_np        : Z axis in metres, of shape (n_z,).
-            n_gaussians      : Gaussian count K.
-            cpu_workers      : Worker count for the metric computation.
-            active_amp_thr   : Physical amplitude above which a Gaussian slot counts as active, as recorded by the label run.
-            logger           : Run logger handed to the metric calculator.
-
-        Returns:
-            Matched-Gaussian metrics describing the best accuracy the extractor could reach.
-        """
 
         floor = Result(
             pred_curves        = result.gt_curves,
@@ -339,26 +206,6 @@ class InferencePipeline:
         return Metrics(floor, z_axis_np, n_gaussians, cpu_workers, active_amp_thr, logger).matched_gaussian_metrics()
 
     def _evaluate_metrics(self, cfg: InferenceConfig, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict, logger: Logger) -> dict:
-        """Computes the core metric dictionary, annotates it with run provenance and writes metrics.json.
-
-        The provenance names the split and its region, the checkpoint file and the
-        one-based epoch it holds, the code commit the metrics were computed with and,
-        for a pass scored on a foreign dataset, that target and the dataset the run was
-        trained on. Pixels with an empty GT profile are warned about, since they bias
-        the headline cosine and peak statistics.
-
-        Args:
-            cfg       : Inference configuration supplying the worker count and the checkpoint name.
-            result    : Inference result carrying the cubes and per-pixel maps.
-            z_axis_np : Z axis in metres, of shape (n_z,).
-            run       : Loaded run supplying the split, regions and track metadata.
-            meta      : Run metadata resolving the metrics path.
-            indices   : Slice-index arrays keyed by axis.
-            logger    : Run logger handed to the metric calculator and receiving the empty-GT warning.
-
-        Returns:
-            The metric dictionary, also written to disk.
-        """
 
         param_space = result.params_pred is not None and result.params_gt is not None
 
@@ -406,16 +253,6 @@ class InferencePipeline:
         return global_metrics
 
     def _evaluate_embeddings(self, cfg: InferenceConfig, meta: InferenceMetadata, evaluator, result, global_metrics: dict, logger: Logger) -> None:
-        """Runs the embedding evaluator, merging its scalars into the metrics and its maps into the result.
-
-        Args:
-            cfg            : Inference configuration deciding whether the maps are saved as cubes.
-            meta           : Run metadata resolving the metrics and cube paths.
-            evaluator      : Embedding evaluator, or None to skip.
-            result         : Inference result, updated in place with the embedding maps.
-            global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the section heading and result line.
-        """
 
         if evaluator is None:
             return
@@ -438,17 +275,6 @@ class InferencePipeline:
         logger.subsection(f"Embeddings evaluated : {len(metrics)} metrics merged into global metrics")
 
     def _evaluate_label_quality(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, global_metrics: dict, logger: Logger) -> None:
-        """Scores how well the Gaussian labels reproduce the raw cube and splits the error by label quality.
-
-        Args:
-            cfg            : Inference configuration deciding whether the map is saved as a cube.
-            meta           : Run metadata resolving the metrics and cube paths.
-            run            : Loaded run supplying the raw cube.
-            result         : Inference result, updated in place with the label R² map.
-            z_axis_np      : Z axis in metres, of shape (n_z,).
-            global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the section heading and result line.
-        """
 
         logger.section("[Inference: Label Quality]")
 
@@ -465,22 +291,6 @@ class InferencePipeline:
         logger.subsection(f"Label quality : mean fit R² = {stats['label_r2_mean']:.4f}, {stats['label_r2_frac_below_half'] * 100.0:.1f}% of labels below R² 0.5")
 
     def _evaluate_cube_ssim(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, global_metrics: dict, indices: dict, logger: Logger) -> None:
-        """Runs the standard SSIM sweep of the prediction against the raw cube.
-
-        Skipped when the configuration disables it, in which case only the status key is
-        recorded. The sweep scores the same slices as the headline SSIM against the
-        labels, in raw intensity and in unit area, with the raw cube as the reference.
-
-        Args:
-            cfg            : Inference configuration deciding whether the sweep runs.
-            meta           : Run metadata resolving the metrics path.
-            run            : Loaded run supplying the raw cube.
-            result         : Inference result supplying the predicted cube.
-            z_axis_np      : Z axis in metres, of shape (n_z,).
-            global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            indices        : Slice-index arrays keyed by axis.
-            logger         : Logger for the section heading, whether skipped or computed, and the result line.
-        """
 
         if not cfg.compute_cube_ssim:
             logger.section("[Inference: Cube SSIM skipped]")
@@ -505,21 +315,6 @@ class InferencePipeline:
         logger.subsection(f"Cube SSIM : z {stats['ssim_cube_z_mean']:.4f}, col {stats['ssim_cube_col_mean']:.4f}, row {stats['ssim_cube_row_mean']:.4f} vs the raw cube")
 
     def _evaluate_flip_consistency(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-        """Measures flip-equivariance disagreement and its correlation with the supervised error.
-
-        Skipped when the configuration disables it.
-
-        Args:
-            cfg            : Inference configuration supplying the stitching window and amplitude floor.
-            meta           : Run metadata resolving the metrics and cube paths.
-            run            : Loaded run.
-            result         : Inference result, updated in place with the disagreement map.
-            global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the section headings and result line.
-
-        Raises:
-            ValueError : If the stitched disagreement map holds no finite value.
-        """
 
         if not cfg.compute_flip_consistency:
             logger.section("[Inference: Flip Consistency skipped]")
@@ -557,19 +352,6 @@ class InferencePipeline:
         logger.subsection(f"Flip consistency : mean disagreement {global_metrics['flip_mse_mean']:.4g}, correlation with pixel MSE {corr:.3f}")
 
     def _stratify_errors(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-        """Stratifies the per-pixel error over scene covariates and records the rank correlations.
-
-        Skipped when the configuration disables it. A covariate that loses sparse bins or
-        non-finite pixels is warned about, naming the bins and the pixel counts left out.
-
-        Args:
-            cfg            : Inference configuration.
-            meta           : Run metadata resolving the metrics path.
-            run            : Loaded run supplying the covariate sources.
-            result         : Inference result, updated in place with the stratification tables.
-            global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the section headings, result line and warnings.
-        """
 
         if not cfg.compute_stratified:
             logger.section("[Inference: Stratified Errors skipped]")
@@ -612,18 +394,6 @@ class InferencePipeline:
         logger.subsection(f"Stratified over {sorted(tables)}; strongest rank correlation with error: {strongest} ({finite[strongest]:.3f})")
 
     def _classify_failures(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-        """Classifies each pixel into a failure mode from its matched prediction-GT component pairs.
-
-        Skipped when no parameter cubes exist.
-
-        Args:
-            cfg            : Inference configuration deciding whether the mode map is saved as a cube.
-            meta           : Run metadata resolving the metrics and cube paths.
-            run            : Loaded run supplying the Gaussian count.
-            result         : Inference result, updated in place with the mode map, pairs and separation table.
-            global_metrics : Metric dictionary, extended in place and rewritten to disk, including failure_sep_status saying whether the miss-rate-by-separation profile was computed or why not.
-            logger         : Logger for the section headings and result lines.
-        """
 
         if result.params_pred is None or result.params_gt is None:
             logger.section("[Inference: Failure Modes skipped]")
@@ -654,17 +424,6 @@ class InferencePipeline:
         logger.subsection(f"Miss rate by GT separation : {scalars['failure_sep_status']}")
 
     def _calibrate_presence(self, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-        """Builds the presence-reliability curve relating predicted amplitude to detection precision.
-
-        Skipped when the failure-mode step produced no pairs.
-
-        Args:
-            meta           : Run metadata resolving the metrics path.
-            run            : Loaded run.
-            result         : Inference result, updated in place with the reliability rows.
-            global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the section headings and result line.
-        """
 
         if result.failure_pairs is None:
             logger.section("[Inference: Presence Calibration skipped]")
@@ -685,18 +444,6 @@ class InferencePipeline:
         logger.subsection(f"Presence calibration : overall precision {scalars['presence_overall_precision'] * 100.0:.1f}%, amp-precision rank correlation {scalars['presence_rank_corr']:.3f}")
 
     def _audit_normalization(self, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-        """Audits input-normalization drift and output-clamp saturation on this split.
-
-        Non-finite normalised inputs, drift past the audit bounds and clamp saturation
-        above the audit share are raised as warnings naming the channel or bound.
-
-        Args:
-            meta           : Run metadata resolving the metrics path.
-            run            : Loaded run supplying the dataset and normalization statistics.
-            result         : Inference result supplying the predicted parameter cube.
-            global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the section heading, result lines and warnings.
-        """
 
         logger.section("[Inference: Normalization Audit]")
 
@@ -713,19 +460,6 @@ class InferencePipeline:
             logger.warning(f"Normalization audit, {line}")
 
     def _compose_figures(self, composer: FigureComposer, result, run, global_metrics: dict, z_axis_np: np.ndarray, indices: dict) -> Dict[str, List[Path]]:
-        """Delegates figure composition, enabling parameter figures only when both parameter cubes exist.
-
-        Args:
-            composer       : Figure composer bound to this run's plotters and output directories.
-            result         : Inference result.
-            run            : Loaded run.
-            global_metrics : Metric dictionary the figures annotate themselves from.
-            z_axis_np      : Z axis in metres, of shape (n_z,).
-            indices        : Slice-index arrays keyed by axis.
-
-        Returns:
-            Mapping of figure-family name to the paths written for it.
-        """
 
         return composer.compose(
             result         = result,
@@ -746,20 +480,6 @@ class InferencePipeline:
         figure_paths   : Dict[str, List[Path]],
         gif_paths      : Dict[str, Path],
     ) -> Path:
-        """Assembles the markdown inference report from the metrics, figures and animations.
-
-        Args:
-            meta           : Run metadata resolving the output and report paths.
-            run            : Loaded run described in the report header.
-            cfg            : Inference configuration echoed into the report.
-            z_axis_np      : Z axis in metres, of shape (n_z,).
-            global_metrics : Metric dictionary tabulated in the report.
-            figure_paths   : Figure paths grouped by family.
-            gif_paths      : Animation paths keyed by axis.
-
-        Returns:
-            Path of the written report.
-        """
 
         return Report(
             output_dir       = meta.output_dir,
@@ -773,14 +493,6 @@ class InferencePipeline:
         ).assemble()
 
     def run(self) -> Path:
-        """Runs the whole inference pass and stamps the completion marker on success.
-
-        The run logger is closed whether the pass succeeds or raises, so a failed pass
-        still flushes its log.
-
-        Returns:
-            Path of the written inference report.
-        """
 
         cfg                   = self.config
         meta, logger, plotter = self._setup(cfg)

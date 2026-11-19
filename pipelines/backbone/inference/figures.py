@@ -1,9 +1,3 @@
-"""Composes the full backbone-inference figure set from a stitched inference result.
-
-The composer walks every optional evaluation carried on the `Result` (parameters,
-embedding maps) and writes one figure per
-file into the run's figures directory, returning the paths grouped by figure family.
-"""
 
 from __future__ import annotations
 
@@ -24,16 +18,6 @@ from tools.monitoring.logger                         import Logger
 
 
 class FigureComposer:
-    """Writes every inference figure and animation for one backbone run.
-
-    Attributes:
-        plotter        : Bundle of per-family plotters (slice, param, slot, organization, stratified).
-        meta           : Run metadata holding the output directory layout.
-        logger         : Logger used to announce each figure family as it is written.
-        cfg            : Inference configuration selecting colormaps, slice counts and GIF settings.
-        full_norm_cube : Cached unit-area normalisation of the raw cube, built on first use.
-        skipped        : Figure family mapped to why it came out empty or incomplete in the last composition.
-    """
 
     def __init__(
         self,
@@ -42,14 +26,6 @@ class FigureComposer:
         logger  : Logger,
         cfg     : InferenceConfig,
     ) -> None:
-        """Stores the plotters, run metadata, logger and inference configuration.
-
-        Args:
-            plotter : Plotter bundle providing the per-family plotting methods.
-            meta    : Inference metadata resolving the figure and animation directories.
-            logger  : Logger for per-family progress lines.
-            cfg     : Inference configuration.
-        """
 
         self.plotter        = plotter
         self.meta           = meta
@@ -59,15 +35,6 @@ class FigureComposer:
         self.skipped        = {}
 
     def _compose_input_channels(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
-        """Writes amplitude and derived-channel-phase maps of the complex input stack.
-
-        Nothing is written when the run carries no complex inputs.
-
-        Args:
-            result       : Inference result supplying the row and column offsets of the crop.
-            run          : Loaded run carrying the complex input stack of shape (channels, rows, cols).
-            figure_paths : Mapping of figure family to written paths, extended in place.
-        """
 
         slice_plotter = self.plotter.slice
         meta          = self.meta
@@ -85,15 +52,6 @@ class FigureComposer:
             logger.subsection(f"Input channels : {len(figure_paths['input_channels'])} figures in {meta.figures_dir / 'input_channels'}")
 
     def _compose_profiles(self, result: Result, run, z_axis_np: np.ndarray, param_space: bool, figure_paths: Dict[str, List[Path]]) -> None:
-        """Writes predicted-vs-GT z profiles for best, worst and random pixels.
-
-        Args:
-            result       : Inference result carrying the predicted and GT curve cubes and per-pixel metrics.
-            run          : Loaded run supplying the Gaussian count and the raw cube curves.
-            z_axis_np    : Z axis in metres, of shape (n_z,).
-            param_space  : Whether predicted Gaussian parameters exist and should be drawn as components.
-            figure_paths : Mapping of figure family to written paths, extended in place.
-        """
 
         slice_plotter = self.plotter.slice
         meta          = self.meta
@@ -134,15 +92,6 @@ class FigureComposer:
             logger.subsection(f"Profiles ({tag:<6}) : {len(figure_paths[f'profiles_{tag}'])} figures in {meta.figures_dir / 'profiles'}")
 
     def _compose_pixel_maps(self, result: Result, figure_paths: Dict[str, List[Path]]) -> None:
-        """Writes the per-pixel metric maps, stratified error curves, failure-mode map and metric histograms.
-
-        Maps for label fit R², extraction fit R² and flip consistency are added only when
-        the corresponding evaluation ran.
-
-        Args:
-            result       : Inference result carrying the per-pixel metric maps of shape (rows, cols).
-            figure_paths : Mapping of figure family to written paths, extended in place.
-        """
 
         slice_plotter = self.plotter.slice
         meta          = self.meta
@@ -227,14 +176,6 @@ class FigureComposer:
         logger.subsection(f"Metric histograms : {len(figure_paths['metric_histograms'])} figures in {meta.figures_dir / 'histograms'}")
 
     def _compose_embedding_maps(self, result: Result, figure_paths: Dict[str, List[Path]]) -> None:
-        """Writes the JEPA embedding-error, cosine, decoder-floor and full-chain maps plus their histograms.
-
-        Returns immediately when the run carried no embedding evaluation.
-
-        Args:
-            result       : Inference result whose `embedding_maps` holds the per-pixel maps of shape (rows, cols).
-            figure_paths : Mapping of figure family to written paths, extended in place.
-        """
 
         if result.embedding_maps is None:
             return
@@ -270,13 +211,6 @@ class FigureComposer:
         self.logger.subsection(f"Embedding maps : error, cosine, decoder floor, full chain written to {out_dir}")
 
     def _compose_param_plots(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
-        """Writes the Gaussian-parameter distributions, scatters, error maps, error histograms and active-count map.
-
-        Args:
-            result       : Inference result carrying the predicted and GT parameter cubes of shape (3 * K, rows, cols).
-            run          : Loaded run supplying the Gaussian count K.
-            figure_paths : Mapping of figure family to written paths, extended in place.
-        """
 
         param_plotter = self.plotter.param
         slot_plotter  = self.plotter.slot
@@ -346,11 +280,6 @@ class FigureComposer:
         logger.subsection(f"Param plots : {written}, active-count maps {len(figure_paths['active_count_map'])} written to {meta.figures_dir}")
 
     def _log_param_skips(self, skips: List[ParamFigureSkip]) -> None:
-        """Warns which parameter figures were not drawn, grouped by family, slot and reason, and counts them per family for the closing summary.
-
-        Args:
-            skips : Skip records drained from the parameter plotter.
-        """
 
         if not skips:
             return
@@ -368,13 +297,6 @@ class FigureComposer:
         self.logger.warning(f"Param figures skipped for {len(skips)} (family, slot, parameter) triples: {described}")
 
     def _compose_slot_organization(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
-        """Writes the raw-slot usage bars, per-slot parameter distributions, μ-rank matrix and GT-assignment matrix.
-
-        Args:
-            result       : Inference result carrying the predicted and GT parameter cubes of shape (3 * K, rows, cols).
-            run          : Loaded run supplying the Gaussian count K.
-            figure_paths : Mapping of figure family to written paths, extended in place.
-        """
 
         org_plotter = self.plotter.organization
         meta        = self.meta
@@ -395,16 +317,6 @@ class FigureComposer:
         logger.subsection(f"Slot organization : usage, per-slot distributions, μ-rank and GT-assignment matrices written to {out_dir}")
 
     def _compose_slices(self, result: Result, run, global_metrics: dict, z_axis_np: np.ndarray, indices: dict, figure_paths: Dict[str, List[Path]]) -> None:
-        """Writes col, row and z slices twice: in denormalised intensity and in unit-area form.
-
-        Args:
-            result         : Inference result carrying the predicted and GT curve cubes of shape (n_z, row, col).
-            run            : Loaded run supplying the raw cube.
-            global_metrics : Metric dictionary holding the per-slice SSIM values keyed by axis and index.
-            z_axis_np      : Z axis in metres, of shape (n_z,).
-            indices        : Slice-index arrays produced by the pipeline, keyed by axis.
-            figure_paths   : Mapping of figure family to written paths, extended in place.
-        """
 
         meta   = self.meta
         logger = self.logger
@@ -473,26 +385,6 @@ class FigureComposer:
         full_title     : str,
         figure_paths   : Dict[str, List[Path]],
     ) -> None:
-        """Writes one slice figure per selected range, row and z index for a single cube variant.
-
-        Args:
-            pred_cube      : Predicted cube of shape (n_z, rows, cols).
-            gt_cube        : Ground-truth cube of the same shape as `pred_cube`.
-            full_cube      : Raw cube of the same shape, drawn as an extra reference panel.
-            result         : Inference result supplying the row and column offsets of the crop.
-            x_axis_np      : Z axis in metres, of shape (n_z,).
-            indices        : Slice-index arrays keyed by axis.
-            global_metrics : Metric dictionary holding the per-slice SSIM values.
-            ssim_prefix    : Metric-key prefix selecting which SSIM series to annotate ("gt", "norm" or "red").
-            out_dir        : Directory the slice figures are written into.
-            stem_prefix    : Prefix prepended to each figure file stem.
-            group_suffix   : Suffix appended to the figure-family keys in `figure_paths`.
-            ref_title      : Panel title for the reference cube.
-            pred_title     : Panel title for the predicted cube.
-            err_title      : Panel title for the absolute-error panel.
-            full_title     : Panel title for the raw cube panel.
-            figure_paths   : Mapping of figure family to written paths, extended in place.
-        """
 
         slice_plotter = self.plotter.slice
         slice_col_idx = indices["slice_col_idx"]
@@ -552,15 +444,6 @@ class FigureComposer:
                 progress.advance(task)
 
     def _compose_ssim(self, result: Result, global_metrics: dict, z_axis_np: np.ndarray, indices: dict, figure_paths: Dict[str, List[Path]]) -> None:
-        """Writes the per-slice SSIM curves for both cube variants and the per-z metric curves.
-
-        Args:
-            result         : Inference result supplying the cube shape and crop offsets.
-            global_metrics : Metric dictionary holding the per-slice SSIM and per-z series.
-            z_axis_np      : Z axis in metres, of shape (n_z,).
-            indices        : Slice-index arrays keyed by axis.
-            figure_paths   : Mapping of figure family to written paths, extended in place.
-        """
 
         slice_plotter = self.plotter.slice
         meta          = self.meta
@@ -616,19 +499,6 @@ class FigureComposer:
         out_dir        : Path,
         figure_paths   : Dict[str, List[Path]],
     ) -> None:
-        """Writes one SSIM-versus-slice-index curve per axis for a single cube variant.
-
-        Args:
-            global_metrics : Metric dictionary holding the per-slice SSIM values.
-            indices        : Full index arrays for range, row and z.
-            shape          : Cube shape (n_z, rows, cols) the curves span.
-            offsets        : Crop offsets keyed "range" and "row", added to the plotted indices.
-            ssim_prefix    : Metric-key prefix selecting which SSIM series to plot.
-            group_suffix   : Suffix appended to the figure-family keys in `figure_paths`.
-            series_label   : Legend label for the plotted series.
-            out_dir        : Directory the curves are written into.
-            figure_paths   : Mapping of figure family to written paths, extended in place.
-        """
 
         slice_plotter     = self.plotter.slice
         _N_z, _row, _col = shape
@@ -650,7 +520,6 @@ class FigureComposer:
             )]
 
     def _full_unit_area(self, run) -> np.ndarray:
-        """Returns the raw cube normalised to unit area per profile, cached after the first call."""
 
         if self.full_norm_cube is None:
             self.full_norm_cube = ProfileNormalizer.unit_area(run.full_curves)
@@ -658,11 +527,6 @@ class FigureComposer:
         return self.full_norm_cube
 
     def _summarize(self, figure_paths: Dict[str, List[Path]]) -> None:
-        """Closes the composition with the figure count of every family and the reason each empty or incomplete family lost figures.
-
-        Args:
-            figure_paths : Mapping of figure family to written paths.
-        """
 
         families = sorted(set(figure_paths) | set(self.skipped))
         rows     = [{"Family": family, "Figures": len(figure_paths.get(family, [])), "Skipped": self.skipped.get(family, "")} for family in families]
@@ -685,19 +549,6 @@ class FigureComposer:
         indices        : dict,
         param_space    : bool = True,
     ) -> Dict[str, List[Path]]:
-        """Composes every figure family available for this run and returns their paths.
-
-        Args:
-            result         : Inference result carrying the cubes, per-pixel maps and optional evaluations.
-            run            : Loaded run supplying the raw cube and the Gaussian count.
-            global_metrics : Metric dictionary written by the pipeline before plotting.
-            x_axis_np      : Z axis in metres, of shape (n_z,).
-            indices        : Slice-index arrays keyed by axis.
-            param_space    : Whether Gaussian-parameter figures should be produced.
-
-        Returns:
-            Mapping of figure-family name to the list of figure paths written for it.
-        """
 
         figure_paths: Dict[str, List[Path]] = {}
         self.skipped                        = {}
@@ -723,16 +574,6 @@ class FigureComposer:
         return figure_paths
 
     def animate(self, result: Result, run, z_axis_np: np.ndarray) -> Dict[str, Path]:
-        """Renders the walk-through GIFs per configured axis over the predicted and GT cubes.
-
-        Args:
-            result    : Inference result carrying the predicted and GT curve cubes of shape (n_z, rows, cols).
-            run       : Loaded run supplying the raw cube.
-            z_axis_np : Z axis in metres, of shape (n_z,).
-
-        Returns:
-            Mapping of "walk_<axis>" to the composite GIF path, plus "walk_<axis>_<cube>" entries when separate panels are enabled.
-        """
 
         cfg    = self.cfg
         meta   = self.meta

@@ -1,10 +1,3 @@
-"""Pipeline assembling a feed target and profiling its training steps.
-
-Reuses the dataloader-tuning feed adapters to build a real (dataset, model,
-loss) triple for the configured family, then hands it to the step profiler,
-which records full forward-backward-optimizer steps and writes the chrome
-trace, operator table and summary under a timestamped output directory.
-"""
 
 from __future__ import annotations
 
@@ -18,28 +11,15 @@ from tools.runtime.run_tag                import RunTag
 
 
 class TrainingProfilePipeline:
-    """Builds the configured feed target and profiles its training steps.
-
-    Attributes:
-        entry  : Profiling entry configuration.
-        logger : Logger receiving progress and artifact lines.
-    """
 
     def __init__(self, entry, logger) -> None:
-        """Stores the entry configuration and logger."""
         self.entry  = entry
         self.logger = logger
 
     def _device(self) -> torch.device:
-        """Returns the CUDA device when visible, the CPU otherwise."""
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def run(self) -> dict:
-        """Assembles the feed and profiles the configured number of steps.
-
-        Returns:
-            The profiler summary payload.
-        """
         output_dir = Path(self.entry.output_dir) / RunTag.now()
         feed       = FeedTargetFactory.build(self.entry, output_dir / "feed", self.logger)
 

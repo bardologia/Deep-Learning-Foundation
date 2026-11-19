@@ -1,4 +1,3 @@
-"""Construction of the train/val/test DataLoader triple shared by every pipeline."""
 
 from __future__ import annotations
 
@@ -12,40 +11,18 @@ from tools.training.distributed    import DistributedContext
 
 
 class EvaluationShardSampler(Sampler):
-    """Strided shard of a dataset for one DDP rank, visiting every sample once.
-
-    `DistributedSampler` pads the short shards with duplicated samples so all
-    ranks see the same number of batches, which the gradient-synchronised
-    training loop needs but which would double-count those samples in the
-    reduced evaluation loss. Evaluation reduces once after its loop, so unequal
-    shard lengths are harmless and the reduced loss equals the single-process
-    value.
-
-    Attributes:
-        indices : Dataset indices this rank evaluates, in ascending order.
-    """
 
     def __init__(self, dataset: Dataset, num_replicas: int, rank: int) -> None:
-        """Takes every `num_replicas`-th index starting at the rank's offset.
-
-        Args:
-            dataset      : Dataset being sharded.
-            num_replicas : Number of ranks the dataset is split over.
-            rank         : Zero-based rank this shard belongs to.
-        """
         self.indices = list(range(rank, len(dataset), num_replicas))
 
     def __iter__(self) -> Iterator[int]:
-        """Yields this rank's dataset indices."""
         return iter(self.indices)
 
     def __len__(self) -> int:
-        """Returns the number of samples in this rank's shard."""
         return len(self.indices)
 
 
 class Loader:
-    """Builds seeded DataLoaders with a shared worker and memory configuration."""
 
     @staticmethod
     def build(
@@ -61,33 +38,6 @@ class Loader:
         prefetch_factor : int  = 8,
         section_label   : str  = "[Loaders]",
     ) -> Tuple[DataLoader, DataLoader, DataLoader]:
-        """Builds the train, validation and test loaders and logs their sizes.
-
-        Args:
-            train_dataset   : Training split dataset.
-            val_dataset     : Validation split dataset.
-            test_dataset    : Test split dataset.
-            batch_size      : Samples per batch, shared by all three loaders.
-            num_workers     : Worker processes per loader; zero loads in the main process and disables prefetching and persistent workers.
-            logger          : Logger the loader configuration and split sizes are written to.
-            pin_memory      : Whether batches are placed in pinned host memory.
-            shuffle_train   : Whether the training loader shuffles each epoch.
-            seed            : Base seed for the shuffling generator and worker seeding.
-            prefetch_factor : Batches prefetched per worker.
-            section_label   : Section heading used in the log.
-
-        Returns:
-            Triple of (train, validation, test) loaders. Only the training loader
-            shuffles and drops a partial final batch. Inside an active DDP group
-            the given batch size is divided by the rank count so the global batch
-            is preserved, and all three splits are sharded across the ranks: the
-            training split with a DistributedSampler whose shards are padded to
-            equal length, the evaluation splits with an EvaluationShardSampler
-            that visits every sample exactly once.
-
-        Raises:
-            ValueError : The training loader would yield zero batches, so the run would take no gradient step; or the batch size does not divide evenly across the DDP ranks.
-        """
         context = DistributedContext.current()
 
         if context.active:

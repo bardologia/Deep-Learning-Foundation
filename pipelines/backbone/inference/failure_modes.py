@@ -1,10 +1,3 @@
-"""Classification of per-pixel component prediction failures.
-
-Predicted Gaussian slots are matched to the ground-truth slots, then every pixel
-is labelled with its dominant failure: a missed or hallucinated component, or a
-position, width or amplitude error on an otherwise matched one. The miss rate is
-also profiled against the ground-truth separation between neighbouring peaks.
-"""
 
 from __future__ import annotations
 
@@ -15,16 +8,6 @@ from tools.metrics.gaussian_matching import GaussianMatcher
 
 
 class FailureModes:
-    """Labels each pixel with its dominant component-prediction failure mode.
-
-    Attributes:
-        params_pred    : Predicted interleaved (amp, mu, sigma) per slot, shape (3 * n_gaussians, rows, cols); mu and sigma in metres.
-        params_gt      : Ground-truth parameters of the same shape.
-        n_gaussians    : Number of Gaussian slots per pixel.
-        assignment     : Precomputed prediction-to-ground-truth slot assignment, or None to match on demand.
-        active_amp_thr : Physical amplitude above which a Gaussian slot counts as active.
-        shape          : Spatial shape (rows, cols) of the parameter cubes.
-    """
 
     MODES = ("ok", "missed", "hallucinated", "position", "width", "amplitude")
 
@@ -36,15 +19,6 @@ class FailureModes:
     MIN_BIN_COUNT = 30
 
     def __init__(self, params_pred: np.ndarray, params_gt: np.ndarray, n_gaussians: int, active_amp_thr: float, assignment: np.ndarray | None = None) -> None:
-        """Binds the predicted and ground-truth parameter cubes.
-
-        Args:
-            params_pred    : Predicted interleaved (amp, mu, sigma) per slot, shape (3 * n_gaussians, rows, cols).
-            params_gt      : Ground-truth parameters of the same shape.
-            n_gaussians    : Number of Gaussian slots per pixel.
-            active_amp_thr : Physical amplitude above which a Gaussian slot counts as active, as recorded by the label run.
-            assignment     : Precomputed slot assignment of shape (pixels, n_gaussians), or None to compute it on demand.
-        """
         self.params_pred    = np.asarray(params_pred, dtype=np.float64)
         self.params_gt      = np.asarray(params_gt, dtype=np.float64)
         self.n_gaussians    = int(n_gaussians)
@@ -54,27 +28,9 @@ class FailureModes:
         self.shape = self.params_pred.shape[1:]
 
     def _channels(self, params: np.ndarray, offset: int) -> np.ndarray:
-        """Returns one interleaved field of every slot, flattened to (n_gaussians, pixels).
-
-        Args:
-            params : Interleaved parameters of shape (3 * n_gaussians, rows, cols).
-            offset : Field offset within a slot: 0 amplitude, 1 mu, 2 sigma.
-        """
         return np.stack([params[3 * k + offset] for k in range(self.n_gaussians)], axis=0).reshape(self.n_gaussians, -1)
 
     def pair_predictions(self) -> dict:
-        """Matches predicted slots to ground-truth slots and flags each error kind.
-
-        A pair counts as matched when both slots are active and their zs
-        differ by no more than the match tolerance; the position, width and
-        amplitude flags then mark matched pairs exceeding their own tolerance.
-
-        Returns:
-            A dict holding the activity masks of both sides, shape (n_gaussians,
-            pixels), the predicted amplitudes and ground-truth zs, the
-            matched masks, the per-pixel counts of missed and hallucinated
-            components, and the per-pixel position, width and amplitude flags.
-        """
         n_K = self.n_gaussians
         sel = GaussianMatcher(amp_threshold=self.active_amp_thr).assignment(self.params_pred, self.params_gt, n_K) if self.assignment is None else self.assignment
 
@@ -130,17 +86,6 @@ class FailureModes:
         }
 
     def _mode_map(self, pairs: dict) -> np.ndarray:
-        """Reduces the per-pixel error flags to a single dominant failure mode.
-
-        Later assignments override earlier ones, so a missed component outranks a
-        hallucinated one, which outranks position, width and amplitude errors.
-
-        Args:
-            pairs : Payload from the slot pairing.
-
-        Returns:
-            Mode indices into MODES of shape (rows, cols).
-        """
         mode = np.zeros(pairs["n_missed"].size, dtype=np.int8)
 
         mode[pairs["any_amp"]]        = self.MODES.index("amplitude")
@@ -152,15 +97,6 @@ class FailureModes:
         return mode.reshape(self.shape)
 
     def _min_gt_separation(self, pairs: dict) -> np.ndarray:
-        """Returns the smallest z gap between active ground-truth slots per pixel.
-
-        Args:
-            pairs : Payload from the slot pairing.
-
-        Returns:
-            Separations in metres of shape (pixels,), infinite where a pixel has
-            fewer than two active ground-truth components.
-        """
         mu_gt  = pairs["mu_gt"]
         act_gt = pairs["act_gt"]
         n_K    = self.n_gaussians
@@ -175,20 +111,6 @@ class FailureModes:
         return sep
 
     def _miss_by_separation(self, pairs: dict) -> tuple[list[dict], str]:
-        """Profiles the miss rate against ground-truth component separation.
-
-        Args:
-            pairs : Payload from the slot pairing.
-
-        Returns:
-            Tuple of one row per quantile bin holding the bin "center" in metres,
-            the pixel count "n" and the "miss_rate", and a status string saying
-            either how many bins were computed over how many two-component pixels
-            or why the profile was skipped. The rows are empty when too few
-            pixels carry two active ground-truth components, when their
-            separations fall on too few distinct quantile edges, or when every
-            bin is sparse.
-        """
         sep       = self._min_gt_separation(pairs)
         missed    = pairs["n_missed"] > 0
         has_pairs = np.isfinite(sep)
@@ -225,16 +147,6 @@ class FailureModes:
         return rows, f"computed: {len(rows)} bins over {n_pairs} two-component pixels, {dropped} sparse bin(s) under {self.MIN_BIN_COUNT} pixels dropped"
 
     def _scalars(self, pairs: dict, mode_map: np.ndarray) -> dict:
-        """Summarises the failure classification as scalar rates.
-
-        Args:
-            pairs    : Payload from the slot pairing.
-            mode_map : Dominant failure mode per pixel, shape (rows, cols).
-
-        Returns:
-            The miss rate over active ground-truth slots, the hallucination rate
-            over active predicted slots, and the pixel fraction of every mode.
-        """
         n_pixels   = mode_map.size
         n_gt_act   = int(pairs["act_gt"].sum())
         n_pred_act = int(pairs["act_pred"].sum())
@@ -250,16 +162,6 @@ class FailureModes:
         return out
 
     def classify(self, pairs: dict) -> tuple[np.ndarray, list[dict], dict]:
-        """Builds the mode map, separation profile and scalars from a pairing payload.
-
-        Args:
-            pairs : Payload from the slot pairing.
-
-        Returns:
-            A tuple of the mode map of shape (rows, cols), the miss-rate rows
-            by separation, and the scalar summary, whose "failure_sep_status"
-            entry says whether the separation profile was computed or why not.
-        """
         mode_map       = self._mode_map(pairs)
         by_sep, status = self._miss_by_separation(pairs)
         scalars        = self._scalars(pairs, mode_map)
@@ -269,10 +171,4 @@ class FailureModes:
         return mode_map, by_sep, scalars
 
     def run(self) -> tuple[np.ndarray, list[dict], dict]:
-        """Pairs the slots and classifies the failure modes.
-
-        Returns:
-            A tuple of the mode map of shape (rows, cols), the miss-rate rows
-            by separation, and the scalar summary.
-        """
         return self.classify(self.pair_predictions())

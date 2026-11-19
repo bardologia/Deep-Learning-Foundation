@@ -1,12 +1,3 @@
-"""Resume policy for a single training or inference unit.
-
-Decides whether a run directory can be reused, resumed from its checkpoint or
-must be wiped and restarted, based on the completion marker written when a run
-finishes. A reused run is compared with the configuration and the commit of the
-launch reusing it, so results trained under other settings or other code never
-enter a comparison unnoticed. Unfinished inference stamps are deleted so partial
-outputs never look complete.
-"""
 
 from __future__ import annotations
 
@@ -27,23 +18,11 @@ from tools.training.pretraining                    import PretrainOrchestrator
 
 
 class UnitResume:
-    """Decides whether a unit's training or inference can be skipped.
-
-    Attributes:
-        EXCLUDED_FIELDS : Top-level entry-config fields never compared with a reused run: the hardware and resume flags of the launch, and the fields a sweep scheduler rewrites per unit.
-        ABSENT          : Marker printed for a leaf one of the two configurations does not have.
-        run_directory   : Run directory of the unit.
-        enabled         : Whether resume logic applies at all.
-        trainer_resume  : Whether the trainer itself continues from a checkpoint, which keeps unfinished run directories in place.
-        config          : Entry configuration of this launch, compared with a reused run's recording; None for callers that only consult `skip_inference`.
-        logger          : Logger created lazily on the first message.
-    """
 
     EXCLUDED_FIELDS = tuple(TrainingResume.LAUNCH_FIELDS) + tuple(TrainingResume.UNIT_FIELDS)
     ABSENT          = "<absent>"
 
     def __init__(self, run_directory: Path, enabled: bool, trainer_resume: bool = False, config=None) -> None:
-        """Stores the run directory, the resume flags and the launch configuration of this unit."""
         self.run_directory  = Path(run_directory)
         self.enabled        = enabled
         self.trainer_resume = trainer_resume
@@ -51,18 +30,6 @@ class UnitResume:
         self.logger         = None
 
     def _recorded_differences(self) -> dict | None:
-        """Returns the leaves on which the reused run's recording and this launch disagree.
-
-        Launch and per-unit fields are left out, as are the leaves the probes
-        enabled in this launch would rewrite anyway. A leaf present on one side
-        only is reported against the ABSENT marker, since that means the config
-        schema changed between the two launches.
-
-        Returns:
-            Mapping of dotted leaf path to (recorded, current) pairs in path
-            order, empty when the recording matches; None when the run recorded
-            no configuration.
-        """
         path = ResolvedEntryConfigWriter.path_for(self.run_directory)
         if not path.is_file():
             return None
@@ -85,11 +52,6 @@ class UnitResume:
         return differences
 
     def _commit_difference(self) -> tuple | None:
-        """Returns the (recorded, current) commits when other code produced the reused run, else None.
-
-        A run without a provenance record predates provenance recording, and
-        its commit is reported as unknown.
-        """
         path    = ResolvedEntryConfigWriter.provenance_path_for(self.run_directory)
         current = GitState.commit()
 
@@ -101,7 +63,6 @@ class UnitResume:
         return None if recorded == current else (recorded, current)
 
     def _report_reuse(self) -> None:
-        """Warns that the completed run is reused and names every setting and the commit on which it differs from this launch."""
         logger       = self._logger()
         name         = self.run_directory.name
         completed_at = CompletionMarker.payload(self.run_directory)["completed_at"]
@@ -123,7 +84,6 @@ class UnitResume:
             logger.warning(f"{name}: the reused run was produced at commit {commits[0]}; this launch runs {commits[1]}")
 
     def _discarded_contents(self) -> str:
-        """Describes what deleting the unfinished run directory discards: its file count and, when it holds one, the trainer state with its size and last save time."""
         files = sum(1 for path in self.run_directory.rglob("*") if path.is_file())
         state = TrainerState.path(self.run_directory)
 
@@ -136,18 +96,6 @@ class UnitResume:
         return f"{files} file(s) including {TrainerState.FILENAME} ({stat.st_size / 1024 ** 2:.1f} MB, last saved {saved}); the epochs it held are retrained, pass training.resume to continue from it instead"
 
     def skip_training(self) -> bool:
-        """Returns whether the completed run can be reused instead of retrained.
-
-        A completed run is reused after its recording and commit are compared
-        with this launch. An unfinished run is left alone when the trainer
-        resumes from its checkpoint, and otherwise deleted so training restarts
-        from scratch. With resume disabled an existing directory is reported:
-        the run metadata deletes an unfinished attempt's artifacts when training
-        starts and refuses a completed run.
-
-        Raises:
-            ValueError : If the unit was built without the entry configuration the reuse check compares.
-        """
         if self.config is None:
             raise ValueError(f"UnitResume for {self.run_directory} was built without the entry configuration; skip_training compares a reused run with it, pass config=")
 
@@ -174,18 +122,6 @@ class UnitResume:
         return False
 
     def skip_inference(self, split: str, subdir: str | None = None) -> bool:
-        """Returns whether an existing inference for a split can be reused.
-
-        Unfinished inference stamps are deleted first, so only completed
-        stamps count as reusable.
-
-        Args:
-            split  : Dataset split the inference covers (e.g. ``test``).
-            subdir : Optional subdirectory of ``inference`` holding the stamps.
-
-        Returns:
-            True when a completed stamp for the split already exists.
-        """
         if not self.enabled:
             return False
 
@@ -206,7 +142,6 @@ class UnitResume:
         return False
 
     def _logger(self) -> Logger:
-        """Returns the appending logger of the unit's run directory, created on first use."""
         if self.logger is None:
             self.logger = Logger(log_dir=str(self.run_directory / "logs"), name="unit_resume", level="INFO", file_mode="a")
 

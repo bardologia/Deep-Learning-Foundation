@@ -1,10 +1,3 @@
-"""Cross-run representation similarity via debiased linear CKA.
-
-Layer activations of several trained runs are sampled at identical pixels of the
-same split, then compared with the unbiased HSIC estimator of linear centred
-kernel alignment. The comparison yields per-pair cross-layer matrices, per-run
-self-similarity structure, and a run-by-run alignment summary.
-"""
 
 from __future__ import annotations
 
@@ -31,23 +24,12 @@ from tools.runtime.run_tag                              import RunTag
 
 
 class CkaComputation:
-    """Debiased linear CKA between sampled feature matrices.
-
-    A layer whose self-HSIC is non-positive or negligible against its squared mean
-    feature energy carries no usable variance; its CKA against any layer, itself
-    included, is undefined and set to NaN rather than to a fake zero.
-
-    Attributes:
-        DIVERGENCE_THRESHOLD : Best-match CKA below which a layer counts as diverged.
-        DEGENERATE_TOLERANCE : Self-HSIC, relative to the squared mean feature energy, at or below which a layer is degenerate.
-    """
 
     DIVERGENCE_THRESHOLD = 0.5
     DEGENERATE_TOLERANCE = 1e-10
 
     @staticmethod
     def _unbiased_hsic(X: np.ndarray, Y: np.ndarray) -> float:
-        """Returns the unbiased HSIC estimate for linear kernels on (samples, features) matrices."""
         n = X.shape[0]
 
         cross      = X.T @ Y
@@ -67,18 +49,6 @@ class CkaComputation:
 
     @staticmethod
     def _validated(features_a: np.ndarray, features_b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Returns both feature matrices as float64 after checking sample counts match.
-
-        Args:
-            features_a : Features of shape (samples, features_a).
-            features_b : Features of shape (samples, features_b).
-
-        Returns:
-            The two matrices cast to float64.
-
-        Raises:
-            ValueError : If the sample counts differ or fall below four.
-        """
         X = np.asarray(features_a, dtype=np.float64)
         Y = np.asarray(features_b, dtype=np.float64)
 
@@ -91,17 +61,14 @@ class CkaComputation:
 
     @staticmethod
     def _normalized(hsic_xy: float, hsic_xx: float, hsic_yy: float) -> float:
-        """Returns the CKA value from cross and positive self HSIC terms, clipped at zero."""
         return max(0.0, hsic_xy / np.sqrt(hsic_xx * hsic_yy))
 
     @classmethod
     def _self_hsic(cls, layers: dict[str, np.ndarray]) -> dict[str, float]:
-        """Returns the self-HSIC of every layer's feature matrix, keyed by layer name."""
         return {name: cls._unbiased_hsic(np.asarray(features, dtype=np.float64), np.asarray(features, dtype=np.float64)) for name, features in layers.items()}
 
     @classmethod
     def _degenerate(cls, layers: dict[str, np.ndarray], self_hsic: dict[str, float]) -> set[str]:
-        """Returns the layers whose self-HSIC is negligible against their squared mean feature energy."""
         degenerate = set()
         for name, features in layers.items():
             X      = np.asarray(features, dtype=np.float64)
@@ -114,14 +81,6 @@ class CkaComputation:
 
     @classmethod
     def degenerate_layers(cls, layers: dict[str, np.ndarray]) -> dict[str, float]:
-        """Returns the self-HSIC of every degenerate layer, whose CKA is undefined.
-
-        Args:
-            layers : Layer name to feature matrix of shape (samples, features).
-
-        Returns:
-            Self-HSIC keyed by the name of each degenerate layer, in layer order.
-        """
         self_hsic  = cls._self_hsic(layers)
         degenerate = cls._degenerate(layers, self_hsic)
 
@@ -129,16 +88,6 @@ class CkaComputation:
 
     @classmethod
     def cross_matrix(cls, layers_a: dict[str, np.ndarray], layers_b: dict[str, np.ndarray]) -> np.ndarray:
-        """Builds the full cross-layer CKA matrix between two layer collections.
-
-        Args:
-            layers_a : Layer name to feature matrix of shape (samples, features).
-            layers_b : Same for the second run; passing the identical object triggers the symmetric fast path.
-
-        Returns:
-            CKA values of shape (len(layers_a), len(layers_b)), in layer order, NaN in
-            the rows and columns of degenerate layers.
-        """
         names_a   = list(layers_a)
         names_b   = list(layers_b)
         symmetric = layers_b is layers_a
@@ -167,18 +116,6 @@ class CkaComputation:
 
     @staticmethod
     def best_match_profiles(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Returns the per-layer best-match CKA in each direction of a cross-layer matrix.
-
-        Undefined (NaN) entries are ignored; a layer whose row or column is undefined
-        throughout, a degenerate layer, gets a NaN best match.
-
-        Args:
-            matrix : CKA values of shape (n_layers_a, n_layers_b).
-
-        Returns:
-            A tuple of the forward profile, shape (n_layers_a,), and the backward
-            profile, shape (n_layers_b,).
-        """
         forward  = np.array([np.nanmax(row) if np.isfinite(row).any() else np.nan for row in matrix])
         backward = np.array([np.nanmax(column) if np.isfinite(column).any() else np.nan for column in matrix.T])
 
@@ -186,14 +123,6 @@ class CkaComputation:
 
     @classmethod
     def alignment_score(cls, matrix: np.ndarray) -> float:
-        """Returns the mean best-match CKA of a cross-layer matrix, symmetrised over both directions and over the defined layers.
-
-        Args:
-            matrix : CKA values of shape (n_layers_a, n_layers_b), NaN where undefined.
-
-        Raises:
-            ValueError : If one side holds no layer with a defined best match.
-        """
         forward, backward = cls.best_match_profiles(matrix)
 
         if not np.isfinite(forward).any() or not np.isfinite(backward).any():
@@ -203,15 +132,6 @@ class CkaComputation:
 
     @classmethod
     def divergence_depth(cls, profile: np.ndarray) -> float | None:
-        """Returns the relative depth at which a best-match profile first drops below threshold.
-
-        Args:
-            profile : Best-match CKA per layer in forward order, shape (n_layers,); NaN for a degenerate layer, which never counts as diverged.
-
-        Returns:
-            The relative depth in [0, 1] of the first layer below the divergence
-            threshold, or None when no layer falls below it.
-        """
         below = np.where(profile < cls.DIVERGENCE_THRESHOLD)[0]
         if below.size == 0:
             return None
@@ -222,21 +142,8 @@ class CkaComputation:
 
 
 class CkaPlots(PlotBase):
-    """Publication figures for cross-layer and cross-run CKA structure."""
 
     def pair_heatmap(self, matrix: np.ndarray, name_a: str, name_b: str, score: float, path: Path) -> Path:
-        """Saves the cross-layer CKA heatmap for one run pair.
-
-        Args:
-            matrix : CKA values of shape (n_layers_a, n_layers_b).
-            name_a : Label of the run on the vertical axis.
-            name_b : Label of the run on the horizontal axis.
-            score  : Mean best-match alignment annotated on the figure.
-            path   : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         return self._imshow_figure(
             matrix,
             x_label        = f"{name_b} layers (forward order)",
@@ -251,16 +158,6 @@ class CkaPlots(PlotBase):
         )
 
     def self_heatmap(self, matrix: np.ndarray, name: str, path: Path) -> Path:
-        """Saves the within-run layer-to-layer CKA heatmap.
-
-        Args:
-            matrix : CKA values of shape (n_layers, n_layers).
-            name   : Run label used in the title.
-            path   : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         return self._imshow_figure(
             matrix,
             x_label        = "Layers (forward order)",
@@ -274,18 +171,6 @@ class CkaPlots(PlotBase):
         )
 
     def best_match_profile(self, forward: np.ndarray, backward: np.ndarray, name_a: str, name_b: str, path: Path) -> Path:
-        """Saves the two best-match CKA profiles against relative network depth.
-
-        Args:
-            forward  : Best match in run B for each layer of run A, shape (n_layers_a,).
-            backward : Best match in run A for each layer of run B, shape (n_layers_b,).
-            name_a   : Label of the first run.
-            name_b   : Label of the second run.
-            path     : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
@@ -308,16 +193,6 @@ class CkaPlots(PlotBase):
         return self._save(fig, path)
 
     def summary_heatmap(self, matrix: np.ndarray, names: list[str], path: Path) -> Path:
-        """Saves the annotated run-by-run alignment heatmap.
-
-        Args:
-            matrix : Mean best-match CKA of shape (n_runs, n_runs).
-            names  : Run labels in matrix order.
-            path   : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH, aspect=0.9))
@@ -339,23 +214,8 @@ class CkaPlots(PlotBase):
 
 
 class CkaComparison:
-    """Compares the layer representations of several runs on a shared pixel sample.
-
-    Attributes:
-        config            : CKA configuration carrying run selection, split and sampling fields.
-        logger            : Logger for progress reporting.
-        profile_overrides : Leaf path to value of every default the machine profile rewrote.
-        output_dir        : Timestamped directory receiving figures, JSON and the report.
-    """
 
     def __init__(self, config: CkaConfig, logger, profile_overrides: dict) -> None:
-        """Stores the configuration and resolves the timestamped output directory.
-
-        Args:
-            config            : CKA configuration.
-            logger            : Logger for progress reporting.
-            profile_overrides : Leaf path to value of every default the machine profile rewrote, tagged in the configuration table.
-        """
         self.config            = config
         self.logger            = logger
         self.profile_overrides = profile_overrides
@@ -363,14 +223,6 @@ class CkaComparison:
         self.output_dir = Path(config.output_dir) / RunTag.now()
 
     def _select_runs(self) -> list[Path]:
-        """Returns the run directories to compare.
-
-        Returns:
-            The matching run directories, at least two.
-
-        Raises:
-            ValueError : If fewer than two runs match the filter.
-        """
         selector = RunSelector(self.config.runs_dir, self.config.checkpoint_name, self.logger, action="compare")
         run_dirs = selector.resolve(self.config.run_filter)
 
@@ -380,7 +232,6 @@ class CkaComparison:
         return run_dirs
 
     def _load(self, run_dir: Path):
-        """Returns the loaded run for one run directory on the configured split."""
         return RunLoader(run_dir, logger=self.logger).load(
             split           = self.config.split,
             batch_size      = self.config.batch_size,
@@ -392,18 +243,9 @@ class CkaComparison:
 
     @staticmethod
     def _sample_grid(run) -> tuple:
-        """Returns the (split region, patch size, patch stride) identity of a run's sample grid."""
         return (run.split_region.as_tuple(), tuple(run.dataset_config.patch.size), tuple(run.dataset_config.patch.stride))
 
     def _validate_alignment(self, grids: list[tuple]) -> None:
-        """Checks that every run shares one split region and patch grid.
-
-        Args:
-            grids : Sample-grid identities collected so far.
-
-        Raises:
-            ValueError : If the runs disagree on region, patch size or stride.
-        """
         regions = {grid[0] for grid in grids}
         patches = {grid[1] for grid in grids}
         strides = {grid[2] for grid in grids}
@@ -412,7 +254,6 @@ class CkaComparison:
             raise ValueError(f"Runs are not sample-aligned: regions {sorted(regions)}, patches {sorted(patches)}, strides {sorted(strides)}; CKA needs identical split regions and patch grids")
 
     def _probe_layers(self, run) -> list[str]:
-        """Returns the leaf layer names to record, thinned evenly to the configured cap."""
         names = ActivationRecorder(run.model.module).leaf_names()
 
         if len(names) <= self.config.max_layers:
@@ -422,26 +263,6 @@ class CkaComparison:
         return [names[index] for index in sorted(set(keep))]
 
     def _collect(self, run, name: str) -> tuple[dict[str, np.ndarray], dict]:
-        """Records layer activations at the sampled pixels of one run.
-
-        Layers that do not emit a (batch, channels, height, width) feature map on
-        the input grid are dropped with their reason; the usable layer and sample
-        counts are logged and the dropped layers named in one warning.
-
-        Args:
-            run  : Loaded run providing the model and loader.
-            name : Run label used in the log lines.
-
-        Returns:
-            A pair of the mapping from layer name to features of shape (samples,
-            channels), in matrix order, and the layer record holding the compared
-            "layers", the "dropped" layers with their reason, the "degenerate"
-            layers with their self-HSIC, the "n_leaf_layers" the probed layers were
-            thinned from and the "n_samples" per matrix.
-
-        Raises:
-            ValueError : If no layer produced a usable feature map.
-        """
         layers   = self._probe_layers(run)
         sampler  = FeatureSampler(self.config.samples_per_batch, seed=self.config.sample_seed)
         recorder = ActivationRecorder(run.model.module)
@@ -497,18 +318,6 @@ class CkaComparison:
         return features, record
 
     def _write_report(self, names: list[str], records: dict[str, dict], summary: np.ndarray, pairs: dict, figures: dict[str, Path]) -> Path:
-        """Writes the markdown CKA report with the alignment matrix, pair diagnostics and compared layers.
-
-        Args:
-            names   : Run labels in matrix order.
-            records : Layer record of each run, keyed by run label.
-            summary : Mean best-match CKA of shape (n_runs, n_runs).
-            pairs   : Per-pair alignment score and divergence depths, keyed by run-name pair.
-            figures : Mapping from figure name to its written path.
-
-        Returns:
-            The written report path.
-        """
         doc = MarkdownDoc(title="Representation similarity (debiased linear CKA)")
         doc.paragraph(
             f"Debiased linear CKA (unbiased HSIC estimator) between {len(names)} runs on identical sampled pixels of the '{self.config.split}' split. "
@@ -548,13 +357,6 @@ class CkaComparison:
         return doc.save(self.output_dir / "cka_report.md")
 
     def run(self) -> dict:
-        """Collects features, computes all CKA matrices and writes figures, JSON and report.
-
-        Returns:
-            The payload holding run labels, split, commit, each run's compared and
-            dropped layers with its checkpoint, the matrix file keys, alignment
-            matrix, pair scores and divergence depths.
-        """
         FileIO.ensure_dirs(self.output_dir)
         PlotBase.use_style(self.config.figure_style)
 

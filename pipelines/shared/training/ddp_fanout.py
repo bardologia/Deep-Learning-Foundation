@@ -1,20 +1,3 @@
-"""Data-parallel fan-out of one training run across the local GPUs.
-
-Launches one synchronised training rank per device in two stages: rank zero
-starts alone and owns the canonical run directory and the console, and the
-other ranks join only once rank zero's resume gate has settled that directory,
-writing their mirrored artifacts into an isolated ``ddp/rank<N>`` subtree so no
-file is ever written by two processes. The ranks rendezvous through a
-``torch.distributed`` process group whose coordinates are stamped into each
-child's environment, average their gradients every optimizer window, and reduce
-their validation losses, so the processes behave as one run with the configured
-global batch split across the devices.
-
-The dispatch class next to the fan-out holds the decision every training entry
-shares: whether this process fans a run out, trains it in place as one of the
-ranks, or must refuse because a seed sweep or a trial sweep already claims one
-GPU per unit.
-"""
 
 from __future__ import annotations
 
@@ -39,31 +22,6 @@ from tools.training.distributed                import DistributedContext
 
 
 class DdpFanout:
-    """Runs one training configuration as a staged group of data-parallel rank processes.
-
-    Rank zero is launched first and alone, so its resume gate can settle the
-    canonical run directory; the remaining ranks are launched once that
-    directory is confirmed settled.
-
-    Attributes:
-        OWN_FIELDS        : Top-level config fields owned by the fan-out and therefore never forwarded to the rank processes.
-        POLL_S            : Seconds between liveness polls of the rank processes.
-        GRACE_S           : Seconds a terminated rank gets before it is killed.
-        config            : Entry configuration of the run.
-        entry_script      : Training entry script each rank re-invokes.
-        run_name          : Resolved run directory name shared by every rank's naming.
-        base_name         : Run name handed to rank zero of a fresh run, which its own naming scheme composes back into ``run_name``.
-        mirrors           : Existing mirror directory per secondary rank of a resumed run, empty for a fresh run.
-        seed              : Seed pinned identically on every rank.
-        gpus              : CUDA device indices, one rank launched per device.
-        run_dir           : Canonical run directory owned by rank zero.
-        ddp_dir           : Subtree of the run directory holding the other ranks' output.
-        log_dir           : Directory holding the fan-out log and the per-rank launch logs.
-        forward_overrides : CLI overrides forwarded to every rank.
-        logger            : Logger of the fan-out, opened only once rank zero has settled the run directory (a fresh run deletes a stale unfinished directory, so nothing may be created inside it before that).
-        progress          : Per-rank progress ledger written beside the GPU pool path so the console's sub-run selector can stream the rank logs, opened with the logger.
-        rank_starts       : Device index and monotonic start time per launched rank, keyed by rank, feeding the progress snapshots.
-    """
 
     OWN_FIELDS = ("ddp", "gpu", "gpus", "gpus_file", "poll_interval_s", "seed", "seeds", "run_name", "logdir", "resume_from")
 
@@ -73,17 +31,6 @@ class DdpFanout:
     GRACE_S = 30.0
 
     def __init__(self, config, cli_overrides: dict, entry_script: Path, run_name: str, base_name: str, seed: int, mirrors: dict | None = None) -> None:
-        """Prepares the rank plan, directories and forwarded overrides.
-
-        Args:
-            config        : Entry configuration of the run.
-            cli_overrides : All CLI overrides; fan-out-owned fields are filtered out before forwarding.
-            entry_script  : Training entry script each rank re-invokes.
-            run_name      : Resolved run directory name.
-            base_name     : Run name handed to rank zero of a fresh run, composed back into ``run_name`` by the entry's own naming scheme.
-            seed          : Seed pinned on every rank.
-            mirrors       : Existing mirror directory per secondary rank of a resumed run, or None for a fresh run.
-        """
         self.config       = config
         self.entry_script = Path(entry_script)
         self.run_name     = run_name
@@ -104,14 +51,6 @@ class DdpFanout:
 
     @classmethod
     def _validate(cls, config) -> None:
-        """Rejects configurations the synchronous rank group cannot run.
-
-        Args:
-            config : Entry configuration of the run.
-
-        Raises:
-            ValueError : If fewer than two distinct GPUs are given, the batch size does not divide across them, or a pre-training probe is enabled (probes explore rank-locally, so their outcomes could diverge and desynchronise the group's collectives).
-        """
         gpus = [int(gpu) for gpu in config.gpus]
 
         if len(gpus) < 2 or len(set(gpus)) != len(gpus):
@@ -127,7 +66,6 @@ class DdpFanout:
 
     @classmethod
     def _mirrors(cls, target: Path) -> dict:
-        """Returns the existing mirror directory per secondary rank under a run's ``ddp`` tree, matched by their rank suffix."""
         mirrors = {}
 
         if not (target / "ddp").is_dir():
@@ -142,20 +80,6 @@ class DdpFanout:
 
     @classmethod
     def _validate_resume_group(cls, target: Path, mirrors: dict, n_ranks: int) -> None:
-        """Refuses resuming a run whose rank mirrors do not match the requested rank group.
-
-        Every rank of a resumed group restores its own trainer state, so a rank
-        without a mirror would train from scratch and desynchronise the gradient
-        averaging, while a leftover mirror would silently drop a trained rank.
-
-        Args:
-            target  : Run directory being resumed.
-            mirrors : Existing mirror directory per secondary rank.
-            n_ranks : Number of ranks the current ``gpus`` setting builds.
-
-        Raises:
-            SystemExit : If the run's ``ddp`` mirrors do not cover exactly the ranks 1 to n_ranks - 1.
-        """
         expected = set(range(1, n_ranks))
         found    = set(mirrors)
 
@@ -164,23 +88,6 @@ class DdpFanout:
 
     @classmethod
     def for_runner(cls, config, cli_overrides: dict, entry_script: Path, runner_factory: Callable[[object], object], base_label: str | None = None) -> "DdpFanout":
-        """Builds the fan-out for an entry, resuming or naming a fresh run.
-
-        Args:
-            config         : Entry configuration of the run.
-            cli_overrides  : All CLI overrides seen by the entry.
-            entry_script   : Training entry script each rank re-invokes.
-            runner_factory : Callable turning a config into a single-run runner, used to compose the fresh run name.
-            base_label     : Optional label prefixed to a timestamped run name.
-
-        Returns:
-            The configured fan-out.
-
-        Raises:
-            FileNotFoundError : If ``resume_from`` is not an existing directory.
-            SystemExit        : If a resumed run's rank mirrors do not match the requested rank group.
-            ValueError        : If the configuration cannot run as a rank group.
-        """
         cls._validate(config)
 
         if config.resume_from:
@@ -208,24 +115,11 @@ class DdpFanout:
 
     @staticmethod
     def _free_port() -> int:
-        """Returns a currently free TCP port on the loopback interface."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             probe.bind(("127.0.0.1", 0))
             return int(probe.getsockname()[1])
 
     def _rank_overrides(self, rank: int) -> dict:
-        """Returns the CLI overrides pinning one rank's identity and output tree.
-
-        A fresh run hands every rank the bare run name its own naming scheme
-        composes, so the directory it opens matches the one the fan-out
-        predicted: rank zero keeps the canonical run directory and every other
-        rank is redirected into the ``ddp/rank<N>`` subtree so its mirrored
-        artifacts never collide with the canonical ones. A resumed run hands
-        every rank its existing directory instead.
-
-        Args:
-            rank : Zero-based rank of the process.
-        """
         overrides = {**self.forward_overrides, "seed": self.seed, "seeds": (self.seed,)}
 
         if self.config.resume_from:
@@ -238,23 +132,6 @@ class DdpFanout:
         return overrides
 
     def _launch(self, rank: int, gpu: int, port: int, handles: list):
-        """Starts one rank process pinned to its device.
-
-        Rank zero inherits the console; the other ranks append to per-rank
-        launch logs, so a resumed run keeps the earlier launch's record above
-        the new one. Each rank's environment restores the CUDA mask the parent
-        inherited before pinning itself, so the rank resolves its --gpu against
-        the original device set and stashes its own snapshot.
-
-        Args:
-            rank    : Zero-based rank of the process.
-            gpu     : CUDA device index the rank is pinned to.
-            port    : Rendezvous port shared by the group.
-            handles : List collecting the opened log handles for later closing.
-
-        Returns:
-            The started subprocess.
-        """
         command     = [sys.executable, str(self.entry_script), "--gpu", str(gpu)] + ConfigCli.to_argv(self._rank_overrides(rank))
         environment = {**InheritedCudaMask.restored(), **DistributedContext.environment(rank, len(self.gpus), port)}
 
@@ -269,23 +146,6 @@ class DdpFanout:
         return subprocess.Popen(command, env=environment, stdout=handle, stderr=subprocess.STDOUT)
 
     def _await_run_directory(self, rank_zero) -> bool:
-        """Waits for rank zero to settle the run directory before anything joins it.
-
-        A fresh run's resume gate deletes a stale unfinished run directory, so
-        the other ranks and the fan-out's own files must stay out of it until
-        rank zero has re-created it. The freshly written
-        ``RunDirectorySettledMarker`` marks that moment.
-
-        Args:
-            rank_zero : The already-started rank-zero subprocess.
-
-        Returns:
-            True once the run directory is settled; False when rank zero exited
-            cleanly before opening it (the run was already complete and skipped).
-
-        Raises:
-            SystemExit : If rank zero exited with a non-zero code first.
-        """
         sentinel = RunDirectorySettledMarker.path_for(self.run_dir)
         started  = time.time()
 
@@ -302,18 +162,10 @@ class DdpFanout:
             time.sleep(self.POLL_S)
 
     def _open_logger(self) -> None:
-        """Creates the fan-out log directory and its logger inside the settled run."""
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.logger = Logger(log_dir=str(self.log_dir), name="ddp_fanout")
 
     def _open_progress(self) -> None:
-        """Publishes a progress ledger with one unit per secondary rank.
-
-        The ledger is the same per-unit registry every fan-out writes beside
-        its GPU pool path, so the web console's sub-run selector lists the
-        ``ddp/logs/rank<N>.log`` files and streams them live. Rank zero carries
-        no unit: its output is the pipeline console itself.
-        """
         pool_file = GpuPoolFile.resolve(self.config.gpus_file, self.run_dir)
         jobs      = [GpuJob(name=f"rank{rank}", command=[], log_path=self.log_dir / f"rank{rank}.log") for rank in range(1, len(self.gpus))]
 
@@ -321,28 +173,12 @@ class DdpFanout:
         self.progress.write(self.progress.snapshot(running=[], queued=len(jobs), workers=len(jobs)), force=True)
 
     def _clear_rank_completion(self) -> None:
-        """Clears the completion markers of the secondary ranks' mirror directories.
-
-        A mirror that still carries a marker would be reused by its rank's
-        resume gate, so that rank would exit cleanly without ever joining the
-        process group and leave the training ranks blocked in the rendezvous
-        until it times out. Rank zero's gate has already decided that this run
-        trains, so its mirrors must train with it.
-        """
         for rank, mirror in self._mirrors(self.run_dir).items():
             if rank < len(self.gpus) and CompletionMarker.is_complete(mirror):
                 CompletionMarker.clear(mirror)
                 self.logger.warning(f"rank {rank}: cleared the completion marker of {mirror} so the mirror rejoins the group instead of skipping training")
 
     def _await_group(self, processes: list) -> None:
-        """Waits for every rank, tearing the group down on the first failure.
-
-        Args:
-            processes : Rank subprocesses in rank order.
-
-        Raises:
-            SystemExit : If any rank exited with a non-zero code.
-        """
         try:
             while any(process.poll() is None for process in processes):
                 for rank, process in enumerate(processes):
@@ -365,12 +201,6 @@ class DdpFanout:
             raise SystemExit(f"DDP ranks failed: {descriptions}; see {self.log_dir}")
 
     def _publish_progress(self, processes: list, force: bool = False) -> None:
-        """Folds exited secondary ranks into the ledger and writes a snapshot.
-
-        Args:
-            processes : Rank subprocesses in rank order, rank zero first.
-            force     : Writes the snapshot regardless of the throttle when True.
-        """
         if self.progress is None:
             return
 
@@ -393,11 +223,6 @@ class DdpFanout:
         self.progress.write(self.progress.snapshot(running, queued, workers=len(self.gpus) - 1), force=force)
 
     def _terminate(self, processes: list) -> None:
-        """Terminates every still-running rank, escalating to kill after the grace period.
-
-        Args:
-            processes : Rank subprocesses in rank order.
-        """
         alive = [process for process in processes if process.poll() is None]
         for process in alive:
             process.terminate()
@@ -411,18 +236,6 @@ class DdpFanout:
                 process.wait()
 
     def run(self) -> None:
-        """Launches rank zero, then the remaining ranks, and waits for the group.
-
-        Rank zero starts alone so its resume gate can settle the run directory;
-        once the directory is confirmed fresh the mirrors' completion markers
-        are cleared and the other ranks join it. A rank zero that exits cleanly
-        before opening the directory skipped an already-complete run, and no
-        further rank is launched. The fan-out log closes with an ABORTED banner
-        naming the error when a rank fails or the group is interrupted.
-
-        Raises:
-            SystemExit : If any rank exited with a non-zero code.
-        """
         port = self._free_port()
 
         handles   = []
@@ -472,39 +285,14 @@ class DdpFanout:
 
 
 class DdpDispatch:
-    """Decides, for one training entry, whether a run fans out as a rank group.
-
-    Every training entry offers the same ``ddp`` switch, and the same
-    combinations are impossible: several seeds, or a trial sweep, already claim
-    one GPU per unit, so they cannot also split one run across the pool. This
-    class holds that shared decision and the loud rejections around it.
-    """
 
     @staticmethod
     def reject_seed_sweep(config, seeds: list[int]) -> None:
-        """Refuses a multi-seed sweep combined with data-parallel training.
-
-        Args:
-            config : Entry configuration of the run.
-            seeds  : Seeds resolved from the configuration.
-
-        Raises:
-            ValueError : If ``ddp`` is set for more than one seed.
-        """
         if config.ddp:
             raise ValueError(f"ddp=True trains exactly one seed data-parallel, but seeds={seeds}; pin a single seed, or drop ddp to fan the seeds out one GPU each")
 
     @staticmethod
     def reject_trials(config, trial_unit: bool) -> None:
-        """Refuses a trial sweep, or one of its units, combined with data-parallel training.
-
-        Args:
-            config     : Entry configuration of the run.
-            trial_unit : Whether the entry was re-invoked as a single sweep unit.
-
-        Raises:
-            ValueError : If ``ddp`` is set for a trial sweep or a trial unit.
-        """
         if not config.ddp:
             return
 
@@ -515,22 +303,6 @@ class DdpDispatch:
 
     @classmethod
     def single_seed(cls, config, cli_overrides: dict, entry_script: Path, runner_factory: Callable[[object], object], base_label: str | None = None) -> bool:
-        """Fans the single resolved seed out as a rank group when ``ddp`` asks for it.
-
-        A process that is itself a rank of a running group never fans out
-        again; it trains in place.
-
-        Args:
-            config         : Entry configuration of the run.
-            cli_overrides  : All CLI overrides seen by the entry.
-            entry_script   : Training entry script each rank re-invokes.
-            runner_factory : Callable turning a config into a single-run runner.
-            base_label     : Optional label prefixed to a timestamped run name.
-
-        Returns:
-            True when the rank group ran, False when the caller must train the
-            run in process itself.
-        """
         if not config.ddp or DistributedContext.current().active:
             return False
 

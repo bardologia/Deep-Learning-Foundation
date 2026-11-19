@@ -1,10 +1,3 @@
-"""Training-time diagnostics of the Gaussian head: parameter, slot and example monitoring.
-
-Collects capped samples of the physical Gaussian parameters for histograms, tracks per-slot
-occupancy, amplitude and gradient magnitude to expose slot collapse, and logs reconstructed
-z profiles for a fixed set of validation pixels chosen to span the component
-configurations of interest.
-"""
 
 from __future__ import annotations
 
@@ -16,23 +9,12 @@ import torch
 
 
 class ParamSampler:
-    """Collects a capped sample of active Gaussian parameters for epoch histograms.
-
-    Attributes:
-        PARAM_NAMES          : Sampled parameter names in channel order: amplitude, mu and sigma.
-        MAX_VALUES_PER_BATCH : Values taken from a single batch per parameter.
-        MAX_VALUES_TOTAL     : Values retained per parameter across an epoch.
-        ppg                  : Number of channels per Gaussian.
-        thr                  : Amplitude above which a Gaussian counts as active, set when sampling begins.
-        active               : Whether sampling is currently open.
-    """
 
     PARAM_NAMES          = ("amp", "mu", "sigma")
     MAX_VALUES_PER_BATCH = 2048
     MAX_VALUES_TOTAL     = 200_000
 
     def __init__(self, params_per_gaussian: int):
-        """Stores the channel count per Gaussian and clears the value store."""
         self.ppg    = params_per_gaussian
         self.thr    = None
         self.active = False
@@ -40,18 +22,12 @@ class ParamSampler:
         self._reset_store()
 
     def begin(self, activity_threshold: float) -> None:
-        """Opens a sampling window with the label run's active-amplitude threshold."""
         self.thr    = activity_threshold
         self.active = True
         self._reset_store()
 
     @torch.no_grad()
     def observe(self, pred_params_phys: torch.Tensor) -> None:
-        """Samples the active Gaussian parameters of one batch into the store.
-
-        Args:
-            pred_params_phys : Denormalised predicted parameters of shape (batch, n_gaussians * ppg, height, width), with amplitude, mu in metres and sigma in metres per Gaussian.
-        """
         B, C, H, W = pred_params_phys.shape
         p          = pred_params_phys.reshape(B, C // self.ppg, self.ppg, H, W)
         active     = p[:, :, 0] > self.thr
@@ -72,7 +48,6 @@ class ParamSampler:
 
     @staticmethod
     def _subsample(values: torch.Tensor, cap: int) -> torch.Tensor:
-        """Returns at most cap values, evenly spaced over the flat input tensor."""
         if values.numel() <= cap:
             return values
 
@@ -80,37 +55,20 @@ class ParamSampler:
         return values[idx]
 
     def histograms(self) -> dict:
-        """Returns the collected values per parameter name as flat numpy arrays."""
         return {name: torch.cat(chunks).numpy() for name, chunks in self._values.items() if chunks}
 
     def end(self) -> None:
-        """Closes the sampling window and clears the value store."""
         self.active = False
         self._reset_store()
 
     def _reset_store(self) -> None:
-        """Empties the per-parameter value lists and their counters."""
         self._values = {name: [] for name in self.PARAM_NAMES}
         self._counts = {name: 0  for name in self.PARAM_NAMES}
 
 
 class SlotVitals:
-    """Tracks per-slot occupancy, mean amplitude, mean centre and width, and gradient norm to expose slot collapse.
-
-    A slot declares a pixel when its predicted amplitude exceeds the activity
-    threshold, the same predicate as the active fraction. Centre and width means
-    are reported over all pixels and over the declared pixels only, so a slot
-    whose width drifts below its floor shows up even while it stays declared.
-
-    Attributes:
-        ppg        : Number of channels per Gaussian.
-        thr        : Amplitude above which a slot counts as active, set when observation begins.
-        grad_scale : Factor undoing AMP loss scaling on the observed gradients.
-        active     : Whether value observation is currently open.
-    """
 
     def __init__(self, params_per_gaussian: int, grad_scale: float = 1.0):
-        """Stores the channel count per Gaussian and the gradient rescaling factor."""
         self.ppg        = params_per_gaussian
         self.thr        = None
         self.grad_scale = float(grad_scale)
@@ -120,18 +78,12 @@ class SlotVitals:
         self._reset_grad()
 
     def begin(self, activity_threshold: float) -> None:
-        """Opens an observation window with the label run's active-amplitude threshold."""
         self.thr    = activity_threshold
         self.active = True
         self._reset_val()
 
     @torch.no_grad()
     def observe(self, pred_params_phys: torch.Tensor) -> None:
-        """Accumulates the active-pixel count and amplitude sum of every slot for one batch.
-
-        Args:
-            pred_params_phys : Denormalised predicted parameters of shape (batch, n_gaussians * ppg, height, width).
-        """
         if not self.active:
             return
 
@@ -161,11 +113,6 @@ class SlotVitals:
         self._n_pixels += B * H * W
 
     def observe_gradient(self, grad: torch.Tensor) -> None:
-        """Accumulates the per-slot gradient norm of one backward pass.
-
-        Args:
-            grad : Gradient of the loss with respect to the head output, of shape (batch, n_gaussians * ppg, height, width), still carrying any AMP loss scaling.
-        """
         B, C, H, W = grad.shape
         g          = grad.detach().reshape(B, C // self.ppg, self.ppg, H, W)
         norms      = g.pow(2).sum(dim=(0, 2, 3, 4)).sqrt().float() * self.grad_scale
@@ -178,15 +125,6 @@ class SlotVitals:
         self._grad_batches += 1
 
     def scalars(self) -> dict:
-        """Summarises slot usage over the observation window.
-
-        Returns:
-            Per-slot active fraction, mean active amplitude, mean centre and width
-            in metres over all pixels and over the declared pixels, plus the
-            normalised entropy of the slot-usage distribution; empty when nothing
-            was observed. A slot that declares no pixel reports an amplitude mean
-            of 0.0 and no declared centre or width, since those means are undefined.
-        """
         if self._sums is None or self._n_pixels == 0:
             return {}
 
@@ -212,11 +150,6 @@ class SlotVitals:
         return out
 
     def gradient_scalars(self) -> dict:
-        """Returns the mean per-slot gradient norm and clears the gradient accumulator.
-
-        Returns:
-            Per-slot mean gradient norm since the last call; empty when no gradient was observed.
-        """
         if self._grad_sum is None or self._grad_batches == 0:
             return {}
 
@@ -227,39 +160,19 @@ class SlotVitals:
         return out
 
     def end(self) -> None:
-        """Closes the observation window and clears the value accumulators."""
         self.active = False
         self._reset_val()
 
     def _reset_val(self) -> None:
-        """Clears the per-slot count, amplitude, centre and width accumulators."""
         self._sums     = None
         self._n_pixels = 0
 
     def _reset_grad(self) -> None:
-        """Clears the per-slot gradient accumulator and its batch counter."""
         self._grad_sum     = None
         self._grad_batches = 0
 
 
 class ExampleSelector:
-    """Picks validation pixels spanning the component configurations worth watching.
-
-    Candidates are classified from the ground-truth parameters into one-component pixels and
-    three two-component regimes distinguished by the separation of the two strongest
-    Gaussians relative to their widths, and by their amplitude ratio.
-
-    Attributes:
-        CANDIDATES_PER_BATCH : Candidates retained per category and batch.
-        QUANTILES            : Quantiles of the ranking metric picked within each category.
-        OVERLAP_RATIO_RANGE  : Separation-to-width ratio range counted as overlapping.
-        SEPARATED_RATIO_MIN  : Minimum separation-to-width ratio counted as separated.
-        DISTANT_RATIO_MIN    : Minimum separation-to-width ratio counted as distant.
-        AMP_RATIO_MIN        : Amplitude ratio splitting balanced pairs from dominated ones.
-        CATEGORIES           : Category names in report order.
-        ppg                  : Number of channels per Gaussian.
-        thr                  : Amplitude above which a Gaussian counts as active.
-    """
 
     CANDIDATES_PER_BATCH = 256
     QUANTILES            = (0.1, 0.5, 0.9)
@@ -270,23 +183,11 @@ class ExampleSelector:
     CATEGORIES           = ("single_gaussian", "two_overlapping", "two_separated", "two_distant")
 
     def __init__(self, params_per_gaussian: int, activity_threshold: float):
-        """Stores the channel count per Gaussian and the label run's active-amplitude threshold."""
         self.ppg = params_per_gaussian
         self.thr = activity_threshold
 
     @torch.no_grad()
     def _batch_candidates(self, phys: torch.Tensor, offset: int) -> dict:
-        """Classifies the pixels of one batch into the example categories.
-
-        Args:
-            phys   : Denormalised ground-truth parameters of shape (batch, n_gaussians * ppg, height, width).
-            offset : Number of samples seen before this batch, added to make sample indices global.
-
-        Returns:
-            Category name mapped to candidate rows of shape (n_candidates, 4), each row
-            holding the global sample index, the height and width indices, and the ranking
-            metric of that category.
-        """
         B, C, H, W = phys.shape
         p          = phys.reshape(B, C // self.ppg, self.ppg, H, W)
 
@@ -327,16 +228,6 @@ class ExampleSelector:
         return rows
 
     def _rows(self, mask: torch.Tensor, metric: torch.Tensor, offset: int) -> torch.Tensor:
-        """Turns a pixel mask into capped candidate rows carrying their ranking metric.
-
-        Args:
-            mask   : Boolean pixel mask of shape (batch, height, width).
-            metric : Ranking metric of the same shape as the mask.
-            offset : Number of samples seen before this batch.
-
-        Returns:
-            Rows of shape (n_candidates, 4) with global sample index, height, width and metric.
-        """
         coords = mask.nonzero(as_tuple=False)
 
         if coords.shape[0] == 0:
@@ -347,7 +238,6 @@ class ExampleSelector:
 
     @staticmethod
     def _subsample(rows: torch.Tensor, cap: int) -> torch.Tensor:
-        """Returns at most cap candidate rows, evenly spaced over the input rows."""
         if rows.shape[0] <= cap:
             return rows
 
@@ -356,18 +246,9 @@ class ExampleSelector:
 
     @staticmethod
     def _empty() -> torch.Tensor:
-        """Returns an empty candidate-row tensor of shape (0, 4)."""
         return torch.zeros(0, 4)
 
     def _pick(self, pool: torch.Tensor) -> list:
-        """Picks the pixels sitting at the configured quantiles of a category's ranking metric.
-
-        Args:
-            pool : Candidate rows of shape (n_candidates, 4) for one category.
-
-        Returns:
-            Deduplicated (sample, height, width) index triples, at most one per quantile.
-        """
         if pool.shape[0] == 0:
             return []
 
@@ -386,15 +267,6 @@ class ExampleSelector:
         return picked
 
     def select(self, loader, denormalize) -> dict:
-        """Scans a loader once and picks the example pixels of every category.
-
-        Args:
-            loader      : Loader yielding (inputs, targets) batches over the validation split.
-            denormalize : Callable mapping normalised targets to physical Gaussian parameters.
-
-        Returns:
-            Category name mapped to the selected (sample, height, width) index triples.
-        """
         pools  = {name: [] for name in self.CATEGORIES}
         offset = 0
 
@@ -410,21 +282,10 @@ class ExampleSelector:
 
 
 class ReconstructionFigures:
-    """Logs predicted-versus-label z profiles for a fixed set of validation pixels.
-
-    The reference pixels and their y limits are captured once, so the figures logged each
-    epoch are directly comparable over training.
-
-    Attributes:
-        HEADROOM : Factor applied to the label peak when fixing the y limit of a panel.
-        tracker  : Experiment tracker receiving the figures.
-        device   : Device the cached reference batch is held on.
-    """
 
     HEADROOM = 1.3
 
     def __init__(self, tracker, device):
-        """Stores the tracker and device and clears the cached reference batch."""
         self.tracker = tracker
         self.device  = device
 
@@ -435,17 +296,6 @@ class ReconstructionFigures:
         self._disabled = False
 
     def _collect(self, loader, selected: dict):
-        """Gathers the samples holding the selected pixels into one reference batch.
-
-        Args:
-            loader   : Loader yielding (inputs, targets) batches over the validation split.
-            selected : Category name mapped to (sample, height, width) index triples.
-
-        Returns:
-            Tuple of the stacked inputs of shape (n_examples, in_channels, height, width),
-            the stacked targets of shape (n_examples, target_channels, height, width), and
-            the pixel records as (row, height, width, tag) tuples.
-        """
         needed  = {g for rows in selected.values() for g, _, _ in rows}
         samples = {}
         offset  = 0
@@ -474,26 +324,12 @@ class ReconstructionFigures:
         return torch.stack(images), torch.stack(targets), pixels
 
     def _fixed_ylims(self, criterion) -> list:
-        """Returns the fixed y limit of every panel, taken from its label curve peak.
-
-        Args:
-            criterion : Training criterion supplying the normalisation stats and curve reconstruction.
-
-        Returns:
-            One (0.0, upper) amplitude limit per selected pixel, in pixel order.
-        """
         gt_phys   = criterion.norm_stats.denormalize_output(self._targets.float())
         gt_curves = criterion.reconstruct(gt_phys)
 
         return [(0.0, max(float(gt_curves[row, :, h, w].max()), 1e-6) * self.HEADROOM) for row, h, w, _ in self._pixels]
 
     def capture_reference(self, loader, criterion) -> None:
-        """Selects and caches the reference pixels once, disabling the figures if none qualify.
-
-        Args:
-            loader    : Loader yielding (inputs, targets) batches over the validation split.
-            criterion : Training criterion supplying the Gaussian layout, the active-amplitude threshold, the normalisation stats and the logger.
-        """
         if self._images is not None or self._disabled:
             return
 
@@ -517,17 +353,6 @@ class ReconstructionFigures:
         self._ylims   = self._fixed_ylims(criterion)
 
     def _figure(self, z_axis, pred_curve, gt_curve, ylim):
-        """Draws one prediction-versus-label z profile.
-
-        Args:
-            z_axis     : Z axis in metres, of shape (n_z,).
-            pred_curve : Predicted amplitudes of shape (n_z,).
-            gt_curve   : Label amplitudes of shape (n_z,).
-            ylim       : Fixed amplitude limits of the panel.
-
-        Returns:
-            The matplotlib figure, left open for the tracker to consume.
-        """
         fig, ax = plt.subplots(figsize=(5.0, 3.2), dpi=120)
 
         ax.plot(z_axis, gt_curve,   color="black",   linestyle="--", linewidth=1.2, label="Ground truth")
@@ -543,13 +368,6 @@ class ReconstructionFigures:
 
     @torch.no_grad()
     def log(self, model, criterion, epoch: int) -> None:
-        """Logs one reconstruction figure per reference pixel for the given epoch.
-
-        Args:
-            model     : Model evaluated on the cached reference inputs.
-            criterion : Training criterion supplying the curve reconstruction and the z axis.
-            epoch     : Epoch the figures are logged under.
-        """
         if self._images is None:
             return
 

@@ -1,9 +1,3 @@
-"""Markdown reports comparing several training trials side by side.
-
-Renders an overview with leaderboards, a full metric comparison table, and
-per-subdirectory figure and animation galleries built from each trial's latest
-completed inference run.
-"""
 
 from __future__ import annotations
 
@@ -20,19 +14,6 @@ from tools.monitoring.logger                       import Logger
 
 
 class TrialComparisonReport(ComparisonReportBase):
-    """Writes the markdown comparison of a set of collected trials.
-
-    Attributes:
-        records         : One record per trial, already seed-aggregated.
-        out_dir         : Directory the markdown files and assets are written to.
-        compare_images  : Whether per-figure gallery pages are produced.
-        compare_gifs    : Whether the animation gallery page is produced.
-        inference_split : Dataset split whose completed inference stamps the records were read from.
-        logger          : Logger used for progress reporting.
-        seed_dispersion : Per-trial seed statistics keyed by trial name.
-        has_seed_sweep  : True when at least one trial aggregates several seeds.
-        assets          : Resolver for image links and report headers.
-    """
 
     FIGURE_SUBDIRS = [
         ("tracks",              "Channels and derived channels"),
@@ -94,18 +75,6 @@ class TrialComparisonReport(ComparisonReportBase):
         logger          : Logger,
         seed_dispersion : dict | None = None,
     ) -> None:
-        """Binds the report to the collected trials and output directory.
-
-        Args:
-            records         : Collected trial records to compare.
-            out_dir         : Directory the markdown files are written to.
-            compare_images  : Whether to emit per-subdirectory figure galleries.
-            compare_gifs    : Whether to emit the animation gallery.
-            embed_images    : Whether images are inlined rather than linked.
-            inference_split : Dataset split the records' inference stamps were read from.
-            logger          : Logger used for progress reporting.
-            seed_dispersion : Per-trial seed statistics keyed by trial name.
-        """
         self.records         = records
         self.out_dir         = Path(out_dir)
         self.compare_images  = compare_images
@@ -117,11 +86,6 @@ class TrialComparisonReport(ComparisonReportBase):
         self.assets          = ReportAssets(base=self.out_dir, embed_images=embed_images)
 
     def _write_overview(self) -> Path:
-        """Writes the run table and leaderboards to `overview.md`.
-
-        Returns:
-            Path of the written overview file.
-        """
         lines  = self.assets.header("Trial Comparison Overview")
         lines += [f"Metrics, figures and animations come from each trial's newest completed inference on the `{self.inference_split}` split; a trial without one is listed but not ranked.\n"]
         lines += ["## Runs\n"]
@@ -155,12 +119,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return out
 
     def _leaderboard(self) -> list[str]:
-        """Returns the markdown lines of every leaderboard section.
-
-        Covers the headline metrics, the correlation-grouped variant, matched
-        precision and recall per ground-truth component count, and the count
-        calibration table.
-        """
         scored = [r for r in self.records if r.metrics]
         if not scored:
             return ["## Leaderboard\n", "_No inference metrics available._\n"]
@@ -200,7 +158,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return lines
 
     def _precision_metrics(self, scored: list[TrialRecord]) -> list[tuple[str, str]]:
-        """Returns the (metric key, column label) pairs for matched precision."""
         buckets = self._bucket_indices(scored, self.PRECISION_BUCKET_PATTERN)
 
         metrics = [("matched_precision", "Overall")]
@@ -208,7 +165,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return metrics
 
     def _recall_metrics(self, scored: list[TrialRecord]) -> list[tuple[str, str]]:
-        """Returns the (metric key, column label) pairs for matched recall."""
         buckets = self._bucket_indices(scored, self.RECALL_BUCKET_PATTERN)
 
         metrics = [("matched_recall", "Overall")]
@@ -216,15 +172,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return metrics
 
     def _bucket_indices(self, scored: list[TrialRecord], pattern: re.Pattern) -> list[int]:
-        """Returns the sorted component counts present in the trials' metric keys.
-
-        Args:
-            scored  : Trials carrying inference metrics.
-            pattern : Regex whose first group captures the component count.
-
-        Returns:
-            Ascending list of ground-truth component counts k found in any trial.
-        """
         buckets: set[int] = set()
         for r in scored:
             for key in r.metrics:
@@ -235,11 +182,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return sorted(buckets)
 
     def _write_metrics(self) -> Path:
-        """Writes the grouped scalar-metric comparison to `metrics_comparison.md`.
-
-        Returns:
-            Path of the written metrics file.
-        """
         scored = [r for r in self.records if r.metrics]
 
         lines  = self.assets.header("Metrics Comparison")
@@ -264,15 +206,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return out
 
     def _metric_table(self, keys: list[str], scored: list[TrialRecord]) -> list[str]:
-        """Renders one trial-by-metric table with the best value bolded.
-
-        Args:
-            keys   : Metric keys forming the table columns.
-            scored : Trials carrying inference metrics, one per row.
-
-        Returns:
-            Markdown lines of the table followed by a blank line.
-        """
         headers = ["Run"]
         best    : dict[str, float | None] = {}
 
@@ -300,12 +233,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return [*table.render(), ""]
 
     def _figure_subdirs(self) -> list[tuple[str, str]]:
-        """Returns the (sub-directory, title) pairs to render: the known ones in order, then every other sub-directory some trial's figures hold.
-
-        A sub-directory absent from FIGURE_SUBDIRS is titled by its own name
-        and logged, so a figure family the inference started writing after
-        this table was drawn up still reaches a gallery page.
-        """
         known   = {subdir for subdir, _title in self.FIGURE_SUBDIRS}
         present = {path.name for r in self.records if r.figures_dir is not None for path in r.figures_dir.iterdir() if path.is_dir()}
         extra   = sorted(present - known)
@@ -316,16 +243,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return list(self.FIGURE_SUBDIRS) + [(subdir, subdir.replace("_", " ").capitalize()) for subdir in extra]
 
     def _write_figure_section(self, subdir: str, title: str) -> Path | None:
-        """Writes one figure gallery pairing the same figure across trials.
-
-        Args:
-            subdir : Name of the figure subdirectory inside each inference run.
-            title  : Human-readable section title.
-
-        Returns:
-            Path of the written gallery, or None when no trial holds figures
-            in that subdirectory.
-        """
         resolved = [(r, r.figure_subdir(subdir)) for r in self.records if r.has_inference]
         scored   = [(r, path, {p.name for p in path.glob("*.png")}) for r, path in resolved if path is not None]
 
@@ -353,11 +270,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return out
 
     def _write_figure_galleries(self) -> list[Path]:
-        """Writes one gallery per figure sub-directory held by any trial, warning when no trial holds figures at all.
-
-        Returns:
-            Paths of the written gallery pages, in rendering order.
-        """
         written = []
         for subdir, title in self._figure_subdirs():
             path = self._write_figure_section(subdir, title)
@@ -371,11 +283,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return written
 
     def _write_gifs(self) -> Path | None:
-        """Writes the animation gallery to `gif_comparison.md`.
-
-        Returns:
-            Path of the written gallery, or None when no trial has animations.
-        """
         scored = [r for r in self.records if r.has_inference and r.animations]
         if not scored:
             return None
@@ -404,11 +311,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return out
 
     def _write_summary_json(self) -> Path:
-        """Writes `comparison_summary.json`: the split and, per trial, its directories, checkpoint scalars, metrics and seed dispersion.
-
-        Returns:
-            Path of the written summary file.
-        """
         trials = []
         for r in self.records:
             entry = {
@@ -430,12 +332,6 @@ class TrialComparisonReport(ComparisonReportBase):
         return FileIO.save_json(payload, self.out_dir / "comparison_summary.json", indent=2)
 
     def write_all(self) -> list[Path]:
-        """Writes every enabled report section and returns their paths.
-
-        Returns:
-            Paths of the overview, the metric comparison, the JSON summary, and
-            any figure or animation galleries that were produced.
-        """
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger.section("Writing comparison reports")

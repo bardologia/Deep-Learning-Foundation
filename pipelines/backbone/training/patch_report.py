@@ -1,9 +1,3 @@
-"""Collection, plotting and reporting of patch-size trial results.
-
-Each trial is scored by its seed-mean test loss at the restored best-validation
-checkpoint; the report ranks the patch shapes swept by the patch trials mode and
-shows how the held-out loss follows the receptive field along each axis.
-"""
 
 from __future__ import annotations
 
@@ -29,23 +23,6 @@ from tools.runtime.completion                import CompletionMarker
 
 @dataclass
 class PatchTrialRecord:
-    """Seed-aggregated outcome of one patch-shape trial.
-
-    Attributes:
-        name              : Base run name of the trial.
-        patch_size        : Patch geometry as (rows, cols) in pixels.
-        patch_stride      : Patch stride as (rows, cols) in pixels.
-        batch_size        : Batch size the trial trained at, None when not overridden.
-        status            : Aggregated run status: DONE, PARTIAL or MISSING.
-        test_loss         : Seed-mean test loss at the restored best-validation checkpoint.
-        best_val_loss     : Seed-mean best validation loss.
-        best_epoch        : Seed-mean epoch index of the best validation loss.
-        n_seeds           : Number of seed runs that contributed a finite test loss.
-        n_seed_runs       : Number of seed runs planned for this trial.
-        test_loss_std     : Across-seed standard deviation of the test loss, or None.
-        best_val_loss_std : Across-seed standard deviation of the best validation loss.
-        seed_runs         : Per-seed record dicts backing the aggregate.
-    """
 
     name              : str
     patch_size        : tuple[int, int]
@@ -63,59 +40,24 @@ class PatchTrialRecord:
 
     @property
     def complete(self) -> bool:
-        """Whether the trial is ranked, i.e. it carries a test loss."""
         return self.test_loss is not None
 
 
 class PatchTrialCollector:
-    """Gathers per-trial training outcomes from a patch sweep's runs root.
-
-    The planned seeds drive the collection: every planned seed run is looked up,
-    whether or not its directory exists, so a seed that never started, never
-    finished or diverged is named and counted instead of silently thinning the
-    trial mean.
-
-    Attributes:
-        runs_root : Directory holding one run directory per trial, seed runs nested.
-        planner   : Planner enumerating the swept patch shapes and their overrides.
-        logger    : Logger warning about seed runs excluded from a trial mean.
-        seeds     : Seeds every trial was planned at.
-    """
 
     def __init__(self, runs_root: Path, planner: PatchSizeTrialPlanner, logger: Logger, seeds: list[int]) -> None:
-        """Initializes the collector against a patch sweep's runs root.
-
-        Args:
-            runs_root : Directory the trial run directories live under.
-            planner   : Planner enumerating the swept patch shapes.
-            logger    : Logger for collection warnings.
-            seeds     : Seeds every trial was planned at; several seeds nest one seed<N> run per seed under the trial, one seed trains in the trial directory itself.
-        """
         self.runs_root = Path(runs_root)
         self.planner   = planner
         self.logger    = logger
         self.seeds     = list(seeds)
 
     def _unit_names(self, name: str) -> list[str]:
-        """Returns the run names of the units planned for a trial, one per seed or the trial name alone."""
         if len(self.seeds) == 1:
             return [name]
 
         return [SeedSet.run_name(name, seed) for seed in self.seeds]
 
     def _unit_directory(self, unit_name: str) -> Path | None:
-        """Resolves the run directory of a planned unit under the runs root.
-
-        Args:
-            unit_name : Planned unit run name, nested for a seed run.
-
-        Returns:
-            The directory, matched with or without the entry's label prefix, or
-            None when the unit never created one.
-
-        Raises:
-            ValueError : If several directories match the unit, which leaves the trial ambiguous.
-        """
         hits = SweepResumeRoot.matches(self.runs_root, unit_name)
 
         if len(hits) > 1:
@@ -124,14 +66,6 @@ class PatchTrialCollector:
         return hits[0] if hits else None
 
     def _test_loss(self, run_dir: Path) -> float | None:
-        """Reads the average test loss of one run, or None when it has no test metrics.
-
-        Args:
-            run_dir : Run directory of a single seed run.
-
-        Returns:
-            The test average loss, NaN included, or None.
-        """
         path = run_dir / "meta" / "test_metrics.json"
         if not path.exists():
             return None
@@ -139,29 +73,11 @@ class PatchTrialCollector:
         return float(FileIO.load_json(path)["avg_loss"])
 
     def _checkpoint_fields(self, run_dir: Path) -> tuple[float, int]:
-        """Reads the best validation loss and epoch from a completed run's marker.
-
-        Args:
-            run_dir : Run directory of a single seed run carrying a completion marker.
-
-        Returns:
-            Tuple of the best validation loss and best epoch.
-        """
         payload = CompletionMarker.payload(run_dir)
 
         return float(payload["best_val_loss"]), int(payload["best_epoch"])
 
     def _collect_seed_run(self, unit_name: str, run_dir: Path | None) -> dict:
-        """Builds the record of one planned seed run from its metrics and completion marker.
-
-        Args:
-            unit_name : Run name of the unit.
-            run_dir   : Directory of this seed run, or None when it was never created.
-
-        Returns:
-            Dict with the run name, status, test loss, best validation loss
-            and best epoch; a run without a completion marker is MISSING.
-        """
         complete                  = run_dir is not None and CompletionMarker.is_complete(run_dir)
         test_loss                 = self._test_loss(run_dir) if run_dir is not None else None
         best_val_loss, best_epoch = self._checkpoint_fields(run_dir) if complete else (None, None)
@@ -176,11 +92,6 @@ class PatchTrialCollector:
 
     @staticmethod
     def _exclusion(run: dict) -> str | None:
-        """Returns why a seed run contributes no test loss to its trial mean, or None when it does.
-
-        Args:
-            run : Per-seed record dict.
-        """
         if run["status"] != "DONE":
             return "no completion marker (run directory missing or run unfinished)"
         if run["test_loss"] is None:
@@ -192,16 +103,6 @@ class PatchTrialCollector:
 
     @classmethod
     def _status(cls, runs: list[dict]) -> str:
-        """Reduces the per-seed records to one trial status.
-
-        Args:
-            runs : Per-seed record dicts.
-
-        Returns:
-            "DONE" when every planned seed finished and contributed a finite test
-            loss, "PARTIAL" when at least one finished but not all contributed,
-            and "MISSING" when none finished.
-        """
         scored   = [run for run in runs if cls._exclusion(run) is None]
         finished = [run for run in runs if run["status"] == "DONE"]
 
@@ -212,17 +113,6 @@ class PatchTrialCollector:
         return "MISSING"
 
     def _aggregate(self, name: str, overrides: dict, runs: list[dict]) -> PatchTrialRecord:
-        """Averages the per-seed metrics of one trial into a PatchTrialRecord.
-
-        Args:
-            name      : Base run name of the trial.
-            overrides : Planner overrides carrying the trial's patch geometry.
-            runs      : Per-seed record dicts.
-
-        Returns:
-            The seed-aggregated PatchTrialRecord, carrying means, standard
-            deviations and the backing per-seed records.
-        """
         means, stds = SeedAggregation.aggregate(runs, ["test_loss", "best_val_loss", "best_epoch"])
 
         return PatchTrialRecord(
@@ -242,14 +132,6 @@ class PatchTrialCollector:
         )
 
     def collect(self) -> list[PatchTrialRecord]:
-        """Builds one aggregated record per planned patch trial.
-
-        Returns:
-            One PatchTrialRecord per trial, in planner order. Every planned seed
-            run excluded from its trial mean is warned about by name and reason;
-            a trial left without a finite test loss is kept but excluded from the
-            ranking.
-        """
         records = []
         for name, overrides in self.planner.plan():
             runs   = [self._collect_seed_run(unit_name, self._unit_directory(unit_name)) for unit_name in self._unit_names(name)]
@@ -269,41 +151,20 @@ class PatchTrialCollector:
 
 
 class PatchTrialPlots(PlotBase):
-    """Publication-quality figures of loss against patch geometry.
-
-    Attributes:
-        out_dir : Directory receiving the figure files.
-    """
 
     save_dpi    = 300
     AXIS_LABELS = ("row", "range")
 
     def __init__(self, out_dir: Path) -> None:
-        """Applies the shared plot style and stores the output directory.
-
-        Args:
-            out_dir : Directory receiving the figure files.
-        """
         self.out_dir = out_dir
 
         self._apply_style()
 
     @staticmethod
     def _axis_values(records: list[PatchTrialRecord], axis: int) -> list[int]:
-        """Returns the sorted distinct patch lengths in pixels along one axis."""
         return sorted({record.patch_size[axis] for record in records})
 
     def _band(self, ax, records: list[PatchTrialRecord], axis: int, value_key: str, std_key: str, color: str) -> None:
-        """Shades the across-seed one-standard-deviation band around a loss curve.
-
-        Args:
-            ax        : Matplotlib axes to draw on.
-            records   : Records backing the curve.
-            axis      : 0 for rows, 1 for cols; selects the patch length used as abscissa.
-            value_key : PatchTrialRecord attribute holding the mean.
-            std_key   : PatchTrialRecord attribute holding the standard deviation.
-            color     : Fill colour of the band.
-        """
         with_std = [record for record in records if getattr(record, std_key) is not None]
         if len(with_std) < 2:
             return
@@ -315,16 +176,6 @@ class PatchTrialPlots(PlotBase):
         ax.fill_between(sizes, means - stds, means + stds, color=color, alpha=0.15, linewidth=0)
 
     def curve(self, title: str, records: list[PatchTrialRecord], axis: int) -> Path:
-        """Plots test and validation loss against patch length along one axis.
-
-        Args:
-            title   : Figure title.
-            records : Records of the sweep.
-            axis    : 0 for rows, 1 for cols.
-
-        Returns:
-            Path of the written figure.
-        """
         complete = [record for record in records if record.complete]
 
         fig, ax = plt.subplots(figsize=(5.2, 3.6))
@@ -344,17 +195,6 @@ class PatchTrialPlots(PlotBase):
         return self._save(fig, self.out_dir / "curve.png")
 
     def heatmap(self, title: str, records: list[PatchTrialRecord], rows: list[int], ranges: list[int]) -> Path:
-        """Plots the seed-mean test loss over the row-by-range patch grid.
-
-        Args:
-            title    : Figure title.
-            records  : Records of the sweep.
-            rows : Row patch lengths in pixels, ordered as the grid rows.
-            ranges   : Range patch lengths in pixels, ordered as the grid columns.
-
-        Returns:
-            Path of the written figure, with the lowest-loss cell starred.
-        """
         grid = np.full((len(rows), len(ranges)), np.nan, dtype=np.float64)
         for record in records:
             if record.complete:
@@ -380,15 +220,6 @@ class PatchTrialPlots(PlotBase):
         return self._save(fig, self.out_dir / "heatmap.png")
 
     def grid_figure(self, title: str, records: list[PatchTrialRecord]) -> Path:
-        """Draws the heatmap for a two-dimensional grid, otherwise the one-axis curve.
-
-        Args:
-            title   : Figure title.
-            records : Records of the sweep.
-
-        Returns:
-            Path of the written figure.
-        """
         rows = self._axis_values(records, 0)
         ranges   = self._axis_values(records, 1)
 
@@ -399,30 +230,8 @@ class PatchTrialPlots(PlotBase):
 
 
 class PatchTrialsReport:
-    """Writes the patch sweep's JSON summary, loss figure and markdown report.
-
-    Attributes:
-        config      : Entry config the sweep ran under, supplying paths and seeds.
-        planner     : Planner supplying the grid description and trial overrides.
-        model_label : Model identity printed in the report banner.
-        runs_root   : Directory holding the trial run directories.
-        out_dir     : Directory receiving the report artifacts.
-        logger      : Logger for report warnings and the ranking summary.
-        seeds       : Seeds every trial was planned at.
-        plots       : Figure writer bound to out_dir.
-    """
 
     def __init__(self, config, planner: PatchSizeTrialPlanner, model_label: str, runs_root: Path, out_dir: Path, logger: Logger) -> None:
-        """Initializes the report writer.
-
-        Args:
-            config      : Entry config the sweep ran under, supplying paths and seeds.
-            planner     : Planner supplying the grid description and trial overrides.
-            model_label : Model identity printed in the report banner.
-            runs_root   : Directory holding the trial run directories.
-            out_dir     : Directory receiving the report artifacts.
-            logger      : Logger for report warnings and the ranking summary.
-        """
         self.config      = config
         self.planner     = planner
         self.model_label = model_label
@@ -433,11 +242,9 @@ class PatchTrialsReport:
         self.plots       = PatchTrialPlots(self.out_dir)
 
     def _sorted_records(self, records: list[PatchTrialRecord]) -> list[PatchTrialRecord]:
-        """Returns the records sorted by patch size."""
         return sorted(records, key=lambda record: record.patch_size)
 
     def _best(self, records: list[PatchTrialRecord]) -> PatchTrialRecord | None:
-        """Returns the record with the lowest test loss, or None if none ranked."""
         complete = [record for record in records if record.complete]
         if not complete:
             return None
@@ -445,15 +252,6 @@ class PatchTrialsReport:
         return min(complete, key=lambda record: record.test_loss)
 
     def _summary_payload(self, records: list[PatchTrialRecord]) -> dict:
-        """Builds the machine-readable sweep summary.
-
-        Args:
-            records : Records sorted by patch size.
-
-        Returns:
-            Dict with the patch step, the admissible axis sizes, the dataset, the
-            best patch size, best test loss and the full per-trial record list.
-        """
         best = self._best(records)
 
         row_sizes, col_sizes = self.planner.patch_sizes()
@@ -484,30 +282,19 @@ class PatchTrialsReport:
         }
 
     def _write_json(self, records: list[PatchTrialRecord]) -> Path:
-        """Writes the summary payload to patch_trials.json and returns its path."""
         path = self.out_dir / "patch_trials.json"
         FileIO.save_json(self._summary_payload(records), path, indent=2)
 
         return path
 
     def _write_figure(self, records: list[PatchTrialRecord]) -> Path:
-        """Writes the loss figure over the swept patch grid and returns its path."""
         return self.plots.grid_figure(Path(self.config.paths.dataset_path).name, records)
 
     @staticmethod
     def _patch_label(patch_size: tuple[int, int]) -> str:
-        """Formats an (rows, cols) pixel pair as an 'AxR' label."""
         return f"{patch_size[0]}x{patch_size[1]}"
 
     def _summary_table(self, best: PatchTrialRecord | None) -> MarkdownTable:
-        """Builds the one-row table of the best patch size and its test loss.
-
-        Args:
-            best : The winning record, or None when no trial ranked.
-
-        Returns:
-            The markdown table, with empty cells when no trial ranked.
-        """
         table = MarkdownTable(["Best patch (row x col, px)", "Test loss at best"], align=["right", "right"])
 
         if best is None:
@@ -519,31 +306,12 @@ class PatchTrialsReport:
 
     @staticmethod
     def _with_std(value: float | None, std: float | None) -> str | None:
-        """Formats a scalar with its across-seed standard deviation, or None if absent.
-
-        Args:
-            value : Mean value, or None.
-            std   : Standard deviation, or None to print the mean alone.
-
-        Returns:
-            The formatted cell text, or None when the value is missing.
-        """
         if value is None:
             return None
 
         return ScalarFormatter.with_std(ScalarFormatter.format_scalar(value), std)
 
     def _trial_table(self, records: list[PatchTrialRecord], best: PatchTrialRecord | None) -> MarkdownTable:
-        """Builds the per-trial table, with the winning patch in bold.
-
-        Args:
-            records : Records sorted by patch size.
-            best    : The winning record, or None.
-
-        Returns:
-            The markdown table listing patch geometry, batch size, seeds scored,
-            losses and status.
-        """
         table = MarkdownTable(["Patch (row x col, px)", "Stride", "Batch", "Seeds scored", "Test loss", "Best val loss", "Best epoch", "Status"], align=["right"] * 8)
 
         for record in records:
@@ -563,15 +331,6 @@ class PatchTrialsReport:
         return table
 
     def _write_markdown(self, records: list[PatchTrialRecord], figure_path: Path) -> Path:
-        """Writes report.md with the configuration banner, ranking tables and figure.
-
-        Args:
-            records     : Records sorted by patch size.
-            figure_path : Path of the loss figure over the swept patch grid.
-
-        Returns:
-            Path of the written markdown report.
-        """
         row_sizes, col_sizes = self.planner.patch_sizes()
         best                       = self._best(records)
         doc                        = MarkdownDoc("Patch-size sweep")
@@ -600,11 +359,6 @@ class PatchTrialsReport:
         return path
 
     def _log_ranking(self, records: list[PatchTrialRecord]) -> None:
-        """Logs how many trials ranked and the winning patch with its seed-mean test loss.
-
-        Args:
-            records : Records of the sweep.
-        """
         ranked = [record for record in records if record.complete]
         best   = self._best(records)
 
@@ -615,11 +369,6 @@ class PatchTrialsReport:
         self.logger.subsection(f"Ranked {len(ranked)}/{len(records)} patch shapes; best {self._patch_label(best.patch_size)} with test loss {self._with_std(best.test_loss, best.test_loss_std)} over {best.n_seeds}/{best.n_seed_runs} seeds")
 
     def write_all(self) -> list[Path]:
-        """Collects the trial records, writes every report artifact and logs the ranking.
-
-        Returns:
-            Paths of the JSON summary, the loss figure and the markdown report.
-        """
         collector = PatchTrialCollector(runs_root=self.runs_root, planner=self.planner, logger=self.logger, seeds=self.seeds)
         records   = self._sorted_records(collector.collect())
 

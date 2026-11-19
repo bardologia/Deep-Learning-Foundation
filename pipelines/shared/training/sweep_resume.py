@@ -1,12 +1,3 @@
-"""Reconciliation of a resumed sweep against the run directories on disk.
-
-Resolves the pasted resume path to the sweep root and classifies every planned
-unit as complete, unfinished with or without a trainer state, or missing, so
-the launcher can reuse finished runs, resume the ones that saved state, restart
-the others and train the rest from scratch. The same plan reports which
-completed units still lack their inference output, and warns a fresh launch
-that lands in a root already holding runs of its units.
-"""
 
 from __future__ import annotations
 
@@ -19,35 +10,13 @@ from tools.training.checkpoint           import TrainerState
 
 
 class SweepResumeRoot:
-    """Resolves a pasted resume path to the root directory of a sweep."""
 
     @staticmethod
     def head_matches(dir_name: str, head: str) -> bool:
-        """Returns whether a directory name equals the unit head or ends in it.
-
-        Args:
-            dir_name : Name of a directory under the sweep root.
-            head     : First path component of a planned unit name.
-
-        Returns:
-            True when the directory is the head itself or the head carrying a
-            composed label prefix.
-        """
         return dir_name == head or dir_name.endswith(f"_{head}")
 
     @classmethod
     def matches(cls, root: Path, name: str) -> list[Path]:
-        """Returns the directories under the root matching a planned unit name.
-
-        Args:
-            root : Sweep root directory.
-            name : Planned unit name, possibly with nested path components.
-
-        Returns:
-            Existing directories whose first component matches the unit head,
-            with or without a label prefix, and whose remaining components
-            match exactly.
-        """
         parts = Path(name).parts
         hits  = [child for child in sorted(root.iterdir()) if child.is_dir() and cls.head_matches(child.name, parts[0])]
 
@@ -58,22 +27,6 @@ class SweepResumeRoot:
 
     @classmethod
     def resolve(cls, resume_from: str, unit_names: list[str]) -> Path:
-        """Resolves the resume path to the sweep root holding the planned units.
-
-        Accepts either the sweep root itself or one of the run directories
-        inside it, in which case the unit's path components are stripped off.
-
-        Args:
-            resume_from : Pasted path of the sweep folder or one of its runs.
-            unit_names  : Names of the units planned by the current launch.
-
-        Returns:
-            The sweep root directory.
-
-        Raises:
-            FileNotFoundError : If the path does not exist.
-            SystemExit        : If no planned unit matches anything under the path.
-        """
         target = Path(resume_from).expanduser()
 
         if not target.is_dir():
@@ -97,25 +50,10 @@ class SweepResumeRoot:
 
 
 class SweepResumePlan:
-    """Classifies the planned units of a resumed sweep against what is on disk.
-
-    Attributes:
-        EXCLUDED_DIRS : Directory names under the root that are never runs.
-        root          : Sweep root directory.
-        unit_names    : Names of the units planned by the current launch.
-        split         : Dataset split whose inference output is reported per completed unit, or None when the sweep infers nothing.
-        completed     : Units with a completion marker, reused as they are.
-        resumable     : Unfinished units whose run directory holds a trainer state, continued from it.
-        restarting    : Unfinished units without a trainer state, deleted and trained from scratch.
-        missing       : Units with no run directory at all.
-        inferred      : Completed units carrying a completed inference stamp for the split.
-        unplanned     : Directories under the root that no planned unit claims.
-    """
 
     EXCLUDED_DIRS = ("batch_train_logs",)
 
     def __init__(self, root: Path, unit_names: list[str], split: str | None = None) -> None:
-        """Stores the sweep root, the planned units and the scored split with empty classifications."""
         self.root       = Path(root)
         self.unit_names = list(unit_names)
         self.split      = split
@@ -128,17 +66,14 @@ class SweepResumePlan:
 
     @property
     def unfinished(self) -> list[str]:
-        """Units with a run directory but no completion marker, in plan order."""
         pending = set(self.resumable) | set(self.restarting)
 
         return [name for name in self.unit_names if name in pending]
 
     def _has_inference(self, hits: list[Path]) -> bool:
-        """Returns whether any run directory of a unit carries a completed inference stamp for the split."""
         return any(CompletedInference.stamps(hit / "inference", self.split) for hit in hits)
 
     def _classify_planned(self) -> None:
-        """Sorts each planned unit into completed, resumable, restarting or missing, noting which completed units carry inference."""
         for name in self.unit_names:
             hits = SweepResumeRoot.matches(self.root, name)
 
@@ -154,7 +89,6 @@ class SweepResumePlan:
                 self.missing.append(name)
 
     def _collect_unplanned(self) -> None:
-        """Records run directories under the root that no planned unit claims."""
         heads = {Path(name).parts[0] for name in self.unit_names}
 
         for candidate in sorted(self.root.iterdir()):
@@ -165,7 +99,6 @@ class SweepResumePlan:
                 self.unplanned.append(candidate.name)
 
     def summary(self) -> dict:
-        """Returns the reconciliation counts as a table-ready mapping."""
         complete = f"{len(self.completed)} (reused)"
         if self.split is not None:
             complete += f", {len(self.completed) - len(self.inferred)} of them without '{self.split}' inference"
@@ -179,11 +112,9 @@ class SweepResumePlan:
         }
 
     def columns(self) -> list[str]:
-        """Returns the columns of the per-unit table, the inference column only when a split is scored."""
         return ["Run", "Status", "Inference"] if self.split is not None else ["Run", "Status"]
 
     def rows(self) -> list[dict]:
-        """Returns one row per planned unit with what its directory holds, in plan order."""
         status = {}
         status.update({name: "complete (reused)" for name in self.completed})
         status.update({name: f"unfinished, trainer state saved (resumes from {TrainerState.FILENAME})" for name in self.resumable})
@@ -202,29 +133,17 @@ class SweepResumePlan:
         return rows
 
     def _log_units(self, logger) -> None:
-        """Logs the per-unit table and warns about every unplanned run under the root."""
         logger.metrics_table(self.rows(), columns=self.columns())
 
         for name in self.unplanned:
             logger.warning(f"{name}: present under the sweep root but not in the current plan; left untouched")
 
     def log(self, logger) -> None:
-        """Logs the reconciliation summary, the per-unit table and any unplanned runs."""
         logger.subsection("Sweep resume")
         logger.kv_table(self.summary(), title="Reconciliation")
         self._log_units(logger)
 
     def warn_existing_root(self, logger, unit_resume: bool, trainer_resume: bool) -> None:
-        """Warns a fresh launch that the root already holds runs of its planned units, stating what the resume flags do with them.
-
-        Nothing is logged when no planned unit has a directory yet, which is
-        the ordinary fresh launch.
-
-        Args:
-            logger         : Logger of the sweep.
-            unit_resume    : Whether completed units are reused; otherwise a completed unit refuses to train over its finished run and fails.
-            trainer_resume : Whether unfinished units continue from their trainer state; otherwise they are deleted and restart.
-        """
         found = len(self.completed) + len(self.unfinished)
         if found == 0:
             return
@@ -236,31 +155,15 @@ class SweepResumePlan:
         self._log_units(logger)
 
     def build(self) -> "SweepResumePlan":
-        """Classifies the planned and unplanned runs and returns the plan itself."""
         self._classify_planned()
         self._collect_unplanned()
         return self
 
 
 class SweepResults:
-    """The results JSON of a sweep, carried across the launches that resume it."""
 
     @staticmethod
     def merge(results: list[dict], path: Path, logger) -> list[dict]:
-        """Returns the earlier launches' entries with this launch's results replacing those of the same unit.
-
-        Earlier entries keep their order and are followed by the units this
-        launch ran for the first time, so the file always describes the whole
-        sweep rather than the units of the last launch alone.
-
-        Args:
-            results : Result records of this launch, each carrying the unit under 'name'.
-            path    : Results file an earlier launch may have written.
-            logger  : Logger warned about the entries kept and replaced.
-
-        Returns:
-            The merged records, or the results unchanged when no earlier file exists.
-        """
         path = Path(path)
         if not path.is_file():
             return list(results)

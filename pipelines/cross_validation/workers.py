@@ -1,9 +1,3 @@
-"""Per-unit workers and fold collection for cross-validation.
-
-Holds the collector that folds seed runs back into one record per fold, and the
-worker processes that train or run inference on a single fold x seed unit in
-whichever model family the sweep selected.
-"""
 
 from __future__ import annotations
 
@@ -25,27 +19,10 @@ from tools.monitoring.logger import Logger
 
 
 class FoldCollector(TrialCollector):
-    """Collects fold runs and aggregates their seed runs into per-fold records.
-
-    Attributes:
-        training_dir    : Directory holding the fold run directories.
-        splits          : Dataset splits whose inference metrics are collected.
-        training_type   : Training family, deciding where inference lives.
-        seed_dispersion : Within-fold seed statistics keyed by fold name.
-        scored_splits   : Splits each collected run holds a completed inference with metrics for, keyed by run name; filled while collecting.
-    """
 
     CHECKPOINT_KEYS = ("best_val_loss", "best_epoch", "n_train_epochs")
 
     def __init__(self, run_dir: Path, splits: list[str], training_type: str, logger: Logger) -> None:
-        """Binds the collector to a sweep run directory.
-
-        Args:
-            run_dir       : Sweep run directory holding the `folds/` subtree.
-            splits        : Dataset splits whose inference metrics are collected.
-            training_type : Training family the folds were trained in.
-            logger        : Logger used for progress reporting.
-        """
         super().__init__(run_dir=run_dir, logger=logger, inference_split=splits[0] if splits else None)
         self.training_dir    = run_dir / "folds"
         self.splits          = splits
@@ -54,28 +31,12 @@ class FoldCollector(TrialCollector):
         self.scored_splits   = {}
 
     def _run_dirs(self) -> list[tuple[str, Path]]:
-        """Returns the fold runs, leaving out directories under the folds directory that are no fold, such as comparison stamps."""
         return [(name, run_dir) for name, run_dir in super()._run_dirs() if FoldNaming.is_fold(FoldNaming.base(name))]
 
     def _aggregate_sources(self, runs: list[tuple[str, Path]]) -> tuple[dict, dict]:
-        """Returns the empty size-match record and the training results keyed by the fold run each one ran in.
-
-        A unit a resume matched to a renamed directory keeps its status and
-        duration, since every stored result is matched to its run through the
-        worker log it names.
-        """
         return {}, UnitResultsByRun(self.training_dir, self.logger).build(TrainingResultsIndex(self.pipeline_dir, self.logger), runs)
 
     def _attach_inference(self, record: TrialRecord) -> None:
-        """Notes which configured splits a run has scored, and attaches the first split's inference wherever the family keeps its stamps.
-
-        The inherited reader looks only directly under ``inference/``, which
-        made every autoencoder fold run read as uninferred; the family's own
-        inference base is used instead.
-
-        Args:
-            record : Run record filled in place with the first split's inference fields when that split is scored.
-        """
         scored = []
         for split in self.splits:
             inference_dir = FoldFamily.split_inference_dir(record.run_dir, self.training_type, split)
@@ -92,7 +53,6 @@ class FoldCollector(TrialCollector):
             setattr(record, name, value)
 
     def _group_by_fold(self, records: list[TrialRecord]) -> list[tuple[str, list[TrialRecord]]]:
-        """Groups seed runs under their fold name, ordered by fold index."""
         groups: dict[str, list[TrialRecord]] = {}
 
         for record in records:
@@ -101,7 +61,6 @@ class FoldCollector(TrialCollector):
         return sorted(groups.items(), key=lambda item: FoldNaming.index(item[0]))
 
     def _log_split_coverage(self) -> None:
-        """Logs, once per configured split, how many collected runs hold a completed inference with metrics, naming the runs that do not."""
         total = len(self.scored_splits)
 
         for split in self.splits:
@@ -114,16 +73,6 @@ class FoldCollector(TrialCollector):
                 self.logger.info(summary)
 
     def _split_view(self, record: TrialRecord, split: str) -> TrialRecord:
-        """Returns a copy of a run record populated from one split's inference run.
-
-        Args:
-            record : Record of a single seed run.
-            split  : Dataset split to read.
-
-        Returns:
-            A copy carrying that split's metrics, figures, and report, with the
-            inference fields cleared when the split has no completed run.
-        """
         inference_dir = FoldFamily.split_inference_dir(record.run_dir, self.training_type, split)
 
         if inference_dir is None or not (inference_dir / "metrics.json").exists():
@@ -132,7 +81,6 @@ class FoldCollector(TrialCollector):
         return replace(record, **self._inference_fields(inference_dir))
 
     def _inference_fields(self, inference_dir: Path) -> dict:
-        """Returns the record fields read out of one completed inference directory."""
         report_path = inference_dir / "report.md"
 
         return {
@@ -144,21 +92,6 @@ class FoldCollector(TrialCollector):
         }
 
     def _fold_split_record(self, fold_name: str, runs: list[TrialRecord], split: str) -> tuple[TrialRecord, dict, dict]:
-        """Aggregates a fold's seed runs into one record for a split, naming the seeds that contributed nothing.
-
-        Args:
-            fold_name : Name of the fold.
-            runs      : Records of the fold's seed runs.
-            split     : Dataset split to aggregate.
-
-        Returns:
-            A tuple (record, stds, coverage) where the record carries seed-mean
-            metrics and the figures of a representative seed, stds maps each
-            metric to its across-seed standard deviation, and coverage holds
-            ``n_used``, the seeds whose metrics entered the means,
-            ``missing_seeds``, the labels of the seeds without metrics, and
-            ``dropped``, the metrics no seed reported as a finite value.
-        """
         views   = [self._split_view(run, split) for run in runs]
         keys    = sorted({key for view in views for key in view.metrics})
         scored  = [view for view in views if view.metrics]
@@ -183,18 +116,6 @@ class FoldCollector(TrialCollector):
         return replace(representative, name=fold_name, metrics=means), stds, coverage
 
     def _fold_base_record(self, fold_name: str, runs: list[TrialRecord]) -> tuple[TrialRecord, float | None]:
-        """Aggregates a fold's seed runs into one training-only record, naming the seeds that did not finish.
-
-        Args:
-            fold_name : Name of the fold.
-            runs      : Records of the fold's seed runs.
-
-        Returns:
-            A tuple (record, best_val_loss_std) where the record carries the
-            seed-mean checkpoint fields and mean duration in seconds, and the
-            second element is the across-seed standard deviation of the best
-            validation loss.
-        """
         checkpoint, checkpoint_std = SeedAggregation.aggregate([run.checkpoint for run in runs], list(self.CHECKPOINT_KEYS))
 
         durations = [run.training_result.get("duration_s") for run in runs]
@@ -217,19 +138,9 @@ class FoldCollector(TrialCollector):
 
     @staticmethod
     def _seed_label(run_name: str) -> str:
-        """Returns the seed directory of a run name, or the name itself for an unseeded run."""
         return run_name.rsplit("/", 1)[-1]
 
     def collect_by_split(self) -> tuple[list[TrialRecord], dict[str, list[TrialRecord]]]:
-        """Collects every fold and splits its records by dataset split.
-
-        Returns:
-            A tuple (base_records, records_by_split) holding one training-only
-            record per fold and, for each split, one metric-carrying record per
-            fold. `seed_dispersion` is filled in as a side effect, carrying per
-            fold the seed count, the training status, the seeds used per split
-            and the seeds missing from each split.
-        """
         self.scored_splits = {}
 
         groups = self._group_by_fold(self.collect())
@@ -278,60 +189,28 @@ class FoldCollector(TrialCollector):
 
 
 class CrossValidationWorker(WorkerBase):
-    """Shared config factory and naming for the per-unit cross-validation workers.
-
-    Attributes:
-        factory : Builds the fold planner and per-fold configs.
-        naming  : Composes fold run names with the family training tag.
-    """
 
     def __init__(self, config: CrossValidationConfig, run_tag: str) -> None:
-        """Binds the worker to a cross-validation sweep run.
-
-        Args:
-            config  : Cross-validation configuration.
-            run_tag : Tag of the sweep run directory.
-        """
         super().__init__(config=config, run_tag=run_tag)
         self.factory = FoldConfigFactory(config)
         self.naming  = FoldRunNaming(config)
 
     def fold_name(self, fold_index: int) -> str:
-        """Returns the seedless name of a fold."""
         return FoldNaming.name(fold_index)
 
     def fold_run_name(self, fold_index: int, seed: int | None) -> str:
-        """Returns the full run name of one fold and seed."""
         return self.naming.run_name(fold_index, seed)
 
     def unit_run_name(self, fold_index: int, seed: int | None, run_name: str | None) -> str:
-        """Returns the run name the unit lives under: the one the scheduler handed over, else the composed one.
-
-        Args:
-            fold_index : Zero-based index of the fold.
-            seed       : Seed of the unit, or None for an unseeded run.
-            run_name   : Directory the scheduler found for this unit relative to the folds directory, or None to compose the name.
-        """
         return run_name if run_name else self.fold_run_name(fold_index, seed)
 
     def unit_directory(self, run_name: str) -> Path:
-        """Returns the run directory of a unit from its name relative to the folds directory."""
         return self.run_dir / "folds" / run_name
 
 
 class FoldTrainingWorker(CrossValidationWorker):
-    """Trains one fold x seed unit in the configured model family."""
 
     def _spatial_configs(self, split_regions: SplitRegions) -> tuple:
-        """Builds the trainer and dataset configs of a spatial family fold.
-
-        Args:
-            split_regions : Guard-trimmed train, val, and test crop regions.
-
-        Returns:
-            A tuple (trainer_config, dataset_config) with the fold's regions
-            and resolved acquisition geometry applied.
-        """
         trainer_config            = self.factory.training_trainer_config(logdir=self.run_dir / "folds")
         trainer_config.curriculum = self.config.curriculum
 
@@ -342,23 +221,12 @@ class FoldTrainingWorker(CrossValidationWorker):
         return trainer_config, dataset_config
 
     def _write_manifest(self, fold_index: int, seed: int | None, run_name: str) -> Path:
-        """Records the unit's identity and scored regions in its run directory before training starts.
-
-        Args:
-            fold_index : Zero-based index of the fold.
-            seed       : Seed of the unit, or None for an unseeded run.
-            run_name   : Run name of the unit relative to the folds directory.
-
-        Returns:
-            Path of the written manifest.
-        """
         planner = self.factory.planner()
         regions = {split: planner.inference_region(fold_index, split).as_tuple() for split in FoldPlanner.INFERENCE_SPLITS}
 
         return FoldUnitManifest.write(self.unit_directory(run_name), run_tag=self.run_tag, unit=run_name, fold_index=fold_index, seed=seed, training_type=self.config.training_type, inference_regions=regions)
 
     def _run_backbone(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
-        """Trains one backbone fold unit."""
         from pipelines.backbone.training.pipeline import TrainingPipeline
         from pipelines.shared.model.model_builder import ModelBuilder
 
@@ -379,7 +247,6 @@ class FoldTrainingWorker(CrossValidationWorker):
         pipeline.run(probe_config=self.config.probe)
 
     def _run_dual(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
-        """Trains one dual-trunk fold unit."""
         from pipelines.dual.training.pipeline import DualTrainingPipeline
 
         model_config                   = self._dual_model_config()
@@ -398,14 +265,6 @@ class FoldTrainingWorker(CrossValidationWorker):
         pipeline.run(probe_config=self.config.probe)
 
     def _dual_model_config(self):
-        """Builds the dual model config from the dedicated trunk entry fields.
-
-        Returns:
-            The dual model configuration.
-
-        Raises:
-            ValueError : If a trunk field was also passed through `model_overrides`, which would silently conflict.
-        """
         from models.dual                          import DUAL_CONFIG_REGISTRY
         from pipelines.shared.model.model_builder import ModelBuilder
 
@@ -427,13 +286,11 @@ class FoldTrainingWorker(CrossValidationWorker):
         return ModelBuilder.config_from_registry(dual.model_name, {**trunk_overrides, **self.config.model_overrides}, registry=DUAL_CONFIG_REGISTRY)
 
     def _run_jepa(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
-        """Trains one JEPA fold unit."""
         from pipelines.jepa.training.pipeline import TrainingPipeline
 
         TrainingPipeline(self._jepa_entry_config(run_name, seed), split_regions=split_regions).run()
 
     def _jepa_entry_config(self, run_name: str, seed: int | None):
-        """Builds the JEPA training entry config for one fold unit."""
         from configuration.training import JepaEntryConfig
 
         cv   = self.config
@@ -456,13 +313,11 @@ class FoldTrainingWorker(CrossValidationWorker):
         )
 
     def _run_profile_autoencoder(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
-        """Trains one profile-autoencoder fold unit."""
         from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
 
         TrainingPipeline(self._ae_entry_config(run_name, seed), split_regions=split_regions).run()
 
     def _ae_entry_config(self, run_name: str, seed: int | None):
-        """Builds the profile-autoencoder training entry config for one fold unit."""
         from configuration.training import ProfileAeEntryConfig
 
         cv = self.config
@@ -488,13 +343,11 @@ class FoldTrainingWorker(CrossValidationWorker):
         )
 
     def _run_image_autoencoder(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
-        """Trains one image-autoencoder fold unit."""
         from pipelines.image_autoencoder.training.pipeline import TrainingPipeline
 
         TrainingPipeline(self._image_ae_entry_config(run_name, seed), split_regions=split_regions).run()
 
     def _image_ae_entry_config(self, run_name: str, seed: int | None):
-        """Builds the image-autoencoder training entry config for one fold unit."""
         from configuration.training import ImageAeEntryConfig
 
         cv = self.config
@@ -515,22 +368,6 @@ class FoldTrainingWorker(CrossValidationWorker):
         )
 
     def run(self, fold_index: int, seed: int | None = None, run_name: str | None = None) -> None:
-        """Trains one fold unit, dispatching on the configured training family.
-
-        The unit's manifest is written first, so even a run that dies before
-        its first epoch is identifiable when the sweep is resumed; a unit that
-        already finished is left as it is on a resume and refused when resume
-        is off.
-
-        Args:
-            fold_index : Zero-based index of the fold.
-            seed       : Seed of the unit, or None for an unseeded run.
-            run_name   : Directory of the unit relative to the folds directory, or None to compose it from the fold and seed.
-
-        Raises:
-            ValueError : If the training family is unsupported.
-            SystemExit : If the unit already holds a completed run while resume is off.
-        """
         dispatch = {
             "backbone"            : self._run_backbone,
             "dual"                : self._run_dual,
@@ -552,16 +389,13 @@ class FoldTrainingWorker(CrossValidationWorker):
 
 
 class FoldInferenceWorker(CrossValidationWorker):
-    """Runs inference for one fold x seed unit on every configured split."""
 
     def _log(self, run_directory: Path, message: str) -> None:
-        """Writes a single message into the run's fold-inference log."""
         logger = Logger(log_dir=str(run_directory / "logs"), name="fold_inference", level="INFO")
         logger.info(message)
         logger.close()
 
     def _run_spatial(self, run_directory: Path, split: str, fold_index: int) -> None:
-        """Runs backbone-style inference restricted to the fold's row block."""
         from pipelines.backbone.inference.pipeline           import InferencePipeline
         from pipelines.shared.inference.inference_components import InferenceComponentsResolver
 
@@ -570,31 +404,16 @@ class FoldInferenceWorker(CrossValidationWorker):
         InferencePipeline(self.factory.fold_inference_config(run_directory, split, fold_index), components=components).run()
 
     def _run_profile_autoencoder(self, run_directory: Path, split: str, fold_index: int) -> None:
-        """Runs profile-autoencoder inference for one fold and split."""
         from pipelines.profile_autoencoder.inference.pipeline import ProfileAeInferencePipeline
 
         ProfileAeInferencePipeline(self.factory.fold_profile_ae_inference_config(run_directory, split)).run()
 
     def _run_image_autoencoder(self, run_directory: Path, split: str, fold_index: int) -> None:
-        """Runs image-autoencoder inference for one fold and split."""
         from pipelines.image_autoencoder.inference.pipeline import ImageAeInferencePipeline
 
         ImageAeInferencePipeline(self.factory.fold_image_ae_inference_config(run_directory, split)).run()
 
     def run(self, fold_index: int, seed: int | None = None, run_name: str | None = None) -> None:
-        """Runs inference for one fold unit on every configured split.
-
-        Splits whose inference is already complete are skipped when resume is
-        enabled.
-
-        Args:
-            fold_index : Zero-based index of the fold.
-            seed       : Seed of the unit, or None for an unseeded run.
-            run_name   : Directory of the unit relative to the folds directory, or None to compose it from the fold and seed.
-
-        Raises:
-            ValueError : If the training family is unsupported.
-        """
         dispatch = {
             "backbone"            : self._run_spatial,
             "dual"                : self._run_spatial,

@@ -1,9 +1,3 @@
-"""Layer-wise linear probes measuring where scene quantities become decodable.
-
-Ridge probes are fitted on the features of each layer to predict five ground-truth
-quantities of the volumetric scene, against an input-pixel baseline and a
-shuffled-target control, alongside the effective dimensionality of each layer.
-"""
 
 from __future__ import annotations
 
@@ -23,28 +17,10 @@ from tools.reporting.plotting                        import PlotBase
 
 
 class RidgeProbe:
-    """Cross-validated ridge regression scoring how linearly decodable a target is.
-
-    Attributes:
-        ridge_lambda : Ridge penalty, scaled by the number of training samples.
-        n_folds      : Number of cross-validation folds.
-        seed         : Seed of the fold permutation.
-        MIN_SAMPLES  : Fewest samples a probe is fitted on.
-    """
 
     MIN_SAMPLES = 20
 
     def __init__(self, ridge_lambda: float = 1.0, n_folds: int = 4, seed: int = 0) -> None:
-        """Stores the probe hyper-parameters.
-
-        Args:
-            ridge_lambda : Ridge penalty per sample.
-            n_folds      : Number of cross-validation folds.
-            seed         : Seed of the fold permutation.
-
-        Raises:
-            ValueError : If fewer than two folds are requested.
-        """
         self.ridge_lambda = float(ridge_lambda)
         self.n_folds      = int(n_folds)
         self.seed         = int(seed)
@@ -53,19 +29,6 @@ class RidgeProbe:
             raise ValueError(f"Cross-validated probe needs at least 2 folds, got {self.n_folds}")
 
     def _fold_score(self, X: np.ndarray, y: np.ndarray, train: np.ndarray, test: np.ndarray) -> float:
-        """Fits the ridge readout on one fold's train indices and scores it on its test indices.
-
-        Features are standardized and the target centred using the train statistics only.
-
-        Args:
-            X     : Feature matrix of shape (samples, features).
-            y     : Target vector of shape (samples,).
-            train : Sample indices of the training part.
-            test  : Sample indices of the held-out part.
-
-        Returns:
-            The held-out R², or NaN when the held-out target has no variance and R² is undefined.
-        """
         mean = X[train].mean(axis=0)
         std  = X[train].std(axis=0) + 1e-8
         Xn   = (X - mean) / std
@@ -86,35 +49,14 @@ class RidgeProbe:
         return 1.0 - ss_res / ss_total
 
     def _folds(self, n_samples: int) -> list[np.ndarray]:
-        """Returns the held-out sample indices of each fold, drawn from the seeded permutation."""
         order = np.random.default_rng(self.seed).permutation(n_samples)
         return np.array_split(order, self.n_folds)
 
     def degenerate_folds(self, targets: np.ndarray) -> int:
-        """Returns how many held-out folds of a target vector carry no variance, leaving R² undefined there.
-
-        Args:
-            targets : Target vector of shape (samples,).
-        """
         y = np.asarray(targets, dtype=np.float64)
         return sum(1 for test in self._folds(y.size) if float(((y[test] - y[test].mean()) ** 2).sum()) <= 0.0)
 
     def score(self, features: np.ndarray, targets: np.ndarray) -> dict[str, float]:
-        """Cross-validates the ridge readout over the configured folds.
-
-        Folds whose held-out target has no variance leave R² undefined and are
-        excluded from the mean and spread; their count is returned.
-
-        Args:
-            features : Feature matrix of shape (samples, features).
-            targets  : Target vector of shape (samples,).
-
-        Returns:
-            Dictionary with the "mean" and "std" held-out R² across the defined folds and the number of "degenerate_folds" left out.
-
-        Raises:
-            ValueError : If the shapes do not line up, fewer than MIN_SAMPLES samples are given, or the held-out target has no variance in any fold.
-        """
         X = np.asarray(features, dtype=np.float64)
         y = np.asarray(targets, dtype=np.float64)
 
@@ -138,37 +80,14 @@ class RidgeProbe:
 
 
 class FeatureSampler:
-    """Samples pixel positions and reads the matching features off activation maps.
-
-    Attributes:
-        samples_per_batch : Number of pixel positions drawn per batch.
-        rng               : Generator drawing the positions.
-    """
 
     MAX_FEATURES = 512
 
     def __init__(self, samples_per_batch: int, seed: int = 0) -> None:
-        """Stores the sampling budget and seeds the generator.
-
-        Args:
-            samples_per_batch : Number of pixel positions to draw per batch.
-            seed              : Seed of the position generator.
-        """
         self.samples_per_batch = int(samples_per_batch)
         self.rng               = np.random.default_rng(seed)
 
     def sample_coords(self, B: int, H: int, W: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Draws pixel positions uniformly over a batch of patches, without replacement.
-
-        Args:
-            B : Batch size.
-            H : Patch height in row pixels.
-            W : Patch width in range pixels.
-
-        Returns:
-            Three index arrays of equal length holding the batch, row and column
-            coordinate of each drawn pixel.
-        """
         n  = min(self.samples_per_batch, B * H * W)
         ix = self.rng.choice(B * H * W, size=n, replace=False)
 
@@ -176,18 +95,6 @@ class FeatureSampler:
 
     @staticmethod
     def is_feature_map(stored: torch.Tensor, B: int, H: int, W: int) -> bool:
-        """Returns whether a stored activation is a spatial map alignable to the input grid.
-
-        Args:
-            stored : Recorded activation tensor.
-            B      : Batch size of the forward pass.
-            H      : Input patch height in pixels.
-            W      : Input patch width in pixels.
-
-        Returns:
-            True when the tensor is (B, C, h, w) with h and w a uniform integer
-            downsample of the input grid.
-        """
         if stored.ndim != 4:
             return False
 
@@ -200,14 +107,6 @@ class FeatureSampler:
 
     @classmethod
     def drop_reason(cls, stored: torch.Tensor | None, B: int, H: int, W: int) -> str | None:
-        """Returns why a recorded activation cannot be sampled, or None when it is a feature map on the input grid.
-
-        Args:
-            stored : Recorded activation tensor, or None when the module produced no tensor output.
-            B      : Batch size of the forward pass.
-            H      : Input patch height in pixels.
-            W      : Input patch width in pixels.
-        """
         if stored is None:
             return "produced no tensor output"
         if not cls.is_feature_map(stored, B, H, W):
@@ -216,26 +115,6 @@ class FeatureSampler:
         return None
 
     def features_at(self, stored: torch.Tensor, b: np.ndarray, i: np.ndarray, j: np.ndarray, B: int, H: int, W: int) -> np.ndarray:
-        """Reads the feature vector of each sampled pixel off an activation map.
-
-        Input coordinates are mapped onto the layer's own grid, and layers wider than
-        MAX_FEATURES channels are subsampled to that many evenly spaced channels.
-
-        Args:
-            stored : Activation of shape (B, C, h, w).
-            b      : Batch index of each sampled pixel.
-            i      : Row index of each sampled pixel on the input grid.
-            j      : Range index of each sampled pixel on the input grid.
-            B      : Batch size of the forward pass.
-            H      : Input patch height in pixels.
-            W      : Input patch width in pixels.
-
-        Returns:
-            Feature matrix of shape (samples, min(C, MAX_FEATURES)).
-
-        Raises:
-            ValueError : If the activation is not a feature map on the input grid.
-        """
         if not self.is_feature_map(stored, B, H, W):
             raise ValueError(f"Activation of shape {tuple(stored.shape)} is not a (B, C, H, W) map of a {B}x{H}x{W} input; its leading dimension is not the batch or its grid is not a uniform downsample of the input")
 
@@ -255,19 +134,9 @@ class FeatureSampler:
 
 
 class FeatureGeometry:
-    """Geometric descriptors of a layer's feature cloud."""
 
     @staticmethod
     def participation_ratio(features: np.ndarray) -> float:
-        """Returns the effective number of dimensions the features spread their variance over.
-
-        Args:
-            features : Feature matrix of shape (samples, features).
-
-        Returns:
-            The participation ratio of the centred singular spectrum, 0.0 when the cloud
-            carries no variance.
-        """
         centered = features - features.mean(axis=0)
         singular = np.linalg.svd(centered, compute_uv=False)
         spectrum = singular ** 2
@@ -280,16 +149,6 @@ class FeatureGeometry:
 
 
 class LayerProbeCore:
-    """Collects layer features and scores the linear decodability of the scene targets.
-
-    Attributes:
-        model   : Model whose layers are probed.
-        layers  : Qualified names of the probed layers, in forward order.
-        ppg     : Number of parameters per Gaussian slot in the ground truth.
-        amp_thr : Amplitude above which a Gaussian slot counts as active.
-        probe   : Ridge probe scoring each layer.
-        sampler : Sampler drawing the pixel positions and reading their features.
-    """
 
     TARGETS = (
         ("count",           "active Gaussian count K"),
@@ -300,17 +159,6 @@ class LayerProbeCore:
     )
 
     def __init__(self, model, layers: list[str], ppg: int, amp_thr: float, samples_per_batch: int, probe: RidgeProbe, seed: int = 0) -> None:
-        """Stores the model, the probed layers and the sampling and scoring components.
-
-        Args:
-            model             : Model to probe.
-            layers            : Qualified names of the layers to record.
-            ppg               : Number of parameters per Gaussian slot, three for amplitude, mu and sigma.
-            amp_thr           : Amplitude threshold marking a Gaussian slot as active.
-            samples_per_batch : Number of pixel positions drawn per batch.
-            probe             : Ridge probe used for every layer and target.
-            seed              : Seed of the sampler and of the shuffled-target control.
-        """
         self.model   = model
         self.layers  = list(layers)
         self.ppg     = ppg
@@ -320,17 +168,6 @@ class LayerProbeCore:
         self.rng     = np.random.default_rng(seed)
 
     def _targets(self, gt_phys: np.ndarray) -> dict[str, np.ndarray]:
-        """Derives the five per-pixel scene quantities from the ground-truth parameters.
-
-        Args:
-            gt_phys : Ground-truth parameters in physical units of shape (batch, 3 * slots, rows, cols), with mu and sigma in metres.
-
-        Returns:
-            Per-pixel maps of shape (batch, rows, cols) keyed by target: the active
-            Gaussian "count", the "dominant_mu" and "dominant_sigma" of the strongest slot
-            (NaN where no slot is active), the "total_amp" over active slots and the
-            binary "second_presence".
-        """
         B, C, H, W = gt_phys.shape
         p          = gt_phys.reshape(B, C // self.ppg, self.ppg, H, W)
         amps       = p[:, :, 0]
@@ -357,19 +194,6 @@ class LayerProbeCore:
         }
 
     def _target_notes(self, targets: dict[str, np.ndarray]) -> tuple[dict[str, str], set[str]]:
-        """Explains the targets that cannot be scored, or are scored on only part of the folds.
-
-        A target with fewer than MIN_SAMPLES finite samples, or whose held-out values
-        are constant in every fold, has no defined R² and is left unscored; one that is
-        constant in some folds is averaged over the others. The folds depend only on
-        the target, so the notes hold for every layer alike.
-
-        Args:
-            targets : Target vectors of shape (samples,) keyed by target name.
-
-        Returns:
-            A pair of the note per affected target and the set of targets left unscored.
-        """
         notes    = {}
         unscored = set()
 
@@ -391,16 +215,6 @@ class LayerProbeCore:
         return notes, unscored
 
     def _score_targets(self, features: np.ndarray, targets: dict[str, np.ndarray], unscored: set[str]) -> dict[str, dict | None]:
-        """Scores every target from one feature matrix, skipping the ones without a defined R².
-
-        Args:
-            features : Feature matrix of shape (samples, features).
-            targets  : Target vectors of shape (samples,) keyed by target name.
-            unscored : Targets left unscored, as explained by the target notes.
-
-        Returns:
-            The probe score of each target, or None for an unscored target.
-        """
         scores = {}
         for target, _label in self.TARGETS:
             y      = targets[target]
@@ -411,27 +225,6 @@ class LayerProbeCore:
         return scores
 
     def collect(self, batches: list[tuple[torch.Tensor, np.ndarray]]) -> dict:
-        """Records the layer features over the batches and probes every target on them.
-
-        Layers whose activation is not a feature map on the input grid are dropped. The
-        raw input channels are probed as a baseline, and the best layer of each target is
-        re-probed on permuted targets as a leakage control.
-
-        Args:
-            batches : Pairs of an input batch of shape (batch, channels, rows, cols) and its ground-truth parameters in physical units of shape (batch, 3 * slots, rows, cols).
-
-        Returns:
-            Dictionary with "layers", mapping each surviving layer to its channel count,
-            the channel count actually sampled (at most MAX_FEATURES), the effective
-            dimensionality of the sampled channels and per-target scores, the same block for the
-            "input_baseline", the "shuffled_controls" naming the best layer and its
-            permuted-target score per target, the "dropped_layers" mapping each
-            dropped layer to the reason it could not be probed, and the "target_notes"
-            explaining every target scored on part of the folds or not at all.
-
-        Raises:
-            ValueError : If no probed layer produced a usable feature map.
-        """
         store: dict[str, list]  = {layer: [] for layer in self.layers}
         widths: dict[str, int]  = {}
         dropped: dict[str, str] = {}
@@ -516,23 +309,8 @@ class LayerProbeCore:
 
 
 class LayerProbePlots(PlotBase):
-    """Depth profiles of probe decodability and of feature dimensionality."""
 
     def decodability_by_depth(self, layers: list[str], results: dict, target: str, label: str, baseline: dict | None, control: dict | None, path: Path) -> Path:
-        """Draws the held-out probe R² of one target across the probed depth.
-
-        Args:
-            layers   : Probed layer names in forward order.
-            results  : Per-layer probe results keyed by layer name.
-            target   : Target key to plot.
-            label    : Human-readable target name for the title.
-            baseline : Input-pixel baseline block, drawn as a reference line when scored.
-            control  : Shuffled-target control block, drawn as a reference line when present.
-            path     : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         depth  = np.arange(len(layers))
@@ -567,17 +345,6 @@ class LayerProbePlots(PlotBase):
         return self._save(fig, path)
 
     def effective_dim_by_depth(self, layers: list[str], results: dict, input_dim: float, path: Path) -> Path:
-        """Draws the participation ratio of each layer against the input-pixel reference.
-
-        Args:
-            layers    : Probed layer names in forward order.
-            results   : Per-layer probe results holding the effective dimensionality.
-            input_dim : Participation ratio of the raw input channels.
-            path      : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         depth  = np.arange(len(layers))
@@ -601,20 +368,11 @@ class LayerProbePlots(PlotBase):
 
 
 class LayerProbeRun(AnalysisRun):
-    """Runs the layer-wise linear probes on a single training run."""
 
     SUMMARY_FILENAME = "layer_probes.json"
     REPORT_FILENAME  = "layer_probes.md"
 
     def _select_layers(self, run) -> list[str]:
-        """Picks the layers to probe, thinned evenly over depth when the model has too many.
-
-        Args:
-            run : Loaded run exposing the model.
-
-        Returns:
-            Qualified leaf-module names in forward order, at most max_layers of them.
-        """
         names = ActivationRecorder(run.model.module).leaf_names()
 
         if len(names) <= self.config.max_layers:
@@ -628,18 +386,6 @@ class LayerProbeRun(AnalysisRun):
         return selected
 
     def _batches(self, run) -> list[tuple[torch.Tensor, np.ndarray]]:
-        """Materializes the probe batches with their targets denormalized to physical units.
-
-        Args:
-            run : Loaded run bundling the dataloader and the dataset normalizer.
-
-        Returns:
-            Pairs of a normalized input batch and its ground-truth parameters in physical
-            units of shape (batch, 3 * slots, rows, cols).
-
-        Raises:
-            ValueError : If the loader yields no batch.
-        """
         batches = []
         for index, batch in enumerate(run.loader):
             if index >= self.config.max_batches:
@@ -653,18 +399,6 @@ class LayerProbeRun(AnalysisRun):
         return batches
 
     def _write_report(self, run, layers: list[str], results: dict, figures: dict[str, Path], n_batches: int) -> Path:
-        """Writes the markdown report of the probes.
-
-        Args:
-            run       : Loaded run, used for the backbone name in the title.
-            layers    : Probed layer names in forward order.
-            results   : Probe results with their layers, baseline and controls.
-            figures   : Figure paths keyed by figure name.
-            n_batches : Number of batches the probe data was drawn from.
-
-        Returns:
-            Path of the written report.
-        """
         doc = MarkdownDoc(title=f"Layer-wise linear probes: {run.backbone_name}")
         doc.paragraph(
             f"Ridge probes (λ={self.config.ridge_lambda}, {self.config.n_folds}-fold cross-validation) on {len(layers)} layers over {n_batches} '{self.config.split}' batches: "
@@ -720,15 +454,6 @@ class LayerProbeRun(AnalysisRun):
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
     def _analyse(self, run) -> AnalysisOutcome:
-        """Probes the layers of this run, plots the depth profiles and writes the report.
-
-        Args:
-            run : Loaded run bundling the model, the dataloader and the dataset normalizer.
-
-        Returns:
-            The outcome whose payload holds the backbone name, the split, the surviving
-            layer order and the probe results, baseline and shuffled controls.
-        """
         layers = self._select_layers(run)
 
         core = LayerProbeCore(
@@ -784,7 +509,6 @@ class LayerProbeRun(AnalysisRun):
 
 
 class LayerProbeBatch(RunBatch):
-    """Runs the layer probes over every run matching the configured filter."""
 
     SELECTOR_ACTION = "probe"
     SECTION_TITLE   = "Layer-wise linear probes"

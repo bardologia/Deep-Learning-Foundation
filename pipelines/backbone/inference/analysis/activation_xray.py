@@ -1,9 +1,3 @@
-"""Per-layer activation diagnostics of a trained backbone on real batches.
-
-Records activation statistics through forward hooks, flags dead channels, saturation
-and collapsed dynamic range, and writes depth profiles, histograms and a markdown
-report into the run's analysis directory.
-"""
 
 from __future__ import annotations
 
@@ -21,20 +15,11 @@ from tools.reporting.markdown                        import MarkdownDoc, Markdow
 
 
 class ActivationXrayRun(AnalysisRun):
-    """Runs the activation x-ray on a single training run directory."""
 
     SUMMARY_FILENAME = "activation_xray.json"
     REPORT_FILENAME  = "activation_xray.md"
 
     def _record(self, run) -> ActivationRecorder:
-        """Collects per-layer activation statistics over the configured number of batches.
-
-        Args:
-            run : Loaded run bundling the model, the dataloader and the dataset.
-
-        Returns:
-            The detached recorder, holding the statistics of every call site and which modules fired more than once per forward.
-        """
         recorder = ActivationRecorder(run.model.module)
         recorder.attach_stats()
 
@@ -48,29 +33,18 @@ class ActivationXrayRun(AnalysisRun):
         return recorder
 
     def _log_reuse(self, recorder: ActivationRecorder) -> None:
-        """Warns which leaf modules fired more than once per forward, since their rows are split per call site."""
         reused = recorder.reused_modules()
         if reused:
             named = ", ".join(f"{name} x{calls}" for name, calls in reused.items())
             self.logger.warning(f"{len(reused)} leaf modules fire more than once per forward and are recorded per call site (name#k): {named}")
 
     def _log_silent(self, recorder: ActivationRecorder, n_batches: int) -> None:
-        """Warns which hooked leaf modules produced no tensor, since they are absent from every profile, table and the verdict."""
         silent = recorder.silent_layers()
         if silent:
             named = ", ".join(f"{name} ({module_type})" for name, module_type in silent.items())
             self.logger.warning(f"{len(silent)} hooked leaf modules produced no tensor during {n_batches} batches and are excluded from the x-ray: {named}")
 
     def _render_figures(self, ordered_stats: list[dict], flagged: list) -> dict[str, Path]:
-        """Renders the depth profiles and the histograms of the most severely flagged layers.
-
-        Args:
-            ordered_stats : Per-layer statistics in forward-call order.
-            flagged       : Layer reports whose severity is not "ok".
-
-        Returns:
-            Figure paths keyed by figure name.
-        """
         plots    = ActivationXrayPlots(self.config)
         severity = {report.name: report.severity for report in flagged}
 
@@ -92,17 +66,6 @@ class ActivationXrayRun(AnalysisRun):
         return figures
 
     def _write_report(self, run, reports: list, summary: dict, figures: dict[str, Path]) -> Path:
-        """Writes the markdown report of the x-ray.
-
-        Args:
-            run     : Loaded run, used for the backbone name in the title.
-            reports : Per-layer reports in forward-call order.
-            summary : Verdict, counts and worst layers from the summarizer.
-            figures : Figure paths keyed by figure name.
-
-        Returns:
-            Path of the written report.
-        """
         doc = MarkdownDoc(title=f"Activation x-ray: {run.backbone_name}")
         doc.paragraph(
             f"Per-layer activation statistics on {summary['batches']} real '{self.config.split}' batches. Verdict: **{summary['verdict']}**. "
@@ -161,11 +124,6 @@ class ActivationXrayRun(AnalysisRun):
 
     @staticmethod
     def _status(summary: dict) -> str:
-        """Returns the outcome status the verdict calls for: 'critical' or 'warning' when such layers were flagged, 'ok' otherwise.
-
-        Args:
-            summary : Verdict block holding the per-severity layer counts.
-        """
         if summary["severity_counts"]["critical"] > 0:
             return "critical"
         if summary["severity_counts"]["warning"] > 0:
@@ -174,16 +132,6 @@ class ActivationXrayRun(AnalysisRun):
         return "ok"
 
     def _analyse(self, run) -> AnalysisOutcome:
-        """Records, analyses, plots and reports the activations of this run.
-
-        Args:
-            run : Loaded run bundling the model, the dataloader and the dataset.
-
-        Returns:
-            The outcome whose payload holds the "summary" verdict block, the ordered
-            per-layer "layers" statistics and the flat list of detected "issues", as
-            written to JSON.
-        """
         recorder  = self._record(run)
         n_batches = min(self.config.max_batches, len(run.loader))
         all_stats = recorder.stats()
@@ -209,7 +157,6 @@ class ActivationXrayRun(AnalysisRun):
 
 
 class ActivationXrayBatch(RunBatch):
-    """Runs the activation x-ray over every run matching the configured filter."""
 
     SELECTOR_ACTION = "x-ray"
     SECTION_TITLE   = "Activation x-ray"

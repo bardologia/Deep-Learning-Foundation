@@ -1,9 +1,3 @@
-"""Export of trained backbone checkpoints as ONNX graphs with a manifest.
-
-Rebuilds each run's model from its persisted architecture config, loads the
-best checkpoint, and exports the forward as an ONNX graph with a dynamic batch
-axis, writing a manifest that ties the graph to the checkpoint it came from.
-"""
 
 from __future__ import annotations
 
@@ -19,30 +13,14 @@ from tools.monitoring.logger                    import Logger
 
 
 class OnnxRunExporter:
-    """Exports the best checkpoint of every discovered backbone run as ONNX.
-
-    Attributes:
-        entry  : Entry configuration naming the runs root and export settings.
-        logger : Logger receiving discovery and artifact lines.
-    """
 
     CHECKPOINT = "best_model.pt"
 
     def __init__(self, entry, logger: Logger) -> None:
-        """Stores the entry configuration and logger."""
         self.entry  = entry
         self.logger = logger
 
     def _discover(self) -> list[Path]:
-        """Returns every run directory holding a best checkpoint and backbone meta files.
-
-        Runs whose relative name misses every run_filter substring are dropped;
-        runs of other families (no backbone model config in meta/) are skipped
-        with a warning rather than failing the batch.
-
-        Raises:
-            FileNotFoundError : If the runs root does not exist or no run qualifies.
-        """
         root = Path(self.entry.runs_dir)
         if not root.is_dir():
             raise FileNotFoundError(f"Runs directory {root} does not exist; train runs before exporting them")
@@ -66,14 +44,6 @@ class OnnxRunExporter:
         return run_dirs
 
     def _rebuild_model(self, run_dir: Path) -> tuple[torch.nn.Module, dict, tuple[int, int]]:
-        """Rebuilds a run's model with its trained weights on the CPU.
-
-        Args:
-            run_dir : Run directory holding meta/ and the best checkpoint.
-
-        Returns:
-            Triple of the eval-mode model, the run summary payload and the patch size.
-        """
         meta_dir = run_dir / "meta"
         summary  = FileIO.load_json(meta_dir / "run_summary.json")
         creation = FileIO.load_json(meta_dir / "dataset_creation_config.json")
@@ -97,14 +67,6 @@ class OnnxRunExporter:
         return model, summary, patch_size
 
     def _export_run(self, run_dir: Path) -> Path:
-        """Exports one run's model and writes its manifest.
-
-        Args:
-            run_dir : Run directory to export.
-
-        Returns:
-            The written .onnx path.
-        """
         model, summary, patch_size = self._rebuild_model(run_dir)
 
         export_dir = FileIO.ensure_dir(run_dir / "export")
@@ -140,7 +102,6 @@ class OnnxRunExporter:
         return onnx_path
 
     def run(self) -> list[Path]:
-        """Exports every discovered run and returns the written .onnx paths."""
         run_dirs = self._discover()
 
         paths = []

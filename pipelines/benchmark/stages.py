@@ -1,10 +1,3 @@
-"""Stages of the architecture benchmark: batch probing, sizing, training and comparison.
-
-Each stage owns its own artefact paths and resume rules; the seed-expansion mixin
-turns the selected models and loss components into the per-seed units the queued
-training and inference stages consume, and matches them to the run directories
-their manifests identify when a run is resumed.
-"""
 
 from __future__ import annotations
 
@@ -30,34 +23,15 @@ from tools.runtime.run_tag                         import RunTag
 
 
 class BenchmarkUnitManifest:
-    """Identity of one benchmark unit, as the training worker records it in the unit's run directory.
-
-    Attributes:
-        KIND : Manifest kind every benchmark unit is written with.
-    """
 
     KIND = "benchmark"
 
     @staticmethod
     def identity(manifest: dict) -> tuple:
-        """Returns the (model key, loss component, seed) triple a manifest identifies."""
         return (manifest["model"], manifest["loss_component"], manifest["seed"])
 
     @classmethod
     def write(cls, run_directory: Path, run_tag: str, unit: str, model: str, loss_component: str | None, seed: int | None) -> Path:
-        """Writes the manifest of one unit before its training starts.
-
-        Args:
-            run_directory  : Run directory of the unit.
-            run_tag        : Tag of the benchmark run the unit belongs to.
-            unit           : Run name of the unit, relative to the training directory.
-            model          : Model key of the unit.
-            loss_component : Loss component the unit isolates, or None.
-            seed           : Seed of the unit, or None when the sweep has no seed dimension.
-
-        Returns:
-            Path of the written manifest.
-        """
         payload = {
             "run_tag"        : run_tag,
             "unit"           : unit,
@@ -70,34 +44,11 @@ class BenchmarkUnitManifest:
 
 
 class SeedExpandedStage:
-    """Mixin expanding models and loss components into named per-seed units.
-
-    Unit names double as run directory names for fresh units, and are mapped
-    back to their model, loss component and seed when the worker command line
-    is built. On a resumed run every unit is matched to the run directory whose
-    manifest records its identity, whatever that directory is called.
-
-    Attributes:
-        unit_dirs    : Existing directory per unit name, relative to the training directory, for the units a resume found through their manifests.
-        unidentified : Run directories under the training directory that carry no benchmark manifest and are left untouched.
-    """
 
     _N_GAUSSIANS : dict = {}
 
     @classmethod
     def components(cls, config: BenchmarkConfig) -> list[str | None]:
-        """Returns the loss components swept per model, or a single None for non-backbone types.
-
-        Args:
-            config : Benchmark configuration carrying `sweep_loss_components`.
-
-        Returns:
-            The validated component names, or `[None]` when the training type has
-            no loss-component axis.
-
-        Raises:
-            SystemExit : If the component list is empty or names an unregistered loss component.
-        """
         if config.training_type != "backbone":
             return [None]
 
@@ -114,7 +65,6 @@ class SeedExpandedStage:
 
     @classmethod
     def n_gaussians(cls, config: BenchmarkConfig) -> int:
-        """Returns the dataset's default Gaussian slot count, cached per dataset path pair."""
         key = (str(config.paths.dataset_path), str(config.paths.parameters_path))
 
         if key not in cls._N_GAUSSIANS:
@@ -124,16 +74,6 @@ class SeedExpandedStage:
 
     @classmethod
     def unit_base(cls, config: BenchmarkConfig, model: str, component: str | None) -> str:
-        """Returns the seed-free run name of one model and loss component.
-
-        Args:
-            config    : Benchmark configuration determining the naming scheme.
-            model     : Model key.
-            component : Loss component swept for this unit, or None.
-
-        Returns:
-            The run name, following the run-naming convention of the training type.
-        """
         if config.training_type == "backbone":
             return RunNaming.benchmark_unit(model, component, config.loss, cls.n_gaussians(config), config.augmentation)
         if config.training_type == "jepa":
@@ -144,19 +84,6 @@ class SeedExpandedStage:
 
     @classmethod
     def planned_units(cls, config: BenchmarkConfig, models: list[str]) -> list[tuple[str, tuple]]:
-        """Returns every unit a benchmark configuration plans, named and identified.
-
-        The unit name is the directory a fresh unit is created under, and the
-        identity is what its manifest records, so anything that has to line
-        planned units up with directories on disk reads both from here.
-
-        Args:
-            config : Benchmark configuration carrying the loss components and seeds.
-            models : Selected model keys.
-
-        Returns:
-            Pairs of unit name and its (model key, loss component, seed) identity.
-        """
         components = cls.components(config)
         pairs      = [(model, component) for model in models for component in components]
         by_base    = {cls.unit_base(config, model, component): (model, component) for model, component in pairs}
@@ -166,30 +93,15 @@ class SeedExpandedStage:
         return [(name, (*by_base[base], seed)) for base, seed, name in units]
 
     def _expand(self, config: BenchmarkConfig, models: list[str]) -> list[str]:
-        """Expands models and loss components into per-seed unit names, caching each unit's identity.
-
-        Args:
-            config : Benchmark configuration carrying the seeds.
-            models : Selected model keys.
-
-        Returns:
-            The unit names, one per model, loss component and seed.
-        """
         planned    = self.planned_units(config, models)
         self._unit = dict(planned)
 
         return [name for name, _ in planned]
 
     def _identity(self, name: str) -> tuple:
-        """Returns the (model key, loss component, seed) identity of a planned unit."""
         return self._unit[name]
 
     def _reconcile(self, training_dir: Path) -> None:
-        """Maps every planned unit onto the run directory its manifest identifies, when one exists.
-
-        Args:
-            training_dir : Directory holding the unit run directories.
-        """
         ledger = UnitLedger(training_dir, BenchmarkUnitManifest.KIND, BenchmarkUnitManifest.identity).build()
 
         self.unit_dirs    = {}
@@ -201,11 +113,9 @@ class SeedExpandedStage:
                 self.unit_dirs[name] = directory.relative_to(training_dir).as_posix()
 
     def _log_unidentified(self) -> None:
-        """Warns, from a queued stage, about the run directories under its stage directory that no planned unit's manifest claims."""
         UnidentifiedRuns(self.stage_dir, self.unidentified, BenchmarkUnitManifest.KIND, {item: self.unit_dir(item) for item in self.items}).log(self.logger, type(self).__name__)
 
     def _worker_argv(self, action: str, name: str) -> list[str]:
-        """Returns the worker arguments running `action` for the unit named `name`."""
         model, component, seed = self._identity(name)
 
         loss_args = ["--loss-component", component] if component is not None else []
@@ -213,11 +123,9 @@ class SeedExpandedStage:
         return ["--worker", action, "--model", model, *loss_args, *SeedSet.cli_args(seed), "--run-name", self.unit_name(name), "--run-tag", self.run_tag, "--run-dir", str(self.run_dir)]
 
     def _seed_command(self, action: str, name: str) -> list[str]:
-        """Returns the full subprocess command running `action` for one unit."""
         return [sys.executable, str(self.entry_script), *self._worker_argv(action, name)]
 
     def _job(self, item: str) -> GpuJob:
-        """Returns the GPU job running this stage's worker action for one unit."""
         return GpuJob(
             name     = item,
             command  = self._seed_command(self.worker_action, item),
@@ -225,30 +133,12 @@ class SeedExpandedStage:
         )
 
     def _scored_splits(self) -> list[str]:
-        """Returns the split the benchmark scores, empty when the family runs no inference."""
         return [self.config.inference.split] if self.config.runs_inference() else []
 
 
 class MaxBatchStage(ExperimentStage):
-    """Probes the maximum trainable batch size of every model on the GPU pool.
-
-    Attributes:
-        models       : Model keys to probe.
-        stage_dir    : Directory holding the per-model probe outputs.
-        records_path : JSON file collecting every probe record.
-        report_path  : Markdown report of the probe results.
-    """
 
     def __init__(self, config: BenchmarkConfig, entry_script: Path, run_tag: str, models: list[str], logger: Logger) -> None:
-        """Resolves the probe stage directories and artefact paths.
-
-        Args:
-            config       : Benchmark configuration.
-            entry_script : Entry script the probe workers re-invoke.
-            run_tag      : Tag identifying this benchmark run.
-            models       : Model keys to probe.
-            logger       : Logger for the stage.
-        """
         super().__init__(config=config, run_tag=run_tag, logger=logger, entry_script=entry_script)
         self.models       = models
         self.stage_dir    = self.run_dir / "max_batch"
@@ -256,21 +146,9 @@ class MaxBatchStage(ExperimentStage):
         self.report_path  = self.run_dir / "pipeline" / "max_batch_report.md"
 
     def _result_path(self, model_name: str) -> Path:
-        """Returns the JSON path of one model's probe result."""
         return self.stage_dir / model_name / "max_batch_result.json"
 
     def _cache_verdict(self, model_name: str) -> str | None:
-        """Returns why a model's previous probe result cannot be reused, or None when it can.
-
-        Args:
-            model_name : Model key to check.
-
-        Returns:
-            None when resuming and the result file holds a PASS measured under
-            the current probe settings; otherwise the reason it is re-probed:
-            no previous result, resume off, a status other than PASS, a result
-            predating the current settings schema, or a changed setting.
-        """
         path = self._result_path(model_name)
 
         if not path.exists():
@@ -296,16 +174,9 @@ class MaxBatchStage(ExperimentStage):
         return None
 
     def _has_result(self, model_name: str) -> bool:
-        """Returns whether a cached passing result measured under the current settings exists for a model."""
         return self._cache_verdict(model_name) is None
 
     def _discard_result(self, model_name: str, reason: str) -> None:
-        """Deletes a model's previous probe result before it is re-probed, saying why, so a worker that dies before writing leaves no stale file behind.
-
-        Args:
-            model_name : Model key about to be re-probed.
-            reason     : Verdict explaining why the previous result is not reused.
-        """
         path = self._result_path(model_name)
         if not path.exists():
             return
@@ -314,11 +185,9 @@ class MaxBatchStage(ExperimentStage):
         path.unlink()
 
     def _worker_log(self, model_name: str) -> Path:
-        """Returns the log file of one model's probe worker."""
         return self.stage_dir / model_name / "worker.log"
 
     def _job(self, model_name: str) -> GpuJob:
-        """Returns the GPU job probing the maximum batch size of one model."""
         return GpuJob(
             name     = model_name,
             command  = [sys.executable, str(self.entry_script), "--worker", "maxbatch", "--model", model_name, "--run-tag", self.run_tag, "--run-dir", str(self.run_dir)],
@@ -326,12 +195,6 @@ class MaxBatchStage(ExperimentStage):
         )
 
     def _fail_record(self, model_name: str, error: str) -> dict:
-        """Returns a FAIL probe record for a model whose probe left no usable result.
-
-        Args:
-            model_name : Model key the record stands for.
-            error      : Text explaining the failure.
-        """
         return {
             "model"                    : model_name,
             "status"                   : "FAIL",
@@ -351,17 +214,6 @@ class MaxBatchStage(ExperimentStage):
         }
 
     def _load_result(self, model_name: str, job: dict | None) -> dict:
-        """Loads one model's probe record, or synthesises a FAIL record when the probe left none.
-
-        Args:
-            model_name : Model key whose result is read.
-            job        : GPU queue result of the probe worker this launch ran for the model, or None when the cached result was reused.
-
-        Returns:
-            The record on disk, turned into FAIL when it was measured under
-            other probe settings than the current ones, or a FAIL record naming
-            the worker exit and its log when the worker died before writing one.
-        """
         path = self._result_path(model_name)
 
         if not path.exists():
@@ -380,11 +232,6 @@ class MaxBatchStage(ExperimentStage):
         return record
 
     def _write_report(self, records: dict) -> None:
-        """Writes the markdown table of batch size, peak memory and status per model.
-
-        Args:
-            records : Probe record per model key.
-        """
         budget  = self.config.max_batch.vram_budget_gb
         ceiling = self.config.max_batch.max_batch
 
@@ -412,15 +259,6 @@ class MaxBatchStage(ExperimentStage):
         self.logger.info(f"Report written to: {self.report_path}")
 
     def _log_summary(self, records: dict) -> None:
-        """Logs how many models were measured, the batch size and peak of each, and why each failure failed.
-
-        A model whose LR range test found no usable response is warned about,
-        since it trains at the configured learning rate, and every failed
-        model is listed with the last line of its error and its worker log.
-
-        Args:
-            records : Probe record per model key.
-        """
         passed = [m for m in records if records[m]["status"] == "PASS"]
         failed = [m for m in records if records[m]["status"] != "PASS"]
 
@@ -444,11 +282,6 @@ class MaxBatchStage(ExperimentStage):
             self.logger.error(f"FAILED  {model_name}: {reason}  (see {self._worker_log(model_name)})")
 
     def run(self) -> dict:
-        """Probes every model that has no reusable cached result and reports the outcome.
-
-        Returns:
-            The probe record per model key, cached and freshly measured alike.
-        """
         self.logger.section("Maximum batch size")
         self.logger.kv_table({
             "Models"        : len(self.models),
@@ -486,23 +319,8 @@ class MaxBatchStage(ExperimentStage):
 
 
 class SizeMatchStage(ExperimentStage):
-    """Matches every model's capacity to the reference model, in process.
-
-    Attributes:
-        models       : Model keys to match.
-        records_path : JSON file collecting the per-model match records.
-        report_path  : Markdown report of the matched widths.
-    """
 
     def __init__(self, config: BenchmarkConfig, run_tag: str, models: list[str], logger: Logger) -> None:
-        """Resolves the artefact paths of the capacity-matching stage.
-
-        Args:
-            config  : Benchmark configuration.
-            run_tag : Tag identifying this benchmark run.
-            models  : Model keys to match.
-            logger  : Logger for the stage.
-        """
         super().__init__(config=config, run_tag=run_tag, logger=logger)
         self.models       = models
         self.records_path = self.run_dir / "pipeline" / "size_match.json"
@@ -510,19 +328,6 @@ class SizeMatchStage(ExperimentStage):
 
     @staticmethod
     def resolve_reference(reference: str, models: list[str], heads: list[str]) -> str:
-        """Expands a bare reference backbone name into a full model key when unambiguous.
-
-        Args:
-            reference : Configured reference model, with or without a head suffix.
-            models    : Swept model keys.
-            heads     : Benchmarked output heads.
-
-        Returns:
-            The reference as a swept model key.
-
-        Raises:
-            SystemExit : If the reference cannot be resolved to a swept key.
-        """
         if reference in models:
             return reference
 
@@ -536,25 +341,10 @@ class SizeMatchStage(ExperimentStage):
 
     @staticmethod
     def validate_reference(reference: str, models: list[str]) -> None:
-        """Checks that the reference model is one of the swept keys.
-
-        Args:
-            reference : Reference model key.
-            models    : Swept model keys.
-
-        Raises:
-            SystemExit : If the reference is not among them, which would bisect every arm against a model the benchmark never trains.
-        """
         if reference not in models:
             raise SystemExit(f"size_match.reference_model '{reference}' is not one of the swept model keys {models}; give the full key including the head (e.g. 'unet-set_pred') so the reference is capacity-matched against its own architecture and not bisected against a different head")
 
     def _load_cached(self) -> dict | None:
-        """Loads the cached match records when they cover every model under the current settings.
-
-        Returns:
-            The cached records, or None when not resuming, a model is missing or
-            the stored settings differ.
-        """
         if not self.config.resume or not self.records_path.exists():
             return None
 
@@ -573,7 +363,6 @@ class SizeMatchStage(ExperimentStage):
         return records
 
     def _reference_record(self, reference: str, target: int) -> dict:
-        """Returns the trivial match record of the reference model, at scale 1.0 and zero deviation."""
         return asdict(SizeMatchResult(
             model         = reference,
             scale         = 1.0,
@@ -586,13 +375,6 @@ class SizeMatchStage(ExperimentStage):
         ))
 
     def _write_report(self, records: dict, target: int, out_channels: int) -> None:
-        """Writes the markdown table of scale, widths, parameter count and flags per model.
-
-        Args:
-            records      : Match record per model key.
-            target       : Reference parameter count.
-            out_channels : Output channel count the models were counted at.
-        """
         lines = [
             "# Capacity Matching Report",
             f"\n_Generated {RunTag.timestamp()}  —  run tag `{self.run_tag}`_\n",
@@ -615,14 +397,6 @@ class SizeMatchStage(ExperimentStage):
         self.logger.info(f"Report written to: {self.report_path}")
 
     def run(self) -> dict:
-        """Matches every non-reference model onto the reference parameter count.
-
-        Returns:
-            The match record per model key, each stamped with the provenance of the launch that matched it, reused from cache when valid.
-
-        Raises:
-            SystemExit : If the reference is not swept, or a model cannot reach the target within the configured scale bounds.
-        """
         self.validate_reference(self.config.size_match.reference_model, self.models)
 
         matcher = SizeMatcher(config=self.config, logger=self.logger)
@@ -671,18 +445,8 @@ class SizeMatchStage(ExperimentStage):
 
 
 class TrainingStage(SeedExpandedStage, QueuedTrainingStage):
-    """Trains every seed-expanded benchmark unit through the GPU queue."""
 
     def __init__(self, config: BenchmarkConfig, entry_script: Path, run_tag: str, models: list[str], logger: Logger) -> None:
-        """Expands the models into per-seed units, reconciles them against the training directory and hands them to the queued stage.
-
-        Args:
-            config       : Benchmark configuration.
-            entry_script : Entry script the training workers re-invoke.
-            run_tag      : Tag identifying this benchmark run.
-            models       : Model keys to train.
-            logger       : Logger for the stage.
-        """
         items = self._expand(config, models)
         super().__init__(config=config, entry_script=entry_script, run_tag=run_tag, items=items, logger=logger)
         self.unidentified = []
@@ -693,18 +457,8 @@ class TrainingStage(SeedExpandedStage, QueuedTrainingStage):
 
 
 class InferenceStage(SeedExpandedStage, QueuedInferenceStage):
-    """Runs inference over every seed-expanded benchmark unit through the GPU queue."""
 
     def __init__(self, config: BenchmarkConfig, entry_script: Path, run_tag: str, models: list[str], logger: Logger) -> None:
-        """Expands the models into per-seed units, reconciles them against the training directory and hands them to the queued stage.
-
-        Args:
-            config       : Benchmark configuration.
-            entry_script : Entry script the inference workers re-invoke.
-            run_tag      : Tag identifying this benchmark run.
-            models       : Model keys to infer with.
-            logger       : Logger for the stage.
-        """
         items = self._expand(config, models)
         super().__init__(config=config, entry_script=entry_script, run_tag=run_tag, items=items, logger=logger)
         self.unidentified = []
@@ -715,28 +469,8 @@ class InferenceStage(SeedExpandedStage, QueuedInferenceStage):
 
 
 class ComparisonStage(ExperimentStage):
-    """Collects the finished runs and writes the cross-model comparison reports.
-
-    Attributes:
-        reference_model : Model key every other model is compared against.
-        embed_images    : Whether figures are embedded into the reports.
-        inference_split : Dataset split whose completed inference stamps supply each run's metrics.
-        planned_units   : Directory of every planned unit relative to the training directory, keyed by unit name, or None when the plan is unknown and every run under the training directory is compared.
-    """
 
     def __init__(self, config, run_tag: str, logger: Logger, reference_model: str, embed_images: bool, inference_split: str, run_dir: Path | None = None, planned_units: dict[str, str] | None = None) -> None:
-        """Stores the comparison reference, figure embedding preference, the scored split and the unit plan.
-
-        Args:
-            config          : Benchmark configuration, or the standalone comparison entry configuration, supplying the paths.
-            run_tag         : Tag identifying this benchmark run.
-            logger          : Logger for the stage.
-            reference_model : Model key used as comparison baseline.
-            embed_images    : Whether figures are embedded into the reports.
-            inference_split : Dataset split whose completed inference stamps are collected.
-            run_dir         : Explicit run directory, or None to derive it from the configured log base and the run tag.
-            planned_units   : Directory of every planned unit relative to the training directory, keyed by unit name, or None for a standalone comparison without a plan.
-        """
         super().__init__(config=config, run_tag=run_tag, logger=logger, run_dir=run_dir)
         self.reference_model = reference_model
         self.embed_images    = embed_images
@@ -744,14 +478,6 @@ class ComparisonStage(ExperimentStage):
         self.planned_units   = planned_units
 
     def _check_coverage(self, runs: list) -> None:
-        """Logs what the collection covers against the plan and refuses an empty collection.
-
-        Args:
-            runs : Per-run records as collected from the training directory, before seed aggregation.
-
-        Raises:
-            SystemExit : If nothing was collected, since every report would be empty.
-        """
         collected = [record.name for record in runs]
         scored    = [record.name for record in runs if record.has_inference]
 
@@ -776,14 +502,6 @@ class ComparisonStage(ExperimentStage):
             self.logger.warning(f"{name}: collected but planned by no unit; ranked in the reports beside the planned units")
 
     def run(self) -> Path:
-        """Aggregates the run records over seeds and writes the reports.
-
-        Returns:
-            The timestamped directory the reports were written into.
-
-        Raises:
-            SystemExit : If no run was collected.
-        """
         self.logger.section("Comparison reports")
 
         collector = BenchmarkSeedCollector(run_dir=self.run_dir, logger=self.logger, inference_split=self.inference_split)

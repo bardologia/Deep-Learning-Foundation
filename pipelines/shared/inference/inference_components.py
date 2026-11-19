@@ -1,4 +1,3 @@
-"""Selection of the inference component set implied by a run's persisted configs."""
 
 from __future__ import annotations
 
@@ -11,23 +10,9 @@ from pipelines.shared.config.config_persistence import BackboneModelConfigIO, Du
 
 
 class InferenceComponentsResolver:
-    """Picks the spatial inference components matching a trained run's family."""
 
     @staticmethod
     def for_run(run_directory: Path) -> InferenceComponents:
-        """Returns the inference components a spatial run should be scored with.
-
-        A dual config selects the dual components; a profile- or image-autoencoder
-        config alongside a backbone config marks a JEPA run and selects its curve
-        or parameter components; anything else falls back to the plain backbone
-        components.
-
-        Args:
-            run_directory : Training run whose meta/ directory is inspected.
-
-        Raises:
-            ValueError : The run is a standalone autoencoder run, which this resolver does not cover.
-        """
         meta         = Path(run_directory) / "meta"
         has_backbone = BackboneModelConfigIO.exists(meta)
 

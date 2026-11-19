@@ -1,8 +1,3 @@
-"""Staged architecture benchmark over the registered model families.
-
-Runs capacity matching and batch probing, trains every selected model under the
-same budget, optionally infers, and finally writes the comparison reports.
-"""
 
 from __future__ import annotations
 
@@ -17,40 +12,18 @@ from pipelines.benchmark.stages import ComparisonStage, InferenceStage, MaxBatch
 
 
 class BenchmarkPipeline(StagedPipeline):
-    """Runs the architecture benchmark end to end or one of its stages.
-
-    Attributes:
-        models         : Model keys selected for this benchmark, skip list applied.
-        training_stage : Training stage of this launch once built, whose unit plan the comparison is checked against.
-    """
 
     LOGGER_NAME     = "benchmark_pipeline"
     SUPPORTED_TYPES = ("backbone", "jepa", "profile_autoencoder")
     STAGES          = ("full", "prepare", "compare")
 
     def __init__(self, config: BenchmarkConfig, entry_script: Path, resumed=None) -> None:
-        """Resolves the run directory and the model keys this benchmark covers.
-
-        Args:
-            config       : Resolved benchmark configuration.
-            entry_script : Entry script the stage workers re-invoke.
-            resumed      : Resumed-run description logged when the pipeline starts, or None for a fresh run.
-        """
         super().__init__(config, entry_script, resumed=resumed)
         self.models         = self.select_models(config)
         self.training_stage = None
 
     @classmethod
     def select_models(cls, config: BenchmarkConfig) -> list[str]:
-        """Returns the benchmarked model keys, dropping those the skip list names.
-
-        Args:
-            config : Benchmark configuration carrying the training type, heads and skip list.
-
-        Returns:
-            Model keys, by architecture name alone for non-backbone families and
-            as backbone-and-head keys for backbones.
-        """
         skip = set(config.skip_models)
         keys = cls._model_keys(config)
 
@@ -58,7 +31,6 @@ class BenchmarkPipeline(StagedPipeline):
 
     @classmethod
     def _model_keys(cls, config: BenchmarkConfig) -> list[str]:
-        """Returns every registered model key of the training type, before skipping."""
         registry = config_registry(config.training_type)
 
         if config.training_type != "backbone":
@@ -68,11 +40,6 @@ class BenchmarkPipeline(StagedPipeline):
 
     @classmethod
     def unknown_skips(cls, config: BenchmarkConfig) -> list[str]:
-        """Returns the skip_models entries that name neither a model key of the training type nor a backbone name.
-
-        Args:
-            config : Benchmark configuration carrying the training type, heads and skip list.
-        """
         keys  = cls._model_keys(config)
         known = set(keys) | {ModelBuilder.split_key(key)[0] for key in keys}
 
@@ -80,14 +47,6 @@ class BenchmarkPipeline(StagedPipeline):
 
     @classmethod
     def validate_sweep(cls, config: BenchmarkConfig) -> None:
-        """Validates the sweep settings and resolves the size-match reference model.
-
-        Args:
-            config : Benchmark configuration, mutated in place when the reference model has to be expanded into a full model key.
-
-        Raises:
-            SystemExit : On an unsupported training type or stage, an invalid loss component, an unknown or empty head list, a skip_models entry that matches no model, or a reference model that is not among the swept keys.
-        """
         if config.training_type not in cls.SUPPORTED_TYPES:
             raise SystemExit(f"benchmark does not support training_type '{config.training_type}'; supported: {', '.join(cls.SUPPORTED_TYPES)}")
 
@@ -110,12 +69,10 @@ class BenchmarkPipeline(StagedPipeline):
             config.size_match.reference_model = SizeMatchStage.resolve_reference(config.size_match.reference_model, cls.select_models(config), config.heads)
 
     def _validate_sweep(self) -> None:
-        """Validates this pipeline's own configuration before any stage runs."""
         self._begin_stage("validation")
         self.validate_sweep(self.config)
 
     def _log_model_selection(self) -> None:
-        """Logs the model keys this benchmark covers and the ones the skip list removed."""
         skipped = [key for key in self._model_keys(self.config) if key not in self.models]
 
         self.logger.kv_table({
@@ -124,14 +81,6 @@ class BenchmarkPipeline(StagedPipeline):
         }, title=f"Model selection: {len(self.models)} benchmarked, {len(skipped)} skipped")
 
     def _run_max_batch(self) -> dict:
-        """Probes the maximum batch size of every model and records the outcome.
-
-        Returns:
-            The per-model probe records.
-
-        Raises:
-            SystemExit : If the probe failed for every model, leaving nothing to train.
-        """
         self._begin_stage("max_batch")
 
         stage   = MaxBatchStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
@@ -148,7 +97,6 @@ class BenchmarkPipeline(StagedPipeline):
         return records
 
     def _run_size_match(self) -> dict:
-        """Matches every model's capacity to the reference and returns the per-model records."""
         self._begin_stage("size_match")
 
         stage   = SizeMatchStage(config=self.config, run_tag=self.run_tag, models=self.models, logger=self.logger)
@@ -158,13 +106,6 @@ class BenchmarkPipeline(StagedPipeline):
         return records
 
     def _log_unit_status(self) -> None:
-        """Logs what every model x seed unit already holds on disk, and which directories no unit claims.
-
-        A full run gets the same table from its training stage; this is the
-        prepare stage's version, so a resume can be inspected before anything
-        is launched. The stage itself warns about the run directories no unit
-        claims while it reconciles.
-        """
         self._begin_stage("prepare")
 
         self.training_stage = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
@@ -172,7 +113,6 @@ class BenchmarkPipeline(StagedPipeline):
         self.training_stage.status_report().log(self.logger, "Unit status")
 
     def _run_training(self) -> list[dict]:
-        """Trains every benchmark unit on the GPU pool and returns the job results."""
         self._begin_stage("training")
 
         self.training_stage = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
@@ -183,14 +123,6 @@ class BenchmarkPipeline(StagedPipeline):
         return results
 
     def _run_inference(self) -> list[dict]:
-        """Runs inference over every trained unit, or skips the stage when the benchmark scores nothing.
-
-        The skip is logged with its reason and marked in the state; a family
-        without an inference stage that was asked to infer is warned about.
-
-        Returns:
-            One result dictionary per unit, empty when inference is skipped.
-        """
         self._begin_stage("inference")
 
         if not self.config.runs_inference():
@@ -210,20 +142,12 @@ class BenchmarkPipeline(StagedPipeline):
         return results
 
     def _unit_plan(self) -> dict[str, str]:
-        """Returns the directory of every planned unit relative to the training directory.
-
-        The plan comes from the training stage this launch built; a
-        compare-only launch reconciles the units against the training
-        directory itself, so renamed directories are matched through their
-        manifests.
-        """
         if self.training_stage is None:
             self.training_stage = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
 
         return {item: self.training_stage.unit_name(item) for item in self.training_stage.items}
 
     def _run_comparison(self) -> Path:
-        """Writes the cross-model comparison reports, checked against the unit plan, and returns their output directory."""
         self._begin_stage("comparison")
 
         stage   = ComparisonStage(config=self.config, run_tag=self.run_tag, logger=self.logger, reference_model=self.config.size_match.reference_model, embed_images=self.config.comparison.embed_images, inference_split=self.config.inference.split, planned_units=self._unit_plan())
@@ -233,12 +157,6 @@ class BenchmarkPipeline(StagedPipeline):
         return out_dir
 
     def _execute(self) -> None:
-        """Runs the configured stage, or the whole prepare-train-infer-compare sequence.
-
-        Raises:
-            SystemExit : If the sweep configuration is invalid or batch probing failed for every model.
-            PartialRun : If a full run ends with failed units, after the comparison reports are written.
-        """
         self.logger.section("Benchmark pipeline")
         self.logger.kv_table({
             "Run tag"   : self.run_tag,

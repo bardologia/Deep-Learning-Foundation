@@ -1,9 +1,3 @@
-"""Collection of per-trial artifacts from a benchmark or cross-validation tree.
-
-Walks the training directory of a pipeline run, reads each trial's config,
-checkpoint, completion marker and latest inference stamp into a `TrialRecord`,
-and aggregates seed sweeps into a single record plus dispersion statistics.
-"""
 
 from __future__ import annotations
 
@@ -30,23 +24,6 @@ _CHECKPOINT_KEYS      = ("best_val_loss", "best_epoch", "epoch")
 
 @dataclass
 class TrialRecord:
-    """Everything the comparison report knows about one trial.
-
-    Attributes:
-        name            : Trial identifier, "<trial>/<seed>" for seed-swept runs.
-        run_dir         : Training directory of the trial (or of the single seed).
-        parameters      : Trainable parameter count of the model, when known.
-        size_match      : Width-scaling record used to equalise capacity across models.
-        trainer_config  : Serialized trainer configuration from docs/.
-        run_summary     : Run summary written by the trainer under meta/.
-        checkpoint      : Best-checkpoint scalars plus the completed epoch count.
-        training_result : Status and wall-clock duration of the training job.
-        inference_dir   : Latest completed inference stamp, or None.
-        metrics         : Test metrics loaded from that stamp.
-        figures         : PNG figure paths of that stamp.
-        animations      : GIF animation paths of that stamp.
-        report_path     : Path of the per-run inference report, when present.
-    """
 
     name            : str
     run_dir         : Path
@@ -64,32 +41,18 @@ class TrialRecord:
 
     @property
     def has_inference(self) -> bool:
-        """True when a completed inference stamp was attached to this trial."""
         return self.inference_dir is not None
 
 
 class SeedRunAggregator:
-    """Collapses the seed runs of a trial into one record with dispersion stats.
-
-    Attributes:
-        CHECKPOINT_KEYS : Checkpoint scalars averaged across seeds.
-        logger          : Logger receiving the representative-seed line of every trial and a warning when its means cover fewer seeds than it holds.
-        seed_dispersion : Per-trial dispersion payloads, populated by `aggregate`.
-    """
 
     CHECKPOINT_KEYS = ("best_val_loss", "best_epoch", "n_train_epochs")
 
     def __init__(self, logger: Logger) -> None:
-        """Starts with an empty dispersion table.
-
-        Args:
-            logger : Logger for the seed-coverage warnings and the representative-seed lines.
-        """
         self.logger          = logger
         self.seed_dispersion = {}
 
     def _group(self, records: list[TrialRecord]) -> list[tuple[str, list[TrialRecord]]]:
-        """Groups records by the seed-stripped base name, preserving discovery order."""
         groups: dict[str, list[TrialRecord]] = {}
 
         for record in records:
@@ -98,16 +61,6 @@ class SeedRunAggregator:
         return list(groups.items())
 
     def _report_coverage(self, name: str, runs: list[TrialRecord], seed_names: list[str], metric_keys: list[str], contributors: dict[str, int], representative: TrialRecord) -> None:
-        """Names the seed standing for the trial and warns when any metric mean covers fewer seeds than the trial holds.
-
-        Args:
-            name           : Seed-stripped trial name.
-            runs           : Seed runs of the trial.
-            seed_names     : Seed label of every run, aligned with runs.
-            metric_keys    : Metric keys aggregated for the trial.
-            contributors   : Number of seeds carrying a finite value, per metric key.
-            representative : Seed run whose figures and report stand for the trial.
-        """
         shortfall = SeedAggregation.shortfall([run.metrics for run in runs], metric_keys, seed_names)
 
         without_inference = [seed for seed, run in zip(seed_names, runs) if not run.has_inference]
@@ -128,20 +81,6 @@ class SeedRunAggregator:
         self.logger.info(f"{name}: figures and report from {representative.name}")
 
     def _aggregate_group(self, name: str, runs: list[TrialRecord]) -> tuple[TrialRecord, dict]:
-        """Averages the seed runs of one trial into a single record.
-
-        Args:
-            name : Seed-stripped trial name carried by the aggregate record.
-            runs : Seed runs belonging to that trial.
-
-        Returns:
-            Pair of the aggregated record (metrics and checkpoint scalars are
-            seed means, figures and report come from the first seed with an
-            inference stamp) and its dispersion payload holding the seed count,
-            the per-metric count of seeds that entered each mean, the
-            best-val-loss standard deviation, per-metric standard deviations
-            and the raw per-seed metric dicts.
-        """
         representative = next((run for run in runs if run.has_inference), runs[0])
 
         seed_names   = [run.name.rsplit("/", 1)[-1] for run in runs]
@@ -175,15 +114,6 @@ class SeedRunAggregator:
         return record, dispersion
 
     def aggregate(self, records: list[TrialRecord]) -> list[TrialRecord]:
-        """Replaces every multi-seed group by its aggregate record.
-
-        Args:
-            records : Per-run records as collected from disk.
-
-        Returns:
-            One record per trial; single-seed trials pass through untouched.
-            `seed_dispersion` is refilled for the aggregated trials.
-        """
         self.seed_dispersion = {}
         aggregated           = []
 
@@ -200,13 +130,6 @@ class SeedRunAggregator:
 
 
 class TrialArtifactReader:
-    """Reads checkpoint scalars and inference artifacts of a single trial.
-
-    Attributes:
-        CHECKPOINT_FILENAME : Best checkpoint the trainer writes at the top of a run directory.
-        logger              : Logger for the per-run warnings.
-        inference_split     : Split whose completed inference stamps are attached, or None to skip inference attachment entirely.
-    """
 
     CHECKPOINT_FILENAME = "best_model.pt"
 
@@ -214,15 +137,6 @@ class TrialArtifactReader:
     inference_split : str | None
 
     def _read_checkpoint(self, trial_dir: Path) -> dict:
-        """Returns the best-checkpoint scalars and completed epoch count of a run.
-
-        Args:
-            trial_dir : Run directory, read at the trainer's own checkpoint path rather than searched, since a run with context pretraining holds a second checkpoint below pretrain/.
-
-        Returns:
-            Dict of the non-null checkpoint scalars plus "n_train_epochs", or an
-            empty dict when the run holds no best checkpoint.
-        """
         checkpoint_path = trial_dir / self.CHECKPOINT_FILENAME
         if not checkpoint_path.is_file():
             return {}
@@ -240,7 +154,6 @@ class TrialArtifactReader:
 
     @staticmethod
     def _epochs_completed(run_dir: Path) -> int | None:
-        """Returns the epoch count from the run's completion marker, or None when absent."""
         marker_path = CompletionMarker.path(run_dir)
 
         if not marker_path.is_file():
@@ -249,11 +162,6 @@ class TrialArtifactReader:
         return int(FileIO.load_json(marker_path)["epochs_completed"])
 
     def _attach_inference(self, record: TrialRecord) -> None:
-        """Attaches the newest completed inference stamp of the configured split.
-
-        Args:
-            record : Trial record to fill in place with the inference directory, metrics, animations, figures and report path.
-        """
         if self.inference_split is None:
             return
 
@@ -274,15 +182,9 @@ class TrialArtifactReader:
             record.report_path = report_path
 
     def _attach_figures(self, record: TrialRecord, inference_dir: Path) -> None:
-        """Attaches the sorted PNG figures of an inference stamp to the record."""
         record.figures = sorted((inference_dir / "figures").glob("*.png")) if (inference_dir / "figures").is_dir() else []
 
     def _warn_no_inference(self, record: TrialRecord) -> None:
-        """Warns when a run has no completed inference on the split, naming any family sub-directory whose stamps this collector does not read.
-
-        Args:
-            record : Collected run; nothing is logged when inference is attached or no split is configured.
-        """
         if self.inference_split is None or record.has_inference:
             return
 
@@ -293,7 +195,6 @@ class TrialArtifactReader:
         self.logger.warning(f"{record.name}: no completed inference on split '{self.inference_split}' under {inference_dir}{nested}; listed but not ranked")
 
     def _warn_unfinished(self, record: TrialRecord) -> None:
-        """Warns when a run lacks its best checkpoint or its training completion marker, so it is known to be compared as it stands."""
         if not (record.run_dir / self.CHECKPOINT_FILENAME).is_file():
             self.logger.warning(f"{record.name}: no {self.CHECKPOINT_FILENAME} under {record.run_dir}; training saved no best checkpoint, compared without checkpoint scalars")
 
@@ -301,7 +202,6 @@ class TrialArtifactReader:
             self.logger.warning(f"{record.name}: no {CompletionMarker.FILENAME} under {record.run_dir}; training did not finish (crashed or still running), compared as is")
 
     def _status(self, record: TrialRecord) -> str:
-        """Returns the one-line status of a collected run: its inference stamp or the lack of one, its epoch count and whether training finished."""
         inference = f"inference {record.inference_dir.name}" if record.has_inference else "no inference"
         epochs    = record.checkpoint.get("n_train_epochs", "?")
         complete  = "yes" if CompletionMarker.is_complete(record.run_dir) else "no"
@@ -310,39 +210,22 @@ class TrialArtifactReader:
 
 
 class TrainingResultsIndex:
-    """Per-run training status and duration, from the index file or the markers.
-
-    Attributes:
-        FILENAME : Name of the index file written by the training stage.
-        path     : Full path of that file inside the pipeline directory.
-    """
 
     FILENAME = "training_results.json"
 
     def __init__(self, pipeline_dir: Path, logger: Logger) -> None:
-        """Points the index at the pipeline directory of a benchmark or CV run."""
         self.path   = Path(pipeline_dir) / self.FILENAME
         self.logger = logger
 
     def _stored(self) -> dict:
-        """Returns the persisted training results keyed by run name."""
         return {result["name"]: result for result in FileIO.load_json(self.path)}
 
     def _derived(self, runs: list[tuple[str, Path]]) -> dict:
-        """Rebuilds training results from completion markers when no index exists.
-
-        Args:
-            runs : (run name, run directory) pairs to inspect.
-
-        Returns:
-            Results keyed by run name, with duration unavailable.
-        """
         self.logger.warning(f"No {self.path.name} in {self.path.parent}: rebuilding training results from the completion markers of {len(runs)} run(s)")
 
         return {name: self._marker_result(name, run_dir) for name, run_dir in runs}
 
     def _marker_result(self, name: str, run_dir: Path) -> dict:
-        """Returns a DONE/PARTIAL result derived from one run's completion marker."""
         return {
             "name"       : name,
             "status"     : "DONE" if CompletionMarker.is_complete(run_dir) else "PARTIAL",
@@ -350,11 +233,6 @@ class TrainingResultsIndex:
         }
 
     def build(self, runs: list[tuple[str, Path]]) -> dict:
-        """Returns the training results keyed by run name, stored or marker-derived.
-
-        Args:
-            runs : (run name, run directory) pairs used for the marker fallback.
-        """
         if self.path.is_file():
             return self._stored()
 
@@ -362,23 +240,8 @@ class TrainingResultsIndex:
 
 
 class TrialCollector(TrialArtifactReader):
-    """Builds the `TrialRecord` list of a benchmark or cross-validation run.
-
-    Attributes:
-        run_dir         : Root of the pipeline run.
-        training_dir    : Directory holding one sub-directory per trial.
-        pipeline_dir    : Directory holding size_match.json and training_results.json.
-        inference_split : Split whose inference stamps are attached.
-    """
 
     def __init__(self, run_dir: Path, logger: Logger, inference_split: str | None) -> None:
-        """Resolves the training and pipeline sub-directories of the run.
-
-        Args:
-            run_dir         : Root of the benchmark or cross-validation run.
-            logger          : Logger for per-trial progress lines.
-            inference_split : Split whose completed inference stamps are attached, or None to collect training artifacts only.
-        """
         self.run_dir         = run_dir
         self.training_dir    = run_dir / "training"
         self.pipeline_dir    = run_dir / "pipeline"
@@ -386,18 +249,11 @@ class TrialCollector(TrialArtifactReader):
         self.inference_split = inference_split
 
     def _optional_json(self, path: Path) -> dict:
-        """Returns the JSON payload at the path, or an empty dict when it is missing."""
         if not path.exists():
             return {}
         return FileIO.load_json(path)
 
     def _run_json(self, record: TrialRecord, path: Path) -> dict:
-        """Returns one of a run's JSON artifacts, or an empty dict after warning that the run lacks it.
-
-        Args:
-            record : Run the artifact belongs to.
-            path   : Expected location of the artifact inside the run directory.
-        """
         if not path.is_file():
             self.logger.warning(f"{record.name}: no {path.relative_to(record.run_dir).as_posix()} under {record.run_dir}; its report cells stay empty")
             return {}
@@ -405,7 +261,6 @@ class TrialCollector(TrialArtifactReader):
         return FileIO.load_json(path)
 
     def _training_result(self, record: TrialRecord, training_results: dict) -> dict:
-        """Returns the run's entry of the training results index, or an empty dict after warning that the index lacks it."""
         if record.name in training_results:
             return training_results[record.name]
 
@@ -413,15 +268,6 @@ class TrialCollector(TrialArtifactReader):
         return {}
 
     def _parse_parameters(self, trial_dir: Path, size_match: dict) -> int | None:
-        """Returns the trainable parameter count of a trial.
-
-        Args:
-            trial_dir  : Training directory whose docs/model_doc.md is parsed first.
-            size_match : Width-scaling record used as fallback source.
-
-        Returns:
-            Parameter count, or None when neither source records one.
-        """
         summary_path = trial_dir / "docs" / "model_doc.md"
 
         if summary_path.exists():
@@ -433,7 +279,6 @@ class TrialCollector(TrialArtifactReader):
 
     @staticmethod
     def _model_of(trial_name: str) -> str:
-        """Returns the size-match key of a trial: a backbone-head model key or the bare stem."""
         base  = SeedSet.base(trial_name).split("__")[0]
         parts = base.split("-")
 
@@ -444,11 +289,9 @@ class TrialCollector(TrialArtifactReader):
 
     @staticmethod
     def _seed_dirs(trial_dir: Path) -> list[Path]:
-        """Returns the sorted seedNN sub-directories of a trial directory."""
         return sorted(d for d in trial_dir.iterdir() if d.is_dir() and re.fullmatch(r"seed\d+", d.name))
 
     def _run_dirs(self) -> list[tuple[str, Path]]:
-        """Returns (run name, run directory) pairs, expanding seed sweeps into one entry per seed."""
         runs = []
         for trial_dir in sorted(d for d in self.training_dir.iterdir() if d.is_dir()):
             seed_dirs = self._seed_dirs(trial_dir)
@@ -461,18 +304,12 @@ class TrialCollector(TrialArtifactReader):
         return runs
 
     def _aggregate_sources(self, runs: list[tuple[str, Path]]) -> tuple[dict, dict]:
-        """Returns the pipeline-level size-match record and the training results index.
-
-        Args:
-            runs : (run name, run directory) pairs used to rebuild the index when the training results file is absent.
-        """
         size_match       = self._optional_json(self.pipeline_dir / "size_match.json")
         training_results = TrainingResultsIndex(self.pipeline_dir, self.logger).build(runs)
 
         return size_match, training_results
 
     def _summarise(self, records: list[TrialRecord]) -> None:
-        """Logs how many runs were collected, how many carry inference on the split and how many lack a checkpoint or a completion marker."""
         n_inferred   = sum(1 for record in records if record.has_inference)
         n_unfinished = sum(1 for record in records if not CompletionMarker.is_complete(record.run_dir))
         n_no_ckpt    = sum(1 for record in records if not (record.run_dir / self.CHECKPOINT_FILENAME).is_file())
@@ -481,14 +318,6 @@ class TrialCollector(TrialArtifactReader):
         self.logger.ok(f"{len(records)} run(s) collected: {inference}, {n_unfinished} without {CompletionMarker.FILENAME}, {n_no_ckpt} without {self.CHECKPOINT_FILENAME}")
 
     def collect(self) -> list[TrialRecord]:
-        """Reads every trial of the run into a record and logs its status.
-
-        Returns:
-            One record per run directory.
-
-        Raises:
-            FileNotFoundError : If the run has no training directory, so a wrong run tag fails instead of yielding an empty comparison.
-        """
         if not self.training_dir.is_dir():
             raise FileNotFoundError(f"No training directory at {self.training_dir}; expected one sub-directory per trial there, check the run tag")
 

@@ -1,14 +1,3 @@
-"""GPU probes finding the largest training batch size that fits a VRAM budget.
-
-Each probe builds the real dataset, model and trainer of one benchmark model,
-then measures the peak memory of actual training steps across candidate batch
-sizes. The backbone probe assembles its context from the benchmark's sweep
-settings; the entry probe borrows the throwaway trainer a training pipeline
-builds for its own preflight, covering the JEPA and autoencoder families. When
-the LR range test is enabled it runs on the same trainer at the probed batch
-size, and the selected multiplier is stored in the probe result for the
-training worker to apply.
-"""
 
 from __future__ import annotations
 
@@ -34,34 +23,8 @@ from tools.training.pretraining.lr_finder    import LrRangeTest
 
 
 class MaxBatchProbeBase:
-    """Shared skeleton of the per-model VRAM probe and its optional LR range test.
-
-    Subclasses supply ``_build_probe_setup`` returning the trainer and training
-    dataset the measured steps run on; the skeleton seeds, measures the CUDA
-    context, caps the search ceiling at the dataset size, runs the batch-size
-    ladder and, when enabled, the LR range test at the probed batch size.
-
-    Attributes:
-        config        : Benchmark configuration supplying the probe and dataset settings.
-        model_name    : Model key under probe.
-        budget_gb     : Peak-memory budget in gigabytes.
-        ceiling       : Largest batch size the search may return.
-        measure_steps : Training steps executed per candidate batch size.
-        seed          : Seed applied before building the probe context.
-        device        : CUDA device the probe runs on.
-        context_gb    : Memory in gigabytes held by the CUDA context itself.
-        work_dir      : Directory the probe writes its log and result into.
-        logger        : Logger for the probe.
-    """
 
     def __init__(self, config: BenchmarkConfig, model_name: str, work_dir: Path) -> None:
-        """Stores the probe settings and opens the log under the work directory.
-
-        Args:
-            config     : Benchmark configuration.
-            model_name : Model key under probe.
-            work_dir   : Directory the probe writes into.
-        """
         self.config     = config
         self.model_name = model_name
 
@@ -77,40 +40,19 @@ class MaxBatchProbeBase:
         self.logger = Logger(log_dir=str(self.work_dir / "logs"), name="max_batch", level="INFO")
 
     def _measure_context(self) -> float:
-        """Returns the memory in gigabytes already occupied on the device before any model."""
         return TrainStepMemoryProbe.measure_context(self.device)
 
     def _build_probe_setup(self) -> tuple:
-        """Returns the (trainer, dataset) pair the probe steps run on; implemented by subclasses."""
         raise NotImplementedError
 
     def _candidates(self) -> list[int]:
-        """Returns the power-of-two batch sizes searched up to the ceiling."""
         return BatchSizeFinder.candidates(self.ceiling)
 
     def _release(self, trainer) -> None:
-        """Drops gradients and the caching allocator's blocks after an out-of-memory trial."""
         trainer.optimizer.zero_grad(set_to_none=True)
         torch.cuda.empty_cache()
 
     def _find_lr(self, trainer, dataset, batch_size: int) -> dict:
-        """Runs the LR range test at the probed batch size and returns its record fields.
-
-        The trainer was built with the learning-rate scale of the configured
-        batch size, so its warmup-free base rates are first rescaled to the
-        probed batch under the batch-size rule; the selected multiplier is then
-        relative to the effective rates the training worker will run with.
-
-        Args:
-            trainer    : Probe trainer whose optimizer and loss path the test drives.
-            dataset    : Training dataset the test batches are drawn from.
-            batch_size : Batch size resolved by the batch-size search.
-
-        Returns:
-            Dict with "lr_multiplier", "lr_min_loss_multiplier",
-            "lr_divergence_multiplier" and "lr_rungs_run"; every entry is None
-            when the test found no usable response.
-        """
         settings = self.config.find_lr
 
         rescale          = batch_size / self.config.training.batch_size if self.config.training.scale_lr_with_batch else 1.0
@@ -153,17 +95,6 @@ class MaxBatchProbeBase:
         }
 
     def run(self) -> dict:
-        """Searches for the largest batch size fitting the budget and reports the outcome.
-
-        Failures are captured rather than raised, so one unbuildable model does
-        not abort the benchmark sweep.
-
-        Returns:
-            Dict with the model key, status, chosen batch size, peak and context
-            memory in gigabytes, the per-candidate trials, the LR range-test
-            multiplier fields, the probe settings and the traceback of any
-            failure.
-        """
         result = {
             "model"                  : self.model_name,
             "status"                 : None,
@@ -228,31 +159,12 @@ class MaxBatchProbeBase:
 
 
 class MaxBatchProbe(MaxBatchProbeBase):
-    """Probes one backbone benchmark model, assembling its context from the sweep settings.
-
-    Attributes:
-        overrides : Model configuration overrides, typically the size-matched widths.
-    """
 
     def __init__(self, config: BenchmarkConfig, model_name: str, overrides: dict, work_dir: Path) -> None:
-        """Stores the probe settings and the size-match overrides.
-
-        Args:
-            config     : Benchmark configuration.
-            model_name : Model key (backbone and head) under probe.
-            overrides  : Model configuration overrides applied when building the model.
-            work_dir   : Directory the probe writes into.
-        """
         super().__init__(config, model_name, work_dir)
         self.overrides = overrides
 
     def _build_context(self):
-        """Builds the dataset the probe trains on, at the benchmark's loss and patch settings.
-
-        Returns:
-            Tuple of the trainer config, the dataset config, the training
-            dataset and the Gaussian configuration.
-        """
         factory        = ConfigFactory(self.config)
         dataset_config = factory.training_dataset_config()
         trainer_config = factory.training_trainer_config(logdir=self.work_dir)
@@ -277,16 +189,6 @@ class MaxBatchProbe(MaxBatchProbeBase):
         return trainer_config, dataset_config, datasets["train"], gaussian_cfg
 
     def _build_model(self, dataset_config, dataset, gaussian_cfg):
-        """Builds the probed model at the dataset input width and Gaussian output width.
-
-        Args:
-            dataset_config : Dataset configuration supplying the patch size.
-            dataset        : Training dataset supplying the input channel count.
-            gaussian_cfg   : Gaussian configuration supplying the output width.
-
-        Returns:
-            The model and its resolved model configuration.
-        """
         name, head   = ModelBuilder.split_key(self.model_name)
         model_config = ModelBuilder.config_from_registry(name, self.overrides, head=head)
 
@@ -299,21 +201,6 @@ class MaxBatchProbe(MaxBatchProbeBase):
         return get_backbone(name, config=model_config, **overrides)
 
     def _build_trainer(self, trainer_config, dataset_config, model, model_cfg, dataset):
-        """Builds a trainer pinned to the complete loss stage, in train mode.
-
-        The complete stage is the heaviest composition the run will use, so the
-        measured peak bounds every later epoch.
-
-        Args:
-            trainer_config : Trainer configuration for the probe.
-            dataset_config : Dataset configuration supplying the z axis.
-            model          : The probed model.
-            model_cfg      : Resolved model configuration.
-            dataset        : Training dataset supplying the normalizer.
-
-        Returns:
-            The trainer whose training step the probe times.
-        """
         trainer = Trainer(
             model      = model,
             model_cfg  = model_cfg,
@@ -331,14 +218,6 @@ class MaxBatchProbe(MaxBatchProbeBase):
         return trainer
 
     def _build_probe_setup(self) -> tuple:
-        """Builds the backbone probe context and validates the dataset channel width.
-
-        Returns:
-            Tuple of the trainer and the training dataset.
-
-        Raises:
-            RuntimeError : If the dataset channel count differs from the width capacity matching counted with.
-        """
         trainer_config, dataset_config, dataset, gaussian_cfg = self._build_context()
 
         if dataset.input_channels != self.config.size_match.in_channels:
@@ -351,34 +230,12 @@ class MaxBatchProbe(MaxBatchProbeBase):
 
 
 class EntryMaxBatchProbe(MaxBatchProbeBase):
-    """Probes one JEPA or autoencoder benchmark model through its training pipeline.
-
-    The probed trainer, dataset and model come from the family pipeline's own
-    ``build_pretrain_trainer``, so the measured steps run the exact loss and
-    data path that unit will train with.
-
-    Attributes:
-        build_trainer : Callable taking (work_dir, logger) and returning the (trainer, dataset, model) triple of the probed unit.
-    """
 
     def __init__(self, config: BenchmarkConfig, model_name: str, work_dir: Path, build_trainer: Callable) -> None:
-        """Stores the probe settings and the pipeline trainer builder.
-
-        Args:
-            config        : Benchmark configuration.
-            model_name    : Model key under probe.
-            work_dir      : Directory the probe writes into.
-            build_trainer : Callable taking (work_dir, logger) and returning (trainer, dataset, model).
-        """
         super().__init__(config, model_name, work_dir)
         self.build_trainer = build_trainer
 
     def _build_probe_setup(self) -> tuple:
-        """Builds the probed trainer through the family pipeline, in train mode.
-
-        Returns:
-            Tuple of the trainer and the training dataset.
-        """
         trainer, dataset, _model = self.build_trainer(self.work_dir / "context", self.logger)
         trainer.model.train()
 

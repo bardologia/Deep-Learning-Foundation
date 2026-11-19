@@ -1,9 +1,3 @@
-"""Draws Gaussian-parameter accuracy after matching predicted slots to ground-truth slots.
-
-Every figure is scoped to the pixels where the ground-truth Gaussian is active, so
-inactive slots cannot dilute the comparison, and all of them read the same cached
-Hungarian alignment.
-"""
 
 from __future__ import annotations
 
@@ -25,14 +19,6 @@ from tools.metrics.gaussian_matching         import GaussianMatcher
 
 @dataclass
 class ParamFigureSkip:
-    """One parameter figure that was not drawn, with the reason.
-
-    Attributes:
-        family    : Figure family, one of distributions, scatter, error_maps or error_hists.
-        slot      : One-based GT slot index.
-        parameter : Parameter file name, one of a, mu or sigma.
-        reason    : Why no figure was written.
-    """
 
     family    : str
     slot      : int
@@ -41,18 +27,8 @@ class ParamFigureSkip:
 
 
 class SlotAlignment:
-    """Caches the slot-aligned prediction so the parameter figures match only once.
-
-    Attributes:
-        params_pred   : Predicted parameter cube the cached alignment was built from.
-        params_gt     : Ground-truth parameter cube the cached alignment was built against.
-        n_gaussians   : Gaussian count K of the cached alignment.
-        amp_threshold : Activity threshold of the cached alignment.
-        aligned       : Predicted parameters reordered into GT slot order.
-    """
 
     def __init__(self) -> None:
-        """Starts with an empty cache."""
 
         self.params_pred   = None
         self.params_gt     = None
@@ -62,7 +38,6 @@ class SlotAlignment:
 
     @staticmethod
     def _is_same(cached: Optional[np.ndarray], candidate: np.ndarray) -> bool:
-        """Returns whether the candidate array is the identical buffer, shape and strides as the cached one."""
 
         if cached is None:
             return False
@@ -70,18 +45,6 @@ class SlotAlignment:
         return cached.shape == candidate.shape and cached.strides == candidate.strides and cached.ctypes.data == candidate.ctypes.data
 
     def of(self, params_pred: np.ndarray, params_gt: np.ndarray, n_gaussians: int, amp_threshold: float, assignment: Optional[np.ndarray] = None) -> np.ndarray:
-        """Returns the slot-aligned prediction, reusing the cache when the same cubes come back.
-
-        Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
-            params_gt     : Ground-truth parameter cube of the same shape.
-            n_gaussians   : Gaussian count K.
-            amp_threshold : Amplitude above which a slot counts as active.
-            assignment    : Precomputed predicted-to-GT assignment, or None to match here.
-
-        Returns:
-            Predicted parameters reordered into GT slot order, of shape (3 * K, rows, cols).
-        """
 
         if self.n_gaussians == n_gaussians and self.amp_threshold == amp_threshold and self._is_same(self.params_pred, params_pred) and self._is_same(self.params_gt, params_gt):
             return self.aligned
@@ -96,19 +59,8 @@ class SlotAlignment:
 
 
 class ParamPlotter(PlotTools):
-    """Plots matched Gaussian-parameter distributions, scatters, error maps and error histograms.
-
-    Every figure family skips a (slot, parameter) pair that has nothing to
-    draw; each skip is kept with its reason so the caller can say why a
-    g<k>_* file is missing instead of leaving it to be discovered.
-
-    Attributes:
-        alignment : Cache of the slot-aligned prediction shared by every figure family here.
-        skips     : Figures not drawn since the last drain_skips call.
-    """
 
     def __init__(self, *args, **kwargs) -> None:
-        """Builds the plotter with the shared plot style, an empty alignment cache and no recorded skip."""
 
         super().__init__(*args, **kwargs)
         self.alignment = SlotAlignment()
@@ -124,25 +76,6 @@ class ParamPlotter(PlotTools):
         assignment    : Optional[np.ndarray] = None,
         bins          : int = 80,
     ) -> List[Path]:
-        """Plots predicted-versus-GT histograms of each parameter, one figure per Gaussian and parameter.
-
-        With ground truth present the prediction is slot-aligned first and both
-        distributions are restricted to the pixels where that GT Gaussian is active;
-        without it, the raw predicted distribution is drawn alone. Amplitude uses
-        logarithmic bins.
-
-        Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
-            params_gt     : Ground-truth parameter cube of the same shape, or None.
-            n_gaussians   : Gaussian count K.
-            out_dir       : Directory the figures are written into.
-            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
-            assignment    : Precomputed predicted-to-GT assignment, or None to match here.
-            bins          : Number of histogram bins.
-
-        Returns:
-            Paths of the written figures.
-        """
 
         matched     = params_gt is not None
         pred_source = self.alignment.of(params_pred, params_gt, n_gaussians, amp_threshold, assignment) if matched else params_pred
@@ -232,16 +165,6 @@ class ParamPlotter(PlotTools):
 
     @staticmethod
     def _bin_edges(values: np.ndarray, bins: int, q: float = 0.5) -> np.ndarray:
-        """Returns linear bin edges spanning the central percentile range of the values.
-
-        Args:
-            values : Flat value array.
-            bins   : Number of bins, so the result has `bins` + 1 edges.
-            q      : Percentile trimmed from each tail.
-
-        Returns:
-            Monotone bin edges, widened to the full range and then to unit width if degenerate.
-        """
 
         lo = float(np.percentile(values, q))
         hi = float(np.percentile(values, 100.0 - q))
@@ -255,15 +178,6 @@ class ParamPlotter(PlotTools):
 
     @staticmethod
     def _point_density(gt: np.ndarray, pred: np.ndarray) -> np.ndarray:
-        """Returns the 2-D histogram count of the bin each scatter point falls in.
-
-        Args:
-            gt   : Ground-truth values of shape (n_points,).
-            pred : Matched predicted values of the same shape.
-
-        Returns:
-            Per-point bin count of shape (n_points,), floored at 1 so it can be log-scaled.
-        """
 
         bins = int(np.clip(np.sqrt(gt.size / 2.0), 16, 128))
 
@@ -277,17 +191,6 @@ class ParamPlotter(PlotTools):
         return np.maximum(counts[gt_bin, pred_bin], 1.0)
 
     def _scatter_panel(self, ax, gt: np.ndarray, pred: np.ndarray, label: str):
-        """Draws a density-coloured scatter of prediction against ground truth, densest points on top.
-
-        Args:
-            ax    : Axes to draw into.
-            gt    : Ground-truth values of shape (n_points,).
-            pred  : Matched predicted values of the same shape.
-            label : Legend label, annotated with the R² of the pair.
-
-        Returns:
-            The matplotlib PathCollection, so the caller can attach a colorbar.
-        """
 
         r2      = self._r2_value(gt, pred)
         density = self._point_density(gt, pred)
@@ -301,15 +204,6 @@ class ParamPlotter(PlotTools):
 
     @staticmethod
     def _robust_square_limits(*arrays: np.ndarray, q: float = 0.5) -> tuple:
-        """Returns padded shared axis limits covering the central percentile range of all inputs.
-
-        Args:
-            *arrays : Value arrays sharing one axis range.
-            q       : Percentile trimmed from each tail before padding.
-
-        Returns:
-            Tuple of lower and upper limit.
-        """
 
         flat = np.concatenate([arr for arr in arrays])
         lo   = float(np.percentile(flat, q))
@@ -320,7 +214,6 @@ class ParamPlotter(PlotTools):
 
     @staticmethod
     def _identity_line(ax, lo: float, hi: float) -> None:
-        """Draws the dashed y = x reference line between `lo` and `hi` on the axes."""
 
         ax.plot([lo, hi], [lo, hi], color="black", linewidth=0.9, linestyle="--", label="identity")
 
@@ -335,24 +228,6 @@ class ParamPlotter(PlotTools):
         max_points    : int = 8_000,
         seed          : int = 0,
     ) -> List[Path]:
-        """Plots matched prediction against ground truth as a density scatter, one figure per Gaussian and parameter.
-
-        Points come only from pixels where the GT Gaussian is active, and are subsampled
-        jointly across the pair so the axes stay paired.
-
-        Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
-            params_gt     : Ground-truth parameter cube of the same shape.
-            n_gaussians   : Gaussian count K.
-            out_dir       : Directory the figures are written into.
-            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
-            assignment    : Precomputed predicted-to-GT assignment, or None to match here.
-            max_points    : Maximum number of scatter points drawn per figure.
-            seed          : Seed of the subsampling generator.
-
-        Returns:
-            Paths of the written figures.
-        """
 
         aligned = self.alignment.of(params_pred, params_gt, n_gaussians, amp_threshold, assignment)
         paths   = []
@@ -402,7 +277,6 @@ class ParamPlotter(PlotTools):
 
     @staticmethod
     def _r2_value(gt: np.ndarray, pred: np.ndarray) -> float:
-        """Returns the coefficient of determination of `pred` against `gt`."""
 
         ss_res = float(np.sum((gt - pred) ** 2))
         ss_tot = float(np.sum((gt - np.mean(gt)) ** 2))
@@ -420,24 +294,6 @@ class ParamPlotter(PlotTools):
         amp_threshold : float,
         assignment    : Optional[np.ndarray] = None,
     ) -> List[Path]:
-        """Maps the absolute matched parameter error over the scene, one figure per Gaussian and parameter.
-
-        Pixels where the GT Gaussian is inactive are left blank, and the colour scale is
-        capped at the 99th percentile of the finite errors.
-
-        Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
-            params_gt     : Ground-truth parameter cube of the same shape.
-            n_gaussians   : Gaussian count K.
-            out_dir       : Directory the figures are written into.
-            row_offset    : Row index of the crop origin, used for the axis extent.
-            col_offset    : Column index of the crop origin, used for the axis extent.
-            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
-            assignment    : Precomputed predicted-to-GT assignment, or None to match here.
-
-        Returns:
-            Paths of the written figures.
-        """
 
         aligned = self.alignment.of(params_pred, params_gt, n_gaussians, amp_threshold, assignment)
         H, W    = params_pred.shape[-2:]
@@ -488,23 +344,6 @@ class ParamPlotter(PlotTools):
         assignment    : Optional[np.ndarray] = None,
         bins          : int = 80,
     ) -> List[Path]:
-        """Plots the signed matched parameter error histogram, one figure per Gaussian and parameter.
-
-        The axis is centred on zero and clipped symmetrically at the 99.5th percentile of
-        the absolute error; median and mean lines expose any systematic bias.
-
-        Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
-            params_gt     : Ground-truth parameter cube of the same shape.
-            n_gaussians   : Gaussian count K.
-            out_dir       : Directory the figures are written into.
-            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
-            assignment    : Precomputed predicted-to-GT assignment, or None to match here.
-            bins          : Number of histogram bins.
-
-        Returns:
-            Paths of the written figures.
-        """
 
         aligned = self.alignment.of(params_pred, params_gt, n_gaussians, amp_threshold, assignment)
         paths   = []
@@ -560,15 +399,6 @@ class ParamPlotter(PlotTools):
 
     @staticmethod
     def _active_skip_reason(is_active: np.ndarray, missing: str) -> str:
-        """Returns why a slot has nothing to draw: the GT slot was never active, or its active pixels lack `missing`.
-
-        Args:
-            is_active : Boolean GT-activity mask over the pixels of one slot.
-            missing   : What the GT-active pixels lack, e.g. "matched active prediction".
-
-        Returns:
-            The reason phrase with the pixel counts.
-        """
 
         n_active = int(is_active.sum())
         if n_active == 0:
@@ -577,19 +407,10 @@ class ParamPlotter(PlotTools):
         return f"no {missing} on {n_active:,} GT-active pixels"
 
     def _record_skip(self, family: str, slot: int, parameter: str, reason: str) -> None:
-        """Remembers a figure that was not drawn.
-
-        Args:
-            family    : Figure family the figure belongs to.
-            slot      : Zero-based GT slot index, stored one-based as in the file names.
-            parameter : Parameter file name.
-            reason    : Why no figure was written.
-        """
 
         self.skips.append(ParamFigureSkip(family=family, slot=slot + 1, parameter=parameter, reason=reason))
 
     def drain_skips(self) -> List[ParamFigureSkip]:
-        """Returns the figures skipped since the last call and forgets them."""
 
         skips      = self.skips
         self.skips = []

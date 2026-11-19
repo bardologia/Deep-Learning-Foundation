@@ -1,4 +1,3 @@
-"""Spatial layout of a preprocessing run: crop extent, artifacts and pass labels."""
 
 from __future__ import annotations
 
@@ -12,28 +11,10 @@ from tools.monitoring.logger import Logger
 
 
 class Layout:
-    """Reads dataset.json of a preprocessing run and resolves its artifact paths.
-
-    Attributes:
-        run_directory   : Root of the preprocessing run.
-        data_directory  : Sub-directory holding the generated arrays.
-        parameters_path : Path of the ground-truth Gaussian parameter array.
-        global_crop     : Row/col crop the run was generated over.
-        cube_tag        : Tag identifying the volumetric focusing settings.
-        artifacts       : Mapping of artifact key to filename inside data/.
-        channel_labels  : Channel labels of the stack, reference first, or None when unavailable.
-    """
 
     LAYOUT_RELPATH = Path("data") / "dataset.json"
 
     def __init__(self, run_directory: Path, logger: Logger, parameters_path: Path) -> None:
-        """Loads the dataset layout and logs its crop extent and artifact tags.
-
-        Args:
-            run_directory   : Root of the preprocessing run.
-            logger          : Logger the layout summary is written to.
-            parameters_path : Path of the ground-truth Gaussian parameter array.
-        """
         self.run_directory   = Path(run_directory)
         self.logger          = logger
         self.data_directory  = self.run_directory / "data"
@@ -60,34 +41,16 @@ class Layout:
 
     @property
     def profile_length(self) -> int:
-        """Number of z bins per profile, read from the full cube's first axis."""
         cube = np.load(str(self.artifact_path("cube_full")), mmap_mode="r", allow_pickle=False)
         return int(cube.shape[0])
 
     def artifact_path(self, artifact_key: str) -> Path:
-        """Returns the file path of one dataset artifact.
-
-        Args:
-            artifact_key : Artifact name from dataset.json; the special key "parameters" resolves to the externally configured parameter file.
-        """
         if artifact_key == "parameters":
             return self.parameters_path
 
         return self.data_directory / self.artifacts[artifact_key]
 
     def secondary_indices(self, secondary_labels) -> list | None:
-        """Maps requested secondary channel labels onto track indices of the stack.
-
-        Args:
-            secondary_labels : Pass labels to use as secondaries, or None to keep the dataset's own secondary ordering.
-
-        Returns:
-            Track indices in the order the labels were requested, or None when no
-            labels were given.
-
-        Raises:
-            ValueError : The dataset records no pass labels, so labels cannot be resolved to indices.
-        """
         if secondary_labels is None:
             return None
 
@@ -112,21 +75,6 @@ class Layout:
 
     @classmethod
     def secondary_channel_labels(cls, run_directory) -> list:
-        """Returns every secondary channel label a dataset records in data/dataset.json, in stack order.
-
-        Reads only the layout file, so trial planners can enumerate the
-        dataset's channels without loading the dataset or logging a layout.
-
-        Args:
-            run_directory : Root of the dataset run.
-
-        Returns:
-            The channel labels after the reference channel; empty for a single-channel stack.
-
-        Raises:
-            FileNotFoundError : If the dataset has no data/dataset.json.
-            ValueError        : If dataset.json records no channel labels.
-        """
         layout_path = Path(run_directory) / cls.LAYOUT_RELPATH
         if not layout_path.is_file():
             raise FileNotFoundError(f"{layout_path} does not exist; the dataset's channel labels are read from it, so point paths.dataset_path at a generated dataset")

@@ -1,9 +1,3 @@
-"""Reliability of predicted component amplitude as a presence score.
-
-Bins the active predicted Gaussians by amplitude and measures, per bin, the fraction that
-Hungarian-matched a ground-truth component, so amplitude can be read as a detection
-confidence rather than only as a magnitude.
-"""
 
 from __future__ import annotations
 
@@ -13,33 +7,14 @@ from tools.metrics.scoring import RankCorrelation
 
 
 class PresenceCalibration:
-    """Scores predicted-amplitude bins by the precision of the detections they contain.
-
-    Attributes:
-        N_BINS        : Number of quantile bins over predicted amplitude.
-        MIN_BIN_COUNT : Minimum predictions a bin needs before it is reported.
-        pairs         : Matched-pair arrays from FailureModes.pair_predictions.
-    """
 
     N_BINS        = 10
     MIN_BIN_COUNT = 30
 
     def __init__(self, pairs: dict) -> None:
-        """Stores the per-slot matched-pair arrays the calibration is computed from."""
         self.pairs = pairs
 
     def run(self) -> tuple[list[dict], dict]:
-        """Bins active predictions by amplitude and measures the match precision per bin.
-
-        Returns:
-            Tuple of the per-bin rows, each carrying "amp_mean", "n" and "precision", and the
-            scalar summary with overall precision, the Spearman correlation between amplitude
-            and match success, the precision of the lowest and highest bins, and the number of
-            scored predictions.
-
-        Raises:
-            ValueError : If too few active predictions exist, if the predicted amplitudes are effectively constant, or if no bin reaches MIN_BIN_COUNT.
-        """
         active = self.pairs["act_pred"].reshape(-1)
         amps   = self.pairs["amp_pred"].reshape(-1)[active]
         hits   = self.pairs["pred_matched"].reshape(-1)[active].astype(np.float64)

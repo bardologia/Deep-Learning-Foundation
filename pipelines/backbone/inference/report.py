@@ -1,9 +1,3 @@
-"""Markdown report assembling the results of a backbone inference run.
-
-Turns the run summary, the metric dictionary and the generated figures into the sectioned
-inference report: run configuration, headline metric tables with their interpretation,
-the full taxonomy of metric keys, and the figure galleries.
-"""
 
 from __future__ import annotations
 
@@ -19,19 +13,9 @@ from tools.runtime.run_tag     import RunTag
 
 
 class ReportPayloadBuilder:
-    """Collects the run and configuration payloads the report renders as tables."""
 
     @staticmethod
     def run_summary(run, z_axis_np: np.ndarray) -> Dict[str, Any]:
-        """Summarises the model, dataset, patch grid and chan selection of a run.
-
-        Args:
-            run       : Loaded run exposing the backbone, channel counts, split region and patch grid.
-            z_axis_np : Z axis in metres, of shape (n_z,).
-
-        Returns:
-            Serialisable summary consumed by the report's run-summary section.
-        """
         return {
             "model_name"        : run.backbone_name,
             "in_channels"       : run.in_channels,
@@ -54,15 +38,6 @@ class ReportPayloadBuilder:
 
     @staticmethod
     def inference_config(cfg, run) -> Dict[str, Any]:
-        """Collects the checkpoint, scoring, stitching, plotting, animation and device settings of the run.
-
-        Args:
-            cfg : Inference configuration of the run.
-            run : Loaded run, supplying the dataset batch size.
-
-        Returns:
-            Serialisable configuration snapshot consumed by the report's configuration table, including the settings that change the scores (render amplitude floor, curve extraction, region override) and the code commit the report was built with.
-        """
         return {
             "checkpoint_name"         : cfg.checkpoint_name,
             "target_dataset"          : run.target.describe() if run.target is not None else "none (scored on its own split)",
@@ -94,22 +69,6 @@ class ReportPayloadBuilder:
 
 
 class Report:
-    """Assembles the markdown inference report from payloads, metrics and figure paths.
-
-    Section numbers of the optional headline subsections are allocated as the subsections
-    are emitted, so cross-references between them stay correct when a subsection is absent.
-
-    Attributes:
-        report_path      : Destination path of the markdown file.
-        output_dir       : Directory the report and its relative asset links live in.
-        run_summary      : Run summary payload from ReportPayloadBuilder.run_summary.
-        inference_config : Configuration payload from ReportPayloadBuilder.inference_config.
-        checkpoint_meta  : Checkpoint epoch and best-validation-loss metadata.
-        global_metrics   : Flat metric dictionary of the run.
-        figure_paths     : Figure group name mapped to one path or a list of paths.
-        gif_paths        : Animation name mapped to its GIF path.
-        assets           : Helper rendering image links relative to the output directory.
-    """
 
     _DATASET_KEYS = frozenset({
         "gt_mean", "gt_std", "gt_max",
@@ -129,18 +88,6 @@ class Report:
         gif_paths        : Dict[str, Path],
         report_path      : Path,
     ) -> None:
-        """Stores the report payloads and resets the subsection numbering.
-
-        Args:
-            output_dir       : Directory the report and its assets live in.
-            run_summary      : Run summary payload.
-            inference_config : Inference configuration payload.
-            checkpoint_meta  : Checkpoint metadata with "epoch", "best_epoch" and "best_val_loss".
-            global_metrics   : Flat metric dictionary of the run.
-            figure_paths     : Figure group name mapped to one path or a list of paths.
-            gif_paths        : Animation name mapped to its GIF path.
-            report_path      : Destination path of the markdown file.
-        """
 
         self.report_path      = Path(report_path)
         self.output_dir       = Path(output_dir)
@@ -157,12 +104,10 @@ class Report:
 
     @staticmethod
     def _fmt(v: Any) -> str:
-        """Returns a scalar formatted for a report cell at six significant digits."""
         return ScalarFormatter.format_scalar(v, precision=6, adaptive=True)
 
     @staticmethod
     def _kv_table(rows: List[Tuple[str, Any]], header: Tuple[str, str] = ("Key", "Value")) -> str:
-        """Renders key-value pairs as a two-column markdown table with the keys in code style."""
         table = MarkdownTable(header)
         for k, v in rows:
             table.add_row(f"`{k}`", Report._fmt(v))
@@ -170,7 +115,6 @@ class Report:
 
     @staticmethod
     def _dict_table(d: Dict[str, Any]) -> str:
-        """Renders a dictionary as a key-sorted two-column markdown table."""
         return Report._kv_table(sorted(d.items()))
 
     @staticmethod
@@ -178,7 +122,6 @@ class Report:
         rows   : List[Tuple[str, Any, str]],
         header : Tuple[str, str, str] = ("Metric", "Pred vs GT", "Description"),
     ) -> str:
-        """Renders metric, value and description triples as a three-column markdown table."""
         table = MarkdownTable(header)
         for label, gt_val, desc in rows:
             table.add_row(label, Report._fmt(gt_val), desc)
@@ -189,7 +132,6 @@ class Report:
         rows   : List[Tuple[str, Any, Any, str]],
         header : Tuple[str, str, str, str] = ("Metric", "GT", "Pred", "Description"),
     ) -> str:
-        """Renders metric rows carrying a ground-truth and a predicted value side by side."""
         table = MarkdownTable(header)
         for label, gt_val, pred_val, desc in rows:
             table.add_row(label, Report._fmt(gt_val), Report._fmt(pred_val), desc)
@@ -205,15 +147,9 @@ class Report:
 
     @classmethod
     def _is_per_slice_ssim(cls, k: str) -> bool:
-        """Returns whether a metric key is a per-slice value excluded from the metric tables."""
         return any(k.startswith(prefix) and k[len(prefix):].lstrip("-").isdigit() for prefix in cls._PER_SLICE_PREFIXES)
 
     def _build_run_summary(self) -> List[str]:
-        """Builds section 1: model, dataset, inputs, checkpoint and inference configuration.
-
-        Returns:
-            Markdown lines of the run-summary section.
-        """
         rs  = self.run_summary
         cfg = self.inference_config
         ck  = self.checkpoint_meta
@@ -293,12 +229,6 @@ class Report:
         return out
 
     def _build_headline_metrics(self) -> List[str]:
-        """Builds section 2: curve, per-pixel, SSIM and per-z tables plus every optional subsection.
-
-        Returns:
-            Markdown lines of the headline-metrics section, with subsection numbers allocated
-            in emission order so cross-references resolve.
-        """
         gm  = self.global_metrics
         out = ["\n## 2. Headline metrics\n"]
 
@@ -369,7 +299,6 @@ class Report:
         return out
 
     def _next_subsection(self, anchor: str) -> str:
-        """Allocates the next section-2 subsection number and registers it under an anchor."""
         self._subsection_index += 1
         number                  = f"2.{self._subsection_index}"
 
@@ -378,26 +307,12 @@ class Report:
         return number
 
     def _reference(self, anchor: str, template: str) -> str:
-        """Fills a cross-reference template with an anchor's section number, or returns an empty string.
-
-        Args:
-            anchor   : Anchor registered by _next_subsection.
-            template : Template carrying a {section} placeholder.
-
-        Returns:
-            The rendered reference, or "" when the anchored subsection was not emitted.
-        """
         if anchor not in self._anchors:
             return ""
 
         return template.format(section=self._anchors[anchor])
 
     def _build_extraction_headline(self) -> List[str]:
-        """Builds the curve-parameter extraction subsection and its measurement floor.
-
-        Returns:
-            Markdown lines, empty unless the run's parameters were refitted from curves.
-        """
         gm = self.global_metrics
         if gm.get("params_source") != "extracted":
             return []
@@ -425,11 +340,6 @@ class Report:
         return out
 
     def _build_active_count_headline(self) -> List[str]:
-        """Builds the slot-occupancy subsection with per-slot and count-agreement tables.
-
-        Returns:
-            Markdown lines, empty unless occupancy metrics were computed.
-        """
         gm = self.global_metrics
         if "active_frac_gt" not in gm:
             return []
@@ -473,11 +383,6 @@ class Report:
         return out
 
     def _build_param_population_headline(self) -> List[str]:
-        """Builds the per-slot parameter statistics split by ground-truth slot activity.
-
-        Returns:
-            Markdown lines with one table per slot, empty unless the population statistics exist.
-        """
         gm = self.global_metrics
         if "slot_0_amp_active_gt_mean" not in gm:
             return []
@@ -521,12 +426,6 @@ class Report:
         return out
 
     def _build_matched_headline(self) -> List[str]:
-        """Builds the permutation-invariant matched-Gaussian error subsection.
-
-        Returns:
-            Markdown lines with the aggregate table and the breakdown by ground-truth count,
-            empty unless matched errors were computed.
-        """
         gm = self.global_metrics
         if "matched_mu_mae" not in gm:
             return []
@@ -567,12 +466,6 @@ class Report:
         return out
 
     def _build_slot_organization_headline(self) -> List[str]:
-        """Builds the emergent slot-organization subsection.
-
-        Returns:
-            Markdown lines covering usage entropy, mu-rank diagonality and slot-to-GT
-            alignment, empty unless those scalars were computed.
-        """
         gm = self.global_metrics
         if "slot_mu_rank_diag" not in gm:
             return []
@@ -601,12 +494,6 @@ class Report:
         return out
 
     def _build_jepa_headline(self) -> List[str]:
-        """Builds the JEPA embedding-space diagnostics subsection.
-
-        Returns:
-            Markdown lines separating the decoder reconstruction floor from the predictor's
-            own error, empty unless embedding metrics were computed.
-        """
         gm = self.global_metrics
         if "jepa_embedding_mse" not in gm:
             return []
@@ -645,11 +532,6 @@ class Report:
         return out
 
     def _build_roughness_headline(self) -> List[str]:
-        """Builds the curve-smoothness subsection comparing predicted and label roughness.
-
-        Returns:
-            Markdown lines, empty unless roughness metrics were computed.
-        """
         gm = self.global_metrics
         if "roughness_ratio" not in gm:
             return []
@@ -672,11 +554,6 @@ class Report:
         return out
 
     def _build_cube_ssim_headline(self) -> List[str]:
-        """Builds the subsection with the standard SSIM of the prediction against the raw cube.
-
-        Returns:
-            Markdown lines with the raw-intensity and unit-area tables, empty unless the sweep ran.
-        """
         gm = self.global_metrics
         if "ssim_cube_z_mean" not in gm:
             return []
@@ -733,22 +610,12 @@ class Report:
 
     @staticmethod
     def _section_order(title: str) -> tuple:
-        """Returns the sort key of a section-3 title, splitting its number into digits and suffix."""
         number = title.split()[0].split(".")[1]
         digits = "".join(ch for ch in number if ch.isdigit())
         return (int(digits), number[len(digits):])
 
     @classmethod
     def group_metric_keys(cls, keys) -> List[Tuple[str, List[str]]]:
-        """Sorts metric keys into the report's metric taxonomy.
-
-        Args:
-            keys : Metric key names to classify.
-
-        Returns:
-            Non-empty (section title, sorted keys) pairs in section order; per-slice SSIM
-            keys and the payload keys rendered elsewhere are dropped.
-        """
         groups: Dict[str, List[str]] = {title: [] for title, _match in cls._METRIC_TAXONOMY}
 
         for key in sorted(keys):
@@ -762,11 +629,6 @@ class Report:
         return [(title, groups[title]) for title in ordered]
 
     def _build_full_metrics(self) -> List[str]:
-        """Builds section 3: every metric key, grouped by the taxonomy.
-
-        Returns:
-            Markdown lines of the full metric tables.
-        """
         gm  = self.global_metrics
         out = ["\n## 3. Full metric tables\n"]
 
@@ -778,12 +640,6 @@ class Report:
         return out
 
     def _section(self, out: List[str], groups) -> None:
-        """Appends a heading and its images for every figure group that has paths.
-
-        Args:
-            out    : Markdown lines appended to in place.
-            groups : (figure key, pre-numbered heading title) pairs.
-        """
         fp = self.figure_paths
 
         for key, title in groups:
@@ -792,13 +648,6 @@ class Report:
                 out += self.assets.images(key, fp[key])
 
     def _numbered_section(self, out: List[str], prefix: str, groups) -> None:
-        """Appends figure groups under consecutively numbered headings, skipping absent ones.
-
-        Args:
-            out    : Markdown lines appended to in place.
-            prefix : Heading number prefix the running index is appended to.
-            groups : (figure key, heading title) pairs.
-        """
         fp        = self.figure_paths
         available = [(key, title) for key, title in groups if fp.get(key)]
 
@@ -807,11 +656,6 @@ class Report:
             out += self.assets.images(key, fp[key])
 
     def _build_figures(self) -> List[str]:
-        """Builds the figure galleries: passes, profiles, metric maps, parameters, slices, SSIM and animations.
-
-        Returns:
-            Markdown lines of every figure section whose figures were produced.
-        """
         fp  = self.figure_paths
         gp  = self.gif_paths
         out = []
@@ -979,11 +823,6 @@ class Report:
         return out
 
     def assemble(self) -> Path:
-        """Writes the full markdown report to disk.
-
-        Returns:
-            Path of the written report.
-        """
         self.output_dir.mkdir(parents=True, exist_ok=True)
         report_path = self.report_path
 

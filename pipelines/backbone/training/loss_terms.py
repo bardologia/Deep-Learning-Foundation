@@ -1,9 +1,3 @@
-"""Registry of the backbone loss terms and helpers building loss configurations.
-
-`LOSS_TERMS` is the single source of truth linking a term name to its enable
-flag, weight field and evaluation space; the catalog uses it to compose
-single-term, multi-term and curriculum loss configurations.
-"""
 
 from __future__ import annotations
 
@@ -32,35 +26,19 @@ LOSS_TERMS = (
 
 
 class LossComponentCatalog:
-    """Builds loss configurations that enable a chosen subset of the registered terms."""
 
     _TERMS = {term.name: term for term in LOSS_TERMS}
 
     @classmethod
     def names(cls) -> tuple[str, ...]:
-        """Returns the names of every registered loss term."""
         return tuple(term.name for term in LOSS_TERMS)
 
     @classmethod
     def standalone(cls, name: str, base: LossConfig | None = None) -> LossConfig:
-        """Returns a loss config with only `name` enabled at weight 1.0."""
         return cls.combined([name], base=base)
 
     @classmethod
     def combined(cls, names, base: LossConfig | None = None) -> LossConfig:
-        """Returns a loss config with exactly the named terms enabled at weight 1.0.
-
-        Args:
-            names : Loss component names to enable.
-            base  : Config whose other settings are copied; a default LossConfig when omitted.
-
-        Returns:
-            A new loss configuration; every unnamed term is disabled.
-
-        Raises:
-            ValueError : If no name is given.
-            KeyError   : If a name is not a registered loss component.
-        """
         if not names:
             raise ValueError("names must list at least one loss component")
 
@@ -82,30 +60,16 @@ class LossComponentCatalog:
 
     @classmethod
     def curriculum(cls, name: str, base: LossConfig | None = None) -> LossCurriculumConfig:
-        """Returns a curriculum-disabled config using only `name` in both stages."""
         cfg = cls.standalone(name, base=base)
         return LossCurriculumConfig(enabled=False, warmup=cfg, complete=cfg)
 
     @classmethod
     def combined_curriculum(cls, names, base: LossConfig | None = None) -> LossCurriculumConfig:
-        """Returns a curriculum-disabled config using the named terms in both stages."""
         cfg = cls.combined(names, base=base)
         return LossCurriculumConfig(enabled=False, warmup=cfg, complete=cfg)
 
     @classmethod
     def probe_union(cls, curriculum: LossCurriculumConfig) -> LossConfig:
-        """Returns the last stage widened with every term any earlier stage enables.
-
-        Pretraining probes must exercise every term the run will ever compute, so
-        memory and throughput are measured against the heaviest composition.
-
-        Args:
-            curriculum : Curriculum whose active stages are merged.
-
-        Returns:
-            A copy of the final stage carrying the union of the enabled terms,
-            each keeping the weight of the earliest stage that enabled it.
-        """
         stages = curriculum.active_stages()
         union  = copy.deepcopy(stages[-1])
 

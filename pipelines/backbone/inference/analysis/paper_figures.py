@@ -1,8 +1,3 @@
-"""Collection of inference figures from several runs into one publication figure pack.
-
-Figures are copied as each run's inference rendered them, renamed to a stable
-run-qualified name, and listed in a manifest next to them.
-"""
 
 from __future__ import annotations
 
@@ -18,25 +13,10 @@ from tools.runtime.run_tag                                 import RunTag
 
 
 class PaperFigurePack:
-    """Copies the figures matching a set of patterns out of several runs into one directory.
-
-    Attributes:
-        config            : Run selection, figure patterns and output directory of the pack.
-        logger            : Logger receiving the per-run progress.
-        profile_overrides : Leaf path to value of every default the machine profile rewrote.
-        output_dir        : Directory receiving the copied figures and the manifest.
-    """
 
     MANIFEST = "figure_manifest.json"
 
     def __init__(self, config: PaperFigurePackConfig, logger, profile_overrides: dict) -> None:
-        """Stores the pack configuration and resolves the output directory.
-
-        Args:
-            config            : Figure-pack configuration.
-            logger            : Logger receiving the per-run progress.
-            profile_overrides : Leaf path to value of every default the machine profile rewrote, tagged in the configuration table.
-        """
         self.config            = config
         self.logger            = logger
         self.profile_overrides = profile_overrides
@@ -44,46 +24,18 @@ class PaperFigurePack:
         self.output_dir = Path(config.output_dir)
 
     def _select_runs(self) -> list[Path]:
-        """Returns the run directories that hold an inference report and match the filter."""
         selector = ReportRunSelector(self.config.runs_dir, "inference", self.config.report_filename, self.logger)
         return selector.resolve(self.config.run_filter)
 
     def _run_label(self, run_dir: Path) -> str:
-        """Returns a flat label for a run, joining its path under the runs directory."""
         relative = run_dir.relative_to(self.config.runs_dir) if run_dir.is_relative_to(self.config.runs_dir) else Path(run_dir.name)
         return "__".join(relative.parts)
 
     def _stable_name(self, run_dir: Path, figures_dir: Path, figure: Path) -> str:
-        """Builds the target filename of a figure, qualified by its run and its subpath.
-
-        Args:
-            run_dir     : Run the figure comes from.
-            figures_dir : Figures directory of that run's inference.
-            figure      : Source figure path.
-
-        Returns:
-            A flat filename keeping the run label, the figure subpath and the extension.
-        """
         relative = figure.relative_to(figures_dir)
         return f"{self._run_label(run_dir)}__{'__'.join(relative.with_suffix('').parts)}{figure.suffix}"
 
     def _collect_run(self, run_dir: Path, resolver: SeedInferenceResolver, packed_at: str, overwritten: list[str]) -> list[dict]:
-        """Copies every figure of one run that matches the configured patterns.
-
-        Args:
-            run_dir     : Run to collect from.
-            resolver    : Resolver picking the inference directory of the run, including seed-swept runs.
-            packed_at   : Timestamp of this pack, recorded on every entry.
-            overwritten : Target filenames that already existed before this pack; the run's replaced targets are appended.
-
-        Returns:
-            One manifest entry per copied figure, holding the run label, the source path,
-            the target filename, the inference stamp it came from, its split, its
-            completion time and the time it was packed.
-
-        Raises:
-            FileNotFoundError : If the run saved no figures directory, or if a configured pattern matches nothing in it.
-        """
         inference_dir = resolver.resolve(run_dir)
         record        = SeedInferenceResolver.record(inference_dir)
         figures_dir   = inference_dir / self.config.figures_subdir
@@ -111,17 +63,6 @@ class PaperFigurePack:
         return entries
 
     def _merge_manifest(self, entries: list[dict]) -> list[dict]:
-        """Merges this pack's entries into the manifest already in the output directory.
-
-        Earlier entries are kept for the targets this pack did not rewrite and that are
-        still on disk, so figures left from an earlier pack keep their recorded source.
-
-        Args:
-            entries : Manifest entries of the figures copied by this pack.
-
-        Returns:
-            Every manifest entry, keyed uniquely by target and sorted by target.
-        """
         manifest_path = self.output_dir / self.MANIFEST
         merged        = {}
 
@@ -137,7 +78,6 @@ class PaperFigurePack:
         return [merged[target] for target in sorted(merged)]
 
     def _report_uncovered(self, manifest: list[dict]) -> None:
-        """Warns about files in the output directory that no manifest entry records a source for."""
         covered   = {entry["target"] for entry in manifest} | {self.MANIFEST}
         uncovered = sorted(path.name for path in self.output_dir.iterdir() if path.is_file() and path.name not in covered)
 
@@ -145,12 +85,6 @@ class PaperFigurePack:
             self.logger.warning(f"{len(uncovered)} file(s) in {self.output_dir} have no manifest entry and no recorded source: {', '.join(uncovered[:8])}" + (", ..." if len(uncovered) > 8 else ""))
 
     def run(self) -> dict:
-        """Packs the figures of every selected run and writes the merged manifest.
-
-        Returns:
-            Payload with the output directory, the patterns used, a note on the figure
-            formats and the merged manifest entries, earlier packs' entries included.
-        """
         self.logger.section("Paper figure pack")
         AnalysisConfigTable.log(self.logger, self.config, self.profile_overrides)
 

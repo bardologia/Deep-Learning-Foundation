@@ -1,10 +1,3 @@
-"""Entry-agnostic scheduler running a planned trial sweep over the GPU pool.
-
-Holds the shared machinery every trial fan-out uses: seed expansion of the
-planned units, sweep-root and resume resolution, per-unit argv construction,
-GPU-queue submission and the summary reporting. Entries subclass it with their
-mode table, their planner dispatch and their model key.
-"""
 
 from __future__ import annotations
 
@@ -21,38 +14,12 @@ from tools.runtime.config_cli                  import ConfigCli
 
 
 class TrialSweepScheduler:
-    """Expands a trial mode into per-unit GPU jobs and runs them as a sweep.
-
-    Every trial mode maps to a planner and a run subdirectory; the resulting
-    units are fanned out over the GPU pool, with inference either folded into
-    each unit or batched after all training finishes when the entry stages it.
-
-    Attributes:
-        config             : Resolved entry config of the training entry.
-        entry_script       : Path to the training entry script the jobs re-invoke.
-        resume_plan        : Plan of already-completed units when resuming, else None.
-        runs_root          : Directory holding all run directories of this sweep.
-        log_dir            : Directory for the scheduler log and result JSONs.
-        results_path       : JSON file with the training job results.
-        infer_results_path : JSON file with the batched inference job results.
-        forward_overrides  : CLI overrides forwarded to each unit, scheduler-only fields removed.
-    """
 
     SCHEDULER_FIELDS = ()
 
     MODE_SUBDIRS = {}
 
     def __init__(self, config, cli_overrides: dict, entry_script: Path) -> None:
-        """Resolves the sweep root, the resume plan and the overrides forwarded to units.
-
-        Args:
-            config        : Resolved entry config naming the trial mode.
-            cli_overrides : Override paths and values parsed from the command line.
-            entry_script  : Path to the training entry script each unit re-invokes.
-
-        Raises:
-            ValueError : If `config.trials_mode` is not a known mode, or if `ddp` is set, which a trial sweep cannot combine with.
-        """
         DdpDispatch.reject_trials(config, trial_unit=False)
 
         self.config       = config
@@ -82,50 +49,36 @@ class TrialSweepScheduler:
 
     @property
     def entry_label(self) -> str:
-        """The training family owning the sweep, read off the entry script name."""
         return self.entry_script.stem.removeprefix("train_")
 
     @property
     def sweep_name(self) -> str:
-        """The cluster sweep name, qualifying the trial mode with the entry that owns it."""
         return f"sweep_{self.entry_label}_{self.config.trials_mode}"
 
     @property
     def entry_flags(self) -> tuple:
-        """The flags marking a re-invocation of the entry script as a single trial."""
         return ("--trial",)
 
     @property
     def staged_inference(self) -> bool:
-        """Whether inference runs as a separate stage after all training units."""
         return False
 
     @property
     def unit_inference(self) -> bool:
-        """Whether every training unit runs its own inference after training; entries with an infer_after switch override it."""
         return False
 
     @property
     def inference_split(self) -> str | None:
-        """Dataset split every unit must carry inference for, batched or inside its own job; None when the sweep infers nothing."""
         return self.config.inference.split if self.staged_inference or self.unit_inference else None
 
     def setup_argv(self) -> list[str] | None:
-        """Returns the preparation-stage argv, None because this sweep needs none."""
         return None
 
     def finalize_argv(self) -> list[str] | None:
-        """Returns the finalization-stage argv, None because a trial sweep stages no compare job.
-
-        The mode report is written by `run`, which a cluster sweep never
-        executes; re-running the launch locally against the finished sweep root
-        writes it, since a fully resumed sweep still reports.
-        """
         return None
 
     @property
     def logger(self) -> Logger:
-        """The scheduler logger, created on first use."""
         if self._logger is None:
             self._logger = Logger(log_dir=str(self.log_dir), name="train_scheduler")
 
@@ -133,59 +86,35 @@ class TrialSweepScheduler:
 
     @property
     def stage(self) -> ExperimentStage:
-        """The GPU-queue experiment stage backing this sweep, created on first use."""
         if self._stage is None:
             self._stage = ExperimentStage(config=self.config, run_tag="batch_train", logger=self.logger, entry_script=self.entry_script, run_dir=self.runs_root)
 
         return self._stage
 
     def planner(self):
-        """Returns the trial planner for the configured mode, built on first use."""
         if self._planner is None:
             self._planner = self._build_planner()
 
         return self._planner
 
     def _build_planner(self):
-        """Builds the planner matching the configured trial mode.
-
-        Raises:
-            NotImplementedError : Always; every entry scheduler dispatches its own planner set.
-        """
         raise NotImplementedError("Entry schedulers must map their trial modes to planners")
 
     def _model_key(self) -> str:
-        """Returns the model label of the base configuration.
-
-        Raises:
-            NotImplementedError : Always; every entry scheduler names its own base model.
-        """
         raise NotImplementedError("Entry schedulers must name their base model")
 
     def _seed_units(self, experiments: list[tuple[str, dict]], seeds: list[int]) -> list[tuple[str, dict]]:
-        """Expands each planned experiment into one unit per seed.
-
-        Args:
-            experiments : Planned `(run_name, overrides)` pairs.
-            seeds       : Seeds to train each experiment at.
-
-        Returns:
-            The experiments unchanged for a single seed, otherwise one
-            seed-suffixed unit per experiment and seed.
-        """
         if len(seeds) == 1:
             return list(experiments)
 
         return [(SeedSet.run_name(base, seed), {**overrides, "seed": seed, "seeds": (seed,)}) for base, overrides in experiments for seed in seeds]
 
     def planned_units(self) -> list[tuple[str, dict]]:
-        """Returns every seed-expanded unit of the sweep, including the ones a resume marks complete."""
         seeds = SeedSet.resolve(self.config.seeds, self.config.seed)
 
         return self._seed_units(self.planner().plan(), seeds)
 
     def units(self) -> list[tuple[str, dict]]:
-        """Returns the seed-expanded units still to train, dropping those the resume plan marks complete."""
         units = self.planned_units()
 
         if self.resume_plan is None:
@@ -195,19 +124,6 @@ class TrialSweepScheduler:
         return [(run_name, overrides) for run_name, overrides in units if run_name not in done]
 
     def trial_argv(self, run_name: str, overrides: dict, batched_inference: bool = False) -> list[str]:
-        """Builds the command-line arguments training one unit of the sweep.
-
-        Args:
-            run_name          : Name of the unit's run directory.
-            overrides         : Per-unit config overrides from the planner.
-            batched_inference : Whether the caller submits the inference pass separately, as staged inference requires.
-
-        Returns:
-            The argv list for the entry script.
-
-        Raises:
-            ValueError : If inference is staged but the caller did not declare that it batches inference itself.
-        """
         if self.staged_inference and not batched_inference:
             raise ValueError(f"infer_at_end batches inference after every training unit finishes, so '{run_name}' is built with infer_after disabled; the caller must submit the inference pass itself via inference_argv(), or set infer_after instead to run inference inside each unit")
 
@@ -216,20 +132,6 @@ class TrialSweepScheduler:
         return ConfigCli.to_argv({**self.forward_overrides, **overrides, **batched, **self._unit_overrides(run_name)})
 
     def _unit_overrides(self, run_name: str) -> dict:
-        """Returns the overrides placing one unit in its directory.
-
-        A unit whose run directory the resume plan found is handed that
-        directory through ``resume_from``, whatever the current naming scheme
-        would call it; any other unit is named through the runs root and its
-        run name, which the entry's naming scheme composes into a fresh
-        directory.
-
-        Args:
-            run_name : Name of the unit.
-
-        Raises:
-            SystemExit : If several run directories under the root match the unit, which leaves it ambiguous.
-        """
         if self.resume_plan is None or run_name in self.resume_plan.missing:
             return {"run_name": run_name, "logdir": str(self.runs_root)}
 
@@ -240,11 +142,9 @@ class TrialSweepScheduler:
         return {"resume_from": str(hits[0])}
 
     def inference_argv(self, run_name: str, overrides: dict) -> list[str]:
-        """Returns the argv running inference over an already-trained unit."""
         return ConfigCli.to_argv({**self.forward_overrides, **overrides, "infer_after": True, "resume": True, **self._unit_overrides(run_name)})
 
     def _job(self, run_name: str, overrides: dict) -> GpuJob:
-        """Returns the GPU job training one unit."""
         return GpuJob(
             name     = run_name,
             command  = [sys.executable, str(self.entry_script), "--trial"] + self.trial_argv(run_name, overrides, batched_inference=True),
@@ -252,14 +152,6 @@ class TrialSweepScheduler:
         )
 
     def _train_units(self, units: list[tuple[str, dict]]) -> list[dict]:
-        """Trains the pending units over the GPU pool and writes their results.
-
-        Args:
-            units : The `(run_name, overrides)` pairs still to train.
-
-        Returns:
-            Per-unit training job results, empty when a resume left nothing to train.
-        """
         if not units:
             self.logger.ok("every planned unit is already trained; no training job launched")
             return []
@@ -272,7 +164,6 @@ class TrialSweepScheduler:
         return results
 
     def _inference_job(self, run_name: str, overrides: dict) -> GpuJob:
-        """Returns the GPU job running inference over one trained unit."""
         return GpuJob(
             name     = run_name,
             command  = [sys.executable, str(self.entry_script), "--trial"] + self.inference_argv(run_name, overrides),
@@ -280,36 +171,12 @@ class TrialSweepScheduler:
         )
 
     def _inference_pending(self, run_name: str) -> bool:
-        """Returns whether a planned unit still lacks the inference output of the configured split.
-
-        Args:
-            run_name : Name of the unit's run directory.
-
-        Returns:
-            True when no run directory of the unit carries a completed
-            inference stamp, which covers a unit just trained with per-unit
-            inference disabled and a reused unit whose staged pass never ran.
-        """
         if not self.runs_root.is_dir():
             return True
 
         return not any(CompletedInference.stamps(directory / "inference", self.inference_split) for directory in SweepResumeRoot.matches(self.runs_root, run_name))
 
     def _run_inference_pass(self, units: list[tuple[str, dict]], training_results: list[dict]) -> list[dict]:
-        """Runs the batched inference stage over every planned unit still missing its inference output.
-
-        Covers the units this launch trained with per-unit inference held
-        back, and the units an earlier launch completed whose inference never
-        ran or never finished, whichever way the entry infers.
-
-        Args:
-            units            : The `(run_name, overrides)` pairs of every planned unit, reused ones included.
-            training_results : Per-unit training job results of this launch.
-
-        Returns:
-            The inference job results, empty when every unit either failed
-            training or already carries its inference output.
-        """
         failed = {result["name"] for result in training_results if result["status"] != "DONE"}
         todo   = [(run_name, overrides) for run_name, overrides in units if run_name not in failed and self._inference_pending(run_name)]
 
@@ -341,16 +208,9 @@ class TrialSweepScheduler:
         return results
 
     def _inference_rows(self) -> dict:
-        """Returns the inference-related configuration rows, empty for entries without an inference pass."""
         return {}
 
     def _resume_rows(self) -> dict:
-        """Returns the configuration rows stating what the resume flags do with existing unit directories.
-
-        A resumed sweep hands every unit its directory and lets the unit decide
-        from its trainer state, so the sweep-level trainer flag does not apply
-        there and the row points at the reconciliation table instead.
-        """
         unit    = "completed run dirs are reused" if self.config.resume else "completed run dirs are retrained in place"
         trainer = "per unit: continues from last.pt where it exists, restarts from scratch otherwise (see Sweep resume)" if self.resume_plan else f"{self.config.training.resume} ({'unfinished run dirs continue from last.pt' if self.config.training.resume else 'unfinished run dirs are deleted and restart'})"
 
@@ -360,20 +220,14 @@ class TrialSweepScheduler:
         }
 
     def _write_mode_report(self) -> None:
-        """Writes the mode-specific sweep report, a no-op unless an entry defines one."""
+        pass
 
     def _record(self) -> Path:
-        """Records the sweep's effective configuration under its log directory, for a later resume to load."""
         from pipelines.shared.training.resume_source import SweepRecording
 
         return SweepRecording.write(self.runs_root, self.config)
 
     def _warn_existing_root(self, planned: list[tuple[str, dict]]) -> None:
-        """Warns a fresh launch whose runs root already holds runs of its planned units, listing what each unit's resume will do.
-
-        Args:
-            planned : Every `(run_name, overrides)` unit of the sweep.
-        """
         if not self.runs_root.is_dir():
             return
 
@@ -381,14 +235,6 @@ class TrialSweepScheduler:
         plan.warn_existing_root(self.logger, unit_resume=self.config.resume, trainer_resume=self.config.training.resume)
 
     def run(self) -> None:
-        """Runs the whole sweep: plan units, train the pending ones, infer over every unit still missing it, then write the mode report.
-
-        The scheduler log closes with an ABORTED banner naming the error when
-        anything, the failure summary included, ends the sweep early.
-
-        Raises:
-            SystemExit : If any training or inference job did not finish DONE.
-        """
         with self.logger:
             planner     = self.planner()
             experiments = planner.plan()

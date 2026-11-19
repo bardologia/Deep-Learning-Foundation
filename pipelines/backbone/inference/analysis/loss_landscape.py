@@ -1,9 +1,3 @@
-"""Loss landscape of a trained backbone around its converged weights.
-
-Perturbs the weights along filter-normalized random directions in the Li et al. (2018)
-convention, evaluates the physical curve MSE on real batches, and reports sharpness,
-curvature and flatness radius alongside 1-D cuts and a 2-D contour.
-"""
 
 from __future__ import annotations
 
@@ -22,25 +16,9 @@ from tools.reporting.plotting                        import PlotBase
 
 
 class FilterNormalizedDirection:
-    """Random weight-space directions rescaled filter by filter."""
 
     @staticmethod
     def build(model: torch.nn.Module, seed: int) -> dict[str, torch.Tensor]:
-        """Draws a random direction whose filters carry the norm of the trained filters.
-
-        Parameters with one dimension or fewer, such as biases and norm scales, get a zero
-        direction so they are left untouched.
-
-        Args:
-            model : Model whose parameter shapes and norms define the direction.
-            seed  : Seed of the direction generator.
-
-        Returns:
-            One perturbation tensor per parameter name, matching that parameter's shape.
-
-        Raises:
-            ValueError : If the model holds no parameter with two or more dimensions, which would leave the direction all zero.
-        """
         generator = torch.Generator().manual_seed(seed)
         direction = {}
 
@@ -63,58 +41,22 @@ class FilterNormalizedDirection:
 
 
 class LandscapeEvaluator:
-    """Evaluates a loss on a grid of weight perturbations around the trained point.
-
-    Attributes:
-        model   : Model whose weights are perturbed in place.
-        loss_fn : Callable returning the scalar loss at the current weights.
-        origin  : Clone of the trained weights, restored after every sweep.
-    """
 
     def __init__(self, model: torch.nn.Module, loss_fn) -> None:
-        """Snapshots the trained weights as the landscape origin.
-
-        Args:
-            model   : Model to perturb.
-            loss_fn : Zero-argument callable returning the loss at the current weights.
-        """
         self.model   = model
         self.loss_fn = loss_fn
 
         self.origin = {name: param.detach().clone() for name, param in model.named_parameters()}
 
     def _apply(self, alpha: float, beta: float, dir1: dict, dir2: dict) -> None:
-        """Sets the weights to the origin displaced by alpha along dir1 and beta along dir2.
-
-        Args:
-            alpha : Step along the first direction.
-            beta  : Step along the second direction.
-            dir1  : Perturbation tensors of the first direction, keyed by parameter name.
-            dir2  : Perturbation tensors of the second direction, keyed by parameter name.
-        """
         with torch.no_grad():
             for name, param in self.model.named_parameters():
                 param.copy_(self.origin[name] + alpha * dir1[name].to(param.device) + beta * dir2[name].to(param.device))
 
     def restore(self) -> None:
-        """Puts the trained weights back in place."""
         self._apply(0.0, 0.0, {name: torch.zeros_like(t) for name, t in self.origin.items()}, {name: torch.zeros_like(t) for name, t in self.origin.items()})
 
     def grid(self, alphas: np.ndarray, betas: np.ndarray, dir1: dict, dir2: dict, on_point) -> np.ndarray:
-        """Evaluates the loss on the Cartesian product of the two step grids.
-
-        The trained weights are restored even when the evaluation raises.
-
-        Args:
-            alphas   : Steps along the first direction, shape (n_alpha,).
-            betas    : Steps along the second direction, shape (n_beta,).
-            dir1     : Perturbation tensors of the first direction.
-            dir2     : Perturbation tensors of the second direction.
-            on_point : Zero-argument callable invoked after every evaluated point, driving the progress bar.
-
-        Returns:
-            Loss array of shape (n_alpha, n_beta).
-        """
         losses = np.zeros((alphas.size, betas.size))
 
         try:
@@ -130,12 +72,6 @@ class LandscapeEvaluator:
 
 
 class CutDiagnostics:
-    """Scalar descriptors of a 1-D loss cut through the trained point.
-
-    Every descriptor refuses a cut holding a non-finite loss, since NaN compares
-    false against every threshold and would turn into a censored radius or a
-    minimum offset pointing at the NaN step.
-    """
 
     SHARPNESS_RADIUS = 0.1
     CURVATURE_RADIUS = 0.2
@@ -143,33 +79,12 @@ class CutDiagnostics:
 
     @staticmethod
     def require_finite(alphas: np.ndarray, cut: np.ndarray) -> None:
-        """Raises when the cut holds a non-finite loss.
-
-        Args:
-            alphas : Steps along the direction, shape (n_points,).
-            cut    : Loss at each step, shape (n_points,).
-
-        Raises:
-            ValueError : If any loss of the cut is NaN or infinite, naming the affected steps.
-        """
         bad = ~np.isfinite(cut)
         if bad.any():
             raise ValueError(f"Loss cut holds {int(bad.sum())} non-finite value(s) at alpha {[round(float(a), 4) for a in alphas[bad]]}; its diagnostics are undefined")
 
     @classmethod
     def sharpness(cls, alphas: np.ndarray, cut: np.ndarray) -> float:
-        """Returns the relative loss increase within SHARPNESS_RADIUS of the trained point.
-
-        Args:
-            alphas : Steps along the direction, shape (n_points,).
-            cut    : Loss at each step, shape (n_points,).
-
-        Returns:
-            The largest nearby loss over the centre loss, minus one.
-
-        Raises:
-            ValueError : If the cut holds a non-finite loss.
-        """
         cls.require_finite(alphas, cut)
 
         center = cut[np.argmin(np.abs(alphas))]
@@ -179,19 +94,6 @@ class CutDiagnostics:
 
     @classmethod
     def curvature(cls, alphas: np.ndarray, cut: np.ndarray) -> float:
-        """Fits a quadratic near the trained point and returns its normalized coefficient.
-
-        Args:
-            alphas : Steps along the direction, shape (n_points,).
-            cut    : Loss at each step, shape (n_points,).
-
-        Returns:
-            The quadratic coefficient of the least-squares fit within CURVATURE_RADIUS,
-            divided by the centre loss.
-
-        Raises:
-            ValueError : If the cut holds a non-finite loss, or fewer than three samples fall inside the fitting radius.
-        """
         cls.require_finite(alphas, cut)
 
         center = cut[np.argmin(np.abs(alphas))]
@@ -207,22 +109,6 @@ class CutDiagnostics:
 
     @classmethod
     def flatness_radius(cls, alphas: np.ndarray, cut: np.ndarray) -> dict:
-        """Finds the step at which the loss first reaches RADIUS_FACTOR times its centre value.
-
-        Both sides of the cut are scanned and the smaller radius is kept; the crossing is
-        interpolated linearly between the bracketing samples.
-
-        Args:
-            alphas : Steps along the direction, shape (n_points,).
-            cut    : Loss at each step, shape (n_points,).
-
-        Returns:
-            Dictionary with the "radius" in direction steps and a "censored" flag set when
-            the loss never crosses within the sampled span.
-
-        Raises:
-            ValueError : If the cut holds a non-finite loss.
-        """
         cls.require_finite(alphas, cut)
 
         center    = cut[np.argmin(np.abs(alphas))]
@@ -251,36 +137,14 @@ class CutDiagnostics:
 
     @classmethod
     def min_offset(cls, alphas: np.ndarray, cut: np.ndarray) -> float:
-        """Returns the step at which the cut attains its sampled minimum, zero when at the trained point.
-
-        Args:
-            alphas : Steps along the direction, shape (n_points,).
-            cut    : Loss at each step, shape (n_points,).
-
-        Raises:
-            ValueError : If the cut holds a non-finite loss.
-        """
         cls.require_finite(alphas, cut)
 
         return float(alphas[int(np.argmin(cut))])
 
 
 class LossLandscapePlots(PlotBase):
-    """Figures of the 1-D loss cuts and the 2-D landscape contour."""
 
     def cuts_overlay(self, alphas: np.ndarray, cuts: list[np.ndarray], curvatures: list[float], center: float, path: Path) -> Path:
-        """Overlays the loss cuts of every sampled direction on a log axis.
-
-        Args:
-            alphas     : Steps along the directions, shape (n_points,).
-            cuts       : Loss of each direction, each of shape (n_points,).
-            curvatures : Normalized curvature of each direction, shown in the legend.
-            center     : Loss at the trained point, setting the doubling reference line.
-            path       : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH, aspect=0.55))
@@ -302,21 +166,6 @@ class LossLandscapePlots(PlotBase):
         return self._save(fig, path)
 
     def contour_2d(self, alphas: np.ndarray, betas: np.ndarray, losses: np.ndarray, path: Path, annotation: str | None = None) -> Path:
-        """Draws the log-spaced filled contour of the 2-D landscape around the trained point.
-
-        Args:
-            alphas     : Steps along the first direction, shape (n_alpha,), drawn on the y axis.
-            betas      : Steps along the second direction, shape (n_beta,), drawn on the x axis.
-            losses     : Loss grid of shape (n_alpha, n_beta).
-            path       : Output path of the figure.
-            annotation : Optional text box drawn in the top-left corner.
-
-        Returns:
-            Path of the saved figure.
-
-        Raises:
-            ValueError : If the grid holds a non-finite loss, or if the sampled landscape is flat, leaving no range to contour.
-        """
         bad = ~np.isfinite(losses)
         if bad.any():
             raise ValueError(f"{int(bad.sum())} of {losses.size} landscape grid losses are non-finite; the perturbed model diverges inside the sampled plane, so shrink span or check the checkpoint")
@@ -346,46 +195,17 @@ class LossLandscapePlots(PlotBase):
 
 
 class LossLandscapeRun(AnalysisRun):
-    """Maps the loss landscape of a single training run."""
 
     SUMMARY_FILENAME = "loss_landscape.json"
     REPORT_FILENAME  = "loss_landscape.md"
 
     def __init__(self, run_dir: Path, config, logger) -> None:
-        """Binds the landscape to one run directory after checking the direction count.
-
-        Args:
-            run_dir : Directory of the training run to analyse.
-            config  : Landscape configuration.
-            logger  : Logger for progress reporting.
-
-        Raises:
-            ValueError : If fewer than two directions are configured, leaving no plane for the 2-D grid.
-        """
         if config.n_directions < 2:
             raise ValueError(f"The landscape needs at least 2 directions for the 2-D grid, got n_directions={config.n_directions}")
 
         super().__init__(run_dir, config, logger)
 
     def _loss_fn(self, run):
-        """Builds the objective evaluated at every landscape point.
-
-        The batches and their ground-truth profiles are materialized once, so only the
-        forward chan is repeated as the weights move. The objective is the physical curve
-        MSE rather than the training loss, keeping runs with different loss configurations
-        comparable.
-
-        Args:
-            run : Loaded run bundling the model, the dataloader and the normalizer.
-
-        Returns:
-            A pair of the zero-argument callable returning the mean curve MSE over the
-            cached batches and the number of cached batches, which the loader's end caps
-            below max_batches.
-
-        Raises:
-            ValueError : If the loader yields no batch.
-        """
         renderer = PredictionCurves(run.n_gaussians, run.z_axis)
         batches  = []
 
@@ -408,19 +228,6 @@ class LossLandscapeRun(AnalysisRun):
         return evaluate, len(batches)
 
     def _diagnose(self, alphas: np.ndarray, cuts: list[np.ndarray]) -> list[dict]:
-        """Describes every 1-D cut, flagging the cuts that hold a non-finite loss as invalid.
-
-        Args:
-            alphas : Steps along the directions, shape (n_points,).
-            cuts   : Loss of each direction, each of shape (n_points,).
-
-        Returns:
-            One entry per direction holding "valid", the "nonfinite_alphas" and, for a
-            valid cut, its sharpness, curvature, flatness radius and minimum offset.
-
-        Raises:
-            ValueError : If every cut holds a non-finite loss, leaving nothing to summarize.
-        """
         diagnostics = []
         for index, cut in enumerate(cuts):
             nonfinite = alphas[~np.isfinite(cut)]
@@ -445,18 +252,6 @@ class LossLandscapeRun(AnalysisRun):
         return diagnostics
 
     def _write_report(self, run, center: float, diagnostics: list[dict], figures: dict[str, Path], n_batches: int) -> Path:
-        """Writes the markdown report of the landscape.
-
-        Args:
-            run         : Loaded run, used for the backbone name in the title.
-            center      : Curve MSE at the trained weights.
-            diagnostics : Per-direction validity, sharpness, curvature, flatness radius and minimum offset.
-            figures     : Figure paths keyed by figure name.
-            n_batches   : Number of batches every landscape point was evaluated on.
-
-        Returns:
-            Path of the written report.
-        """
         valid      = [entry for entry in diagnostics if entry["valid"]]
         sharpness  = np.array([entry["sharpness"] for entry in valid])
         curvature  = np.array([entry["curvature"] for entry in valid])
@@ -498,16 +293,6 @@ class LossLandscapeRun(AnalysisRun):
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
     def _analyse(self, run) -> AnalysisOutcome:
-        """Samples the 1-D cuts and the 2-D grid, diagnoses them and writes the report.
-
-        Args:
-            run : Loaded run bundling the model, the dataloader and the normalizer.
-
-        Returns:
-            The outcome whose payload holds the backbone name, the split, the sampled
-            span, the centre loss, the 1-D steps and cuts, the 2-D steps and loss grid,
-            and the per-direction diagnostics.
-        """
         loss_fn, n_batches = self._loss_fn(run)
         module             = run.model.module
 
@@ -566,7 +351,6 @@ class LossLandscapeRun(AnalysisRun):
 
 
 class LossLandscapeBatch(RunBatch):
-    """Maps the loss landscape of every run matching the configured filter."""
 
     SELECTOR_ACTION = "map"
     SECTION_TITLE   = "Loss landscape"

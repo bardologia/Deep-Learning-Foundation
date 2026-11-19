@@ -1,10 +1,3 @@
-"""Effective receptive field (ERF) measurement for trained backbones.
-
-The ERF is the input-gradient magnitude of the centre-pixel output with respect
-to the surrounding input window, averaged over probe pixels. It is summarised by
-Gaussian-equivalent sigmas, cumulative gradient-mass curves and marginal axis
-profiles, all in input pixels.
-"""
 
 from __future__ import annotations
 
@@ -25,27 +18,10 @@ from tools.reporting.plotting                        import PlotBase
 
 
 class ErfComputation:
-    """Computes effective-receptive-field gradient maps and their summaries.
-
-    Attributes:
-        model        : Backbone module evaluated at the probe windows.
-        window       : Side of the square probe window, in input pixels.
-        mass_windows : Window sides at which cumulative gradient mass is reported.
-    """
 
     FAMILIES = ("amp", "mu", "sigma")
 
     def __init__(self, model, window: int, mass_windows: list[int]) -> None:
-        """Binds the model and validates the requested mass windows.
-
-        Args:
-            model        : Backbone module taking an input window and predicting Gaussian parameters interleaved as (amp, mu, sigma) per slot.
-            window       : Side of the square probe window, in input pixels.
-            mass_windows : Window sides (pixels) at which to report gradient mass.
-
-        Raises:
-            ValueError : If any requested mass window exceeds the probe window.
-        """
         self.model        = model
         self.window       = int(window)
         self.mass_windows = [int(w) for w in mass_windows]
@@ -55,22 +31,6 @@ class ErfComputation:
             raise ValueError(f"mass_windows {bad} exceed the probe window {self.window}; shrink them or enlarge window")
 
     def gradient_maps(self, windows: torch.Tensor) -> tuple[dict[str, np.ndarray | None], np.ndarray]:
-        """Accumulates per-family input-gradient magnitude maps over probe windows.
-
-        Args:
-            windows : Probe input windows of shape (probes, channels, window, window).
-
-        Returns:
-            A tuple of the gradient maps and the per-probe sigmas. The maps are
-            keyed by output family plus "combined", each a (window, window) array
-            of mean absolute input gradient, or None for a family the output does
-            not depend on. The sigmas array has shape (probes, 2), holding
-            (rows, cols) Gaussian-equivalent sigmas in pixels, NaN for a probe
-            whose gradient map is zero.
-
-        Raises:
-            ValueError : If an input gradient is non-finite, naming the probe and family, or if the combined gradient map is identically zero.
-        """
         half   = self.window // 2
         device = ModelDevice.of(self.model)
 
@@ -109,14 +69,6 @@ class ErfComputation:
         return maps, np.asarray(probe_sigmas)
 
     def sigma(self, grad: np.ndarray) -> tuple[float, float]:
-        """Returns the mass-weighted spread of a gradient map about the window centre.
-
-        Args:
-            grad : Gradient map of shape (window, window).
-
-        Returns:
-            The (rows, cols) standard deviations in input pixels.
-        """
         center = self.window // 2
         coords = np.arange(self.window, dtype=np.float64)
         rr, cc = np.meshgrid(coords, coords, indexing="ij")
@@ -128,15 +80,6 @@ class ErfComputation:
         return math.sqrt(var_row), math.sqrt(var_col)
 
     def mass_profile(self, grad: np.ndarray) -> dict[int, float]:
-        """Returns the gradient-mass fraction inside each configured window side.
-
-        Args:
-            grad : Gradient map of shape (window, window).
-
-        Returns:
-            Mapping from window side in pixels to the fraction of total gradient
-            mass inside the centred box of that side.
-        """
         center = self.window // 2
         total  = grad.sum()
 
@@ -148,15 +91,6 @@ class ErfComputation:
         return masses
 
     def fine_mass_curve(self, grad: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Returns the cumulative gradient mass on a dense grid of window sides.
-
-        Args:
-            grad : Gradient map of shape (window, window).
-
-        Returns:
-            A tuple of the even window sides in pixels, shape (n_sides,), and the
-            enclosed mass fraction at each side, same shape.
-        """
         center = self.window // 2
         total  = grad.sum()
         sides  = np.arange(2, self.window + 1, 2)
@@ -166,16 +100,6 @@ class ErfComputation:
 
     @staticmethod
     def side_at_mass(sides: np.ndarray, masses: np.ndarray, q: float) -> float:
-        """Interpolates the window side enclosing a target gradient-mass fraction.
-
-        Args:
-            sides  : Monotonically increasing window sides in pixels, shape (n_sides,).
-            masses : Enclosed mass fraction at each side, shape (n_sides,).
-            q      : Target mass fraction in [0, 1].
-
-        Returns:
-            The interpolated window side in pixels, clamped to the sampled range.
-        """
         idx = int(np.searchsorted(masses, q))
 
         if idx == 0:
@@ -189,19 +113,6 @@ class ErfComputation:
         return float(s0 + (q - m0) / (m1 - m0) * (s1 - s0))
 
     def mass_within_2sigma(self, grad: np.ndarray, sigma_row: float, sigma_col: float) -> float:
-        """Returns the gradient-mass fraction inside the ±2σ box.
-
-        A separable Gaussian ERF would place 0.911 of its mass there, so a smaller
-        value indicates heavier-than-Gaussian tails.
-
-        Args:
-            grad     : Gradient map of shape (window, window).
-            sigma_row : Row spread in pixels.
-            sigma_col : Column spread in pixels.
-
-        Returns:
-            The enclosed mass fraction in [0, 1].
-        """
         center  = self.window // 2
         half_row = min(int(round(2.0 * sigma_row)), center)
         half_col = min(int(round(2.0 * sigma_col)), center)
@@ -210,15 +121,6 @@ class ErfComputation:
         return float(box.sum() / grad.sum())
 
     def axis_profiles(self, grad: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Returns the normalized marginal gradient profiles along both axes.
-
-        Args:
-            grad : Gradient map of shape (window, window).
-
-        Returns:
-            A tuple of the row marginal, the range marginal and the pixel
-            offsets relative to the window centre, each of shape (window,).
-        """
         total   = grad.sum()
         offsets = np.arange(self.window) - self.window // 2
 
@@ -226,19 +128,6 @@ class ErfComputation:
 
     @staticmethod
     def gaussian_mass(sides: np.ndarray, sigma_row: float, sigma_col: float) -> np.ndarray:
-        """Returns the mass a separable Gaussian ERF places inside each window side.
-
-        Args:
-            sides    : Window sides in pixels, shape (n_sides,).
-            sigma_row : Row spread in pixels.
-            sigma_col : Column spread in pixels.
-
-        Returns:
-            The reference enclosed mass fraction per side, shape (n_sides,).
-
-        Raises:
-            ValueError : If either sigma is not positive.
-        """
         if sigma_row <= 0.0 or sigma_col <= 0.0:
             raise ValueError(f"Gaussian mass reference needs positive sigmas, got ({sigma_row}, {sigma_col})")
 
@@ -247,11 +136,9 @@ class ErfComputation:
 
 
 class ReceptiveFieldPlots(PlotBase):
-    """Publication figures for effective-receptive-field maps and profiles."""
 
     @staticmethod
     def _mass_levels(grad: np.ndarray, quantiles: tuple[float, ...]) -> dict[float, str]:
-        """Returns log10 contour levels enclosing the given cumulative mass quantiles."""
         flat       = np.sort(grad.reshape(-1))[::-1]
         cumulative = np.cumsum(flat) / flat.sum()
 
@@ -264,7 +151,6 @@ class ReceptiveFieldPlots(PlotBase):
         return levels
 
     def _overlay_geometry(self, ax, grad: np.ndarray, sigma_row: float, sigma_col: float) -> None:
-        """Draws mass contours, 1σ/2σ ellipses and centre lines onto an ERF axis."""
         half    = grad.shape[0] // 2
         offsets = np.arange(grad.shape[0]) - half
         display = np.log10(grad / grad.max() + 1e-12)
@@ -282,19 +168,6 @@ class ReceptiveFieldPlots(PlotBase):
         ax.axvline(0.0, color="white", linewidth=0.5, alpha=0.4)
 
     def erf_map(self, grad: np.ndarray, sigma_row: float, sigma_col: float, anisotropy: float, side_90: float, path: Path) -> Path:
-        """Saves the combined ERF map on a log scale with sigma geometry overlaid.
-
-        Args:
-            grad       : Combined gradient map of shape (window, window).
-            sigma_row   : Row spread in pixels.
-            sigma_col   : Column spread in pixels.
-            anisotropy : Ratio sigma_row / sigma_col.
-            side_90    : Window side enclosing 90% of the mass, in pixels.
-            path       : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         half    = grad.shape[0] // 2
         display = np.log10(grad / grad.max() + 1e-12)
 
@@ -316,18 +189,6 @@ class ReceptiveFieldPlots(PlotBase):
         return self._save(fig, path)
 
     def family_map(self, grad: np.ndarray, family: str, sigma_row: float, sigma_col: float, path: Path) -> Path:
-        """Saves the ERF map of one output family with its 90% mass contour.
-
-        Args:
-            grad     : Family gradient map of shape (window, window).
-            family   : Output family name ("amp", "mu" or "sigma").
-            sigma_row : Row spread in pixels.
-            sigma_col : Column spread in pixels.
-            path     : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         half    = grad.shape[0] // 2
         display = np.log10(grad / grad.max() + 1e-12)
 
@@ -351,19 +212,6 @@ class ReceptiveFieldPlots(PlotBase):
         return self._save(fig, path)
 
     def mass_curve(self, sides: np.ndarray, fine_masses: np.ndarray, gaussian_masses: np.ndarray, marker_masses: dict[int, float], radii: dict[float, float], path: Path) -> Path:
-        """Saves the cumulative gradient-mass curve against its Gaussian reference.
-
-        Args:
-            sides           : Window sides in pixels, shape (n_sides,).
-            fine_masses     : Measured enclosed mass fraction per side, shape (n_sides,).
-            gaussian_masses : Matched-Gaussian mass fraction per side, same shape.
-            marker_masses   : Mass fraction at each configured window side.
-            radii           : Mapping from mass quantile to the interpolated side in pixels.
-            path            : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
@@ -387,18 +235,6 @@ class ReceptiveFieldPlots(PlotBase):
         return self._save(fig, path)
 
     def axis_profile(self, offsets: np.ndarray, profile: np.ndarray, sigma: float, axis_name: str, path: Path) -> Path:
-        """Saves a log-scale marginal ERF profile with ±1σ and ±2σ markers.
-
-        Args:
-            offsets   : Pixel offsets from the window centre, shape (window,).
-            profile   : Normalized marginal gradient mass, shape (window,).
-            sigma     : Spread along this axis in pixels.
-            axis_name : Axis label, "row" or "range".
-            path      : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
@@ -423,27 +259,15 @@ class ReceptiveFieldPlots(PlotBase):
 
 
 class RunReceptiveField(AnalysisRun):
-    """Measures and reports the effective receptive field of one trained run."""
 
     GRAD_FILENAME    = "erf_gradients.npz"
     SUMMARY_FILENAME = "receptive_field.json"
     REPORT_FILENAME  = "receptive_field.md"
 
     def _batch_size(self) -> int:
-        """Returns the loader batch size, fixed at one window per gradient pass."""
         return 1
 
     def _write_summary(self, run, centers, measures: dict) -> Path:
-        """Writes the ERF measures and probe centres as JSON.
-
-        Args:
-            run      : Loaded run providing the backbone name.
-            centers  : Probe pixel centres as (row, col) index pairs.
-            measures : ERF summary scalars and per-family entries.
-
-        Returns:
-            The written JSON path.
-        """
         payload = {
             "backbone"   : run.backbone_name,
             "checkpoint" : self.config.checkpoint_name,
@@ -456,17 +280,6 @@ class RunReceptiveField(AnalysisRun):
         return FileIO.save_json(payload, self.output_dir / self.SUMMARY_FILENAME)
 
     def _write_report(self, run, measures: dict, masses: dict[int, float], figure_paths: dict[str, Path]) -> Path:
-        """Writes the markdown ERF report with summary tables and figures.
-
-        Args:
-            run          : Loaded run providing the backbone name.
-            measures     : ERF summary scalars and per-family entries.
-            masses       : Enclosed mass fraction per configured window side.
-            figure_paths : Mapping from figure name to its written path.
-
-        Returns:
-            The written report path.
-        """
         doc = MarkdownDoc(title=f"Effective receptive field: {run.backbone_name}")
         doc.paragraph(
             f"Measured on the '{self.config.split}' split with {self.config.n_row_probes * self.config.n_col_probes} probe pixels and a {self.config.window}px window: "
@@ -509,14 +322,6 @@ class RunReceptiveField(AnalysisRun):
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
     def _analyse(self, run) -> AnalysisOutcome:
-        """Measures the ERF, writes the gradient maps, figures, JSON and report.
-
-        Args:
-            run : Loaded run bundling the model and the dataset.
-
-        Returns:
-            The outcome whose payload holds the ERF measures.
-        """
         probes  = ProbeWindows(run, self.config.window)
         centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
@@ -581,7 +386,6 @@ class RunReceptiveField(AnalysisRun):
 
 
 class ReceptiveFieldBatch(RunBatch):
-    """Measures the effective receptive field of every selected run."""
 
     SELECTOR_ACTION = "measure"
     SECTION_TITLE   = "Receptive-field measurement"

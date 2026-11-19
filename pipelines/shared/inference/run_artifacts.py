@@ -1,8 +1,3 @@
-"""Reconstruction of a trained run's dataset and checkpoint for inference.
-
-Rebuilds the persisted dataset configuration, loads the checkpoint scalars, and
-assembles the patch dataset and stitching grid for the split being scored.
-"""
 
 from __future__ import annotations
 
@@ -24,38 +19,16 @@ from tools.monitoring.logger                  import Logger
 
 
 class RunArtifactLoader:
-    """Rebuilds the dataset, grid and checkpoint of a trained run.
-
-    Attributes:
-        run_directory  : Root of the training run being scored.
-        logger         : Logger passed on to the layout and cropper.
-        meta_directory : Run's meta/ directory holding the persisted configs.
-    """
 
     def __init__(self, run_directory: Path, logger: Logger) -> None:
-        """Points the loader at a training run and its meta directory."""
         self.run_directory  = Path(run_directory)
         self.logger         = logger
         self.meta_directory = self.run_directory / "meta"
 
     def _read_json(self, name: str) -> dict:
-        """Returns the JSON payload of a file in the run's meta directory."""
         return FileIO.load_json(self.meta_directory / name)
 
     def _build_dataset_config(self, payload: dict, batch_size: Optional[int], num_workers: int) -> DatasetConfig:
-        """Rebuilds the training-time dataset configuration for inference use.
-
-        Args:
-            payload     : Contents of dataset_creation_config.json.
-            batch_size  : Batch size override; the stored value is kept when None.
-            num_workers : Loader worker count to use at inference time.
-
-        Returns:
-            Dataset configuration with shuffling disabled.
-
-        Raises:
-            ValueError : The stored patch stride predates per-axis strides.
-        """
         split_regions = SplitRegions.from_payload(payload["split_regions"])
 
         if not isinstance(payload["patch"]["stride"], list):
@@ -85,20 +58,6 @@ class RunArtifactLoader:
         )
 
     def _load_checkpoint(self, ckpt_path: Path, device: str) -> tuple[dict, np.ndarray, dict]:
-        """Loads a checkpoint together with its z axis and best-epoch scalars.
-
-        Args:
-            ckpt_path : Path of the checkpoint file.
-            device    : Torch device the tensors are mapped to.
-
-        Returns:
-            Triple of the raw checkpoint dict, the z axis of shape
-            (x_axis_length,) in metres, and a metadata dict with the last epoch,
-            the best validation loss and the best epoch.
-
-        Raises:
-            FileNotFoundError : No checkpoint exists at that path.
-        """
         if not ckpt_path.is_file():
             raise FileNotFoundError(f"Checkpoint not found for inference: {ckpt_path}")
 
@@ -115,44 +74,14 @@ class RunArtifactLoader:
 
     @staticmethod
     def _validate_x_axis(ckpt_x_axis: np.ndarray, z_axis: np.ndarray, ckpt_path: Path, dataset_dir: Path) -> None:
-        """Checks that the checkpoint's z axis matches the axis of the dataset being scored.
-
-        Args:
-            ckpt_x_axis : Z axis stored in the checkpoint, shape (x_axis_length,) in metres.
-            z_axis      : Z axis of the dataset being scored, shape (x_axis_length,) in metres.
-            ckpt_path   : Checkpoint path, quoted in the error message.
-            dataset_dir : Dataset directory being scored, quoted in the error message.
-
-        Raises:
-            ValueError : The axes differ in length or values, which would report every z metric in the wrong units.
-        """
         if ckpt_x_axis.shape != z_axis.shape or not np.allclose(ckpt_x_axis, z_axis, rtol=1e-5, atol=1e-5):
             raise ValueError(f"Checkpoint '{ckpt_path}' was trained on z axis [{ckpt_x_axis[0]:.3f}, {ckpt_x_axis[-1]:.3f}] with {ckpt_x_axis.size} bins, but the dataset it is scored on ({dataset_dir}) produces axis [{z_axis[0]:.3f}, {z_axis[-1]:.3f}] with {z_axis.size} bins; every z metric would be reported in the wrong units.")
 
     @staticmethod
     def _axis_label(axis: np.ndarray) -> str:
-        """Returns a z axis rendered as its bounds in metres and its bin count."""
         return f"[{axis[0]:.3f}, {axis[-1]:.3f}] m, {axis.size} bins"
 
     def _build_dataset(self, dataset_config : DatasetConfig, split_name : str, n_gaussians : int, norm_stats : Stats, load_cube : bool, region_override : Optional[CropRegion] = None) -> Tuple[PatchDataset, GridInfo, CropRegion, Layout, dict]:
-        """Builds the patch dataset and stitching grid of one split.
-
-        Args:
-            dataset_config  : Rebuilt dataset configuration of the run.
-            split_name      : Split to load ("train", "val", "test").
-            n_gaussians     : Number of Gaussian components per pixel in the targets.
-            norm_stats      : Normalization statistics fitted at training time.
-            load_cube       : Whether the full cube is loaded alongside the inputs, needed for curve-space metrics.
-            region_override : Wider crop replacing the stored split region, used to extend a cross-validation fold over its guard bands or to score one region of a split stored as several.
-
-        Returns:
-            Tuple of the patch dataset, the patch grid describing the tiling of
-            the region, the region actually loaded, the dataset layout of the
-            preprocessing run, and the raw split arrays keyed by array name.
-
-        Raises:
-            ValueError : No override is given and the split is not a single contiguous region, so stitching is undefined, or the override contains none of the split's stored regions.
-        """
         layout  = Layout(dataset_config.preprocessing_run_directory, logger=self.logger, parameters_path=dataset_config.parameters_path)
         cropper = Cropper(layout, dataset_config.split_regions, logger=self.logger, secondary_labels=dataset_config.secondary_labels)
 

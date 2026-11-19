@@ -1,11 +1,3 @@
-"""Sweep that tunes dataloader settings against measured GPU feed throughput.
-
-Sweeps batch size against worker count, optionally refines prefetch factor and
-memory pinning around the winner, and writes the recommended loader
-configuration alongside the raw measurements. Every sweep writes into its own
-directory, named after the benchmarked model and the launch time, so a later
-sweep of the same mode never replaces an earlier one.
-"""
 
 from __future__ import annotations
 
@@ -27,29 +19,8 @@ from pipelines.dataloader_tuning.adapters import FeedTargetFactory
 
 
 class DataLoaderTuningPipeline:
-    """Runs the dataloader tuning sweep and reports the recommended settings.
-
-    Attributes:
-        config     : Dataloader tuning entry configuration.
-        model_name : Model the sweep benchmarks, the mode's default when none is configured.
-        output_dir : Directory of this sweep, ``<output_dir>/<mode>/<model>_<launch tag>``, holding results, logs and figures.
-        work_dir   : Scratch directory of the mode the dataset pipelines write into, shared by its sweeps.
-        figure_dir : Directory the sweep figures are written to.
-        started_at : Moment the sweep was set up, recorded in its results.
-        gpu        : Requested index, torch name and NVML index, name and UUID of the measured device, set once the benchmark is built.
-        logger     : Logger used for progress reporting.
-        events     : Stream emitting machine-readable progress events.
-    """
 
     def __init__(self, config) -> None:
-        """Prepares the sweep's own output directory, logging, and global seeding.
-
-        Args:
-            config : Dataloader tuning entry configuration.
-
-        Raises:
-            FileExistsError : If the sweep directory already exists, which only a second launch within the same second would cause.
-        """
         self.config     = config
         self.model_name = FeedTargetFactory.model_name(config)
         self.output_dir = Path(config.output_dir) / config.mode / f"{self.model_name}_{RunTag.now()}"
@@ -67,7 +38,6 @@ class DataLoaderTuningPipeline:
         Reproducibility.seed_everything(config.seed)
 
     def _build_target(self):
-        """Logs the sweep configuration and builds the feed target to benchmark."""
         self.logger.section("[DataLoader Tuning]")
         self.logger.kv_table({
             "Mode"          : self.config.mode,
@@ -82,7 +52,6 @@ class DataLoaderTuningPipeline:
         return FeedTargetFactory.build(self.config, self.work_dir, self.logger)
 
     def _gpu(self) -> dict:
-        """Returns the device the sweep measures on: the requested index, the name torch reports, and the NVML index, name and UUID the utilisation is sampled from; None fields on a CPU run."""
         if not torch.cuda.is_available():
             return {"index": self.config.gpu, "name": None, "nvml_index": None, "nvml_name": None, "uuid": None}
 
@@ -91,14 +60,6 @@ class DataLoaderTuningPipeline:
         return {"index": self.config.gpu, "name": torch.cuda.get_device_name(0), "nvml_index": nvml["index"], "nvml_name": nvml["name"], "uuid": nvml["uuid"]}
 
     def _build_benchmark(self, target):
-        """Builds the GPU feed benchmark for a target.
-
-        Args:
-            target : Feed target holding the dataset, model, and forward loss.
-
-        Returns:
-            A tuple (benchmark, device); the device is CUDA when available.
-        """
         device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.gpu = self._gpu()
 
@@ -121,18 +82,6 @@ class DataLoaderTuningPipeline:
         ), device
 
     def _log_feed_target(self, target, device) -> int:
-        """Logs what the sweep measures: the model, its size and sample, the device and the settings in force once the benchmark is built.
-
-        A sweep on the CPU is warned about, since its recommendation says
-        nothing about feeding a GPU.
-
-        Args:
-            target : Feed target holding the model and the dataset description.
-            device : Device the benchmark runs on.
-
-        Returns:
-            The model's parameter count.
-        """
         parameters = int(sum(parameter.numel() for parameter in target.model.parameters()))
         model      = target.model_name if self.config.model_name else f"{target.model_name} (default)"
         gpu        = "none (CPU)" if self.gpu["name"] is None else f"{self.gpu['name']}, requested index {self.gpu['index']}, NVML {self.gpu['nvml_index']}"
@@ -157,15 +106,6 @@ class DataLoaderTuningPipeline:
         return parameters
 
     def _worker_counts(self) -> list[int]:
-        """Returns the worker counts to sweep, capped at the available CPU cores.
-
-        Returns:
-            The configured counts that fit within the core count, or a
-            single-entry list with the core count when none do.
-
-        Raises:
-            ValueError : If no worker count was configured.
-        """
         if not self.config.worker_counts:
             raise ValueError("worker_counts is empty; select at least one dataloader worker count to benchmark")
 
@@ -184,7 +124,6 @@ class DataLoaderTuningPipeline:
         return [cores]
 
     def _main_specs(self) -> list[LoaderSpec]:
-        """Returns the loader specs of the main batch-size by worker-count grid."""
         worker_counts = self._worker_counts()
 
         return [
@@ -194,16 +133,6 @@ class DataLoaderTuningPipeline:
         ]
 
     def _run_sweep(self, benchmark, specs, phase: str) -> list[dict]:
-        """Benchmarks every loader spec, logging and emitting each result.
-
-        Args:
-            benchmark : GPU feed benchmark to run.
-            specs     : Loader specifications to time.
-            phase     : Sweep phase name stamped onto each result, 'main' or 'refine'.
-
-        Returns:
-            One measurement record per spec.
-        """
         total    = len(specs)
         finished = 0
 
@@ -225,7 +154,6 @@ class DataLoaderTuningPipeline:
         return DataLoaderSweep(benchmark, specs, on_result=_on_result, on_start=_on_start).run()
 
     def _refine_specs(self, recommendation: dict) -> list[LoaderSpec]:
-        """Returns the prefetch-factor by pinning grid at the recommended batch size and worker count."""
         return [
             LoaderSpec(batch_size=recommendation["batch_size"], num_workers=recommendation["num_workers"], prefetch_factor=prefetch, pin_memory=pin_memory, persistent_workers=True)
             for prefetch in self.config.prefetch_factors
@@ -233,15 +161,6 @@ class DataLoaderTuningPipeline:
         ]
 
     def _refine(self, benchmark, recommendation: dict) -> tuple[list[dict], SweepReport | None]:
-        """Runs the refinement sweep around the recommended point, unless it is off or the point has no loader workers.
-
-        Args:
-            benchmark      : GPU feed benchmark to run.
-            recommendation : Best point of the main sweep.
-
-        Returns:
-            The refinement records and their report; an empty list and None when the refinement did not run.
-        """
         if not self.config.refine:
             return [], None
 
@@ -254,17 +173,6 @@ class DataLoaderTuningPipeline:
         return results, SweepReport(results, wait_threshold=self.config.data_wait_target)
 
     def _final_config(self, recommendation: dict, refine_report) -> dict:
-        """Merges the main recommendation with the refinement winner, saying where prefetch and pinning came from.
-
-        Args:
-            recommendation : Best point of the main sweep, with its batch size, worker count and throughput.
-            refine_report  : Report of the refinement phase, or None when skipped.
-
-        Returns:
-            The loader configuration to adopt, including prefetch factor and
-            pinning taken from the fastest refinement measurement when present;
-            a 0-worker loader has no prefetch factor and no persistent workers.
-        """
         workers = recommendation["num_workers"]
         final   = {
             "batch_size"         : recommendation["batch_size"],
@@ -292,20 +200,11 @@ class DataLoaderTuningPipeline:
 
     @staticmethod
     def _tally(results: list[dict]) -> str:
-        """Returns how many of a phase's specs ran and how many ran out of memory, as one phrase."""
         ok = sum(1 for record in results if record["status"] == "ok")
 
         return f"{ok} ok, {len(results) - ok} out of memory"
 
     def _log_sweep_summary(self, main_results: list[dict], refine_results: list[dict], report: SweepReport, recommendation: dict) -> None:
-        """Logs how many specs of each phase ran and ran out of memory, how many saturated the GPU, and warns when none did.
-
-        Args:
-            main_results   : Measurements of the main sweep.
-            refine_results : Measurements of the refinement sweep.
-            report         : Report of the main sweep.
-            recommendation : Best point of the main sweep.
-        """
         self.logger.kv_table({
             "Main sweep" : self._tally(main_results),
             "Refinement" : self._tally(refine_results) if refine_results else "not run",
@@ -316,20 +215,6 @@ class DataLoaderTuningPipeline:
             self.logger.warning(f"No configuration reached the {self.config.data_wait_target:.0%} data-wait target or fed the GPU as fast as it computes; recommending the fastest unsaturated setting, so training will wait on data")
 
     def _write(self, target, device, main_results, refine_results, recommendation, final, status: str) -> Path:
-        """Writes the results payload with the settings, code version and device it was measured under.
-
-        Args:
-            target         : Benchmarked feed target, described in the payload.
-            device         : Device the benchmark ran on.
-            main_results   : Measurements of the main sweep.
-            refine_results : Measurements of the refinement sweep.
-            recommendation : Best point of the main sweep, or the not-found marker.
-            final          : Loader configuration to adopt, or None before the sweep has finished.
-            status         : 'partial' after the main sweep, 'complete' at the end, 'failed' when no configuration succeeded.
-
-        Returns:
-            Path of the written `results.json`.
-        """
         payload = {
             "status"         : status,
             "mode"           : self.config.mode,
@@ -355,18 +240,6 @@ class DataLoaderTuningPipeline:
         return results_path
 
     def run(self):
-        """Runs the main sweep, the optional refinement, and writes the results.
-
-        The log is closed as a context manager, so an error in the dataset
-        pipeline, the model or a measurement ends dataloader_tuning.log with
-        the exception, its traceback and an ABORTED banner.
-
-        Returns:
-            The recommended loader configuration.
-
-        Raises:
-            SystemExit : If no loader configuration completed successfully.
-        """
         with self.logger:
             target            = self._build_target()
             benchmark, device = self._build_benchmark(target)

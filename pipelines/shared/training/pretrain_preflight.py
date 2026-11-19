@@ -1,10 +1,3 @@
-"""Pre-training preflight that tunes batch size, loader settings and the learning rate.
-
-Wraps the shared pretraining orchestrator: it builds a throwaway trainer,
-measures the CUDA context footprint and probes real training steps to pick a
-batch size, data-loader configuration and learning-rate multiplier before the
-run starts.
-"""
 
 from __future__ import annotations
 
@@ -21,26 +14,8 @@ from tools.training.pretraining import PretrainContext, PretrainOrchestrator, Tr
 
 
 class PretrainPreflight:
-    """Runs batch-size search, loader tuning and the LR range test ahead of a training run.
-
-    Attributes:
-        pretrain      : Preflight settings (which probes to run, measurement steps).
-        training      : Training configuration whose batch size and loader fields the preflight updates.
-        build_trainer : Callable taking a logger and returning (trainer, dataset, model) for the probe.
-        run_directory : Run directory under which preflight output is written.
-        label         : Optional label identifying the run in the preflight logs.
-    """
 
     def __init__(self, pretrain_config, training_config, build_trainer: Callable[[Logger], tuple], run_directory: Path, label: Optional[str] = None) -> None:
-        """Stores the preflight configuration and the trainer factory.
-
-        Args:
-            pretrain_config : Preflight settings.
-            training_config : Training configuration to tune.
-            build_trainer   : Callable taking a logger and returning (trainer, dataset, model).
-            run_directory   : Run directory for preflight output.
-            label           : Optional run label used in the preflight logs.
-        """
         self.pretrain      = pretrain_config
         self.training      = training_config
         self.build_trainer = build_trainer
@@ -48,21 +23,14 @@ class PretrainPreflight:
         self.label         = label
 
     def _enabled_probes(self) -> list[str]:
-        """Returns the names of the probes switched on, in the order they run."""
         flags = {"find_batch_size": self.pretrain.find_batch_size, "tune_loader": self.pretrain.tune_loader, "find_lr": self.pretrain.find_lr}
 
         return [name for name, enabled in flags.items() if enabled]
 
     def _enabled(self) -> bool:
-        """Returns whether any of the batch-size, loader or LR probes is on."""
         return bool(self._enabled_probes())
 
     def _refuse_on_resume(self) -> None:
-        """Refuses to probe a run that continues from its trainer state.
-
-        Raises:
-            RuntimeError : If the trainer resumes while a probe is on, since the probe would rewrite the recorded batch size, loader settings or learning-rate multiplier under the restored optimizer, scheduler and warmup state.
-        """
         if not self.training.resume:
             return
 
@@ -71,17 +39,6 @@ class PretrainPreflight:
         raise RuntimeError(f"pretraining probes ({probes}) cannot run on a run resuming from {TrainerState.FILENAME}: they would rewrite the recorded training.batch_size={self.training.batch_size}, num_workers/prefetch_factor or lr_multiplier under the restored optimizer, scheduler and warmup state. A run that probed records its probes switched off; pass --pretrain.<probe> false for each probe typed or recorded before that, or start a fresh run")
 
     def _warn_occupied_device(self, logger: Logger, context_gb: float) -> None:
-        """Warns when the CUDA context measured before the probe exceeds a bare context, which means other processes hold memory on the GPU.
-
-        The context is read as total minus free memory, so memory held by a
-        neighbour process shrinks the budget the batch-size finder measures
-        against and can lower the batch size, and with the batch rule the
-        learning-rate scale, of the whole run.
-
-        Args:
-            logger     : Preflight logger receiving the warning.
-            context_gb : Device memory in GB occupied before the probe built anything.
-        """
         if context_gb <= TrainStepMemoryProbe.CONTEXT_WARN_GB:
             return
 
@@ -90,17 +47,6 @@ class PretrainPreflight:
         logger.warning(f"CUDA context {context_gb:.2f} GB on CUDA_VISIBLE_DEVICES={mask} exceeds a bare context ({TrainStepMemoryProbe.CONTEXT_WARN_GB:g} GB): other processes are using this GPU and their memory counts against the probe budget, so the batch-size finder can settle on a smaller training.batch_size, and with scale_lr_with_batch={self.training.scale_lr_with_batch} a smaller learning-rate scale, than on a free GPU")
 
     def _build_context(self, logger: Logger, device: torch.device, context_gb: float) -> PretrainContext:
-        """Builds the probe context around a freshly constructed trainer.
-
-        Args:
-            logger     : Logger the probe trainer writes into.
-            device     : Device the probe steps run on.
-            context_gb : CUDA context footprint measured before anything was built, in gigabytes.
-
-        Returns:
-            The PretrainContext wiring the model, dataset, forward/loss hooks
-            and the memory-probing trial step.
-        """
         trainer, dataset, model = self.build_trainer(logger)
         trainer.model.train()
 
@@ -120,22 +66,11 @@ class PretrainPreflight:
         )
 
     def _release(self, trainer) -> None:
-        """Frees gradients and the CUDA cache after an out-of-memory probe step."""
         trainer.optimizer.zero_grad(set_to_none=True)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
     def run(self) -> None:
-        """Runs the preflight probes, writing their log and evidence records under ``<run>/pretrain``.
-
-        Returns immediately when none of the batch-size search, loader tuning
-        and LR range test is enabled. The preflight log appends across
-        launches and closes with an ABORTED banner naming the error when a
-        probe fails or the run turns out to be a resume.
-
-        Raises:
-            RuntimeError : If the trainer resumes while a probe is on, or a probe fails; propagated with its message recorded in the preflight log.
-        """
         if not self._enabled():
             return
 

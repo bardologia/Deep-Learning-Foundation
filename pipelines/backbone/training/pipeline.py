@@ -1,10 +1,3 @@
-"""End-to-end backbone training pipeline: dataset, model, gate check and trainer.
-
-Wires the patch dataset, the backbone under the configured head and the trainer
-together, persists the run metadata and configurations, optionally starts the
-conv head at the training-label prior, and runs the overfit gate before the
-real training loop.
-"""
 
 from __future__ import annotations
 
@@ -31,39 +24,11 @@ from tools.runtime.reproducibility                 import Reproducibility
 
 
 class HeadPriorBias:
-    """Starts the conv output head at the label prior of the training split.
-
-    At PyTorch's default initialization the decoded embedding of a deep trunk is
-    small, so every output channel starts as a near-constant equal to its head
-    bias, drawn at random. This step replaces that bias with the channel's mean
-    training label in the model's normalized output space, so the step-0
-    prediction is the label prior. Slots follow the sorted_gt order (active
-    slots by ascending z, inactive slots last), and the three channels of a slot
-    are averaged over the training pixels where that slot is active, so pixels
-    without a component in a slot do not pull its prior towards the absent-slot
-    values. Only the training split's labels enter the means.
-
-    Attributes:
-        PARAMS             : Parameter names of one Gaussian slot, in channel order.
-        ROW_CHUNK          : Label rows sorted and normalized at once, which bounds the transient memory.
-        dataset            : Training split, a PatchDataset or a MultiRegionDataset of several regions.
-        n_gaussians        : Gaussian slots the model predicts.
-        activity_threshold : Physical amplitude above which a label slot counts as active, as recorded by the label run.
-        logger             : Logger receiving the prior table.
-    """
 
     PARAMS    = ("amplitude", "mu", "sigma")
     ROW_CHUNK = 256
 
     def __init__(self, dataset, n_gaussians: int, activity_threshold: float, logger) -> None:
-        """Stores the training split and the slot layout the prior is computed for.
-
-        Args:
-            dataset            : Training split dataset carrying physical labels and the run's normalizer.
-            n_gaussians        : Gaussian slots the model predicts.
-            activity_threshold : Physical amplitude above which a label slot counts as active.
-            logger             : Logger receiving the prior table.
-        """
         self.dataset            = dataset
         self.n_gaussians        = n_gaussians
         self.activity_threshold = activity_threshold
@@ -71,21 +36,9 @@ class HeadPriorBias:
 
     @property
     def channel_names(self) -> list[str]:
-        """Names of the output channels, slot by slot, such as ``slot_1_sigma``."""
         return [f"slot_{slot}_{param}" for slot in range(self.n_gaussians) for param in self.PARAMS]
 
     def _head_bias(self, model) -> torch.nn.Parameter:
-        """Returns the bias of the model's conv output head.
-
-        Args:
-            model : Freshly built backbone exposing ``config.head`` and, for the conv head, ``output_head``.
-
-        Returns:
-            The bias parameter of the head's output convolution, of shape (3 * n_gaussians,).
-
-        Raises:
-            ValueError : If the model does not use the conv head, or if the head's width differs from three channels per slot.
-        """
         head = model.config.head
         if head != "conv":
             raise ValueError(f"prior_bias_init sets the bias of the conv head's single output convolution, but the model uses the '{head}' head; select backbone_head conv or turn prior_bias_init off")
@@ -97,17 +50,9 @@ class HeadPriorBias:
         return bias
 
     def _parts(self) -> list:
-        """Returns the per-region datasets of the training split."""
         return list(self.dataset.parts) if isinstance(self.dataset, MultiRegionDataset) else [self.dataset]
 
     def _accumulate(self, labels: np.ndarray, sums: np.ndarray, counts: np.ndarray) -> None:
-        """Adds one region's active-pixel label sums and counts to the running totals.
-
-        Args:
-            labels : Physical training labels of one region, of shape (3 * n_gaussians, rows, cols), amplitude, mu in metres and sigma in metres per slot.
-            sums   : Running per-channel sums in normalized output units, of shape (3 * n_gaussians,), updated in place.
-            counts : Running per-slot active-pixel counts, of shape (n_gaussians,), updated in place.
-        """
         n_params = len(self.PARAMS)
 
         for start in range(0, labels.shape[1], self.ROW_CHUNK):
@@ -123,14 +68,6 @@ class HeadPriorBias:
                 counts[slot]   += int(active.sum())
 
     def prior(self) -> tuple[np.ndarray, np.ndarray, int]:
-        """Computes the per-channel label prior of the training split.
-
-        Returns:
-            Tuple (prior, counts, n_pixels) of the prior of shape (3 * n_gaussians,) in normalized output units, the active training pixels of each slot of shape (n_gaussians,), and the number of training pixels.
-
-        Raises:
-            ValueError : If a region's labels do not hold three channels per slot, if a slot is active on no training pixel, or if a prior entry is not finite.
-        """
         n_params   = len(self.PARAMS)
         n_channels = n_params * self.n_gaussians
         sums       = np.zeros(n_channels, dtype=np.float64)
@@ -158,14 +95,6 @@ class HeadPriorBias:
         return prior, counts, n_pixels
 
     def _log(self, prior: np.ndarray, default_bias: np.ndarray, counts: np.ndarray, n_pixels: int) -> None:
-        """Logs the activity coverage and the prior that replaced each default bias.
-
-        Args:
-            prior        : Prior biases in normalized output units, of shape (3 * n_gaussians,).
-            default_bias : Biases the head was initialized with, of shape (3 * n_gaussians,).
-            counts       : Active training pixels of each slot, of shape (n_gaussians,).
-            n_pixels     : Number of training pixels.
-        """
         rows = {
             "Activity threshold" : f"{self.activity_threshold:g}",
             "Training pixels"    : f"{n_pixels:,}",
@@ -181,14 +110,6 @@ class HeadPriorBias:
         self.logger.kv_table(rows)
 
     def apply(self, model) -> dict:
-        """Overwrites the conv head bias with the training-label prior.
-
-        Args:
-            model : Freshly built backbone with the conv head; every weight other than the head bias is left as built.
-
-        Returns:
-            JSON-serialisable record holding the activity threshold, the training and per-slot active pixel counts, the channel names, the default biases and the prior biases.
-        """
         bias                    = self._head_bias(model)
         prior, counts, n_pixels = self.prior()
         default_bias            = bias.detach().cpu().numpy().astype(np.float64)
@@ -209,20 +130,6 @@ class HeadPriorBias:
 
 
 class TrainingPipeline:
-    """Runs one backbone training job from dataset preparation to test metrics.
-
-    Attributes:
-        trainer_config   : Trainer, curriculum and gaussian configuration.
-        dataset_config   : Patch dataset configuration.
-        backbone_name    : Registered backbone architecture name.
-        model_config     : Resolved model configuration, or None to take registry defaults.
-        seed             : Seed applied to every random source of the run.
-        run_name         : Explicit run directory name, or None to derive one.
-        overfit_check    : Configuration of the pre-training overfit gate.
-        prior_bias_init  : Whether the conv head biases start at the training-label prior instead of the default initialization.
-        configured_patch : Patch size and stride as configured, before the backbone's squaring requirement is applied.
-        patch_size       : Patch size after the backbone's squaring requirement is applied.
-    """
 
     MODEL_CONFIG_IO = BackboneModelConfigIO
 
@@ -237,18 +144,6 @@ class TrainingPipeline:
         overfit_check   : OverfitCheckConfig | None = None,
         prior_bias_init : bool = False,
     ) -> None:
-        """Seeds the run and reconciles the patch geometry with the backbone requirements.
-
-        Args:
-            trainer_config  : Trainer, curriculum and gaussian configuration.
-            dataset_config  : Patch dataset configuration.
-            backbone_name   : Registered backbone architecture name.
-            model_config    : Resolved model configuration, or None for registry defaults.
-            seed            : Seed applied to every random source of the run.
-            run_name        : Explicit run directory name, or None to derive one.
-            overfit_check   : Overfit gate configuration; a default one when omitted.
-            prior_bias_init : Whether the conv head biases start at the training-label prior, see HeadPriorBias.
-        """
 
         self.trainer_config  = trainer_config
         self.dataset_config  = dataset_config
@@ -270,20 +165,16 @@ class TrainingPipeline:
 
     @property
     def effective_patch(self) -> tuple[tuple[int, int], tuple[int, int]]:
-        """The patch size and stride the run trains on, after the squaring requirement."""
         return (tuple(self.patch_size), tuple(self.dataset_config.patch.stride))
 
     @property
     def patch_squared(self) -> bool:
-        """Whether the backbone's square-input requirement changed the configured patch geometry."""
         return self.effective_patch != self.configured_patch
 
     def _square_patch_backbones(self) -> list[str]:
-        """Returns the backbones whose square-patch requirement constrains the patch geometry."""
         return [self.backbone_name]
 
     def _patch_geometry_label(self) -> str:
-        """Returns the patch geometry cell of the execution table, naming the configured values when the backbone squared them."""
         size, stride = self.effective_patch
         effective    = f"patch {size} stride {stride}"
 
@@ -295,7 +186,6 @@ class TrainingPipeline:
         return f"configured patch {configured_size} stride {configured_stride} -> effective {effective} ({self.backbone_name} needs a square input)"
 
     def _patch_geometry_payload(self) -> dict:
-        """Returns the configured and effective patch geometry recorded in run_summary.json."""
         return {
             "configured_size"   : list(self.configured_patch[0]),
             "configured_stride" : list(self.configured_patch[1]),
@@ -305,15 +195,6 @@ class TrainingPipeline:
         }
 
     def _build_dataset_pipeline(self, run_directory: Path, logger) -> DatasetPipeline:
-        """Builds the patch dataset pipeline and derives the z axis from its profile length.
-
-        Args:
-            run_directory : Directory the dataset artefacts are written under.
-            logger        : Logger passed to the dataset pipeline.
-
-        Returns:
-            The configured dataset pipeline, not yet run.
-        """
         gaussian_cfg = self.trainer_config.gaussian
 
         dataset_pipeline = DatasetPipeline(
@@ -330,18 +211,6 @@ class TrainingPipeline:
         return dataset_pipeline
 
     def _run_overfit_check(self, train_dataset, in_channels: int, out_channels: int, z_axis) -> None:
-        """Runs the pre-training gate that must overfit a tiny subset before real training.
-
-        The gate trains a sanitized copy of the model on a single-stage loss with
-        active normalization disabled, so a failure points at the model or data
-        rather than the curriculum.
-
-        Args:
-            train_dataset : Training dataset the gate draws its samples from.
-            in_channels   : Model input channel count.
-            out_channels  : Model output channel count.
-            z_axis        : Z sample positions in metres, of shape (profile_length,).
-        """
         check = OverfitCheck(self.overfit_check, self.run_metadata.run_directory, self.logger)
         if not check.enabled:
             return
@@ -380,15 +249,6 @@ class TrainingPipeline:
         check.run(gate_trainer, train_dataset)
 
     def _build_model(self, in_channels: int, out_channels: int):
-        """Builds the backbone at the given widths and logs its architecture and size.
-
-        Args:
-            in_channels  : Model input channel count.
-            out_channels : Model output channel count.
-
-        Returns:
-            The model and its resolved model configuration.
-        """
         model, model_cfg = self._model_factory()(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
 
         n_total     = sum(p.numel() for p in model.parameters())
@@ -406,27 +266,18 @@ class TrainingPipeline:
         return model, model_cfg
 
     def _architecture_label(self) -> str:
-        """Returns the architecture name shown in the model log banner."""
         return self.backbone_name
 
     def _model_overrides(self, in_channels: int, out_channels: int) -> dict:
-        """Returns the channel widths plus any image-size override the backbone requires."""
         overrides = {"in_channels": in_channels, "out_channels": out_channels}
         overrides.update(ModelBuilder.image_size_override(self.backbone_name, self.patch_size))
 
         return overrides
 
     def _model_factory(self):
-        """Returns the factory that instantiates the architecture family of this pipeline."""
         return get_backbone
 
     def _apply_prior_bias(self, model, train_dataset) -> None:
-        """Sets the conv head biases to the training-label prior and records them in meta/head_prior_bias.json.
-
-        Args:
-            model         : Freshly built model whose conv head bias is overwritten.
-            train_dataset : Training split the prior is computed from.
-        """
         gaussian_cfg = self.trainer_config.gaussian
         prior_bias   = HeadPriorBias(train_dataset, gaussian_cfg.n_default_gaussians, gaussian_cfg.activity_threshold, self.logger)
         record       = prior_bias.apply(model)
@@ -436,21 +287,6 @@ class TrainingPipeline:
         self.logger.info(f"Head prior bias saved: {out_path}")
 
     def _make_trainer(self, model, model_cfg, z_axis, norm_stats, run_dir: Path, logger, emit_docs: bool = True, writer=None):
-        """Builds the trainer driving the training loop.
-
-        Args:
-            model      : The backbone to train.
-            model_cfg  : Resolved model configuration.
-            z_axis     : Z sample positions in metres, of shape (profile_length,).
-            norm_stats : Normalizer of the dataset the model was fitted on.
-            run_dir    : Directory the trainer writes checkpoints and logs into.
-            logger     : Logger for the training loop.
-            emit_docs  : Whether the trainer writes the architecture documentation.
-            writer     : Optional TensorBoard writer.
-
-        Returns:
-            The configured trainer.
-        """
         return Trainer(
             model      = model,
             model_cfg  = model_cfg,
@@ -464,15 +300,6 @@ class TrainingPipeline:
         )
 
     def build_pretrain_trainer(self, work_dir: Path, logger):
-        """Builds a throwaway trainer over the probe-union loss for the pretraining probes.
-
-        Args:
-            work_dir : Scratch directory the probe artefacts are written into.
-            logger   : Logger for the probe run.
-
-        Returns:
-            Tuple of the trainer, the training dataset and the model.
-        """
         work_dir         = Path(work_dir)
         dataset_pipeline = self._build_dataset_pipeline(work_dir, logger)
 
@@ -492,15 +319,6 @@ class TrainingPipeline:
         return trainer, dataset, model
 
     def run(self, probe_config=None, resolved_entry_config=None):
-        """Prepares the data and model, runs the gate and trains, then saves test metrics.
-
-        Args:
-            probe_config          : Optional loss-scale probe configuration run before training.
-            resolved_entry_config : Optional resolved entry config persisted into the run's docs directory.
-
-        Returns:
-            The training results returned by the trainer.
-        """
         self.run_metadata = TrainingRunMetadata(
             trainer_config = self.trainer_config,
             model_name     = self.backbone_name,

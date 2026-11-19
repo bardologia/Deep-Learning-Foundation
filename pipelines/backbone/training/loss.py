@@ -1,9 +1,3 @@
-"""Composite training loss over predicted Gaussian z profiles.
-
-Assembles curve-space and parameter-space terms into one weighted
-objective, tracks the inactive terms as monitoring values, and reports slot
-occupancy and physical parameter errors alongside the loss.
-"""
 
 from __future__ import annotations
 
@@ -17,41 +11,10 @@ from tools.loss.param_loss                  import ParamLoss, ParamMatcher
 
 
 class Loss:
-    """Weighted sum of the enabled curve and parameter loss terms.
-
-    Predictions arrive as normalized Gaussian parameter maps; they are
-    denormalized, optionally clamped, matched against the ground-truth slots and
-    reconstructed into z profiles before the terms are evaluated.
-
-    Attributes:
-        z_axis          : The z sample positions, of shape (profile_length,).
-        gaussian_cfg    : Gaussian head configuration (parameters per Gaussian, axis bounds, activity threshold of the label run).
-        loss_cfg        : Active loss-stage configuration; swapped by the curriculum.
-        norm_stats      : Normalizer converting between normalized and physical parameters.
-        dx              : The z sample spacing.
-        log_all_losses  : Whether disabled terms are still evaluated for monitoring.
-        loss_generation : Counter incremented on every curriculum swap.
-    """
 
     MOMENT_USE_FLAGS = ("use_total_power", "use_moments")
 
     def __init__(self, z_axis, logger, tracker, gaussian_cfg, loss_cfg, norm_stats, log_all_losses=False, sampler=None, slot_vitals=None):
-        """Builds the loss and logs its active terms.
-
-        Args:
-            z_axis         : The z sample positions, of shape (profile_length,).
-            logger         : Logger receiving the configuration tables.
-            tracker        : Metrics tracker used by the diagnostics hooks.
-            gaussian_cfg   : Gaussian head configuration.
-            loss_cfg       : Initial loss-stage configuration.
-            norm_stats     : Normalizer for the output parameter space.
-            log_all_losses : Whether to evaluate disabled terms for monitoring.
-            sampler        : Optional parameter histogram sampler observing predictions.
-            slot_vitals    : Optional per-slot diagnostics observer.
-
-        Raises:
-            ValueError : If the z axis holds fewer than two samples or does not increase, or if the stage enables no term or only terms whose weights sum to zero, which would make the total loss identically zero.
-        """
         if z_axis.shape[0] < 2:
             raise ValueError(f"z_axis must contain at least 2 sample points, got length {z_axis.shape[0]}")
 
@@ -89,29 +52,16 @@ class Loss:
 
     @property
     def param_term_evaluated(self) -> bool:
-        """Whether a presence-weighted parameter term is evaluated this stage, as a loss or for monitoring."""
         cfg = self.loss_cfg
         return bool(cfg.use_param_l1 or cfg.use_param_huber or cfg.use_param_mse or self.log_all_losses)
 
     @property
     def slot_presence_active(self) -> bool:
-        """Whether any presence-sensitive setting makes the occupancy statistics worth computing."""
         cfg = self.loss_cfg
         return bool(cfg.presence_balance or cfg.use_active_normalization or cfg.amp_focal_gamma > 0.0 or self.log_all_losses)
 
     @staticmethod
     def active_weights(cfg) -> list[tuple[str, float]]:
-        """Returns the enabled terms of a stage with their weights, refusing a stage whose total would be identically zero.
-
-        Args:
-            cfg : Loss-stage configuration whose flags and weights are read.
-
-        Returns:
-            (term name, weight) pairs of the enabled terms, in LOSS_TERMS order.
-
-        Raises:
-            ValueError : If no term is enabled, or if the enabled weights do not sum to a positive value, since the total is divided by that sum and would otherwise be identically zero.
-        """
         active = [(term.name, float(getattr(cfg, term.weight_key))) for term in LOSS_TERMS if getattr(cfg, term.use_flag)]
 
         if not active:
@@ -124,18 +74,6 @@ class Loss:
         return active
 
     def log_active_terms(self, cfg, title: str) -> None:
-        """Logs the enabled terms with their configured and weight-sum-normalized coefficients.
-
-        A term enabled at weight zero is computed on every batch, gradients
-        included, without reaching the total, so it is warned about by name.
-
-        Args:
-            cfg   : Loss-stage configuration whose flags and weights are reported.
-            title : Table title.
-
-        Raises:
-            ValueError : If the stage enables no term or its enabled weights do not sum to a positive value.
-        """
         active     = self.active_weights(cfg)
         weight_sum = sum(weight for _name, weight in active)
 
@@ -153,16 +91,6 @@ class Loss:
                 self.logger.warning(f"Loss term '{name}' is enabled with a negative weight {weight:g}; the optimiser drives it up, not down")
 
     def log_slot_presence_config(self, cfg, title: str) -> None:
-        """Logs the presence-balancing and amplitude-focal settings of a loss stage.
-
-        Under presence_balance the configured active and inactive weights are
-        not applied, the weights being derived per slot and batch from the
-        active fraction, so the table says so instead of printing idle constants.
-
-        Args:
-            cfg   : Loss-stage configuration whose presence settings are reported.
-            title : Table title.
-        """
         if cfg.presence_balance:
             weights = {"active_weight / inactive_weight": f"derived per slot and batch as 0.5/frac and 0.5/(1-frac) with frac clamped to [{ParamLoss.FRAC_CLAMP:g}, {1.0 - ParamLoss.FRAC_CLAMP:g}]; the configured {cfg.active_weight:g} / {cfg.inactive_weight:g} are not applied; applied values under loss_monitor/presence"}
         else:
@@ -177,16 +105,9 @@ class Loss:
         }, title=title)
 
     def _moment_terms_enabled(self, cfg) -> bool:
-        """Returns whether the total-power or moment term of the stage is evaluated, as a loss or for monitoring."""
         return bool(self.log_all_losses or any(getattr(cfg, flag) for flag in self.MOMENT_USE_FLAGS))
 
     def log_moment_config(self, cfg, title: str) -> None:
-        """Logs the power floor of the total-power and moment terms when either of them is evaluated.
-
-        Args:
-            cfg   : Loss-stage configuration whose power floor is reported.
-            title : Table title.
-        """
         if not self._moment_terms_enabled(cfg):
             return
 
@@ -195,15 +116,6 @@ class Loss:
         }, title=title)
 
     def set_curriculum(self, complete_cfg, context: str = "curriculum swap") -> None:
-        """Replaces the active loss configuration and logs the new composition.
-
-        Args:
-            complete_cfg : Loss-stage configuration to switch to.
-            context      : Label describing why the swap happens, used in the log.
-
-        Raises:
-            ValueError : If the new configuration enables no term or only terms whose weights sum to zero.
-        """
 
         self.loss_cfg       = complete_cfg
         self.loss_generation += 1
@@ -219,31 +131,9 @@ class Loss:
         self.log_moment_config(complete_cfg, title=f"Moment Terms Config ({context})")
 
     def reconstruct_gaussians(self, params: torch.Tensor) -> torch.Tensor:
-        """Renders physical Gaussian parameters into z profiles.
-
-        Args:
-            params : Physical Gaussian parameters of shape (batch, n_gaussians * params_per_gaussian, z, width).
-
-        Returns:
-            Reflectivity profiles of shape
-            (batch, profile_length, z, width), sampled on the z axis.
-        """
         return GaussianCurve.reconstruct(params, self.z_axis, self.gaussian_cfg.params_per_gaussian)
 
     def _param_term(self, matched, kind):
-        """Evaluates a parameter-space loss with presence, focal and per-parameter weighting.
-
-        Args:
-            matched : Tuple of normalized predictions, physical predictions, normalized targets and physical targets, each of shape (batch, n_gaussians, params_per_gaussian, height, width), already paired by the matcher.
-            kind    : One of 'l1', 'huber' or 'mse'.
-
-        Returns:
-            A tuple of the scalar loss and a dict of per-parameter L1 values;
-            the dict is empty for the huber and mse variants.
-
-        Raises:
-            ValueError : If `param_weights` does not hold one weight per Gaussian parameter, or `kind` is unknown.
-        """
         pred, pred_phys, gt, gt_phys = matched
         cfg = self.loss_cfg
         w   = torch.tensor(cfg.param_weights, dtype=pred.dtype, device=pred.device)
@@ -276,18 +166,6 @@ class Loss:
 
     @torch.no_grad()
     def _physical_errors(self, matched) -> dict:
-        """Reports mean absolute errors of the matched Gaussians in physical units.
-
-        Args:
-            matched : The matcher output; the physical prediction and target tensors have shape (batch, n_gaussians, params_per_gaussian, height, width).
-
-        Returns:
-            Dict with the amplitude MAE over all slots, the mean and sigma MAE in
-            metres restricted to the slots the ground truth marks active, and
-            gt_empty_batch, 1.0 when the batch holds no active ground-truth slot
-            so both metre errors are 0.0 by construction; its epoch mean is the
-            share of such batches.
-        """
         _, pred_phys, _, gt_phys = matched
 
         diff = (pred_phys - gt_phys).abs()
@@ -303,22 +181,6 @@ class Loss:
         }
 
     def _match_params(self, pred_gauss, gt_gauss, gt_phys_gauss, pred_phys_gauss):
-        """Pairs predicted with ground-truth Gaussian slots under the configured strategy.
-
-        Args:
-            pred_gauss      : Normalized predictions of shape (batch, n_gaussians * params_per_gaussian, height, width).
-            gt_gauss        : Normalized targets in the same layout.
-            gt_phys_gauss   : Physical targets in the same layout.
-            pred_phys_gauss : Physical predictions in the same layout.
-
-        Returns:
-            The matched normalized and physical prediction and target tensors,
-            each of shape
-            (batch, n_gaussians, params_per_gaussian, height, width).
-
-        Raises:
-            ValueError : If prediction and ground truth carry different slot counts.
-        """
         batch_size, num_channels, height, width = pred_gauss.shape
 
         ppg           = self.gaussian_cfg.params_per_gaussian
@@ -338,18 +200,6 @@ class Loss:
         return ParamMatcher.match(pred, pred_phys, gt, gt_phys, method=self.loss_cfg.param_matching.value, active_thr=self.gaussian_cfg.activity_threshold)
 
     def _prepare(self, pred_params, gt_params):
-        """Denormalizes, clamps and renders both predictions and targets.
-
-        Args:
-            pred_params : Raw model output of shape (batch, n_gaussians * params_per_gaussian, height, width).
-            gt_params   : Normalized target parameters in the same layout.
-
-        Returns:
-            Tuple of the re-normalized predictions, the physical predictions,
-            the physical targets, the predicted profiles and the target profiles;
-            the profile tensors have shape
-            (batch, profile_length, height, width).
-        """
         clamp_cfg   = self.norm_stats.stats.clamp
         leaky_slope = clamp_cfg.leaky_slope
 
@@ -377,33 +227,10 @@ class Loss:
 
     @torch.no_grad()
     def curves(self, pred_output, gt_params):
-        """Returns the predicted and expected z profiles for a batch.
-
-        Args:
-            pred_output : Raw model output of shape (batch, n_gaussians * params_per_gaussian, height, width).
-            gt_params   : Normalized target parameters in the same layout.
-
-        Returns:
-            The predicted and expected profiles, both of shape
-            (batch, profile_length, height, width).
-        """
         _, _, _, pred_curves, exp_curves = self._prepare(pred_output, gt_params)
         return pred_curves, exp_curves
 
     def _term_computes(self, cfg, diff, pred_curves, exp_curves, pred_params_norm, matched) -> dict:
-        """Builds the lazy evaluators of every loss term for one batch.
-
-        Args:
-            cfg              : Active loss-stage configuration supplying the term parameters.
-            diff             : Profile residual of shape (batch, profile_length, rows, cols), or None when no residual-based term is needed.
-            pred_curves      : Predicted profiles of shape (batch, profile_length, rows, cols).
-            exp_curves       : Expected profiles in the same layout.
-            pred_params_norm : Normalized predicted parameters of shape (batch, n_gaussians * params_per_gaussian, rows, cols).
-            matched          : Matcher output used by the parameter terms.
-
-        Returns:
-            Mapping of term name to a zero-argument callable returning the term value.
-        """
         lc = CurveLoss
         mc = MomentLoss
 
@@ -423,16 +250,6 @@ class Loss:
 
     @torch.no_grad()
     def _presence_monitor(self, matched) -> dict:
-        """Reports the balanced presence weights this batch applied per slot and whether the fraction clamp engaged.
-
-        Args:
-            matched : The matcher output; the physical target tensor has shape (batch, n_gaussians, params_per_gaussian, height, width).
-
-        Returns:
-            Dict keyed presence/active_weight_slot{g}, presence/inactive_weight_slot{g}
-            and presence/clamped_slot{g}, the flag being 1.0 when the slot's active
-            fraction hit FRAC_CLAMP, so its epoch mean is the share of clamped batches.
-        """
         _, _, _, gt_phys = matched
 
         active = GaussianActivity.is_active(gt_phys[:, :, 0:1], self.gaussian_cfg.activity_threshold).to(gt_phys.dtype)
@@ -449,17 +266,6 @@ class Loss:
 
     @torch.no_grad()
     def _moment_monitor(self, exp_curves) -> dict:
-        """Reports the share of pixels above the power floor and flags a batch where none is, warning once per stage.
-
-        Args:
-            exp_curves : Target profiles of shape (batch, profile_length, rows, cols).
-
-        Returns:
-            Dict with moment_valid_frac, the share of pixels the total-power and
-            moment terms averaged over, and moment_empty_batch, 1.0 when no pixel
-            cleared the floor so both terms contributed 0.0; the epoch mean of the
-            flag is the share of such batches.
-        """
         floor      = self.loss_cfg.power_floor
         valid_frac = MomentLoss.valid_fraction(exp_curves, self.dx, floor)
         empty      = (valid_frac == 0.0).to(valid_frac.dtype)
@@ -472,17 +278,6 @@ class Loss:
 
     @torch.no_grad()
     def _occupancy(self, pred_params_phys, gt_phys) -> dict:
-        """Reports how many Gaussian slots the prediction activates against the ground truth.
-
-        Args:
-            pred_params_phys : Physical predicted parameters of shape (batch, n_gaussians * params_per_gaussian, height, width).
-            gt_phys          : Physical target parameters in the same layout.
-
-        Returns:
-            Dict with overall and per-slot active fractions, the exact,
-            under- and over-count fractions, and the count accuracy conditioned
-            on each ground-truth component count.
-        """
         ppg = self.gaussian_cfg.params_per_gaussian
         thr = self.gaussian_cfg.activity_threshold
 
@@ -522,24 +317,6 @@ class Loss:
         return out
 
     def __call__(self, pred_output, gt_params):
-        """Evaluates the composite loss for one batch.
-
-        Enabled terms are summed with their weights and the total divided by the
-        weight sum; disabled terms are evaluated without gradients only when
-        `log_all_losses` is set, and land in the monitor dict.
-
-        Args:
-            pred_output : Raw model output of shape (batch, n_gaussians * params_per_gaussian, rows, cols).
-            gt_params   : Normalized target parameters in the same layout.
-
-        Returns:
-            Dict with the scalar `total_loss`, the weighted `components`, the
-            unweighted `monitor` values (inactive terms, per-parameter L1 parts,
-            under presence_balance the applied per-slot presence weights, and
-            with a total-power or moment term the share of pixels above the
-            power floor), the slot `occupancy` statistics and the `physical`
-            parameter errors.
-        """
         cfg = self.loss_cfg
 
         pred_params_norm, pred_params_phys, gt_phys, pred_curves, exp_curves = self._prepare(pred_output, gt_params)

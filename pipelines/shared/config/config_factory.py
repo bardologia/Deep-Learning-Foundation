@@ -1,8 +1,3 @@
-"""Derivation of dataset, trainer and inference configs from a benchmark config.
-
-Turns the flat benchmark entry configuration into the structured dataset, trainer
-and inference configurations that the individual pipelines consume.
-"""
 
 from __future__ import annotations
 
@@ -18,39 +13,28 @@ from tools.data.regions                import CropRegion
 
 
 class ConfigFactory:
-    """Builds the pipeline configurations implied by one benchmark configuration.
-
-    Attributes:
-        config : Benchmark entry configuration all derived configs come from.
-    """
 
     def __init__(self, config: BenchmarkConfig) -> None:
-        """Stores the benchmark configuration used as the single source of truth."""
         self.config = config
 
     def _secondary_labels(self) -> tuple | None:
-        """Returns the configured secondary channel labels as a tuple, or None when unset."""
         labels = self.config.paths.secondary_labels
         return tuple(labels) if labels else None
 
     def global_crop(self) -> CropRegion:
-        """Returns the global row/col crop recorded by the preprocessing run."""
         layout_path = Path(self.config.paths.dataset_path) / "data" / "dataset.json"
         layout      = FileIO.load_json(layout_path)
 
         return CropRegion(*layout["global_crop"])
 
     def benchmark_input_config(self) -> InputConfig:
-        """Returns the full-stack input configuration used by every benchmark model."""
         return InputConfig.full_stack()
 
     def _output_config(self) -> OutputConfig:
-        """Returns the output configuration with per-target normalization strategies."""
         norm = self.config.normalization
         return OutputConfig(output_strategies={key: norm.strategy("output", key) for key in ("out/amp", "out/mu", "out/sigma")})
 
     def split_regions(self) -> SplitRegions:
-        """Returns train/val/test crops: configured row spans over the full range extent."""
         crop     = self.global_crop()
         training = self.config.training
 
@@ -61,7 +45,6 @@ class ConfigFactory:
         )
 
     def training_dataset_config(self) -> DatasetConfig:
-        """Returns the patch dataset configuration used for benchmark training."""
         training = self.config.training
 
         return DatasetConfig(
@@ -83,15 +66,9 @@ class ConfigFactory:
         )
 
     def gaussian_config(self) -> GaussianConfig:
-        """Returns the Gaussian mixture configuration read from the dataset parameters."""
         return GaussianConfig.from_dataset(self.config.paths.dataset_path, self.config.paths.parameters_path)
 
     def _base_trainer_kwargs(self, logdir: Path) -> dict:
-        """Returns the trainer arguments shared by the backbone and unrolled families.
-
-        Args:
-            logdir : Run directory the trainer writes its outputs to.
-        """
         training = self.config.training
         return {
             "gaussian"         : self.gaussian_config(),
@@ -100,16 +77,6 @@ class ConfigFactory:
         }
 
     def training_trainer_config(self, logdir: Path) -> BackboneTrainerConfig:
-        """Returns the backbone trainer configuration for one benchmark run.
-
-        Args:
-            logdir : Run directory the trainer writes its outputs to.
-
-        Returns:
-            Trainer configuration whose learning rate is linearly rescaled by the
-            ratio of the batch size to the reference batch size when enabled, and
-            whose scheduler spans the configured epoch budget.
-        """
         training         = self.config.training
         scheduler_epochs = training.scheduler_epochs if training.scheduler_epochs is not None else training.epochs
         lr_scale         = training.lr_scale()
@@ -148,11 +115,6 @@ class ConfigFactory:
         )
 
     def inference_config(self, run_directory: Path) -> InferenceConfig:
-        """Returns the inference configuration for scoring one trained run.
-
-        Args:
-            run_directory : Training run whose checkpoint is scored.
-        """
         inference = self.config.inference
 
         return InferenceConfig(

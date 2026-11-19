@@ -1,10 +1,3 @@
-"""Patch-wise inference and stitching of predicted z cubes.
-
-Runs the trained backbone over the patch grid of the inference split, renders the
-predicted and ground-truth Gaussian mixtures into z curves on CPU workers, and
-stitches the patches back into full cubes: curves through a windowed weighted average,
-Gaussian parameters through a most-central-patch selection.
-"""
 
 from __future__ import annotations
 
@@ -27,14 +20,6 @@ from tools.runtime.cuda_mask                         import InheritedCudaMask
 
 
 class CubeStitcher:
-    """Blends overlapping patches into one cube by a window-weighted average.
-
-    Attributes:
-        grid       : Patch grid describing patch size, stride, padding and the target spatial size.
-        n_channels : Number of channels each patch carries.
-        dtype      : Numpy dtype the accumulator and the final cube use.
-        window     : Per-pixel blending weights of shape (patch_height, patch_width).
-    """
 
     def __init__(
         self,
@@ -44,15 +29,6 @@ class CubeStitcher:
         dtype       : str           = "float32",
         memmap_path : Optional[str] = None,
     ) -> None:
-        """Allocates the padded accumulator and weight plane for the patch grid.
-
-        Args:
-            grid        : Patch grid of the split region being stitched.
-            n_channels  : Number of channels per patch, becoming the first cube axis.
-            window_kind : Blending window, one of "hann", "triangular" or "uniform".
-            dtype       : Numpy dtype of the accumulator and the returned cube.
-            memmap_path : Path of a .npy memmap backing the accumulator; kept in RAM when None.
-        """
         self.grid       = grid
         self.n_channels = int(n_channels)
         self.dtype      = np.dtype(dtype)
@@ -70,18 +46,6 @@ class CubeStitcher:
 
     @staticmethod
     def make_patch_window(patch_size: Tuple[int, int], kind: str = "hann") -> np.ndarray:
-        """Builds the separable blending window of a patch.
-
-        Args:
-            patch_size : Patch height and width in pixels.
-            kind       : Window family, one of "hann", "triangular" or "uniform".
-
-        Returns:
-            Window weights of shape (patch_height, patch_width), floored at 1e-3 for the tapered families.
-
-        Raises:
-            ValueError : If kind names no known window family.
-        """
         ph, pw = patch_size
         if kind == "uniform":
             return np.ones((ph, pw), dtype=np.float32)
@@ -104,16 +68,9 @@ class CubeStitcher:
 
     @property
     def number_of_patches(self) -> int:
-        """Number of patches in the grid this stitcher covers."""
         return self.grid.number_of_patches
 
     def add_patch(self, idx: int, patch: np.ndarray) -> None:
-        """Accumulates one window-weighted patch at its grid position.
-
-        Args:
-            idx   : Row-major patch index in the grid.
-            patch : Patch values of shape (n_channels, patch_height, patch_width).
-        """
         ph, pw = self.grid.patch_size
         sv, sh = self.grid.stride
         iv, ih = divmod(idx, self.grid.n_h)
@@ -125,14 +82,6 @@ class CubeStitcher:
         self._weight[v0:v0 + ph, h0:h0 + pw]   += w
 
     def finalize_cube(self) -> np.ndarray:
-        """Normalises the accumulator by the accumulated weights and crops away the padding.
-
-        Returns:
-            Blended cube of shape (n_channels, rows, cols) covering the split region.
-
-        Raises:
-            ValueError : If any pixel of the split region received no patch.
-        """
         H, W         = self.grid.spatial_size
         pad_t, pad_l = self.grid.pad_top, self.grid.pad_left
 
@@ -147,17 +96,6 @@ class CubeStitcher:
 
 
 class SelectStitcher:
-    """Stitches patches by keeping, per pixel, the value from the most central patch.
-
-    Averaging Gaussian parameters across overlapping patches would mix incompatible slot
-    assignments, so each pixel instead takes the patch whose Hann centrality is highest.
-
-    Attributes:
-        grid       : Patch grid describing patch size, stride, padding and the target spatial size.
-        n_channels : Number of channels each patch carries.
-        dtype      : Numpy dtype of the value store and the final cube.
-        centrality : Hann centrality weights of shape (patch_height, patch_width) used to rank patches.
-    """
 
     def __init__(
         self,
@@ -166,14 +104,6 @@ class SelectStitcher:
         dtype       : str           = "float32",
         memmap_path : Optional[str] = None,
     ) -> None:
-        """Allocates the padded value store and best-centrality plane for the patch grid.
-
-        Args:
-            grid        : Patch grid of the split region being stitched.
-            n_channels  : Number of channels per patch, becoming the first cube axis.
-            dtype       : Numpy dtype of the value store and the returned cube.
-            memmap_path : Path of a .npy memmap backing the value store; kept in RAM when None.
-        """
         self.grid       = grid
         self.n_channels = int(n_channels)
         self.dtype      = np.dtype(dtype)
@@ -190,12 +120,6 @@ class SelectStitcher:
         self._best = np.zeros((H_pad, W_pad), dtype=np.float32)
 
     def add_patch(self, idx: int, patch: np.ndarray) -> None:
-        """Writes one patch where its pixels are more central than any patch seen so far.
-
-        Args:
-            idx   : Row-major patch index in the grid.
-            patch : Patch values of shape (n_channels, patch_height, patch_width).
-        """
         ph, pw = self.grid.patch_size
         sv, sh = self.grid.stride
         iv, ih = divmod(idx, self.grid.n_h)
@@ -210,14 +134,6 @@ class SelectStitcher:
         best[take]      = self.centrality[take]
 
     def finalize_cube(self) -> np.ndarray:
-        """Crops the padding off the selected values and returns the stitched cube.
-
-        Returns:
-            Cube of shape (n_channels, rows, cols) covering the split region.
-
-        Raises:
-            ValueError : If any pixel of the split region received no patch.
-        """
         H, W         = self.grid.spatial_size
         pad_t, pad_l = self.grid.pad_top, self.grid.pad_left
 
@@ -231,19 +147,6 @@ class SelectStitcher:
 
 
 class Predictor:
-    """Runs the backbone over an inference split and assembles the stitched result cubes.
-
-    Attributes:
-        RESULT_BUDGET_BYTES : Memory budget bounding how many finished CPU batches stay in flight.
-        run                 : Loaded run bundling model, loader, dataset, patch grid and split region.
-        logger              : Logger used for progress tracking and summary tables.
-        window_kind         : Blending window used for the curve cubes.
-        cube_dtype          : Numpy dtype of every stitched cube.
-        save_cubes          : Whether cubes and per-pixel metric maps are written to disk.
-        cube_dir            : Directory receiving the cubes and the stitching memmaps.
-        cpu_workers         : Number of worker processes rendering curves.
-        render_amp_floor    : Amplitude below which a Gaussian is zeroed before rendering.
-    """
 
     RESULT_BUDGET_BYTES = 2 * 1024 ** 3
 
@@ -259,18 +162,6 @@ class Predictor:
         cpu_workers      : int | None = None,
         render_amp_floor : float = 0.0,
     ) -> None:
-        """Stores the run handle and the stitching options for this inference pass.
-
-        Args:
-            run              : Loaded run with the model in eval mode, the split loader and the patch grid.
-            logger           : Logger for progress bars and summary tables.
-            window_kind      : Blending window for the curve cubes, see CubeStitcher.make_patch_window.
-            cube_dtype       : Numpy dtype of the stitched cubes.
-            save_cubes       : Whether to persist cubes and metric maps under the run's cube directory.
-            meta             : Inference metadata supplying the cube directory.
-            cpu_workers      : Worker processes for curve rendering; defaults to min(8, cpu count).
-            render_amp_floor : Amplitude floor below which Gaussians are suppressed before rendering.
-        """
 
         self.run              = run
         self.logger           = logger
@@ -282,11 +173,6 @@ class Predictor:
         self.render_amp_floor = float(render_amp_floor)
 
     def _device_rows(self) -> dict:
-        """Returns the predict-table rows naming the device the model runs on and, on CUDA, the physical GPU behind it.
-
-        Returns:
-            The backend row read from the wrapped model's device, plus the GPU name, the CUDA_VISIBLE_DEVICES token the process was pinned to and the inherited CUDA mask when the device is a GPU.
-        """
         device = torch.device(self.run.model.device)
         rows   = {"Backend": f"PyTorch / {device}"}
 
@@ -298,13 +184,6 @@ class Predictor:
         return rows
 
     def _forward_pass(self) -> Tuple[List[List[int]], List[np.ndarray], List[np.ndarray]]:
-        """Runs the model over every batch of the split loader and denormalises the labels.
-
-        Returns:
-            Triple of per-batch global patch indices, predicted parameter arrays of shape
-            (batch, out_channels, patch_height, patch_width) and denormalised ground-truth
-            parameter arrays of shape (batch, 3 * n_gaussians, patch_height, patch_width).
-        """
         run = self.run
         n_K = run.n_gaussians
 
@@ -334,15 +213,6 @@ class Predictor:
 
     @staticmethod
     def _render_masked(gauss: np.ndarray, amp_floor: float) -> np.ndarray:
-        """Zeroes the amplitude of Gaussians below the render floor.
-
-        Args:
-            gauss     : Gaussian parameters of shape (batch, n_gaussians, 3, height, width), with amplitude, mu and sigma along axis 2.
-            amp_floor : Amplitude below which a Gaussian is suppressed; no masking when non-positive.
-
-        Returns:
-            Parameter array of the same shape, with sub-floor amplitudes set to zero.
-        """
         if amp_floor <= 0.0:
             return gauss
 
@@ -354,15 +224,6 @@ class Predictor:
 
     @staticmethod
     def _sort_by_mu(gauss: np.ndarray, activity_threshold: float) -> np.ndarray:
-        """Sorts Gaussian slots by z position, pushing inactive slots to the end.
-
-        Args:
-            gauss              : Gaussian parameters of shape (batch, n_gaussians, 3, height, width), with amplitude, mu in metres and sigma along axis 2.
-            activity_threshold : Physical amplitude above which a slot counts as active, as recorded by the label run.
-
-        Returns:
-            Parameter array of the same shape with slots ordered by ascending mu per pixel.
-        """
         sort_key   = np.where(GaussianActivity.is_active(gauss[:, :, 0], activity_threshold), gauss[:, :, 1], np.inf)
         sort_idx   = np.argsort(sort_key, axis=1)
         sort_idx_e = sort_idx[:, :, None, :, :].repeat(3, axis=2)
@@ -371,16 +232,6 @@ class Predictor:
 
     @staticmethod
     def _cpu_worker(args: tuple) -> tuple:
-        """Renders one batch of predicted and ground-truth Gaussians into z curves.
-
-        Args:
-            args : Tuple of the predicted parameter batch of shape (batch, out_channels, height, width), the ground-truth parameter batch of shape (batch, 3 * n_gaussians, height, width), the z axis in metres, the number of Gaussians, the render amplitude floor and the label run's activity threshold.
-
-        Returns:
-            Tuple of predicted curves and ground-truth curves, both of shape
-            (batch, n_z, z, width), followed by the flattened predicted and
-            mu-sorted ground-truth parameters, both of shape (batch, 3 * n_gaussians, z, width).
-        """
         pred_params_chunk, gt_params_chunk, z_axis, n_gaussians, render_amp_floor, activity_threshold = args
 
         x          = z_axis.reshape(1, 1, -1, 1, 1).astype(np.float32)
@@ -406,16 +257,6 @@ class Predictor:
         )
 
     def _stitch_results(self, all_indices : List[List[int]], all_pred_params : List[np.ndarray], all_gt_params : List[np.ndarray]) -> Result:
-        """Renders every batch on a process pool and stitches curves and parameters into cubes.
-
-        Args:
-            all_indices     : Per-batch lists of global patch indices in grid order.
-            all_pred_params : Per-batch predicted parameters of shape (batch, out_channels, patch_height, patch_width).
-            all_gt_params   : Per-batch denormalised ground-truth parameters of shape (batch, 3 * n_gaussians, patch_height, patch_width).
-
-        Returns:
-            Result holding the stitched curve and parameter cubes with their per-pixel metric maps.
-        """
         run    = self.run
         n_K    = run.n_gaussians
         out_ch = run.out_channels
@@ -456,7 +297,6 @@ class Predictor:
         )
 
     def _create_stitcher(self, n_channels: int, name: str) -> CubeStitcher:
-        """Returns a window-blending stitcher, memmap-backed when cubes are saved."""
         memmap_path = str(self.cube_dir / f"_tmp_{name}.npy") if self.save_cubes else None
         return CubeStitcher(
             grid        = self.run.grid,
@@ -467,7 +307,6 @@ class Predictor:
         )
 
     def _create_param_stitcher(self, n_channels: int, name: str) -> SelectStitcher:
-        """Returns a most-central-patch stitcher, memmap-backed when cubes are saved."""
         memmap_path = str(self.cube_dir / f"_tmp_{name}.npy") if self.save_cubes else None
         return SelectStitcher(
             grid        = self.run.grid,
@@ -477,17 +316,6 @@ class Predictor:
         )
 
     def _result_window(self, all_pred_params: List[np.ndarray]) -> int:
-        """Returns how many rendered batches may stay in flight under the memory budget.
-
-        Args:
-            all_pred_params : Per-batch predicted parameters, used for the largest batch size.
-
-        Returns:
-            Number of pending futures allowed, at most twice the worker count.
-
-        Raises:
-            ValueError : If the forward pass produced no batches.
-        """
         run    = self.run
         ph, pw = run.grid.patch_size
         n_elev = run.x_axis_length
@@ -513,19 +341,6 @@ class Predictor:
         param_pred_stitcher : SelectStitcher,
         gt_param_stitcher   : SelectStitcher,
     ) -> Result:
-        """Finalises the four cubes, masks inactive ground-truth slots and scores per-pixel metrics.
-
-        Args:
-            pred_curve_stitcher : Stitcher holding the predicted z curves.
-            gt_curve_stitcher   : Stitcher holding the ground-truth z curves.
-            param_pred_stitcher : Stitcher holding the predicted Gaussian parameters.
-            gt_param_stitcher   : Stitcher holding the mu-sorted ground-truth Gaussian parameters.
-
-        Returns:
-            Result with curve cubes of shape (n_z, rows, cols), parameter cubes
-            of shape (channels, rows, cols) and the per-pixel MSE, MAE, R², cosine and
-            peak-index maps of shape (rows, cols).
-        """
 
         pred_curves_cube = pred_curve_stitcher.finalize_cube()
         gt_curves_cube   = gt_curve_stitcher.finalize_cube()
@@ -591,11 +406,6 @@ class Predictor:
         )
 
     def run_inference(self) -> Result:
-        """Runs the forward pass and the stitching stage and returns the assembled result.
-
-        Returns:
-            Result holding the stitched prediction and ground-truth cubes with their metric maps.
-        """
         self.logger.section("[Inference: Predict]")
         self.logger.kv_table({
             **self._device_rows(),

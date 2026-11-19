@@ -1,10 +1,3 @@
-"""Aggregation of seed replicas of one training into a mean +/- std report.
-
-Each seed keeps its own completed inference; this module resolves those inference
-stamps for one data split, reduces their scalar metrics across seeds, and
-optionally attaches per-pixel seed-disagreement maps with risk-coverage and
-label-suspect analysis.
-"""
 
 from __future__ import annotations
 
@@ -28,28 +21,8 @@ from tools.runtime.run_tag                                   import RunTag
 
 
 class SeedInferenceResolver:
-    """Resolves which completed inference stamp of a seed run to aggregate.
-
-    Only stamps carrying a completion marker for the configured split qualify, so a
-    crashed, still running or other-split inference never enters an aggregate.
-
-    Attributes:
-        inference_subdir : Explicit stamp name, empty to take the newest completed stamp of the split.
-        split            : Data split the chosen stamp must have been scored on.
-        metrics_filename : Metrics file every chosen stamp must hold.
-        logger           : Logger receiving the warnings about unfinished stamps.
-        unfinished       : Stamp names holding metrics but no completion marker, keyed by run directory.
-    """
 
     def __init__(self, inference_subdir: str, split: str, metrics_filename: str, logger: Logger) -> None:
-        """Stores the inference selection rule.
-
-        Args:
-            inference_subdir : Explicit stamp name, or empty to pick each run's newest completed stamp of the split.
-            split            : Data split the stamp must record in its completion marker.
-            metrics_filename : Metrics filename the chosen stamp must hold.
-            logger           : Logger for the warnings about unfinished stamps.
-        """
         self.inference_subdir = inference_subdir
         self.split            = split
         self.metrics_filename = metrics_filename
@@ -58,23 +31,10 @@ class SeedInferenceResolver:
         self.unfinished: dict[Path, list[str]] = {}
 
     def _require_metrics(self, stamp: Path) -> None:
-        """Raises FileNotFoundError when a completed stamp holds no metrics file."""
         if not (stamp / self.metrics_filename).is_file():
             raise FileNotFoundError(f"No {self.metrics_filename} under {stamp}; the completed inference wrote no metrics, re-run it before comparing seeds")
 
     def _explicit(self, inference_root: Path) -> Path:
-        """Returns the named stamp, requiring its completion marker, split and metrics.
-
-        Args:
-            inference_root : The run's inference directory.
-
-        Returns:
-            The requested inference stamp.
-
-        Raises:
-            FileNotFoundError : If the stamp carries no completion marker or no metrics file.
-            ValueError        : If the stamp was scored on another split than the configured one, or belongs to a region group that is missing regions.
-        """
         candidate = inference_root / self.inference_subdir
 
         if not CompletionMarker.is_complete(candidate):
@@ -91,11 +51,6 @@ class SeedInferenceResolver:
         return candidate
 
     def _note_unfinished(self, inference_root: Path) -> None:
-        """Warns about stamps that hold metrics without a completion marker and records them.
-
-        Args:
-            inference_root : The run's inference directory.
-        """
         unfinished = sorted(stamp.name for stamp in inference_root.iterdir() if stamp.is_dir() and (stamp / self.metrics_filename).is_file() and not CompletionMarker.is_complete(stamp))
         if not unfinished:
             return
@@ -104,17 +59,6 @@ class SeedInferenceResolver:
         self.logger.warning(f"{inference_root.parent.name}: {len(unfinished)} stamp(s) hold {self.metrics_filename} without a completion marker and were skipped as unfinished: {', '.join(unfinished)}")
 
     def _latest(self, inference_root: Path) -> Path:
-        """Returns the newest completed stamp of the split, skipping unfinished stamps.
-
-        Args:
-            inference_root : The run's inference directory.
-
-        Returns:
-            The newest stamp carrying a completion marker for the split.
-
-        Raises:
-            FileNotFoundError : If the run has no completed inference on the split.
-        """
         latest = CompletedInference.latest(inference_root, self.split)
         if latest is None:
             raise FileNotFoundError(f"No completed '{self.split}' inference under {inference_root}; infer this run on that split before comparing its seeds")
@@ -125,14 +69,6 @@ class SeedInferenceResolver:
         return latest
 
     def resolve(self, run_dir: Path) -> Path:
-        """Returns the inference stamp of one seed run to aggregate.
-
-        Args:
-            run_dir : Directory of the seed training run.
-
-        Returns:
-            The selected inference stamp.
-        """
         inference_root = Path(run_dir) / "inference"
 
         if self.inference_subdir:
@@ -142,47 +78,16 @@ class SeedInferenceResolver:
 
     @staticmethod
     def record(inference_dir: Path) -> dict:
-        """Returns the stamp name, split and completion time a resolved stamp recorded.
-
-        Args:
-            inference_dir : A resolved inference stamp carrying a completion marker.
-
-        Returns:
-            Mapping with "stamp", "split" and "completed_at".
-        """
         payload = CompletionMarker.payload(inference_dir)
         return {"stamp": Path(inference_dir).name, "split": payload["split"], "completed_at": payload["completed_at"]}
 
 
 class SeedActivityThreshold:
-    """Resolves the one activity threshold every seed inference of a group was scored with.
-
-    Active-slot metrics and matched slots depend on that threshold, so seeds scored
-    at different values, or before the value was recorded, are refused on every
-    comparison path rather than averaged.
-
-    Attributes:
-        metrics_filename : Metrics file read from each seed's inference directory.
-    """
 
     def __init__(self, metrics_filename: str) -> None:
-        """Stores the metrics filename the recorded threshold is read from."""
         self.metrics_filename = metrics_filename
 
     def resolve(self, seeds: list[str], inference_dirs: list[Path]) -> float:
-        """Returns the activity threshold shared by every seed's inference.
-
-        Args:
-            seeds          : Seed labels aligned with inference_dirs.
-            inference_dirs : Resolved inference directory of each seed.
-
-        Returns:
-            The common activity threshold the seeds were scored with.
-
-        Raises:
-            KeyError   : If a seed's metrics file carries no activity_threshold, which inference written before the field existed lacks.
-            ValueError : If the seeds were scored with different activity thresholds, which makes their active-slot metrics and matched slots incomparable.
-        """
         thresholds = {}
         for seed, inference_dir in zip(seeds, inference_dirs):
             metrics = FileIO.load_json(Path(inference_dir) / self.metrics_filename)
@@ -198,43 +103,15 @@ class SeedActivityThreshold:
 
 
 class SeedEnsembleEvaluation:
-    """Scores the across-seed mean prediction cube against the ground-truth curves.
-
-    Deep-ensemble evaluation on artifacts already on disk: the per-seed
-    prediction cubes are averaged and scored with the same cube-wide scalar
-    metrics inference reports per seed, so the ensemble gain reads directly
-    against the per-seed mean without re-running any model.
-
-    Attributes:
-        PRED_CUBE : Filename of the per-seed prediction cube.
-        GT_CUBE   : Filename of the ground-truth curve cube.
-        cube_dirs : Cube directory of each seed, in seed order.
-        logger    : Logger for the result line.
-    """
 
     PRED_CUBE = "pred_curves.npy"
     GT_CUBE   = "gt_curves.npy"
 
     def __init__(self, cube_dirs: list[Path], logger: Logger) -> None:
-        """Stores the seed cube directories and the logger.
-
-        Args:
-            cube_dirs : Cube directory inside each seed's inference directory.
-            logger    : Logger for the result line.
-        """
         self.cube_dirs = [Path(d) for d in cube_dirs]
         self.logger    = logger
 
     def _open(self) -> tuple[list[np.ndarray], np.ndarray]:
-        """Memory-maps every seed's prediction cube and loads the ground truth.
-
-        Returns:
-            Tuple of the per-seed prediction cubes and the float32 GT cube.
-
-        Raises:
-            FileNotFoundError : If any seed is missing its prediction or GT cube.
-            ValueError        : If the cubes disagree on shape across seeds.
-        """
         for cube_dir in self.cube_dirs:
             for name in (self.PRED_CUBE, self.GT_CUBE):
                 if not (cube_dir / name).is_file():
@@ -250,13 +127,6 @@ class SeedEnsembleEvaluation:
         return preds, gt
 
     def run(self) -> dict:
-        """Averages the seed predictions and scores the mean against the ground truth.
-
-        Returns:
-            Mapping with "n_seeds" and the ensemble's "curve_mse_gt",
-            "curve_mae_gt", "curve_rmse_gt", "overall_r2_gt" and "psnr_db_gt",
-            named like the per-seed scalars so the gain reads side by side.
-        """
         preds, gt = self._open()
 
         mean = np.zeros(preds[0].shape, dtype=np.float64)
@@ -285,45 +155,10 @@ class SeedEnsembleEvaluation:
 
 
 class SeedComparisonReport:
-    """Reduces the metrics of one seed group to mean +/- std and writes the report.
-
-    Attributes:
-        group_dir          : Directory holding the seed runs.
-        run_dirs           : Seed run directories in aggregation order.
-        inference_dirs     : Inference stamp chosen for each seed run.
-        activity_threshold : Activity threshold every seed's inference was scored with.
-        metrics_filename   : Metrics filename read per seed and written aggregated.
-        report_filename    : Filename of each seed's own report and of this report.
-        logger             : Logger for the written-artifact lines.
-        disagreement       : Seed-disagreement payload, or None when not computed.
-        ensemble           : Seed-ensemble scores, or None when not computed.
-        output_dir         : Group-level inference directory receiving the aggregate.
-        seeds              : Seed labels, relative to the group directory.
-        records            : Stamp name, split and completion time recorded per seed.
-        split              : Data split every seed's stamp was scored on.
-        MAX_LISTED         : Number of metric keys named in the shortfall warning before it is cut.
-    """
 
     MAX_LISTED = 8
 
     def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], activity_threshold: float, output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None, ensemble: dict | None = None) -> None:
-        """Binds the seed group and validates that at least two seeds are present.
-
-        Args:
-            group_dir          : Directory holding the seed runs.
-            run_dirs           : Seed run directories.
-            inference_dirs     : Inference directory chosen for each seed run.
-            activity_threshold : Activity threshold every seed's inference was scored with, as resolved by SeedActivityThreshold.
-            output_subdir      : Name of the group-level output directory.
-            metrics_filename   : Metrics filename read per seed.
-            report_filename    : Report filename of each seed and of this aggregate.
-            logger             : Logger for the written-artifact lines.
-            disagreement       : Payload from the seed-disagreement analysis, or None.
-            ensemble           : Scores of the seed-ensemble evaluation, or None.
-
-        Raises:
-            ValueError : If fewer than two seed runs are given, or if their stamps were scored on different splits.
-        """
         if len(run_dirs) < 2:
             raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
 
@@ -343,11 +178,6 @@ class SeedComparisonReport:
         self.split      = self._common_split()
 
     def _common_split(self) -> str:
-        """Returns the split every seed's stamp recorded.
-
-        Raises:
-            ValueError : If the seeds resolved to stamps of different splits.
-        """
         splits = {seed: record["split"] for seed, record in zip(self.seeds, self.records)}
         if len(set(splits.values())) != 1:
             raise ValueError(f"The seeds resolved to inferences of different splits {splits}; aggregate one split at a time")
@@ -355,11 +185,9 @@ class SeedComparisonReport:
         return next(iter(splits.values()))
 
     def _load_metrics(self) -> list[dict]:
-        """Returns each seed's metrics dictionary, in seed order."""
         return [FileIO.load_json(inference_dir / self.metrics_filename) for inference_dir in self.inference_dirs]
 
     def _listed(self, items: list[str]) -> str:
-        """Returns the items joined for a log line, cut after MAX_LISTED with the remainder counted."""
         shown = ", ".join(items[:self.MAX_LISTED])
         if len(items) > self.MAX_LISTED:
             shown += f", and {len(items) - self.MAX_LISTED} more"
@@ -367,19 +195,6 @@ class SeedComparisonReport:
         return shown
 
     def _aggregate(self, per_seed: list[dict]) -> tuple[dict, dict, dict, dict]:
-        """Returns the across-seed means, sample standard deviations, 95% confidence intervals and finite-sample counts of every metric key.
-
-        A key some seeds report without a finite value is aggregated over the seeds
-        that do, and one warning names those keys with the seeds that dropped out. A
-        numeric key that is non-finite in every seed is dropped with its own warning.
-
-        Args:
-            per_seed : Each seed's raw metrics dictionary, in seed order.
-
-        Returns:
-            Tuple of the mean, standard-deviation, interval and count mappings; the
-            count is the number of seeds whose finite value entered the mean.
-        """
         keys        = sorted({key for metrics in per_seed for key in metrics})
         means, stds = SeedAggregation.aggregate(per_seed, keys)
         cis, counts = SeedAggregation.intervals(per_seed, keys)
@@ -395,17 +210,6 @@ class SeedComparisonReport:
         return means, stds, cis, counts
 
     def _write_metrics(self, means: dict, stds: dict, cis: dict, counts: dict) -> Path:
-        """Writes the aggregated metrics JSON for the seed group.
-
-        Args:
-            means  : Across-seed mean per metric key.
-            stds   : Across-seed sample standard deviation per metric key.
-            cis    : 95% t-based confidence interval of the mean per metric key.
-            counts : Number of seeds reporting a finite value per metric key.
-
-        Returns:
-            The written JSON path.
-        """
         payload = {
             "n_seeds"            : len(self.run_dirs),
             "split"              : self.split,
@@ -432,18 +236,15 @@ class SeedComparisonReport:
 
     @staticmethod
     def _fmt(value) -> str:
-        """Returns a scalar rendered for the markdown tables."""
         return ScalarFormatter.format_scalar(value, precision=6, adaptive=True)
 
     def _mean_std_cell(self, mean: float, std: float | None) -> str:
-        """Returns the "mean ± std" table cell, or the bare mean when no std exists."""
         if std is None:
             return self._fmt(mean)
 
         return f"{self._fmt(mean)} ± {self._fmt(std)}"
 
     def _build_seed_runs_section(self) -> list[str]:
-        """Returns the markdown lines listing each seed run and linking its own report."""
         out = ["\n## 1. Seed runs\n"]
 
         table = MarkdownTable(("Seed", "Run directory", "Inference", "Split", "Completed", "Report"))
@@ -457,29 +258,15 @@ class SeedComparisonReport:
         return out
 
     def _grouped_keys(self, means: dict) -> list[tuple[str, list[str]]]:
-        """Returns the metric keys grouped into report subsections, with numbering stripped."""
         return [(title.split(" ", 1)[1], keys) for title, keys in Report.group_metric_keys(means)]
 
     def _ci_cell(self, interval: tuple[float, float] | None) -> str:
-        """Returns the "[low, high]" interval cell, or a dash when no interval exists."""
         if interval is None:
             return "—"
 
         return f"[{self._fmt(interval[0])}, {self._fmt(interval[1])}]"
 
     def _build_metrics_section(self, per_seed: list[dict], means: dict, stds: dict, cis: dict, counts: dict) -> list[str]:
-        """Returns the markdown lines of the grouped aggregated-metrics tables.
-
-        Args:
-            per_seed : Each seed's raw metrics dictionary, in seed order.
-            means    : Across-seed mean per metric key.
-            stds     : Across-seed sample standard deviation per metric key.
-            cis      : 95% confidence interval of the mean per metric key.
-            counts   : Number of seeds reporting a finite value per metric key.
-
-        Returns:
-            The markdown lines of the section.
-        """
         out = ["\n## 2. Aggregated metrics\n"]
         out.append(
             f"Every scalar metric aggregated over the {len(self.seeds)} seed runs: the cell is the across-seed mean, "
@@ -501,15 +288,6 @@ class SeedComparisonReport:
         return out
 
     def _build_ensemble_section(self, means: dict, stds: dict) -> list[str]:
-        """Returns the markdown lines comparing the seed-ensemble scalars with the per-seed mean.
-
-        Args:
-            means : Across-seed mean per metric key.
-            stds  : Across-seed sample standard deviation per metric key.
-
-        Returns:
-            The markdown lines of the section.
-        """
         out = ["\n## 3. Seed ensemble\n"]
         out.append(
             f"The {self.ensemble['n_seeds']} seed prediction cubes averaged into one deep-ensemble prediction and scored "
@@ -530,7 +308,6 @@ class SeedComparisonReport:
         return out
 
     def _build_disagreement_section(self) -> list[str]:
-        """Returns the markdown lines summarising the seed-disagreement maps and figures."""
         out = ["\n## 4. Seed disagreement maps\n"]
         out.append(
             "Per-pixel across-seed standard deviation of the model outputs, written as cubes into every seed's inference cube directory "
@@ -566,18 +343,6 @@ class SeedComparisonReport:
         return out
 
     def _write_report(self, per_seed: list[dict], means: dict, stds: dict, cis: dict, counts: dict) -> Path:
-        """Assembles and writes the markdown seed-comparison report.
-
-        Args:
-            per_seed : Each seed's raw metrics dictionary, in seed order.
-            means    : Across-seed mean per metric key.
-            stds     : Across-seed sample standard deviation per metric key.
-            cis      : 95% confidence interval of the mean per metric key.
-            counts   : Number of seeds reporting a finite value per metric key.
-
-        Returns:
-            The written report path.
-        """
         lines = ["# ML Template Seed-Comparison Report", ""]
         lines.append(f"_Generated on {RunTag.timestamp()}_")
         lines.append("")
@@ -598,11 +363,6 @@ class SeedComparisonReport:
         return path
 
     def run(self) -> Path:
-        """Aggregates the seed metrics and writes the metrics JSON and report.
-
-        Returns:
-            The written report path.
-        """
         FileIO.ensure_dirs(self.output_dir)
 
         per_seed                 = self._load_metrics()
@@ -619,35 +379,13 @@ class SeedComparisonReport:
 
 
 class SeedComparison:
-    """Entry-level driver comparing the seed replicas of one or more run groups.
-
-    Attributes:
-        config   : Seed-comparison configuration.
-        logger   : Logger shared with the caller, so a mailer or console run keeps one record.
-        runs_dir : Root directory holding the run groups.
-    """
 
     def __init__(self, config, logger: Logger) -> None:
-        """Stores the configuration and the caller's logger and resolves the runs root.
-
-        Args:
-            config : Seed-comparison configuration carrying group tags, inference selection, filenames and the disagreement toggle.
-            logger : Logger every message of the comparison goes through.
-        """
         self.config   = config
         self.logger   = logger
         self.runs_dir = Path(config.runs_dir)
 
     def _group_dirs(self) -> list[Path]:
-        """Returns the group directories to compare.
-
-        Returns:
-            One directory per configured group tag, or the runs root itself when
-            no tags are configured.
-
-        Raises:
-            FileNotFoundError : If a configured group tag has no directory.
-        """
         if self.config.group_tags:
             missing = [tag for tag in self.config.group_tags if not (self.runs_dir / tag).is_dir()]
             if missing:
@@ -657,20 +395,9 @@ class SeedComparison:
         return [self.runs_dir]
 
     def _output_subdir(self) -> str:
-        """Returns the group-level output directory name, defaulting to a fresh timestamp."""
         return self.config.output_subdir or self.config.inference_subdir or RunTag.now()
 
     def _resolve_seeds(self, group_dir: Path, run_dirs: list[Path], resolver: SeedInferenceResolver) -> list[Path]:
-        """Resolves each seed's inference stamp and logs the chosen stamp, split and completion time per seed.
-
-        Args:
-            group_dir : Directory holding the seed runs, the seed labels are relative to it.
-            run_dirs  : Seed run directories in aggregation order.
-            resolver  : Resolver picking each seed's inference stamp.
-
-        Returns:
-            The resolved inference stamps, aligned with run_dirs.
-        """
         inference_dirs = [resolver.resolve(run_dir) for run_dir in run_dirs]
 
         rows = []
@@ -683,20 +410,6 @@ class SeedComparison:
         return inference_dirs
 
     def _compare_group(self, group_dir: Path, resolver: SeedInferenceResolver, output_subdir: str) -> Path:
-        """Aggregates one group of seed runs, optionally with disagreement maps.
-
-        Args:
-            group_dir     : Directory holding the seed runs of one training.
-            resolver      : Resolver picking each seed's inference directory.
-            output_subdir : Name of the group-level output directory.
-
-        Returns:
-            The written seed-comparison report path.
-
-        Raises:
-            ValueError : If the group holds fewer than two seed runs, or if the seeds were scored at different activity thresholds.
-            KeyError   : If a seed's metrics record no activity threshold.
-        """
         run_dirs = sorted(RunDirectoryWalk.walk(group_dir))
         if len(run_dirs) < 2:
             raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
@@ -738,11 +451,6 @@ class SeedComparison:
         ).run()
 
     def run(self) -> list[Path]:
-        """Compares the seeds of every configured group.
-
-        Returns:
-            The written report path of each group, in group order.
-        """
         self.logger.section("Seed comparison")
 
         group_dirs    = self._group_dirs()

@@ -1,9 +1,3 @@
-"""Worker process running a share of one model's Optuna trials on a GPU.
-
-Builds the entry template and tuner for the configured training type, attaches
-a median pruner and a TPE sampler seeded per worker, and optimizes the shared
-study opened from the run's SQLite storage.
-"""
 
 from __future__ import annotations
 
@@ -25,21 +19,8 @@ from tools.monitoring.logger                import Logger
 
 
 class TuningWorker:
-    """Runs one worker's share of the trials of a single model's study on a GPU.
-
-    Attributes:
-        tag     : Run tag naming the tuning directory.
-        config  : Tuning entry configuration.
-        run_dir : Directory holding the per-model worker logs and results.
-    """
 
     def __init__(self, tag: str, config) -> None:
-        """Resolves the run directory and quiets Optuna's own logging.
-
-        Args:
-            tag    : Run tag naming the tuning directory.
-            config : Tuning entry configuration.
-        """
         self.tag     = tag
         self.config  = config
         self.run_dir = Path(config.paths.log_base_dir) / tag
@@ -47,7 +28,6 @@ class TuningWorker:
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     def _ae_entry_template(self):
-        """Returns the profile-autoencoder entry config each trial deep-copies."""
         return ProfileAeEntryConfig(
             seed            = self.config.tuning.base_seed,
             pixel_subsample = self.config.pixel_subsample,
@@ -58,7 +38,6 @@ class TuningWorker:
         )
 
     def _image_ae_entry_template(self):
-        """Returns the image-autoencoder entry config each trial deep-copies."""
         return ImageAeEntryConfig(
             seed          = self.config.tuning.base_seed,
             ae_loss       = self.config.image_ae_loss,
@@ -69,7 +48,6 @@ class TuningWorker:
         )
 
     def _jepa_entry_template(self):
-        """Returns the JEPA entry config each trial deep-copies."""
         jepa = self.config.jepa
 
         return JepaEntryConfig(
@@ -82,7 +60,6 @@ class TuningWorker:
         )
 
     def _build_base_configs(self):
-        """Returns the (trainer config, dataset config) pair backbone trials copy."""
         factory = ConfigFactory(self.config)
 
         trainer_config            = factory.training_trainer_config(logdir=Path(self.config.paths.log_base_dir))
@@ -92,17 +69,6 @@ class TuningWorker:
         return trainer_config, dataset_config
 
     def _profile_ae_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
-        """Builds the tuner optimizing a profile autoencoder.
-
-        Args:
-            model_name   : Profile autoencoder model name.
-            tune_cfg     : Tuning settings.
-            logger       : Logger of this worker.
-            worker_index : Index of this worker, stamped on every trial it runs.
-
-        Returns:
-            The configured AeTuner.
-        """
         return AeTuner(
             model_name         = model_name,
             config_cls         = PROFILE_AE_CONFIG_REGISTRY[model_name],
@@ -115,17 +81,6 @@ class TuningWorker:
         )
 
     def _image_ae_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
-        """Builds the tuner optimizing an image autoencoder.
-
-        Args:
-            model_name   : Image autoencoder model name.
-            tune_cfg     : Tuning settings.
-            logger       : Logger of this worker.
-            worker_index : Index of this worker, stamped on every trial it runs.
-
-        Returns:
-            The configured AeTuner.
-        """
         return AeTuner(
             model_name         = model_name,
             config_cls         = IMAGE_AE_CONFIG_REGISTRY[model_name],
@@ -138,17 +93,6 @@ class TuningWorker:
         )
 
     def _jepa_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
-        """Builds the tuner optimizing a JEPA backbone.
-
-        Args:
-            model_name   : Composite ``<backbone>[-<head>]`` key.
-            tune_cfg     : Tuning settings.
-            logger       : Logger of this worker.
-            worker_index : Index of this worker, stamped on every trial it runs.
-
-        Returns:
-            The configured JepaTuner.
-        """
         return JepaTuner(
             model_name       = model_name,
             model_config_cls = BACKBONE_CONFIG_REGISTRY[ModelBuilder.split_key(model_name)[0]],
@@ -160,17 +104,6 @@ class TuningWorker:
         )
 
     def _backbone_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
-        """Builds the tuner optimizing a supervised backbone.
-
-        Args:
-            model_name   : Composite ``<backbone>[-<head>]`` key.
-            tune_cfg     : Tuning settings.
-            logger       : Logger of this worker.
-            worker_index : Index of this worker, stamped on every trial it runs.
-
-        Returns:
-            The configured Tuner.
-        """
         trainer_cfg, dataset_cfg = self._build_base_configs()
 
         return Tuner(
@@ -187,20 +120,6 @@ class TuningWorker:
         )
 
     def _build_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
-        """Selects and builds the tuner matching the configured training type.
-
-        Args:
-            model_name   : Model key to tune.
-            tune_cfg     : Tuning settings.
-            logger       : Logger of this worker.
-            worker_index : Index of this worker, stamped on every trial it runs.
-
-        Returns:
-            The tuner for this training type.
-
-        Raises:
-            ValueError : If the training type has no tuner.
-        """
         dispatch = {
             "backbone"            : self._backbone_tuner,
             "image_autoencoder"   : self._image_ae_tuner,
@@ -215,17 +134,6 @@ class TuningWorker:
         return dispatch[training_type](model_name, tune_cfg, logger, worker_index)
 
     def _report_worker(self, logger: Logger, summary: dict, model_name: str, worker_index: int) -> None:
-        """Logs the worker's tally and ends the process as failed when every trial it ran failed.
-
-        Args:
-            logger       : Logger of this worker.
-            summary      : Tally returned by the tuner: trials run by state, best trial and stop reason.
-            model_name   : Model key the worker tuned.
-            worker_index : Index of this worker.
-
-        Raises:
-            SystemExit : If the worker ran trials and every one of them failed, so the queue records the job as FAILED rather than DONE.
-        """
         best = "none" if summary["best_trial"] is None else f"trial {summary['best_trial']}, value {summary['best_value']:.6f}"
 
         logger.kv_table({
@@ -246,31 +154,6 @@ class TuningWorker:
         logger.info(f"[Worker {worker_index}] — {model_name}  DONE")
 
     def run_worker(self, model_name: str, gpu_id: int, worker_index: int, n_trials: int, study_name: str, storage_url: str) -> None:
-        """Optimizes this worker's share of a model's study on one GPU.
-
-        The worker index, not the GPU ordinal, seeds the sampler and names the
-        log directory: with more workers than devices several workers share a
-        GPU, and identical seeds would make them propose the same random
-        startup points into the same log.
-
-        The log is opened as a context manager, so a crash anywhere in the
-        worker, or the exit of a worker whose every trial failed, closes it
-        with the exception and an ABORTED banner instead of leaving it cut off
-        after the last trial line. It adopts Optuna's own logger, so the
-        warnings Optuna writes to stderr (a failed trial's traceback, a
-        rejected NaN value) also land in the durable log file.
-
-        Args:
-            model_name   : Model key to tune.
-            gpu_id       : GPU index this worker owns.
-            worker_index : Index of this worker among the model's workers.
-            n_trials     : Trials this worker contributes.
-            study_name   : Name of the shared study to load.
-            storage_url  : SQLAlchemy URL of the shared Optuna storage.
-
-        Raises:
-            SystemExit : If every trial this worker ran failed.
-        """
         tune_cfg      = self.config.tuning
         model_log_dir = str(self.run_dir / model_name / f"worker{worker_index:02d}")
 

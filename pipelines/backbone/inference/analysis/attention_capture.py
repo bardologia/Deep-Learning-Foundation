@@ -1,9 +1,3 @@
-"""Capture and analysis of the attention a trained backbone puts on its inputs.
-
-Collects spatial attention gates, the weights of the shared attention blocks and of
-any torch MultiheadAttention module, then summarizes their entropy, per-head
-redundancy and attention reach and renders the figures and markdown report.
-"""
 
 from __future__ import annotations
 
@@ -22,25 +16,11 @@ from tools.reporting.plotting                        import PlotBase
 
 
 class AttentionCapture:
-    """Hooks a model to record its attention gates and attention weight tensors.
-
-    Gates are captured with forward hooks, the shared attention blocks through the
-    module-level AttentionTap, and torch MultiheadAttention modules by temporarily
-    replacing their forward so the weights are returned per head.
-
-    Attributes:
-        model : Model being instrumented.
-    """
 
     GATE_SUFFIX = "attention_score"
     TAP_TYPES   = ("MultiHeadSelfAttention", "WindowAttention")
 
     def __init__(self, model: torch.nn.Module) -> None:
-        """Prepares the empty hook, patch and record stores.
-
-        Args:
-            model : Model to instrument.
-        """
         self.model = model
 
         self._handles     = []
@@ -51,7 +31,6 @@ class AttentionCapture:
         self._mha_records = {}
 
     def _find_modules(self) -> tuple[dict, dict, dict]:
-        """Returns the attention gate, tapped-block and MultiheadAttention modules by name."""
         gates = {name: m for name, m in self.model.named_modules() if name.endswith(self.GATE_SUFFIX)}
         taps  = {name: m for name, m in self.model.named_modules() if type(m).__name__ in self.TAP_TYPES}
         mhas  = {name: m for name, m in self.model.named_modules() if isinstance(m, torch.nn.MultiheadAttention)}
@@ -59,24 +38,16 @@ class AttentionCapture:
         return gates, taps, mhas
 
     def _gate_hook(self, name: str):
-        """Returns a forward hook storing a gate's output map of shape (batch, 1, h, w)."""
         def hook(module, args, output):
             self._gate_maps.setdefault(name, []).append(output.detach().cpu())
         return hook
 
     def _tap_pre_hook(self, name: str):
-        """Returns a forward pre-hook recording the call order of the tapped attention blocks."""
         def hook(module, args):
             self._tap_order.append(name)
         return hook
 
     def _patch_mha(self, name: str, module: torch.nn.MultiheadAttention) -> None:
-        """Replaces a MultiheadAttention forward so it returns and records per-head weights.
-
-        Args:
-            name   : Qualified module name used as the record key.
-            module : MultiheadAttention module to patch; restored by detach().
-        """
         original = module.forward
 
         def wrapped(query, key, value, **kwargs):
@@ -92,11 +63,6 @@ class AttentionCapture:
         self._patched.append(module)
 
     def attach(self) -> None:
-        """Installs the gate hooks, the attention tap and the MultiheadAttention patches.
-
-        Raises:
-            ValueError : If the model exposes no attention of any capturable kind.
-        """
         gates, taps, mhas = self._find_modules()
 
         if not gates and not taps and not mhas:
@@ -114,7 +80,6 @@ class AttentionCapture:
             self._patch_mha(name, module)
 
     def detach(self) -> None:
-        """Removes every hook and restores the patched MultiheadAttention forwards."""
         AttentionTap.disable()
 
         for handle in self._handles:
@@ -126,16 +91,6 @@ class AttentionCapture:
         self._patched = []
 
     def records(self) -> dict:
-        """Returns the captured attention, labelled by module.
-
-        Returns:
-            Dictionary with "gates", mapping each gate name to its concatenated maps of
-            shape (calls * batch, 1, h, w), and "attention", mapping each attention module
-            name to the list of its weight tensors of shape (batch, heads, queries, keys).
-
-        Raises:
-            RuntimeError : If the tap collected a different number of weight tensors than the number of tapped module calls, so the capture cannot be labelled.
-        """
         if len(self._tap_order) != len(self._tap_sink):
             raise RuntimeError(f"Attention tap saw {len(self._tap_sink)} weight tensors but {len(self._tap_order)} module calls; the capture cannot be labelled")
 
@@ -151,21 +106,9 @@ class AttentionCapture:
 
 
 class AttentionSummary:
-    """Scalar and map summaries of captured attention weights."""
 
     @staticmethod
     def stack_calls(weight_list: list[torch.Tensor]) -> torch.Tensor:
-        """Concatenates the calls of one attention module along the batch axis.
-
-        Args:
-            weight_list : Weight tensors of shape (batch, heads, queries, keys), one per call.
-
-        Returns:
-            Tensor of shape (total_batch, heads, queries, keys).
-
-        Raises:
-            ValueError : If the calls disagree on their head, query or key extent, or if the weights are not four-dimensional.
-        """
         shapes = {tuple(w.shape[1:]) for w in weight_list}
         if len(shapes) != 1:
             raise ValueError(f"Attention calls of one module disagree on shape {sorted(shapes)}; the capture cannot be pooled")
@@ -178,15 +121,6 @@ class AttentionSummary:
 
     @staticmethod
     def entropy_values(weights: torch.Tensor) -> np.ndarray:
-        """Returns the log(keys)-normalized entropy of every query distribution.
-
-        Args:
-            weights : Attention weights of shape (batch, heads, queries, keys).
-
-        Returns:
-            Flat array of shape (batch * heads * queries,), 1 for uniform attention and
-            0 for a single attended token.
-        """
         w   = weights.clamp_min(1e-12)
         ent = -(w * w.log()).sum(dim=-1) / math.log(w.shape[-1])
 
@@ -194,14 +128,6 @@ class AttentionSummary:
 
     @staticmethod
     def head_entropies(weights: torch.Tensor) -> np.ndarray:
-        """Returns the normalized attention entropy of each head.
-
-        Args:
-            weights : Attention weights of shape (batch, heads, queries, keys).
-
-        Returns:
-            Array of shape (heads,) averaged over batch and queries.
-        """
         w   = weights.clamp_min(1e-12)
         ent = -(w * w.log()).sum(dim=-1) / math.log(w.shape[-1])
 
@@ -209,15 +135,6 @@ class AttentionSummary:
 
     @staticmethod
     def head_redundancy(weights: torch.Tensor) -> float | None:
-        """Returns the mean off-diagonal correlation between the heads' attention maps.
-
-        Args:
-            weights : Attention weights of shape (batch, heads, queries, keys).
-
-        Returns:
-            The mean correlation, 1 when all heads attend identically, or None when the
-            module has a single head or the correlation is not finite.
-        """
         heads = weights.shape[1]
         if heads < 2:
             return None
@@ -231,42 +148,20 @@ class AttentionSummary:
 
     @staticmethod
     def peak(weights: torch.Tensor) -> float:
-        """Returns the mean largest attention weight a query assigns to a single key."""
         return float(weights.amax(dim=-1).mean())
 
     @staticmethod
     def token_grid_side(n_tokens: int) -> int | None:
-        """Returns the side of the square token grid, or None when the count is not a square."""
         side = int(round(math.sqrt(n_tokens)))
         return side if side * side == n_tokens else None
 
     @classmethod
     def distance_matrix(cls, side: int) -> np.ndarray:
-        """Returns the pairwise Euclidean token distances on a square grid.
-
-        Args:
-            side : Side of the token grid in tokens.
-
-        Returns:
-            Array of shape (side², side²) holding the distance in tokens between every
-            pair of grid positions.
-        """
         coords = np.stack(np.meshgrid(np.arange(side), np.arange(side), indexing="ij"), axis=-1).reshape(-1, 2).astype(np.float64)
         return np.sqrt(((coords[:, None, :] - coords[None, :, :]) ** 2).sum(axis=-1))
 
     @classmethod
     def attention_distance(cls, weights: torch.Tensor) -> dict | None:
-        """Measures how far attention reaches on the token grid.
-
-        Args:
-            weights : Attention weights of shape (batch, heads, queries, keys).
-
-        Returns:
-            Dictionary with the attention-weighted mean query-key distance in "tokens",
-            the same divided by the grid side as "relative", and the corresponding
-            "uniform_tokens" and "uniform_relative" references for uniform attention.
-            None when the keys do not form a square grid or queries and keys differ.
-        """
         queries, keys = weights.shape[-2], weights.shape[-1]
         side          = cls.token_grid_side(keys)
 
@@ -287,15 +182,6 @@ class AttentionSummary:
 
     @classmethod
     def mean_attention_map(cls, weights: torch.Tensor) -> np.ndarray | None:
-        """Averages the attention received by each key and folds it back onto the token grid.
-
-        Args:
-            weights : Attention weights of shape (batch, heads, queries, keys).
-
-        Returns:
-            Array of shape (side, side) with the mean weight each key receives, or None
-            when the keys do not form a square grid.
-        """
         side = cls.token_grid_side(weights.shape[-1])
         if side is None:
             return None
@@ -304,15 +190,6 @@ class AttentionSummary:
 
     @staticmethod
     def gate_stats(gate_map: torch.Tensor) -> dict:
-        """Summarizes a spatial attention gate.
-
-        Args:
-            gate_map : Gate activations of shape (batch, channels, rows, cols).
-
-        Returns:
-            Dictionary with the "mean" and "std" gate weight, the "frac_active" fraction
-            of positions above 0.5, and the "spatial_shape" of the map.
-        """
         values = gate_map.float()
 
         return {
@@ -324,27 +201,14 @@ class AttentionSummary:
 
 
 class AttentionCapturePlots(PlotBase):
-    """Figures of the captured attention gates and attention weights."""
 
     @staticmethod
     def _short(name: str) -> str:
-        """Returns a module name shortened to its last few dotted components for axis labels."""
         trimmed = name.removesuffix(".attention")
         parts   = trimmed.split(".")
         return ".".join(parts[-5:]) if len(parts) > 5 else trimmed
 
     def gate_map(self, gate: np.ndarray, name: str, stats: dict, path: Path) -> Path:
-        """Draws the batch-mean map of one attention gate.
-
-        Args:
-            gate  : Mean gate weights of shape (rows, cols), on the gate's own grid.
-            name  : Qualified module name of the gate.
-            stats : Gate statistics used for the overlay text.
-            path  : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         return self._imshow_figure(
             gate,
             x_label        = "Col [px, gate scale]",
@@ -359,16 +223,6 @@ class AttentionCapturePlots(PlotBase):
         )
 
     def entropy_by_layer(self, names: list[str], summary: dict, path: Path) -> Path:
-        """Draws the median attention entropy per layer with its p10-p90 spread.
-
-        Args:
-            names   : Attention module names in capture order.
-            summary : Per-module attention summary holding the entropy percentiles.
-            path    : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         depth = np.arange(len(names))
@@ -393,16 +247,6 @@ class AttentionCapturePlots(PlotBase):
         return self._save(fig, path)
 
     def head_entropy_heatmap(self, names: list[str], summary: dict, path: Path) -> Path:
-        """Draws a layer-by-head heatmap of the normalized attention entropy.
-
-        Args:
-            names   : Attention module names in capture order, one heatmap row each.
-            summary : Per-module attention summary holding the per-head entropies.
-            path    : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         max_heads = max(len(summary[name]["head_entropy"]) for name in names)
@@ -432,19 +276,6 @@ class AttentionCapturePlots(PlotBase):
         return self._save(fig, path)
 
     def distance_by_layer(self, names: list[str], summary: dict, path: Path) -> Path:
-        """Draws the relative attention reach per layer against the uniform-attention reference.
-
-        Args:
-            names   : Attention module names in capture order.
-            summary : Per-module attention summary holding the distance entries.
-            path    : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-
-        Raises:
-            ValueError : If no layer sits on a square token grid, leaving nothing to draw.
-        """
         self._apply_style()
 
         entries = [(i, summary[name]["distance"]) for i, name in enumerate(names) if summary[name]["distance"] is not None]
@@ -471,17 +302,6 @@ class AttentionCapturePlots(PlotBase):
         return self._save(fig, path)
 
     def mean_attention_map(self, attention: np.ndarray, name: str, entropy: float, path: Path) -> Path:
-        """Draws the mean attention received by each key on the token grid.
-
-        Args:
-            attention : Mean key attention of shape (side, side).
-            name      : Qualified module name of the attention layer.
-            entropy   : Mean normalized entropy of the layer, shown as an overlay.
-            path      : Output path of the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         return self._imshow_figure(
             attention,
             x_label        = "Key column [tokens]",
@@ -497,22 +317,11 @@ class AttentionCapturePlots(PlotBase):
 
 
 class AttentionCaptureRun(AnalysisRun):
-    """Captures, summarizes and reports the attention of a single training run."""
 
     SUMMARY_FILENAME = "attention_capture.json"
     REPORT_FILENAME  = "attention_capture.md"
 
     def _capture(self, run) -> tuple[dict, int]:
-        """Runs the model over the configured batches with the attention capture attached.
-
-        Args:
-            run : Loaded run bundling the model and the dataloader.
-
-        Returns:
-            A pair of the captured gate maps and attention weights, as returned by the
-            capture, and the number of batches actually run, which the loader's end caps
-            below max_batches.
-        """
         capture   = AttentionCapture(run.model.module)
         n_batches = 0
         capture.attach()
@@ -530,15 +339,6 @@ class AttentionCaptureRun(AnalysisRun):
         return capture.records(), n_batches
 
     def _summarize(self, records: dict) -> tuple[dict, list[str]]:
-        """Reduces the captured tensors to per-module scalar summaries.
-
-        Args:
-            records : Gate maps and attention weights returned by the capture.
-
-        Returns:
-            A pair of the summary, holding a "gates" and an "attention" section keyed by
-            module name, and the attention module names in capture order.
-        """
         gates = {name: AttentionSummary.gate_stats(gate) for name, gate in records["gates"].items()}
 
         attention = {}
@@ -564,16 +364,6 @@ class AttentionCaptureRun(AnalysisRun):
         return {"gates": gates, "attention": attention}, order
 
     def _render_figures(self, records: dict, summary: dict, order: list[str]) -> dict[str, Path]:
-        """Renders the gate maps, the entropy and reach profiles and the most focused attention maps.
-
-        Args:
-            records : Captured gate maps and attention weights.
-            summary : Per-module summary of the capture.
-            order   : Attention module names in capture order.
-
-        Returns:
-            Figure paths keyed by figure name.
-        """
         plots   = AttentionCapturePlots()
         figures = {}
 
@@ -602,18 +392,6 @@ class AttentionCaptureRun(AnalysisRun):
         return figures
 
     def _write_report(self, run, summary: dict, order: list[str], figures: dict[str, Path], n_batches: int) -> Path:
-        """Writes the markdown report of the capture.
-
-        Args:
-            run       : Loaded run, used for the backbone name in the title.
-            summary   : Per-module summary of the capture.
-            order     : Attention module names in capture order.
-            figures   : Figure paths keyed by figure name.
-            n_batches : Number of batches the capture actually ran.
-
-        Returns:
-            Path of the written report.
-        """
         doc = MarkdownDoc(title=f"Attention capture: {run.backbone_name}")
         doc.paragraph(
             f"Attention gates and attention weights captured on {n_batches} real '{self.config.split}' batches of {self.config.batch_size} patches. "
@@ -647,15 +425,6 @@ class AttentionCaptureRun(AnalysisRun):
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
     def _analyse(self, run) -> AnalysisOutcome:
-        """Captures the attention of this run, plots it and writes the report.
-
-        Args:
-            run : Loaded run bundling the model and the dataloader.
-
-        Returns:
-            The outcome whose payload is the summary with its "gates" and "attention"
-            sections, written to JSON alongside the capture order.
-        """
         records, n_batches = self._capture(run)
         summary, order     = self._summarize(records)
 
@@ -668,7 +437,6 @@ class AttentionCaptureRun(AnalysisRun):
 
 
 class AttentionCaptureBatch(RunBatch):
-    """Runs the attention capture over every run matching the configured filter."""
 
     SELECTOR_ACTION = "capture"
     SECTION_TITLE   = "Attention capture"

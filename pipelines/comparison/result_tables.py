@@ -1,10 +1,3 @@
-"""Export of run metrics as publication-ready CSV, LaTeX and markdown tables.
-
-Walks a runs directory for completed inference stamps of one split, collects each run's
-scalar metrics, and renders one row per run: the CSV carries every scalar key
-for downstream analysis, while the LaTeX and markdown tables carry the
-selected columns at a fixed precision for direct inclusion in a paper.
-"""
 
 from __future__ import annotations
 
@@ -18,35 +11,13 @@ from tools.reporting.markdown                              import MarkdownTable
 
 
 class ResultTableExporter:
-    """Collects run metrics under a root directory and writes them as tables.
-
-    Attributes:
-        entry    : Entry configuration naming the runs root, columns and output.
-        logger   : Logger receiving the discovery and output lines.
-        resolver : Resolver picking each run's newest completed inference stamp of the split.
-    """
 
     def __init__(self, entry, logger: Logger) -> None:
-        """Stores the entry configuration and builds the inference resolver.
-
-        Args:
-            entry  : ResultTableEntryConfig instance.
-            logger : Logger for progress and result lines.
-        """
         self.entry    = entry
         self.logger   = logger
         self.resolver = SeedInferenceResolver(entry.inference_subdir, entry.split, entry.metrics_filename, logger)
 
     def _discover(self) -> list[tuple[str, Path]]:
-        """Returns (run name, inference dir) pairs for every run with finished inference.
-
-        The run name is the run directory path relative to the runs root. An
-        empty run_filter admits every discovered run; otherwise only runs whose
-        name contains one of the filter strings survive.
-
-        Raises:
-            FileNotFoundError : If the runs root does not exist or no run under it has finished inference.
-        """
         root = Path(self.entry.runs_dir)
         if not root.is_dir():
             raise FileNotFoundError(f"Runs directory {root} does not exist; train and infer runs before exporting tables")
@@ -73,7 +44,6 @@ class ResultTableExporter:
         return rows
 
     def _load(self, rows: list[tuple[str, Path]]) -> list[tuple[str, dict]]:
-        """Returns each run's name with its scalar metrics, non-scalar values dropped."""
         loaded = []
         for name, inference_dir in rows:
             metrics = FileIO.load_json(inference_dir / self.entry.metrics_filename)
@@ -83,11 +53,6 @@ class ResultTableExporter:
         return loaded
 
     def _columns(self, loaded: list[tuple[str, dict]]) -> list[str]:
-        """Returns the table columns: the configured metrics, or every scalar key seen.
-
-        Raises:
-            KeyError : If a configured metric key appears in no run.
-        """
         seen = sorted({key for _name, metrics in loaded for key in metrics})
 
         if not self.entry.metrics:
@@ -100,7 +65,6 @@ class ResultTableExporter:
         return list(self.entry.metrics)
 
     def _sorted(self, loaded: list[tuple[str, dict]]) -> list[tuple[str, dict]]:
-        """Returns the rows ordered by the configured sort key, discovery order when unset."""
         if not self.entry.sort_by:
             return loaded
 
@@ -108,14 +72,12 @@ class ResultTableExporter:
         return sorted(loaded, key=lambda row: (row[1].get(key) is None, row[1].get(key, 0.0)), reverse=not self.entry.ascending)
 
     def _fmt(self, value: float | None) -> str:
-        """Returns a value at the configured precision, an empty cell for None."""
         if value is None:
             return ""
 
         return f"{value:.{self.entry.precision}g}"
 
     def _write_csv(self, loaded: list[tuple[str, dict]], out_dir: Path) -> Path:
-        """Writes every scalar key of every run as results_table.csv, full precision."""
         keys  = sorted({key for _name, metrics in loaded for key in metrics})
         lines = [",".join(["run", *keys])]
 
@@ -130,14 +92,12 @@ class ResultTableExporter:
 
     @staticmethod
     def _latex_escape(text: str) -> str:
-        """Returns the text with LaTeX-special characters escaped for a tabular cell."""
         for char in ("&", "%", "#", "_"):
             text = text.replace(char, f"\\{char}")
 
         return text
 
     def _write_latex(self, loaded: list[tuple[str, dict]], columns: list[str], out_dir: Path) -> Path:
-        """Writes the selected columns as a booktabs tabular in results_table.tex."""
         lines = [
             f"\\begin{{tabular}}{{l{'r' * len(columns)}}}",
             "\\toprule",
@@ -157,7 +117,6 @@ class ResultTableExporter:
         return path
 
     def _write_markdown(self, loaded: list[tuple[str, dict]], columns: list[str], out_dir: Path) -> Path:
-        """Writes the selected columns as a markdown table in results_table.md."""
         table = MarkdownTable(("Run", *columns))
         for name, metrics in loaded:
             table.add_row(f"`{name}`", *[self._fmt(metrics.get(key)) for key in columns])
@@ -168,11 +127,6 @@ class ResultTableExporter:
         return path
 
     def run(self) -> dict[str, Path]:
-        """Discovers the runs, loads their metrics and writes the three tables.
-
-        Returns:
-            Mapping with the written "csv", "tex" and "md" paths.
-        """
         rows   = self._discover()
         loaded = self._sorted(self._load(rows))
 

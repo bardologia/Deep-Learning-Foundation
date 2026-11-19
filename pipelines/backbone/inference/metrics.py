@@ -1,12 +1,3 @@
-"""Scores a stitched backbone prediction against its ground truth.
-
-Holds the `Result` container that carries every cube and per-pixel map produced by an
-inference pass, the `Metrics` calculator that turns them into the flat metric
-dictionary written to metrics.json (curve errors, per-slice SSIM against the labels
-and, when requested, against the raw cube, per-z profiles, Gaussian-parameter
-statistics and the label-quality split) and the `BoundedProcessPool` scheduler every
-SSIM sweep runs its per-slice workers on.
-"""
 
 from __future__ import annotations
 
@@ -31,36 +22,6 @@ from tools.monitoring.logger         import Logger
 
 @dataclass
 class Result:
-    """Stitched output of one inference pass together with every optional evaluation.
-
-    Attributes:
-        pred_curves        : Predicted cube of shape (n_z, rows, cols), denormalised intensity.
-        gt_curves          : Ground-truth Gaussian cube of the same shape.
-        pixel_mse          : Per-pixel curve MSE of shape (rows, cols).
-        pixel_mae          : Per-pixel curve MAE of shape (rows, cols).
-        pixel_r2           : Per-pixel curve R² of shape (rows, cols).
-        pixel_cosine       : Per-pixel curve cosine similarity of shape (rows, cols).
-        pixel_peak_err_idx : Per-pixel absolute peak-bin displacement of shape (rows, cols).
-        cube_directory     : Directory the stitched cubes were written to.
-        row_offset         : Row index of the crop origin in scene coordinates.
-        col_offset         : Column index of the crop origin in scene coordinates.
-        params_pred        : Predicted Gaussian parameters of shape (3 * K, rows, cols), or None.
-        params_gt          : Ground-truth Gaussian parameters of the same shape, or None.
-        params_source      : Whether the parameters came from the model ("model") or a curve refit ("extracted").
-        extract_r2         : Per-pixel refit R² of shape (rows, cols) when parameters were extracted.
-        extract_floor      : Matched-Gaussian metrics of the extractor run on GT curves, its own error floor.
-        embedding_maps     : Per-pixel JEPA embedding maps, or None.
-        label_r2           : Per-pixel R² of the GT curves against the raw cube, of shape (rows, cols).
-        flip_consistency   : Per-pixel flip-equivariance disagreement of shape (rows, cols).
-        stratified         : Covariate-stratified error tables keyed by covariate name.
-        failure_mode_map   : Per-pixel failure-mode class index of shape (rows, cols).
-        failure_pairs      : Matched prediction/GT pair records feeding the failure and presence analyses.
-        miss_by_sep        : Miss rate binned by GT peak separation.
-        presence_rows      : Presence-reliability bins relating predicted amplitude to precision.
-        param_assignment   : Cached Hungarian assignment of predicted to GT slots.
-        pred_norm_cube     : Cached unit-area normalisation of `pred_curves`.
-        gt_norm_cube       : Cached unit-area normalisation of `gt_curves`.
-    """
 
     pred_curves        : np.ndarray
     gt_curves          : np.ndarray
@@ -93,18 +54,6 @@ class Result:
     gt_norm_cube     : Optional[np.ndarray]        = None
 
     def assignment(self, n_gaussians: int, amp_threshold: float) -> np.ndarray:
-        """Returns the cached predicted-to-GT slot assignment of shape (n_pixels, K), matching on first call.
-
-        The assignment is matched once and cached, so every caller within one inference
-        chan must supply the same activity threshold.
-
-        Args:
-            n_gaussians   : Gaussian count K.
-            amp_threshold : Physical amplitude above which a Gaussian slot counts as active.
-
-        Returns:
-            Per-pixel GT slot index chosen for each predicted slot, of shape (n_pixels, K).
-        """
 
         if self.param_assignment is None:
             self.param_assignment = GaussianMatcher(amp_threshold=amp_threshold).assignment(self.params_pred, self.params_gt, n_gaussians)
@@ -112,7 +61,6 @@ class Result:
         return self.param_assignment
 
     def pred_unit_area(self) -> np.ndarray:
-        """Returns the predicted cube normalised to unit area per profile, cached after the first call."""
 
         if self.pred_norm_cube is None:
             self.pred_norm_cube = ProfileNormalizer.unit_area(self.pred_curves)
@@ -120,7 +68,6 @@ class Result:
         return self.pred_norm_cube
 
     def gt_unit_area(self) -> np.ndarray:
-        """Returns the ground-truth cube normalised to unit area per profile, cached after the first call."""
 
         if self.gt_norm_cube is None:
             self.gt_norm_cube = ProfileNormalizer.unit_area(self.gt_curves)
@@ -129,40 +76,13 @@ class Result:
 
 
 class BoundedProcessPool:
-    """Runs a picklable worker over a payload stream with a bounded submission window.
-
-    Payloads are pulled from their iterator only as slots free up, so the parent process
-    never materialises more than `2 * num_workers` of them at once. Both SSIM sweeps
-    depend on that bound, since one payload carries a full 2-D cube slice.
-
-    Attributes:
-        num_workers : Process count, capped at the machine's CPU count.
-        logger      : Run logger the progress bar and the per-sweep slice count go through.
-    """
 
     def __init__(self, num_workers: int, logger: Logger) -> None:
-        """Stores the worker count, capped at the machine's CPU count and at least one, and the run logger.
-
-        Args:
-            num_workers : Requested worker count.
-            logger      : Run logger; its progress bar shows the sweep and its info line records the slices scored.
-        """
 
         self.num_workers = max(1, min(int(num_workers), os.cpu_count() or 1))
         self.logger      = logger
 
     def results(self, worker: Callable, payloads: Iterable, total: int, description: str) -> List:
-        """Maps a worker over the payloads in submission order, tracking the sweep on the run logger.
-
-        Args:
-            worker      : Picklable callable taking one payload and returning one result.
-            payloads    : Iterable yielding exactly `total` payloads, consumed lazily.
-            total       : Number of payloads to submit and collect.
-            description : Progress-bar label, repeated in the slice-count line logged when the sweep ends.
-
-        Returns:
-            Worker return values in payload order, of length `total`.
-        """
 
         n_workers = min(self.num_workers, max(1, total))
         in_flight = 2 * n_workers
@@ -190,17 +110,6 @@ class BoundedProcessPool:
 
 
 class Metrics:
-    """Computes every scalar and per-pixel metric describing one inference result.
-
-    Attributes:
-        result         : The inference result being scored.
-        z_axis         : Z axis in metres, of shape (n_z,).
-        n_gaussians    : Gaussian count K.
-        x_step         : Z bin spacing in metres.
-        num_workers    : Process count used for the parallel SSIM sweep.
-        active_amp_thr : Physical amplitude above which a Gaussian slot counts as active.
-        logger         : Run logger the SSIM sweeps report their progress and slice counts through.
-    """
 
     def __init__(
         self,
@@ -211,16 +120,6 @@ class Metrics:
         active_amp_thr : float,
         logger         : Logger,
     ) -> None:
-        """Stores the result and derives the z step and SSIM worker count.
-
-        Args:
-            result         : Inference result carrying the cubes and per-pixel maps.
-            z_axis         : Z axis in metres, of shape (n_z,).
-            n_gaussians    : Gaussian count K.
-            cpu_workers    : Requested worker count, capped at the machine's CPU count.
-            active_amp_thr : Physical amplitude above which a Gaussian slot counts as active, as recorded by the label run.
-            logger         : Run logger handed to the SSIM slice pools.
-        """
 
         self.result         = result
         self.z_axis         = z_axis
@@ -233,16 +132,6 @@ class Metrics:
 
     @staticmethod
     def curve_pixel_metrics(pred: np.ndarray, ref: np.ndarray) -> Dict[str, np.ndarray]:
-        """Computes the per-pixel curve error maps between two cubes.
-
-        Args:
-            pred : Predicted cube of shape (n_z, rows, cols).
-            ref  : Reference cube of the same shape.
-
-        Returns:
-            Mapping with keys "mse", "mae", "r2", "cos" and "peak", each of shape (rows, cols);
-            "peak" is the absolute displacement of the argmax z bin.
-        """
 
         diff   = pred - ref
         mse    = (diff * diff).mean(axis=0).astype(np.float32)
@@ -258,7 +147,6 @@ class Metrics:
 
     @staticmethod
     def write_json(metrics: Dict[str, object], path: Path) -> Path:
-        """Writes the metric dictionary to `path` as indented JSON and returns that path."""
 
         return FileIO.save_json(metrics, path, indent=4)
 
@@ -271,22 +159,6 @@ class Metrics:
         n_random   : int,
         seed       : int = 0,
     ) -> Dict[str, np.ndarray]:
-        """Selects best, worst and random pixel coordinates by a per-pixel metric.
-
-        Lower metric values count as better, and the random pool excludes the best and
-        worst picks so the three sets are disjoint.
-
-        Args:
-            metric_map : Per-pixel metric of shape (rows, cols); non-finite pixels are ignored.
-            n_best     : Number of lowest-metric pixels to select.
-            n_worst    : Number of highest-metric pixels to select, ordered worst first.
-            n_random   : Number of random pixels to draw from the remaining pool.
-            seed       : Seed of the random generator drawing the random set.
-
-        Returns:
-            Mapping with keys "best", "worst" and "random", each an array of (rows, cols)
-            index pairs of shape (n_selected, 2).
-        """
 
         flat      = metric_map.reshape(-1)
         H, W      = metric_map.shape
@@ -309,22 +181,10 @@ class Metrics:
 
     @staticmethod
     def _flat_to_yx(flat_idx: np.ndarray, width: int) -> np.ndarray:
-        """Returns flat indices unravelled into (rows, cols) pairs of shape (n, 2)."""
 
         return np.stack([(flat_idx // width).astype(np.int32), (flat_idx % width).astype(np.int32)], axis=1)
 
     def _curve_scalar_metrics(self, pred: np.ndarray, ref: np.ndarray, suffix: str) -> Dict[str, float]:
-        """Computes cube-wide MSE, MAE, RMSE, R² and PSNR between two cubes.
-
-        Args:
-            pred   : Predicted cube of shape (n_z, rows, cols).
-            ref    : Reference cube of the same shape.
-            suffix : Tag appended to every metric key, naming the reference variant.
-
-        Returns:
-            Scalar metrics keyed "curve_mse_<suffix>", "curve_mae_<suffix>", "curve_rmse_<suffix>",
-            "overall_r2_<suffix>" and "psnr_db_<suffix>".
-        """
 
         diff       = pred - ref
         mse        = float((diff * diff).mean(dtype=np.float64))
@@ -342,15 +202,6 @@ class Metrics:
 
     @staticmethod
     def _psnr(pred: np.ndarray, ref: np.ndarray) -> float:
-        """Returns the peak signal-to-noise ratio in dB, using the reference range as peak.
-
-        Args:
-            pred : Predicted cube of shape (n_z, rows, cols).
-            ref  : Reference cube of the same shape.
-
-        Returns:
-            PSNR in dB, infinity for an exact match and NaN for a constant reference.
-        """
 
         diff = pred - ref
         mse  = float((diff * diff).mean(dtype=np.float64))
@@ -365,21 +216,6 @@ class Metrics:
         return 10.0 * np.log10(data_range * data_range / mse)
 
     def _expand_pixel_stats(self, tagged_arrays: Tuple[Tuple[str, np.ndarray], ...]) -> Dict[str, float]:
-        """Flattens moments and percentiles of several per-pixel maps into one tagged dictionary.
-
-        Every statistic is taken over the finite entries of its map, so pixels whose
-        metric is undefined (a NaN R² at a constant reference profile) are left out
-        instead of turning the whole statistic into NaN.
-
-        Args:
-            tagged_arrays : Pairs of metric tag and per-pixel map of shape (rows, cols).
-
-        Returns:
-            Scalar metrics keyed "<tag>_<statistic>" for each supplied map.
-
-        Raises:
-            ValueError : If a map holds no finite entry at all.
-        """
 
         out: Dict[str, float] = {}
 
@@ -395,19 +231,6 @@ class Metrics:
         return out
 
     def _gt_empty_stats(self) -> Dict[str, float]:
-        """Counts the pixels with an empty ground-truth profile and scores cosine and peak error over the others.
-
-        A pixel whose label fit left every Gaussian at zero amplitude has an all-zero GT
-        curve, so its cosine is 0 by construction and its peak displacement is measured
-        from z bin 0. The headline "pixel_cosine_gt_*" and "pixel_peak_*" statistics
-        keep those pixels; the "_nonempty" statistics leave them out.
-
-        Returns:
-            Scalar metrics "n_pixels_gt_empty" and "gt_empty_frac", the moments and percentiles of the cosine and peak-index maps over non-empty pixels keyed "pixel_cosine_gt_nonempty_<statistic>" and "pixel_peak_idx_d_gt_nonempty_<statistic>", and "pixel_peak_err_units_mean_gt_nonempty" in metres.
-
-        Raises:
-            ValueError : If every pixel of the split has an empty ground-truth profile.
-        """
 
         empty   = self.result.gt_curves.max(axis=0) <= 0.0
         keep    = ~empty
@@ -434,7 +257,6 @@ class Metrics:
 
     @staticmethod
     def _basic_stats(x: np.ndarray) -> Dict[str, float]:
-        """Returns mean, standard deviation, median, minimum and maximum of an array."""
 
         flat = x.reshape(-1)
 
@@ -448,7 +270,6 @@ class Metrics:
 
     @staticmethod
     def _percentiles(x: np.ndarray, qs: Tuple[int, ...] = (1, 5, 25, 50, 75, 95, 99)) -> Dict[str, float]:
-        """Returns the requested percentiles of an array, keyed "p<q>"."""
 
         flat = x.reshape(-1)
         out  = {}
@@ -460,23 +281,6 @@ class Metrics:
         return out
 
     def _slice_ssim(self, pred : np.ndarray, ref : np.ndarray, z_indices : Optional[np.ndarray], col_indices : Optional[np.ndarray], row_indices : Optional[np.ndarray], prefix : str) -> Dict[str, float]:
-        """Computes SSIM for every requested slice of both cubes, in parallel over a process pool.
-
-        Args:
-            pred        : Predicted cube of shape (n_z, rows, cols).
-            ref         : Reference cube of the same shape.
-            z_indices   : Z indices to score, or None to skip that axis.
-            col_indices : Column indices to score, or None to skip that axis.
-            row_indices : Row indices to score, or None to skip that axis.
-            prefix      : Tag naming the reference variant, embedded in every metric key.
-
-        Returns:
-            Scalar metrics keyed "ssim_<prefix>_<axis>_<i>" per slice, plus per axis
-            "ssim_<prefix>_<axis>_mean" over the finite values, the number of slices that
-            mean covers as "ssim_<prefix>_<axis>_n_scored" and the number left out as
-            non-finite as "ssim_<prefix>_<axis>_n_nonfinite". Every axis that left slices
-            out is warned about on the run logger.
-        """
 
         out   : Dict[str, float]                = {}
         specs : list[tuple[str, str, int, int]] = []
@@ -508,16 +312,6 @@ class Metrics:
         return out
 
     def _ssim_payloads(self, pred: np.ndarray, ref: np.ndarray, specs: list) -> Iterator[tuple]:
-        """Yields one worker payload per SSIM spec, slicing both cubes on demand.
-
-        Args:
-            pred  : Predicted cube of shape (n_z, rows, cols).
-            ref   : Reference cube of the same shape.
-            specs : List of (metric key, axis label, cube axis, slice index) tuples.
-
-        Yields:
-            Tuple of metric key, predicted 2-D slice and reference 2-D slice.
-        """
 
         for key, _label, axis, index in specs:
             yield key, self._axis_slice(pred, axis, index), self._axis_slice(ref, axis, index)
@@ -530,15 +324,6 @@ class Metrics:
         axis   : int,
         label  : str,
     ) -> None:
-        """Appends one SSIM work item per slice index to the spec list, in place.
-
-        Args:
-            specs   : List of (metric key, axis label, cube axis, slice index) tuples, extended in place.
-            prefix  : Tag naming the reference variant.
-            indices : Slice indices to enqueue, or None to enqueue nothing.
-            axis    : Cube axis the indices address.
-            label   : Axis name used in the metric key.
-        """
 
         if indices is None:
             return
@@ -548,7 +333,6 @@ class Metrics:
 
     @staticmethod
     def _axis_slice(cube: np.ndarray, axis: int, index: int) -> np.ndarray:
-        """Returns the 2-D slice of a cube taken at `index` along `axis`."""
 
         if axis == 0:
             return cube[index, :, :]
@@ -559,16 +343,6 @@ class Metrics:
 
     @staticmethod
     def _ssim_worker(args: tuple) -> tuple[str, float]:
-        """Computes SSIM for one slice pair inside a worker process.
-
-        The window size is shrunk to the largest odd value the slice can hold, capped at 7.
-
-        Args:
-            args : Tuple of metric key, predicted 2-D slice and reference 2-D slice.
-
-        Returns:
-            Tuple of the metric key and its SSIM value.
-        """
 
         key, pred_slice, ref_slice = args
 
@@ -582,16 +356,6 @@ class Metrics:
         return key, value
 
     def _expand_z(self, pred: np.ndarray, gt: np.ndarray, suffix: str) -> Dict[str, float]:
-        """Flattens the per-z metric series into per-bin scalars plus their means.
-
-        Args:
-            pred   : Predicted cube of shape (n_z, rows, cols).
-            gt     : Ground-truth cube of the same shape.
-            suffix : Tag naming the reference variant.
-
-        Returns:
-            Scalar metrics keyed "<metric>_<suffix>_<bin>" and "<metric>_<suffix>_mean".
-        """
 
         out: Dict[str, float] = {}
 
@@ -602,19 +366,6 @@ class Metrics:
         return out
 
     def _z_metrics(self, pred: np.ndarray, gt: np.ndarray, suffix: str = "gt") -> Dict[str, np.ndarray]:
-        """Computes MAE, RMSE, R² and cross-entropy per z bin over all pixels.
-
-        Cross-entropy compares the two cubes after normalising each profile to a
-        distribution along z.
-
-        Args:
-            pred   : Predicted cube of shape (n_z, rows, cols).
-            gt     : Ground-truth cube of the same shape.
-            suffix : Tag naming the reference variant.
-
-        Returns:
-            Mapping of "z_<metric>_<suffix>" to an array of shape (n_z,).
-        """
 
         P = pred.reshape(pred.shape[0], -1)
         G = gt  .reshape(gt  .shape[0], -1)
@@ -640,29 +391,11 @@ class Metrics:
 
     @staticmethod
     def roughness_map(curves: np.ndarray) -> np.ndarray:
-        """Returns the mean squared second difference along z, of shape (rows, cols).
-
-        Args:
-            curves : Cube of shape (n_z, rows, cols).
-
-        Returns:
-            Per-pixel curve roughness.
-        """
 
         second = np.diff(curves, n=2, axis=0)
         return (second * second).mean(axis=0, dtype=np.float64).astype(np.float32)
 
     def _roughness_stats(self, pred: np.ndarray, gt: np.ndarray) -> Dict[str, float]:
-        """Compares predicted against ground-truth curve roughness.
-
-        Args:
-            pred : Predicted cube of shape (n_z, rows, cols).
-            gt   : Ground-truth cube of the same shape.
-
-        Returns:
-            Mean roughness of each cube, their ratio, and the pixel fraction where the
-            prediction is more than twice as rough as the ground truth.
-        """
 
         rough_pred = self.roughness_map(pred)
         rough_gt   = self.roughness_map(gt)
@@ -679,12 +412,10 @@ class Metrics:
         }
 
     def _param_assignment(self) -> np.ndarray:
-        """Returns the cached predicted-to-GT slot assignment for this result."""
 
         return self.result.assignment(self.n_gaussians, self.active_amp_thr)
 
     def _aligned_prediction(self) -> np.ndarray:
-        """Returns the predicted parameter cube reordered into GT slot order, cached after the first call."""
 
         if self._aligned is None:
             self._aligned = GaussianMatcher(amp_threshold=self.active_amp_thr).aligned_prediction(self.result.params_pred, self.result.params_gt, self.n_gaussians, assignment=self._param_assignment())
@@ -692,13 +423,6 @@ class Metrics:
         return self._aligned
 
     def _active_count_stats(self) -> Dict[str, float]:
-        """Compares how many Gaussians the model activates per pixel against the ground truth.
-
-        Returns:
-            Per-slot active fractions, overall active fractions and counts, the fraction of
-            pixels where the predicted component count is exact, under or over, and the exact-count
-            accuracy conditioned on the GT and on the predicted count.
-        """
 
         pp      = self.result.params_pred
         pg      = self.result.params_gt
@@ -746,15 +470,6 @@ class Metrics:
         return out
 
     def _param_population_stats(self) -> Dict[str, float]:
-        """Computes per-slot means and standard deviations of amplitude, μ and σ.
-
-        Ground-truth moments are reported over the active pixels of each slot (amplitude
-        additionally over inactive and all pixels), and matched-prediction moments over
-        all three scopes, so predicted values on inactive slots stay visible.
-
-        Returns:
-            Scalar metrics keyed "slot_<k>_<param>_<scope>_<gt|pred>_<mean|std>".
-        """
 
         pg      = self.result.params_gt
         n_K     = self.n_gaussians
@@ -784,16 +499,6 @@ class Metrics:
 
     @staticmethod
     def _population_moments(prefix: str, values: np.ndarray, mask: np.ndarray) -> Dict[str, float]:
-        """Returns the mean and standard deviation of the finite masked values, NaN when empty.
-
-        Args:
-            prefix : Metric-key prefix.
-            values : Flat value array.
-            mask   : Boolean selection over `values`.
-
-        Returns:
-            Metrics keyed "<prefix>_mean" and "<prefix>_std".
-        """
 
         vals = values[mask & np.isfinite(values)]
 
@@ -803,19 +508,6 @@ class Metrics:
         }
 
     def matched_gaussian_metrics(self, match_tol: float = 5.0) -> Dict[str, float]:
-        """Scores the matched predicted and GT Gaussians on parameter error and detection quality.
-
-        Only pairs where both the predicted and the assigned GT slot are active count; a
-        pair is a true positive when the μ error stays within `match_tol`. Every quantity
-        is also reported per GT-component-count bucket.
-
-        Args:
-            match_tol : Maximum absolute μ error, in metres, for a matched pair to count as detected.
-
-        Returns:
-            Matched μ, σ and amplitude MAE and RMSE, recall, precision, F1, the pair count,
-            the tolerance used, and the per-bucket variants keyed with a "_gt<k>" suffix.
-        """
 
         pp  = self.result.params_pred
         pg  = self.result.params_gt
@@ -913,12 +605,6 @@ class Metrics:
         return out
 
     def _slot_organization_stats(self) -> Dict[str, float]:
-        """Measures how the model organises its output slots.
-
-        Returns:
-            The entropy of per-slot usage, the diagonality of the slot-versus-μ-rank matrix,
-            and, when GT parameters exist, the diagonality of the slot-versus-matched-GT matrix.
-        """
 
         pp  = self.result.params_pred
         pg  = self.result.params_gt
@@ -938,26 +624,6 @@ class Metrics:
         return out
 
     def compute(self, *, z_indices  : Optional[np.ndarray] = None, col_indices : Optional[np.ndarray] = None, row_indices : Optional[np.ndarray] = None, param_space : bool = True, slot_organization : bool = True, match_tol : float = 5.0) -> Dict[str, float]:
-        """Computes the full metric dictionary for this inference result.
-
-        Args:
-            z_indices      : Z indices to score with SSIM, or None to skip that axis.
-            col_indices     : Range indices to score with SSIM, or None to skip that axis.
-            row_indices        : Row indices to score with SSIM, or None to skip that axis.
-            param_space       : Whether Gaussian-parameter metrics should be computed.
-            slot_organization : Whether slot-organization metrics should be computed; meaningful only when the parameters came from the model rather than a curve refit.
-            match_tol         : μ tolerance in metres for the matched-Gaussian detection metrics.
-
-        Returns:
-            Flat mapping of metric name to value, covering cube statistics, curve errors,
-            per-pixel distributions, the count of pixels with an empty GT profile with the
-            cosine and peak statistics over the others, peak displacement in metres, SSIM in
-            denormalised and unit-area form, per-z series, roughness and the
-            parameter-space metrics.
-
-        Raises:
-            ValueError : If every pixel of the split has an empty ground-truth profile.
-        """
 
         pred = self.result.pred_curves
         gt   = self.result.gt_curves
@@ -1015,19 +681,6 @@ class Metrics:
         return metrics
 
     def label_quality(self, full_curves: np.ndarray) -> Tuple[np.ndarray, Dict[str, object]]:
-        """Measures how well the Gaussian labels reproduce the raw cube they were fitted to.
-
-        Args:
-            full_curves : Raw cube of shape (n_z, rows, cols).
-
-        Returns:
-            Tuple of the per-pixel label fit R² map of shape (rows, cols), NaN where the
-            raw profile is constant, and the scalar statistics summarising its finite entries,
-            the count of undefined pixels and the split of prediction error by label quality.
-
-        Raises:
-            ValueError : If the GT cube and the raw cube disagree in shape, or if the R² map holds no finite value.
-        """
 
         gt   = np.asarray(self.result.gt_curves, dtype=np.float64)
         full = np.asarray(full_curves,           dtype=np.float64)
@@ -1054,17 +707,6 @@ class Metrics:
         return r2_map.astype(np.float32), stats
 
     def _label_noise_split(self, r2_map: np.ndarray, threshold: float = 0.5) -> Dict[str, object]:
-        """Splits the per-pixel prediction error by whether the label fit was good or poor.
-
-        Args:
-            r2_map    : Per-pixel label fit R² of shape (rows, cols).
-            threshold : R² value separating poorly fitted labels from well fitted ones.
-
-        Returns:
-            Mean prediction error above the threshold, and, when any pixel falls below it,
-            the mean error there plus the low-to-high ratio; a status string instead when
-            no pixel reaches the threshold.
-        """
 
         err  = np.asarray(self.result.pixel_mse, dtype=np.float64).reshape(-1)
         r2   = np.asarray(r2_map, dtype=np.float64).reshape(-1)
@@ -1085,25 +727,6 @@ class Metrics:
         return out
 
     def cube_ssim(self, full_curves: np.ndarray, *, z_indices: Optional[np.ndarray], col_indices: Optional[np.ndarray], row_indices: Optional[np.ndarray]) -> Dict[str, float]:
-        """Scores the prediction against the raw cube with the standard slice SSIM.
-
-        The sweep is the one the headline SSIM runs against the Gaussian labels (window up
-        to 7, dynamic range from the reference slice, the same slice indices), with the
-        raw cube as the reference instead: once in raw intensity and once with every
-        profile of both cubes normalised to unit area.
-
-        Args:
-            full_curves : Raw cube of shape (n_z, rows, cols).
-            z_indices   : Z indices to score, or None to skip that axis.
-            col_indices : Column indices to score, or None to skip that axis.
-            row_indices : Row indices to score, or None to skip that axis.
-
-        Returns:
-            Scalar metrics keyed "ssim_cube_<axis>_<i>" and "ssim_cube_norm_<axis>_<i>" per slice, plus per axis the finite-value mean under "ssim_cube_<axis>_mean" and "ssim_cube_norm_<axis>_mean" with the counts of scored and non-finite slices beside it.
-
-        Raises:
-            ValueError : If the predicted cube and the raw cube disagree in shape.
-        """
 
         pred = self.result.pred_curves
 

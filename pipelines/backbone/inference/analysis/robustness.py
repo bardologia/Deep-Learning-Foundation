@@ -1,9 +1,3 @@
-"""Robustness sweep of a trained backbone under controlled input degradations.
-
-Curve-MSE degradation is measured under additive input noise (globally or per
-channel family), global gain error, whole-track dropout, and circular row
-shifts that probe positional dependence of the dense per-pixel prediction.
-"""
 
 from __future__ import annotations
 
@@ -24,26 +18,10 @@ from tools.reporting.plotting                                import PlotBase
 
 
 class RobustnessCore:
-    """Runs the degradation sweeps and reduces them to curve-MSE rows.
-
-    Attributes:
-        model    : Backbone model wrapper called on perturbed inputs.
-        renderer : Renderer turning predicted Gaussian parameters into profiles.
-        on_sweep : Zero-argument callable invoked after every sweep over the batches, driving the progress bar.
-        rng      : Seeded generator for noise draws and track-dropout subsets.
-    """
 
     TOLERANCE_FACTOR = 2.0
 
     def __init__(self, model, renderer: PredictionCurves, on_sweep, seed: int = 0) -> None:
-        """Binds the model and renderer and seeds the perturbation generator.
-
-        Args:
-            model    : Backbone model wrapper mapping an input batch to parameters.
-            renderer : Renderer producing z profiles from parameters.
-            on_sweep : Zero-argument callable invoked after every sweep over the batches.
-            seed     : Seed for the noise and dropout random generator.
-        """
         self.model    = model
         self.renderer = renderer
         self.on_sweep = on_sweep
@@ -51,29 +29,17 @@ class RobustnessCore:
 
     @staticmethod
     def noise_sweeps(sigmas: list[float], draws: int) -> int:
-        """Returns the number of sweeps one noise curve runs: one clean anchor plus every draw of every nonzero sigma."""
         return sum(1 if sigma == 0.0 else draws for sigma in {float(sigma) for sigma in sigmas})
 
     @staticmethod
     def gain_sweeps(factors: list[float]) -> int:
-        """Returns the number of sweeps the gain curve runs, the unit factor included."""
         return len(set(list(factors) + [1.0]))
 
     @staticmethod
     def drop_sweeps(n_secondaries: int, draws: int) -> int:
-        """Returns the number of sweeps the dropout curve runs: the intact stack plus the capped draws per dropped count."""
         return 1 + sum(min(draws, math.comb(n_secondaries, n_dropped)) for n_dropped in range(1, n_secondaries + 1))
 
     def _mse(self, batches: list[tuple[torch.Tensor, np.ndarray]], transform) -> float:
-        """Returns the mean curve MSE against ground truth after applying a perturbation.
-
-        Args:
-            batches   : Pairs of an input batch of shape (batch, channels, height, width) and the ground-truth curves of shape (batch, n_z, height, width).
-            transform : Callable mapping an input batch to its perturbed version.
-
-        Returns:
-            The curve MSE averaged over batches.
-        """
         total = 0.0
         for images, gt_curves in batches:
             perturbed = transform(images)
@@ -86,21 +52,6 @@ class RobustnessCore:
         return total / len(batches)
 
     def noise_curve(self, batches: list, sigmas: list[float], channels: list[int] | None = None, draws: int = 1) -> list[dict]:
-        """Measures curve MSE under additive Gaussian noise on the normalized inputs.
-
-        Args:
-            batches  : Input/ground-truth batch pairs as taken by the MSE helper.
-            sigmas   : Noise standard deviations in normalized input units; must hold the 0.0 clean baseline.
-            channels : Input channel indices to perturb, or None for all channels.
-            draws    : Number of independent noise draws averaged per sigma.
-
-        Returns:
-            One row per sigma holding "sigma", "mse" and "mse_std" (None for a
-            single draw), sorted by increasing sigma.
-
-        Raises:
-            ValueError : If the clean 0.0 baseline is absent from the sigmas.
-        """
         if 0.0 not in sigmas:
             raise ValueError(f"noise_sigmas {sigmas} hold no 0.0 entry; the clean baseline anchors every degradation measure")
 
@@ -125,15 +76,6 @@ class RobustnessCore:
         return rows
 
     def gain_curve(self, batches: list, factors: list[float]) -> list[dict]:
-        """Measures curve MSE under a global multiplicative gain on the inputs.
-
-        Args:
-            batches : Input/ground-truth batch pairs as taken by the MSE helper.
-            factors : Gain factors to sweep; the unit factor is always included.
-
-        Returns:
-            One row per factor holding "gain" and "mse", sorted by factor.
-        """
         rows = []
         for factor in sorted(set(list(factors) + [1.0])):
             def transform(images, factor=factor):
@@ -144,17 +86,6 @@ class RobustnessCore:
         return rows
 
     def drop_curve(self, batches: list, per_track: list[list[int]], draws: int) -> list[dict]:
-        """Measures curve MSE as whole tracks are zeroed out of the input stack.
-
-        Args:
-            batches   : Input/ground-truth batch pairs as taken by the MSE helper.
-            per_track : Input channel indices belonging to each track.
-            draws     : Random track subsets to average per dropped count, capped at the number of distinct subsets.
-
-        Returns:
-            One row per dropped count holding "dropped", "mse" and "mse_std"
-            (None when only one subset exists).
-        """
         n_tracks = len(per_track)
         rows     = []
 
@@ -182,21 +113,6 @@ class RobustnessCore:
         return rows
 
     def shift_consistency(self, batches: list, shifts: list[int]) -> list[dict]:
-        """Measures how far predictions deviate from exact row-shift equivariance.
-
-        The input is circularly shifted along row and the equally shifted
-        baseline prediction is compared on the rows unaffected by the wrap.
-
-        Args:
-            batches : Input/ground-truth batch pairs as taken by the MSE helper.
-            shifts  : Row shifts in pixels, each strictly inside the patch height.
-
-        Returns:
-            One row per shift holding "shift" in pixels and "mse".
-
-        Raises:
-            ValueError : If any shift falls outside 1..height-1.
-        """
         height = batches[0][0].shape[2]
         bad    = [s for s in shifts if int(s) <= 0 or int(s) >= height]
         if bad:
@@ -222,18 +138,6 @@ class RobustnessCore:
 
     @classmethod
     def tolerance_sigma(cls, noise_rows: list[dict]) -> dict:
-        """Interpolates the noise sigma at which the curve MSE doubles.
-
-        Args:
-            noise_rows : Noise rows starting at the clean 0.0 baseline, sorted by sigma.
-
-        Returns:
-            A dict holding the tolerance "sigma" in normalized input units and
-            "censored", true when the loss never doubled within the swept range.
-
-        Raises:
-            ValueError : If the rows are unsorted or do not start at sigma 0.0.
-        """
         sigmas = [row["sigma"] for row in noise_rows]
 
         if sigmas[0] != 0.0 or sigmas != sorted(sigmas):
@@ -253,20 +157,8 @@ class RobustnessCore:
 
 
 class RobustnessPlots(PlotBase):
-    """Publication figures for the four robustness degradation sweeps."""
 
     def noise_curves(self, curves: dict[str, list[dict]], clean: float, tolerance: dict, path: Path) -> Path:
-        """Saves the noise degradation curves for every channel scope.
-
-        Args:
-            curves    : Noise rows keyed by channel-scope label.
-            clean     : Curve MSE on unperturbed inputs.
-            tolerance : Tolerance dict holding "sigma" and "censored".
-            path      : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH, aspect=0.55))
@@ -295,16 +187,6 @@ class RobustnessPlots(PlotBase):
         return self._save(fig, path)
 
     def gain_curve(self, rows: list[dict], clean: float, path: Path) -> Path:
-        """Saves the curve MSE against global input gain on log-log axes.
-
-        Args:
-            rows  : Gain rows holding "gain" and "mse".
-            clean : Curve MSE on unperturbed inputs.
-            path  : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
@@ -325,15 +207,6 @@ class RobustnessPlots(PlotBase):
         return self._save(fig, path)
 
     def drop_curve(self, rows: list[dict], path: Path) -> Path:
-        """Saves the curve MSE against the number of dropped tracks, with subset spread.
-
-        Args:
-            rows : Dropout rows holding "dropped", "mse" and "mse_std".
-            path : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
@@ -357,16 +230,6 @@ class RobustnessPlots(PlotBase):
         return self._save(fig, path)
 
     def shift_curve(self, rows: list[dict], clean: float, path: Path) -> Path:
-        """Saves the shift-equivariance error against row shift.
-
-        Args:
-            rows  : Shift rows holding "shift" in pixels and "mse".
-            clean : Curve MSE against ground truth on unperturbed inputs.
-            path  : Destination image path.
-
-        Returns:
-            The written figure path.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
@@ -387,25 +250,11 @@ class RobustnessPlots(PlotBase):
 
 
 class RobustnessRun(AnalysisRun):
-    """Runs the four robustness sweeps on one trained run and reports them."""
 
     SUMMARY_FILENAME = "robustness.json"
     REPORT_FILENAME  = "robustness.md"
 
     def _batches(self, run, renderer: PredictionCurves) -> list[tuple[torch.Tensor, np.ndarray]]:
-        """Materialises the evaluation batches with denormalized ground-truth curves.
-
-        Args:
-            run      : Loaded run providing the loader and normalizer.
-            renderer : Renderer producing z profiles from parameters.
-
-        Returns:
-            Pairs of an input batch of shape (batch, channels, height, width) and
-            ground-truth curves of shape (batch, n_z, height, width).
-
-        Raises:
-            ValueError : If the loader yielded no batches.
-        """
         batches = []
         for index, batch in enumerate(run.loader):
             if index >= self.config.max_batches:
@@ -419,7 +268,6 @@ class RobustnessRun(AnalysisRun):
         return batches
 
     def _noise_scopes(self, run) -> dict[str, list[int] | None]:
-        """Returns the channel scopes to sweep, mapping label to channel indices or None for all."""
         groups = ChannelGroups.build(run)
         scopes = {"all channels": None}
 
@@ -432,17 +280,6 @@ class RobustnessRun(AnalysisRun):
         return scopes
 
     def _write_report(self, run, results: dict, figures: dict[str, Path], n_batches: int) -> Path:
-        """Writes the markdown robustness report with one table per stress.
-
-        Args:
-            run       : Loaded run providing the backbone name.
-            results   : Sweep results holding "noise", "noise_tolerance", "gain", "drop" (possibly None) and "shift".
-            figures   : Mapping from figure name to its written path.
-            n_batches : Number of batches every sweep ran over.
-
-        Returns:
-            The written report path.
-        """
         clean     = results["noise"]["all channels"][0]["mse"]
         tolerance = results["noise_tolerance"]
 
@@ -504,14 +341,6 @@ class RobustnessRun(AnalysisRun):
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
     def _analyse(self, run) -> AnalysisOutcome:
-        """Runs the noise, gain, dropout and shift sweeps and writes their artifacts.
-
-        Args:
-            run : Loaded run bundling the model, the dataloader and the normalizer.
-
-        Returns:
-            The outcome whose payload holds the backbone name, split and all sweep results.
-        """
         renderer = PredictionCurves(run.n_gaussians, run.z_axis, self.config.render_amp_floor)
         batches  = self._batches(run, renderer)
 
@@ -571,7 +400,6 @@ class RobustnessRun(AnalysisRun):
 
 
 class RobustnessBatch(RunBatch):
-    """Runs the robustness sweep on every selected run."""
 
     SELECTOR_ACTION = "stress"
     SECTION_TITLE   = "Robustness sweep"
