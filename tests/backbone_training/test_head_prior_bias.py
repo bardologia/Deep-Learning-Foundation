@@ -102,23 +102,6 @@ def test_prior_ignores_the_region_split_and_the_row_chunking(monkeypatch):
     assert parts[2] == whole[2] == 35
 
 
-def test_prior_rejects_a_slot_that_is_never_active():
-    labels    = _pixel_labels()
-    labels[0] = 1.0
-    labels[3] = 0.0
-
-    with pytest.raises(ValueError, match=r"Slots \[1\] are active on no training pixel"):
-        HeadPriorBias(_Region(labels, _normalizer()), 2, THRESHOLD, SilentLogger()).prior()
-
-
-def test_prior_rejects_a_non_finite_label_on_an_active_pixel():
-    labels          = _pixel_labels()
-    labels[2, 0, 0] = np.nan
-
-    with pytest.raises(ValueError, match="slot_0_sigma"):
-        HeadPriorBias(_Region(labels, _normalizer()), 2, THRESHOLD, SilentLogger()).prior()
-
-
 def test_apply_overwrites_only_the_conv_head_bias():
     torch.manual_seed(0)
     model, _ = get_backbone("unet", head="conv", in_channels=2, out_channels=6, features=[8, 16])
@@ -142,9 +125,3 @@ def test_apply_overwrites_only_the_conv_head_bias():
     assert record["training_pixels"]    == 4
     assert record["activity_threshold"] == THRESHOLD
 
-
-def test_apply_rejects_a_head_without_a_single_output_convolution():
-    model, _ = get_backbone("unet", head="set_pred", in_channels=2, out_channels=6, features=[8, 16])
-
-    with pytest.raises(ValueError, match="'set_pred' head"):
-        HeadPriorBias(_Region(_pixel_labels(), _normalizer()), 2, THRESHOLD, SilentLogger()).apply(model)

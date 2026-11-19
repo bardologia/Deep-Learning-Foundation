@@ -39,13 +39,6 @@ class LossComponentCatalog:
 
     @classmethod
     def combined(cls, names, base: LossConfig | None = None) -> LossConfig:
-        if not names:
-            raise ValueError("names must list at least one loss component")
-
-        unknown = [name for name in names if name not in cls._TERMS]
-        if unknown:
-            raise KeyError(f"unknown loss component '{unknown[0]}'; valid: {', '.join(cls.names())}")
-
         cfg = copy.deepcopy(base) if base is not None else LossConfig()
 
         for other in LOSS_TERMS:

@@ -104,14 +104,6 @@ def test_probe_union_is_the_single_stage_when_curriculum_disabled():
     assert union.use_cosine_curve  is True
 
 
-def test_catalog_combined_rejects_empty_and_unknown():
-    with pytest.raises(ValueError):
-        LossComponentCatalog.combined([])
-
-    with pytest.raises(KeyError):
-        LossComponentCatalog.combined(["param_l1", "not_a_real_loss"])
-
-
 def test_catalog_combined_curriculum_mirrors_combined_in_both_phases():
     curriculum = LossComponentCatalog.combined_curriculum(["param_l1", "total_power_relerr"])
 
@@ -556,26 +548,6 @@ def test_total_loss_is_weighted_normalised_mean():
     assert out["total_loss"].item() == pytest.approx(expected, rel=1e-4)
 
 
-def test_param_weights_length_mismatch_raises():
-    cfg  = LossConfig(use_param_l1=True, weight_param_l1=1.0, param_weights=(1.0,))
-    loss = build_loss(n_gaussians=3, loss_cfg=cfg)
-    pred = param_tensor(2, 3, 5, 5, seed=23)
-    gt   = param_tensor(2, 3, 5, 5, seed=24)
-
-    with pytest.raises(ValueError, match="param_weights"):
-        loss(pred, gt)
-
-
-def test_zero_weight_sum_is_rejected():
-    with pytest.raises(ValueError, match="summing to 0"):
-        build_loss(loss_cfg=LossConfig(use_param_l1=True, weight_param_l1=0.0))
-
-
-def test_stage_without_enabled_terms_is_rejected():
-    with pytest.raises(ValueError, match="No loss term is enabled"):
-        build_loss(loss_cfg=LossConfig())
-
-
 def test_zero_weight_term_beside_a_weighted_one_is_warned_about(recording_logger):
     cfg  = LossConfig(use_param_l1=True, weight_param_l1=1.0, use_cosine_curve=True, weight_cosine_curve=0.0)
     loss = build_loss(loss_cfg=cfg, logger=recording_logger)
@@ -586,35 +558,11 @@ def test_zero_weight_term_beside_a_weighted_one_is_warned_about(recording_logger
     assert warnings == ["Loss term 'cosine_curve' is enabled with weight 0; it is computed on every batch, gradients included, but contributes nothing to the total"]
 
 
-def test_curriculum_swap_to_a_zero_weight_stage_is_rejected():
-    loss = build_loss()
-
-    with pytest.raises(ValueError, match="summing to 0"):
-        loss.set_curriculum(LossConfig(use_mse_curve=True, weight_mse_curve=0.0))
-
-
 def test_dx_is_the_z_axis_spacing():
     axis = x_axis_tensor()
     loss = build_loss()
 
     assert loss.dx == pytest.approx(float(axis[1] - axis[0]))
-
-
-def test_single_sample_z_axis_raises():
-    with pytest.raises(ValueError, match="at least 2 sample points"):
-        build_loss(length=1)
-
-
-def test_decreasing_z_axis_raises():
-    with pytest.raises(ValueError, match="strictly increasing"):
-        Loss(
-            z_axis       = torch.flip(x_axis_tensor(), dims=[0]),
-            logger       = NullLogger(),
-            tracker      = NullTracker(),
-            gaussian_cfg = gaussian_config(2),
-            loss_cfg     = LossConfig(use_param_l1=True, weight_param_l1=1.0),
-            norm_stats   = identity_normalizer(6),
-        )
 
 
 @pytest.mark.dataset

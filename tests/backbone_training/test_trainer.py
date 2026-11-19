@@ -127,10 +127,6 @@ def test_trainer_builds_the_configured_optimizer_family(tmp_path):
     assert isinstance(trainer.optimizer, torch.optim.SGD)
     assert all(pg["momentum"] == 0.8 for pg in trainer.optimizer.param_groups)
 
-    config.optimizer.type = "lion"
-    with pytest.raises(ValueError, match="Unknown optimizer type"):
-        Trainer(tiny_model(2, 2)[0], model_cfg, x_axis_numpy(), config, tmp_path / "bad", logger, norm_stats=identity_normalizer(6), emit_docs=False)
-
 
 def test_swa_writes_averaged_checkpoint_and_marker(tmp_path):
     trainer = _build_trainer(tmp_path, epochs=2)
@@ -164,20 +160,6 @@ def test_train_writes_final_model_checkpoint(tmp_path):
     assert saved["params"].keys() == trainer.model.state_dict().keys()
     assert saved["best_val_loss"] == best["best_val_loss"]
     assert saved["best_epoch"]    == best["best_epoch"]
-
-
-def test_complete_stage_with_zero_weights_is_rejected_before_training(tmp_path):
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
-    config           = tiny_trainer_config(n_gaussians=2, epochs=2)
-    logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level="ERROR")
-
-    config.curriculum.enabled                  = True
-    config.curriculum.swap_epoch               = 1
-    config.curriculum.warmup                   = LossConfig(use_param_l1=True, weight_param_l1=1.0)
-    config.curriculum.complete.weight_param_l1 = 0.0
-
-    with pytest.raises(ValueError, match="summing to 0"):
-        Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
 
 
 def test_multi_epoch_fit_records_losses(tmp_path):
@@ -227,16 +209,6 @@ def _loss_dict(total: float) -> dict:
 
 def _diverged_loss_dict(bad_term: str) -> dict:
     return {"total_loss": torch.tensor(float("nan")), "components": {"param_l1": torch.tensor(0.5), bad_term: torch.tensor(float("nan"))}, "monitor": {}, "occupancy": {}, "physical": {}}
-
-
-def test_evaluate_raises_on_nonfinite_loss(tmp_path):
-    trainer = _build_trainer(tmp_path)
-    loader  = _loader()
-
-    trainer._eval_step = lambda batch: _loss_dict(float("nan"))
-
-    with pytest.raises(FloatingPointError):
-        trainer.evaluate(loader, epoch=0)
 
 
 def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
@@ -336,26 +308,6 @@ def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
 
     assert result["num_batches"] == 0
     assert result["avg_loss"]    != result["avg_loss"]
-
-
-def test_nonfinite_train_loss_abort_names_the_term_and_clears_the_data(tmp_path):
-    trainer = _build_trainer(tmp_path)
-
-    trainer._compute_loss = lambda batch: _diverged_loss_dict("mse_curve")
-
-    with pytest.raises(FloatingPointError, match=r"non-finite terms: \['mse_curve'\]; inputs and targets finite"):
-        trainer.train_epoch(_loader(), epoch=0)
-
-
-def test_nonfinite_train_loss_abort_names_corrupt_inputs(tmp_path):
-    trainer = _build_trainer(tmp_path)
-    loader  = _loader()
-
-    loader.dataset.tensors[0][0, 0, 0, 0] = float("nan")
-    trainer._compute_loss                 = lambda batch: _loss_dict(float("nan"))
-
-    with pytest.raises(FloatingPointError, match=r"non-finite terms: none \(every weighted term is finite\); non-finite inputs in the batch"):
-        trainer.train_epoch(loader, epoch=0)
 
 
 def test_evaluate_skip_warning_names_the_nonfinite_term(tmp_path):

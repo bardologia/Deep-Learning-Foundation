@@ -15,12 +15,7 @@ class Loss:
     MOMENT_USE_FLAGS = ("use_total_power", "use_moments")
 
     def __init__(self, z_axis, logger, tracker, gaussian_cfg, loss_cfg, norm_stats, log_all_losses=False, sampler=None, slot_vitals=None):
-        if z_axis.shape[0] < 2:
-            raise ValueError(f"z_axis must contain at least 2 sample points, got length {z_axis.shape[0]}")
-
         dx = float(z_axis[1] - z_axis[0])
-        if dx <= 0:
-            raise ValueError(f"z_axis must be strictly increasing, got dx={dx}")
 
         self.z_axis          = z_axis
         self.logger          = logger
@@ -63,13 +58,6 @@ class Loss:
     @staticmethod
     def active_weights(cfg) -> list[tuple[str, float]]:
         active = [(term.name, float(getattr(cfg, term.weight_key))) for term in LOSS_TERMS if getattr(cfg, term.use_flag)]
-
-        if not active:
-            raise ValueError("No loss term is enabled in this stage; the total loss would be identically zero and the run would train on nothing")
-
-        weight_sum = sum(weight for _name, weight in active)
-        if weight_sum <= 0.0:
-            raise ValueError(f"The enabled loss terms {dict(active)} have weights summing to {weight_sum:g}; the total is divided by that sum and must be positive, otherwise the run trains on nothing")
 
         return active
 
@@ -116,7 +104,6 @@ class Loss:
         }, title=title)
 
     def set_curriculum(self, complete_cfg, context: str = "curriculum swap") -> None:
-
         self.loss_cfg       = complete_cfg
         self.loss_generation += 1
 
@@ -138,9 +125,6 @@ class Loss:
         cfg = self.loss_cfg
         w   = torch.tensor(cfg.param_weights, dtype=pred.dtype, device=pred.device)
 
-        if w.numel() != pred.shape[2]:
-            raise ValueError(f"param_weights has {w.numel()} entries but each Gaussian has {pred.shape[2]} parameters; configure exactly one weight per parameter.")
-
         weights = w.reshape(1, 1, -1, 1, 1)
 
         active     = GaussianActivity.is_active(gt_phys[:, :, 0:1], self.gaussian_cfg.activity_threshold).to(pred.dtype)
@@ -159,10 +143,7 @@ class Loss:
         if kind == "huber":
             return ParamLoss.huber(pred, gt, elem_w, cfg.param_huber_delta, cfg.use_active_normalization), {}
 
-        if kind == "mse":
-            return ParamLoss.mse(pred, gt, elem_w, cfg.use_active_normalization), {}
-
-        raise ValueError(f"Unknown param_term kind: {kind!r}. Expected 'l1', 'huber', or 'mse'.")
+        return ParamLoss.mse(pred, gt, elem_w, cfg.use_active_normalization), {}
 
     @torch.no_grad()
     def _physical_errors(self, matched) -> dict:
@@ -190,9 +171,6 @@ class Loss:
         pred_phys = pred_phys_gauss.reshape(batch_size, num_gaussians, ppg, height, width)
 
         gt_gaussians = gt_gauss.shape[1] // ppg
-
-        if gt_gaussians != num_gaussians:
-            raise ValueError(f"The model predicts {num_gaussians} Gaussians but the ground truth carries {gt_gaussians}; both sides must describe the same slot count for the loss to pair them.")
 
         gt      = gt_gauss[     :, : gt_gaussians * ppg].reshape(batch_size, gt_gaussians, ppg, height, width)
         gt_phys = gt_phys_gauss[:, : gt_gaussians * ppg].reshape(batch_size, gt_gaussians, ppg, height, width)

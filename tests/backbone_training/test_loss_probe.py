@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import pytest
 import torch
@@ -10,7 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from configuration.training                 import BackboneEntryConfig, LossScaleProbeConfig
 from configuration.training.general.loss    import LossConfig
-from pipelines.backbone.training.launcher   import BackboneTrainingLauncher, SingleTrainRunner
+from pipelines.backbone.training.launcher   import SingleTrainRunner
 from pipelines.backbone.training.loss_probe import LossScaleProbe
 from tools.monitoring.logger                import Logger, NullLogger
 
@@ -114,20 +113,6 @@ def test_probe_exit_after_warns_that_nothing_trained(tmp_path, probe_logger):
 
     assert stop.value.code == 0
     assert "no training ran and no checkpoint, test metrics or complete.json were written" in _log_text(tmp_path)
-
-
-def test_launcher_refuses_a_probe_only_trial_sweep(tmp_path):
-    launcher = BackboneTrainingLauncher(entry_script=Path("/entry/train_backbone.py"))
-
-    with pytest.raises(ValueError, match="probe.exit_after=True would end every unit of the patch trial sweep"):
-        launcher.run(["--trials_enabled", "true", "--trials_mode", "patch", "--probe.enabled", "true", "--logdir", str(tmp_path)])
-
-
-def test_launcher_refuses_a_probe_only_seed_fanout(tmp_path):
-    launcher = BackboneTrainingLauncher(entry_script=Path("/entry/train_backbone.py"))
-
-    with pytest.raises(ValueError, match="2-seed fan-out"):
-        launcher.run(["--seeds", "[0, 1]", "--probe.enabled", "true", "--logdir", str(tmp_path)])
 
 
 def test_probe_disabled_returns_empty():

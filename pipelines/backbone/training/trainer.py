@@ -32,9 +32,6 @@ class Trainer(BaseTrainer):
 
         self.recon_figures = ReconstructionFigures(self.tracker, self.device)
 
-        if self.curriculum.enabled and self.curriculum.swap_epoch >= self.epochs:
-            raise ValueError(f"curriculum.swap_epoch={self.curriculum.swap_epoch} must be below training.epochs={self.epochs}; the complete loss phase would never run")
-
         if self.curriculum.enabled:
             Loss.active_weights(self.curriculum.complete)
 

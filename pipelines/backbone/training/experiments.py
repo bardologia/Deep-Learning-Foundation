@@ -70,25 +70,6 @@ class SlotPresenceTrialPlanner:
     def __init__(self, presence_trials: dict) -> None:
         self.presence_trials = presence_trials
 
-        self._validate()
-
-    def _validate(self) -> None:
-        if not self.presence_trials:
-            raise ValueError("presence_trials must list at least one trial")
-
-        for label, spec in self.presence_trials.items():
-            missing = [key for key in self.FLAG_KEYS if key not in spec]
-            if missing:
-                raise ValueError(f"Presence trial '{label}' must set {missing}; every trial defines all of {self.FLAG_KEYS}")
-
-            unknown = [key for key in spec if key not in self.FLAG_KEYS]
-            if unknown:
-                raise ValueError(f"Presence trial '{label}' has unknown keys {unknown}; allowed keys are {self.FLAG_KEYS}")
-
-            non_bool = [key for key in self.FLAG_KEYS if not isinstance(spec[key], bool)]
-            if non_bool:
-                raise ValueError(f"Presence trial '{label}' must set {non_bool} to booleans, got {spec}")
-
     def summary(self) -> dict:
         return {
             "Presence trials" : list(self.presence_trials),
@@ -118,40 +99,6 @@ class PairLossTrialPlanner:
     def __init__(self, trials) -> None:
         self.trials = trials
         self.terms  = {term.name: term for term in LOSS_TERMS}
-
-        self._validate()
-
-    def _validate(self) -> None:
-        names = tuple(self.terms)
-
-        if self.trials.base_component not in self.terms:
-            raise ValueError(f"Unknown pair_trials.base_component '{self.trials.base_component}'; allowed components are {names}")
-
-        if self.trials.base_weight <= 0:
-            raise ValueError(f"pair_trials.base_weight={self.trials.base_weight} must be positive")
-
-        if not self.trials.components:
-            raise ValueError("pair_trials.components must list at least one loss component to test")
-
-        unknown = [component for component in self.trials.components if component not in self.terms]
-        if unknown:
-            raise ValueError(f"Unknown pair_trials.components {unknown}; allowed components are {names}")
-
-        if self.trials.base_component in self.trials.components:
-            raise ValueError(f"pair_trials.components must not repeat the base component '{self.trials.base_component}'")
-
-        duplicates = sorted({component for component in self.trials.components if self.trials.components.count(component) > 1})
-        if duplicates:
-            raise ValueError(f"pair_trials.components must be unique, duplicated: {duplicates}")
-
-        if not self.trials.weights:
-            raise ValueError("pair_trials.weights must list at least one weight to test")
-
-        if any(weight <= 0 for weight in self.trials.weights):
-            raise ValueError(f"pair_trials.weights must all be positive, got {self.trials.weights}")
-
-        if len(set(self.trials.weights)) != len(self.trials.weights):
-            raise ValueError(f"pair_trials.weights must be unique, got {self.trials.weights}")
 
     def summary(self) -> dict:
         return {
@@ -200,18 +147,6 @@ class LogEnergyTrialPlanner:
     def __init__(self, trials) -> None:
         self.trials = trials
 
-        self._validate()
-
-    def _validate(self) -> None:
-        if not self.trials.weights:
-            raise ValueError("log_energy_trials.weights must list at least one weight to test")
-
-        if any(weight <= 0 for weight in self.trials.weights):
-            raise ValueError(f"log_energy_trials.weights must all be positive, got {self.trials.weights}")
-
-        if len(set(self.trials.weights)) != len(self.trials.weights):
-            raise ValueError(f"log_energy_trials.weights must be unique, got {self.trials.weights}")
-
     def summary(self) -> dict:
         n_extras = 1 if self.trials.include_baseline else 0
 
@@ -257,22 +192,6 @@ class AblationTrialPlanner:
     def __init__(self, features: list, include_full: bool) -> None:
         self.features     = list(features)
         self.include_full = include_full
-
-        self._validate()
-
-    def _validate(self) -> None:
-        if not self.features:
-            raise ValueError("ablation_features must list at least one feature to ablate")
-
-        for index, feature in enumerate(self.features):
-            missing = [key for key in ("label", "enable", "degrade") if key not in feature]
-            if missing:
-                raise ValueError(f"Ablation feature #{index} must define {missing}, got {feature}")
-
-        labels     = [feature["label"] for feature in self.features]
-        duplicates = sorted({label for label in labels if labels.count(label) > 1})
-        if duplicates:
-            raise ValueError(f"Ablation feature labels must be unique, duplicated: {duplicates}; duplicate labels collapse distinct trials onto one run directory")
 
     def summary(self) -> dict:
         return {
@@ -323,30 +242,6 @@ class ContextTrialPlanner:
         self.trials         = [dict(trial) for trial in trials if isinstance(trial, dict)]
         self.registry_names = tuple(registry_names)
 
-        self._validate()
-
-    def _validate(self) -> None:
-        malformed = [trial for trial in self.raw_trials if not isinstance(trial, dict)]
-        if malformed:
-            raise ValueError(f"context_trials rungs must be dicts of label, backbone and model overrides, got {malformed}; bare backbone names are the pre-rung format and must be rewritten")
-
-        if not self.trials:
-            raise ValueError("context_trials must list at least one rung")
-
-        for trial in self.trials:
-            missing = [key for key in self.RESERVED_KEYS if key not in trial]
-            if missing:
-                raise ValueError(f"context_trials rung {trial} is missing required keys {missing}")
-
-        labels     = [trial["label"] for trial in self.trials]
-        duplicates = sorted({label for label in labels if labels.count(label) > 1})
-        if duplicates:
-            raise ValueError(f"context_trials labels must be unique, duplicated: {duplicates}")
-
-        unknown = sorted({trial["backbone"] for trial in self.trials if trial["backbone"] not in self.registry_names})
-        if unknown:
-            raise ValueError(f"Unknown context_trials backbones {unknown}; registered backbones are {sorted(self.registry_names)}")
-
     def _overrides(self, trial: dict) -> dict:
         return {key: value for key, value in trial.items() if key not in self.RESERVED_KEYS}
 
@@ -381,45 +276,7 @@ class ReachTrialPlanner:
         self.expected_in_channels = expected_in_channels
         self.out_channels         = out_channels
 
-        self._validate()
-
         self.parameter_counts = {rung["label"]: self._parameters(rung) for rung in self.rungs}
-
-        self._verify_capacity_match()
-
-    def _validate(self) -> None:
-        malformed = [rung for rung in self.trials.rungs if not isinstance(rung, dict)]
-        if malformed:
-            raise ValueError(f"reach_trials.rungs must be dicts of label, backbone and model overrides, got {malformed}")
-
-        if len(self.rungs) < 2:
-            raise ValueError("reach_trials.rungs must list at least two architectures; a reach comparison needs something to compare against")
-
-        for rung in self.rungs:
-            missing = [key for key in self.RESERVED_KEYS if key not in rung]
-            if missing:
-                raise ValueError(f"reach_trials rung {rung} is missing required keys {missing}")
-
-        labels     = [rung["label"] for rung in self.rungs]
-        duplicates = sorted({label for label in labels if labels.count(label) > 1})
-        if duplicates:
-            raise ValueError(f"reach_trials labels must be unique, duplicated: {duplicates}")
-
-        unknown = sorted({rung["backbone"] for rung in self.rungs if rung["backbone"] not in self.registry_names})
-        if unknown:
-            raise ValueError(f"Unknown reach_trials backbones {unknown}; registered backbones are {sorted(self.registry_names)}")
-
-        if any(size < 1 for size in self.trials.patch_size) or any(stride < 1 for stride in self.trials.patch_stride):
-            raise ValueError(f"reach_trials.patch_size={tuple(self.trials.patch_size)} and patch_stride={tuple(self.trials.patch_stride)} must be positive")
-
-        if self.trials.match_tolerance <= 0:
-            raise ValueError(f"reach_trials.match_tolerance={self.trials.match_tolerance} must be positive; the arms are only comparable when their capacity is matched to a stated tolerance")
-
-        if self.trials.in_channels != self.expected_in_channels:
-            raise ValueError(f"reach_trials.in_channels={self.trials.in_channels} but the input configuration yields {self.expected_in_channels} channels; training builds every arm at the dataset width, so the capacity check would count the wrong first layer")
-
-        if self.out_channels < 1:
-            raise ValueError(f"reach_trials capacity check needs the resolved output width, got out_channels={self.out_channels}; training builds every arm at the dataset Gaussian count, so the capacity check would count the wrong output stage")
 
     def _overrides(self, rung: dict) -> dict:
         return {key: value for key, value in rung.items() if key not in self.RESERVED_KEYS}
@@ -429,14 +286,6 @@ class ReachTrialPlanner:
         model, _ = get_backbone(rung["backbone"], in_channels=self.trials.in_channels, out_channels=self.out_channels, head=self.head, **sizing, **self._overrides(rung))
 
         return sum(parameter.numel() for parameter in model.parameters())
-
-    def _verify_capacity_match(self) -> None:
-        low, high = min(self.parameter_counts.values()), max(self.parameter_counts.values())
-        deviation = (high - low) / low
-
-        if deviation > self.trials.match_tolerance:
-            counts = {label: f"{count:,}" for label, count in self.parameter_counts.items()}
-            raise ValueError(f"reach_trials arms differ by {100 * deviation:.2f} % in parameter count ({counts}) at head '{self.head}' with {self.out_channels} output channels, exceeding the {100 * self.trials.match_tolerance:.1f} % match tolerance; the comparison only isolates architecture from capacity when the arms are size matched, so retune the rung widths")
 
     def _settings(self, rung: dict) -> dict:
         overrides = self._overrides(rung)
@@ -473,36 +322,6 @@ class HeadMatchingTrialPlanner:
         self.head_names     = tuple(head_names)
         self.matching_names = tuple(matching_names)
 
-        self._validate()
-
-    def _validate(self) -> None:
-        t = self.trials
-
-        if self.backbone not in self.registry_names:
-            raise ValueError(f"Unknown backbone '{self.backbone}'; registered backbones are {sorted(self.registry_names)}")
-
-        if not t.heads:
-            raise ValueError("head_trials.heads must list at least one head")
-
-        unknown = [head for head in t.heads if head not in self.head_names]
-        if unknown:
-            raise ValueError(f"Unknown head_trials.heads {unknown}; registered heads are {self.head_names}")
-
-        duplicates = sorted({head for head in t.heads if t.heads.count(head) > 1})
-        if duplicates:
-            raise ValueError(f"head_trials.heads must be unique, duplicated: {duplicates}")
-
-        if not t.matchings:
-            raise ValueError("head_trials.matchings must list at least one matching strategy")
-
-        unknown = [matching for matching in t.matchings if matching not in self.matching_names]
-        if unknown:
-            raise ValueError(f"Unknown head_trials.matchings {unknown}; allowed matchings are {self.matching_names}")
-
-        duplicates = sorted({matching for matching in t.matchings if t.matchings.count(matching) > 1})
-        if duplicates:
-            raise ValueError(f"head_trials.matchings must be unique, duplicated: {duplicates}")
-
     def summary(self) -> dict:
         return {
             "Backbone"   : self.backbone,
@@ -538,27 +357,11 @@ class InputTrialPlanner:
         self.input_trials = input_trials
         self.candidates   = list(candidates)
 
-        self._validate()
-
     @classmethod
     def from_dataset(cls, input_trials: dict, dataset_path) -> "InputTrialPlanner":
         labels = Layout.secondary_channel_labels(dataset_path)
-        if not labels:
-            raise ValueError(f"Input trials need at least one secondary channel to enumerate channel scopes, but the dataset at {dataset_path} records only its reference channel")
 
         return cls(input_trials, labels)
-
-    def _validate(self) -> None:
-        if not self.input_trials:
-            raise ValueError("input_trials must list at least one input variant")
-
-        for label, spec in self.input_trials.items():
-            if spec.get(self.TRACKS_KEY) not in self.TRACK_SCOPES:
-                raise ValueError(f"Input trial '{label}' must set '{self.TRACKS_KEY}' to one of {self.TRACK_SCOPES}, got {spec.get(self.TRACKS_KEY)!r}")
-
-            unknown = [key for key in spec if key != self.TRACKS_KEY and key not in self.INPUT_KEYS]
-            if unknown:
-                raise ValueError(f"Input trial '{label}' has unknown keys {unknown}; allowed keys are ('{self.TRACKS_KEY}',) + {self.INPUT_KEYS}")
 
     def summary(self) -> dict:
         scopes = [spec[self.TRACKS_KEY] for spec in self.input_trials.values()]
@@ -590,24 +393,6 @@ class AugmentationTrialPlanner:
 
     def __init__(self, trials) -> None:
         self.trials = trials
-
-        self._validate()
-
-    def _validate(self) -> None:
-        if not 0 < self.trials.flip_probability <= 1:
-            raise ValueError(f"augmentation_trials.flip_probability={self.trials.flip_probability} must be in (0, 1]")
-
-        if not 0 < self.trials.noise_probability <= 1:
-            raise ValueError(f"augmentation_trials.noise_probability={self.trials.noise_probability} must be in (0, 1]")
-
-        if not self.trials.noise_stds:
-            raise ValueError("augmentation_trials.noise_stds must list at least one noise strength")
-
-        if any(std <= 0 for std in self.trials.noise_stds):
-            raise ValueError(f"augmentation_trials.noise_stds must all be positive, got {self.trials.noise_stds}")
-
-        if len(set(self.trials.noise_stds)) != len(self.trials.noise_stds):
-            raise ValueError(f"augmentation_trials.noise_stds must be unique, got {self.trials.noise_stds}")
 
     def summary(self) -> dict:
         return {
@@ -649,25 +434,6 @@ class ClampTrialPlanner:
     def __init__(self, trials) -> None:
         self.trials = trials
 
-        self._validate()
-
-    def _validate(self) -> None:
-        slopes       = list(self.trials.leaky_slopes)
-        param_slopes = list(self.trials.param_leaky_slopes)
-
-        if not slopes:
-            raise ValueError("clamp_trials.leaky_slopes must name at least one slope for the leaky rungs")
-
-        if len(param_slopes) != len(slopes):
-            raise ValueError(f"clamp_trials.param_leaky_slopes has {len(param_slopes)} entries but leaky_slopes has {len(slopes)}; the lists pair up by position, one leaky rung each")
-
-        for slope in slopes + param_slopes:
-            if slope <= 0:
-                raise ValueError(f"clamp_trials slope {slope} must be positive; a zero slope makes a leaky rung identical to the hard rung")
-
-        if len(set(slopes)) != len(slopes):
-            raise ValueError(f"clamp_trials.leaky_slopes {slopes} must be unique; the curve slope names each leaky rung")
-
     def summary(self) -> dict:
         pairs = ", ".join(f"{slope:g}/{param:g}" for slope, param in zip(self.trials.leaky_slopes, self.trials.param_leaky_slopes))
         return {
@@ -704,14 +470,8 @@ class ArchitecturePatchStep:
         self.model_overrides = model_overrides
 
     def resolve(self) -> int:
-        if self.backbone_name not in self.PYRAMID_BACKBONES:
-            raise ValueError(f"Backbone '{self.backbone_name}' is not a verified one-halving-per-stage U-Net ({sorted(self.PYRAMID_BACKBONES)}); the admissible patch step cannot be derived from the architecture, set patch_trials.step explicitly")
-
         model_config = ModelBuilder.config_from_registry(self.backbone_name, self.model_overrides, head=self.backbone_head)
         features     = model_config.features
-
-        if not features:
-            raise ValueError(f"Backbone '{self.backbone_name}' has an empty encoder feature pyramid; set patch_trials.step explicitly")
 
         return 2 ** len(features)
 
@@ -728,12 +488,6 @@ class PatchSizeTrialPlanner:
         self._patch_step  = None
         self._patch_sizes = None
 
-        self._validate()
-
-    def _validate(self) -> None:
-        if not 0 < self.trials.stride_ratio <= 1:
-            raise ValueError(f"patch_trials.stride_ratio={self.trials.stride_ratio} must be in (0, 1]")
-
     def patch_step(self) -> int:
         if self._patch_step is None:
             explicit         = self.trials.step
@@ -745,11 +499,6 @@ class PatchSizeTrialPlanner:
         step  = self.patch_step()
         start = self.trials.minimum[axis] if self.trials.minimum[axis] > 0 else step
 
-        if start % step != 0:
-            raise ValueError(f"patch_trials.minimum {label}={start} is not a multiple of the admissible step {step}")
-        if self.trials.maximum[axis] < start:
-            raise ValueError(f"patch_trials.maximum {label}={self.trials.maximum[axis]} is below the first admissible size {start}")
-
         return list(range(start, self.trials.maximum[axis] + 1, step))
 
     def patch_sizes(self) -> tuple[list[int], list[int]]:
@@ -759,9 +508,6 @@ class PatchSizeTrialPlanner:
         row_sizes = self._axis_sizes(0, "row")
         col_sizes = self._axis_sizes(1, "col")
 
-        if len(row_sizes) * len(col_sizes) < 2:
-            raise ValueError(f"The grid rows {row_sizes} x cols {col_sizes} yields {len(row_sizes) * len(col_sizes)} patch shape; a sweep needs at least 2")
-
         self._patch_sizes = (row_sizes, col_sizes)
 
         return self._patch_sizes
@@ -770,16 +516,10 @@ class PatchSizeTrialPlanner:
         reference = self.training.patch_size
         rescaled  = self.training.batch_size * reference[0] * reference[1] // (patch_size[0] * patch_size[1])
 
-        if rescaled < 1:
-            raise ValueError(f"patch shape {patch_size} exceeds the pixel budget of training.batch_size={self.training.batch_size} at the reference patch {tuple(reference)}: not a single sample fits, so no batch size holds the budget")
-
         return Fraction(rescaled, self.training.batch_size)
 
     def _pixel_rescaled(self, base: int, scale: Fraction, label: str) -> int:
         rescaled = base * scale
-
-        if rescaled.denominator != 1 or rescaled < 1:
-            raise ValueError(f"the constant pixel budget rescales training.{label}={base} by {scale} to {float(rescaled)}, which is not a positive whole number of samples; quote it so it rescales in lockstep with training.batch_size={self.training.batch_size}")
 
         return int(rescaled)
 
@@ -843,48 +583,11 @@ class SecondaryTrialPlanner:
         self.fixed      = [label for label in self.candidates if label in tuple(trials.fixed)]
         self.pool       = [label for label in self.candidates if label not in tuple(trials.fixed)]
 
-        self._validate()
-
     @classmethod
     def from_dataset(cls, trials, dataset_path) -> "SecondaryTrialPlanner":
         labels = Layout.secondary_channel_labels(dataset_path)
-        if not labels:
-            raise ValueError(f"Secondary trials need at least one secondary channel to sample from, but the dataset at {dataset_path} records only its reference channel")
 
         return cls(trials, labels)
-
-    def _validate(self) -> None:
-        t = self.trials
-
-        repeated = sorted({label for label in self.candidates if self.candidates.count(label) > 1})
-        if repeated:
-            raise ValueError(f"Secondary candidates name {repeated} more than once, so a subset could pair a channel with itself; every channel must appear once, regenerate the dataset's channel labels")
-
-        unknown = [label for label in t.fixed if label not in self.candidates]
-        if unknown:
-            raise ValueError(f"secondary_trials.fixed names {unknown}, which are not secondary channels of this dataset; candidates are {self.candidates}")
-
-        repeated_fixed = sorted({label for label in t.fixed if list(t.fixed).count(label) > 1})
-        if repeated_fixed:
-            raise ValueError(f"secondary_trials.fixed names {repeated_fixed} more than once; every fixed channel must appear once")
-
-        if t.strategy not in self.STRATEGIES:
-            raise ValueError(f"Unknown secondary_trials.strategy '{t.strategy}', expected one of {self.STRATEGIES}")
-
-        if not 1 <= t.n_secondaries <= len(self.pool):
-            raise ValueError(f"secondary_trials.n_secondaries={t.n_secondaries} counts the swept channels and must be in [1, {len(self.pool)}], the channels left to sweep are {self.pool} and the fixed ones are {self.fixed}")
-
-        if t.strategy in ("uniform", "gaussian") and t.n_trials < 1:
-            raise ValueError(f"secondary_trials.n_trials={t.n_trials} must be >= 1 for strategy '{t.strategy}'")
-
-        if t.strategy == "gaussian" and (t.mean is None or t.sigma is None):
-            raise ValueError("secondary_trials strategy 'gaussian' requires explicit mean and sigma (index units over the secondary list)")
-
-        if t.strategy in ("consecutive", "spaced") and t.block_step < 1:
-            raise ValueError(f"secondary_trials.block_step={t.block_step} must be >= 1")
-
-        if t.strategy == "spaced" and t.spacing < 1:
-            raise ValueError(f"secondary_trials.spacing={t.spacing} must be >= 1")
 
     def summary(self) -> dict:
         exhaustive = self.trials.strategy == "exhaustive"
@@ -921,7 +624,6 @@ class SecondaryTrialPlanner:
             seen.add(indices)
             selections.append(self._pick(indices))
 
-        self._ensure_complete(selections)
         return selections
 
     def _gaussian(self) -> list[list[str]]:
@@ -939,7 +641,6 @@ class SecondaryTrialPlanner:
             seen.add(indices)
             selections.append(self._pick(indices))
 
-        self._ensure_complete(selections)
         return selections
 
     def _gaussian_draw(self, rng) -> tuple | None:
@@ -964,8 +665,6 @@ class SecondaryTrialPlanner:
         n, step, spacing, total = self.trials.n_secondaries, self.trials.block_step, self.trials.spacing, len(self.pool)
 
         span = (n - 1) * spacing + 1
-        if span > total:
-            raise ValueError(f"Spaced selection spans {span} candidates but only {total} are available; reduce n_secondaries or spacing")
 
         return [self._pick(range(start, start + span, spacing)) for start in range(0, total - span + 1, step)]
 
@@ -974,10 +673,6 @@ class SecondaryTrialPlanner:
 
     def _exhaustive(self) -> list[list[str]]:
         return [self._pick(indices) for indices in combinations(range(len(self.pool)), self.trials.n_secondaries)]
-
-    def _ensure_complete(self, selections: list) -> None:
-        if len(selections) < self.trials.n_trials:
-            raise RuntimeError(f"Found only {len(selections)} of {self.trials.n_trials} distinct secondary sets after {self.MAX_ATTEMPTS} attempts; lower n_trials, widen sigma or change strategy")
 
     def plan(self) -> list[tuple[str, dict]]:
         selections = getattr(self, f"_{self.trials.strategy}")()

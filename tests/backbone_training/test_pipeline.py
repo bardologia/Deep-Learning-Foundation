@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -242,10 +243,7 @@ def test_training_pipeline_records_a_dataset_stage_abort_in_its_run_log(tmp_path
 
     pipeline = TrainingPipeline(trainer_config=trainer_config, dataset_config=dataset_config, backbone_name="resunet", run_name="dataset_abort")
 
-    def _broken_dataset_pipeline(run_directory, logger):
-        raise ValueError("dataset stage broke")
-
-    monkeypatch.setattr(pipeline, "_build_dataset_pipeline", _broken_dataset_pipeline)
+    monkeypatch.setattr(pipeline, "_build_dataset_pipeline", Mock(side_effect=ValueError("dataset stage broke")))
 
     with pytest.raises(ValueError, match="dataset stage broke"):
         pipeline.run(probe_config=None)

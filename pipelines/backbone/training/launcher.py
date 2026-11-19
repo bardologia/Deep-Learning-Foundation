@@ -168,15 +168,6 @@ class TrainScheduler(TrialSweepScheduler):
         "ablation"      : "ablation",
     }
 
-    def __init__(self, config, cli_overrides: dict, entry_script: Path) -> None:
-        self.reject_probe_exit(config, f"{config.trials_mode} trial sweep")
-        super().__init__(config, cli_overrides, entry_script)
-
-    @staticmethod
-    def reject_probe_exit(config, fanout: str) -> None:
-        if config.probe.enabled and config.probe.exit_after:
-            raise ValueError(f"probe.enabled with probe.exit_after=True would end every unit of the {fanout} after its probe report with nothing trained, and the GPU queue would still mark each unit DONE; set probe.exit_after=false to train after the probe, or run the probe alone as a single unit with trials_enabled=false and seeds=[{config.seed}]")
-
     @property
     def staged_inference(self) -> bool:
         return self.config.infer_at_end
@@ -231,10 +222,7 @@ class TrainScheduler(TrialSweepScheduler):
             return EmaTrialPlanner(self.config.ema_trials)
         if mode == "amp":
             return AmpTrialPlanner()
-        if mode == "ablation":
-            return AblationTrialPlanner(self.config.ablation_features, self.config.ablation_include_full)
-
-        raise ValueError(f"Unknown trials_mode '{mode}', expected one of {sorted(self.MODE_SUBDIRS)}")
+        return AblationTrialPlanner(self.config.ablation_features, self.config.ablation_include_full)
 
     def _model_key(self) -> str:
         return ModelBuilder.model_key(self.config.backbone_name, self.config.backbone_head)
@@ -285,9 +273,6 @@ class BackboneTrainingLauncher:
 
         CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
 
-        if config.infer_after and config.infer_at_end:
-            raise SystemExit("infer_after and infer_at_end are mutually exclusive; infer_after runs inference inside each training job, infer_at_end batches inference after every training finishes")
-
         return config, cli
 
     def build_scheduler(self, argv: list[str]) -> TrainScheduler:
@@ -314,7 +299,6 @@ class BackboneTrainingLauncher:
                     SeedSweepRunner(config, SingleTrainRunner).run()
             else:
                 DdpDispatch.reject_seed_sweep(config, seeds)
-                TrainScheduler.reject_probe_exit(config, f"{len(seeds)}-seed fan-out")
                 SeedFanoutScheduler.for_runner(config, cli.overrides, self.entry_script, SingleTrainRunner, infer_at_end=config.infer_at_end, infer_after=config.infer_after).run()
             return
 

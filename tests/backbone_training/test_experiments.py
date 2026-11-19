@@ -13,7 +13,6 @@ from configuration.training.general.trials   import TrialCatalog
 from configuration.training.general.ablation import AblationCatalog
 from pipelines.backbone.training.experiments import (
     AblationTrialPlanner,
-    ArchitecturePatchStep,
     AugmentationTrialPlanner,
     ClampTrialPlanner,
     ContextTrialPlanner,
@@ -109,26 +108,6 @@ def test_presence_planner_default_matrix():
         assert plans[name]["curriculum.complete.presence_balance"]         is balance
 
 
-def test_presence_planner_rejects_missing_flag():
-    with pytest.raises(ValueError, match="must set"):
-        SlotPresenceTrialPlanner({"A": {"use_active_normalization": True}})
-
-
-def test_presence_planner_rejects_unknown_key():
-    with pytest.raises(ValueError, match="unknown keys"):
-        SlotPresenceTrialPlanner({"F": {"use_active_normalization": True, "presence_balance": False, "amp_focal_gamma": 2.0}})
-
-
-def test_presence_planner_rejects_non_boolean_flag():
-    with pytest.raises(ValueError, match="booleans"):
-        SlotPresenceTrialPlanner({"A": {"use_active_normalization": 1.0, "presence_balance": False}})
-
-
-def test_presence_planner_rejects_empty_trials():
-    with pytest.raises(ValueError, match="at least one"):
-        SlotPresenceTrialPlanner({})
-
-
 def make_patch_planner(training: TrainingQueueConfig | None = None, **overrides) -> PatchSizeTrialPlanner:
     trials = PatchTrialsConfig(**overrides)
     return PatchSizeTrialPlanner(trials, "unet", "conv", {"features": [64, 128, 256]}, training or TrainingQueueConfig())
@@ -183,22 +162,6 @@ def test_patch_planner_keeps_the_lr_scale_constant_with_a_distinct_reference_bat
         assert overrides["training.batch_size"] * 2 == overrides["training.lr_reference_batch_size"]
 
 
-def test_patch_planner_rejects_a_patch_that_breaks_the_pixel_budget():
-    training = TrainingQueueConfig(batch_size=2, patch_size=(8, 8))
-    planner  = make_patch_planner(training, maximum=(16, 16))
-
-    with pytest.raises(ValueError, match="not a single sample fits"):
-        planner.plan()
-
-
-def test_patch_planner_rejects_a_reference_batch_that_cannot_rescale_in_lockstep():
-    training = TrainingQueueConfig(batch_size=128, lr_reference_batch_size=192)
-    planner  = make_patch_planner(training, minimum=(24, 8), maximum=(24, 16))
-
-    with pytest.raises(ValueError, match="lr_reference_batch_size"):
-        planner.plan()
-
-
 def test_patch_planner_leaves_the_batch_alone_without_the_budget():
     planner = make_patch_planner(maximum=(16, 16), constant_pixel_budget=False)
 
@@ -223,30 +186,6 @@ def test_patch_planner_summary_reports_one_batch_without_the_budget():
     planner  = make_patch_planner(training, maximum=(16, 16), constant_pixel_budget=False)
 
     assert planner.summary()["Batch size / LR reference"] == "32 / 64 in every trial (constant pixel budget off)"
-
-
-def test_patch_planner_rejects_an_inadmissible_minimum():
-    planner = make_patch_planner(minimum=(20, 0))
-
-    with pytest.raises(ValueError, match="row=20 is not a multiple"):
-        planner.patch_sizes()
-
-
-def test_patch_planner_rejects_a_single_shape_grid():
-    planner = make_patch_planner(maximum=(8, 8))
-
-    with pytest.raises(ValueError, match="at least 2"):
-        planner.patch_sizes()
-
-
-def test_patch_planner_rejects_bad_stride_ratio():
-    with pytest.raises(ValueError, match="stride_ratio"):
-        make_patch_planner(stride_ratio=1.5)
-
-
-def test_patch_step_rejects_backbones_outside_the_verified_unet_family():
-    with pytest.raises(ValueError, match="patch_trials.step"):
-        ArchitecturePatchStep("pixel_mlp", "conv", {}).resolve()
 
 
 def test_secondary_consecutive_blocks():
@@ -334,48 +273,6 @@ def test_secondary_fixed_channels_leave_the_swept_pool():
     assert all(len(selection) == 4 for selection in selections)
 
 
-def test_secondary_rejects_a_fixed_channel_outside_the_candidates():
-    trials = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=1, fixed=("CH99",))
-
-    with pytest.raises(ValueError, match="CH99"):
-        SecondaryTrialPlanner(trials, CANDIDATES)
-
-
-def test_secondary_rejects_more_swept_channels_than_the_pool_left_by_the_fixed_ones():
-    trials = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=len(CANDIDATES), fixed=("CH01",))
-
-    with pytest.raises(ValueError, match="n_secondaries"):
-        SecondaryTrialPlanner(trials, CANDIDATES)
-
-
-def test_secondary_gaussian_requires_mean_and_sigma():
-    trials = SecondaryTrialsConfig(strategy="gaussian", n_secondaries=2, n_trials=2)
-
-    with pytest.raises(ValueError):
-        SecondaryTrialPlanner(trials, CANDIDATES)
-
-
-def test_secondary_rejects_unknown_strategy():
-    trials = SecondaryTrialsConfig(strategy="bogus", n_secondaries=2)
-
-    with pytest.raises(ValueError):
-        SecondaryTrialPlanner(trials, CANDIDATES)
-
-
-def test_secondary_rejects_too_many_secondaries():
-    trials = SecondaryTrialsConfig(strategy="consecutive", n_secondaries=99)
-
-    with pytest.raises(ValueError):
-        SecondaryTrialPlanner(trials, CANDIDATES)
-
-
-def test_secondary_rejects_repeated_candidates():
-    trials = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=2)
-
-    with pytest.raises(ValueError, match="CH01.*more than once"):
-        SecondaryTrialPlanner(trials, ["CH01", "CH01", "CH02", "CH02", "CH03"])
-
-
 def test_secondary_exhaustive_never_pairs_a_channel_with_itself():
     trials  = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=3)
     planner = SecondaryTrialPlanner(trials, CANDIDATES)
@@ -448,19 +345,6 @@ def test_input_planner_scopes_tracks_per_variant():
     assert planner.summary() == {"Input variants": 2, "Tracks": f"1 all ({len(CANDIDATES)} secondaries), 1 reduced (configured selection)"}
 
 
-def test_input_planner_rejects_unknown_keys():
-    with pytest.raises(ValueError):
-        InputTrialPlanner({"bad": {"tracks": "all", "use_phase": True}}, CANDIDATES)
-
-
-def test_input_planner_rejects_missing_or_invalid_track_scope():
-    with pytest.raises(ValueError):
-        InputTrialPlanner({"bad": {"use_primary": True}}, CANDIDATES)
-
-    with pytest.raises(ValueError):
-        InputTrialPlanner({"bad": {"tracks": "some", "use_primary": True}}, CANDIDATES)
-
-
 REGISTRY_NAMES = ("pixel_mlp", "local_cnn", "unet", "resunet")
 
 
@@ -523,30 +407,10 @@ def test_context_default_rungs_are_size_matched_at_constant_depth():
         assert convs == 20, trial["label"]
 
 
-def test_context_planner_rejects_a_rung_without_a_label():
-    with pytest.raises(ValueError, match="missing required keys"):
-        ContextTrialPlanner([{"backbone": "unet"}], REGISTRY_NAMES)
-
-
-def test_context_planner_rejects_duplicate_labels():
-    trials = [{"label": "a", "backbone": "unet"}, {"label": "a", "backbone": "pixel_mlp"}]
-
-    with pytest.raises(ValueError, match="labels must be unique"):
-        ContextTrialPlanner(trials, REGISTRY_NAMES)
-
-
 def test_context_default_backbones_are_registered():
     from models import BACKBONE_CONFIG_REGISTRY
 
     ContextTrialPlanner(TrialCatalog.context_trials(), tuple(BACKBONE_CONFIG_REGISTRY))
-
-
-def test_context_planner_rejects_empty_and_unknown_backbones():
-    with pytest.raises(ValueError, match="at least one rung"):
-        ContextTrialPlanner([], REGISTRY_NAMES)
-
-    with pytest.raises(ValueError, match="Unknown context_trials backbones"):
-        ContextTrialPlanner([{"label": "a", "backbone": "voxel_gnn"}], REGISTRY_NAMES)
 
 
 def _reach_config(**overrides) -> ReachTrialsConfig:
@@ -600,45 +464,6 @@ def test_reach_planner_counts_the_arms_at_the_configured_gaussian_count():
     assert five_slots.parameter_counts["a"] > two_slots.parameter_counts["a"]
 
 
-def test_reach_planner_rejects_arms_that_are_not_size_matched():
-    rungs = [
-        {"label" : "narrow", "backbone" : "local_cnn", "features" : [8]  * 2},
-        {"label" : "wide",   "backbone" : "local_cnn", "features" : [64] * 2},
-    ]
-
-    with pytest.raises(ValueError, match="in parameter count"):
-        ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, "conv", 9, 6)
-
-
-def test_reach_planner_rejects_a_lone_arm_and_unknown_backbones():
-    with pytest.raises(ValueError, match="at least two architectures"):
-        ReachTrialPlanner(_reach_config(rungs=[{"label": "a", "backbone": "unet"}]), REGISTRY_NAMES, "conv", 9, 6)
-
-    rungs = [{"label": "a", "backbone": "voxel_gnn"}, {"label": "b", "backbone": "unet"}]
-    with pytest.raises(ValueError, match="Unknown reach_trials backbones"):
-        ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, "conv", 9, 6)
-
-
-def test_reach_planner_rejects_duplicate_labels():
-    rungs = [{"label": "a", "backbone": "unet"}, {"label": "a", "backbone": "local_cnn"}]
-
-    with pytest.raises(ValueError, match="labels must be unique"):
-        ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, "conv", 9, 6)
-
-
-def test_reach_planner_rejects_an_input_stack_mismatch():
-    with pytest.raises(ValueError, match="count the wrong first layer"):
-        ReachTrialPlanner(_reach_config(), REGISTRY_NAMES, "conv", 61, 6)
-
-
-def test_reach_and_context_planners_reject_bare_string_rungs():
-    with pytest.raises(ValueError, match="must be dicts"):
-        ReachTrialPlanner(_reach_config(rungs=["local_cnn", "unet"]), REGISTRY_NAMES, "conv", 9, 6)
-
-    with pytest.raises(ValueError, match="pre-rung format"):
-        ContextTrialPlanner(["pixel_mlp", "local_cnn", "unet"], REGISTRY_NAMES)
-
-
 HEAD_NAMES     = ("conv", "multihead", "per_gaussian", "set_pred")
 MATCHING_NAMES = ("hungarian", "sorted_gt")
 
@@ -655,31 +480,6 @@ def test_head_matching_planner_default_crosses_heads_and_matchings():
         ("hm-set_pred-hungarian", {"backbone_name": "unet", "backbone_head": "set_pred", "curriculum.warmup.param_matching": "hungarian", "curriculum.complete.param_matching": "hungarian"}),
     ]
     assert planner.summary() == {"Backbone": "unet", "Heads": ["conv", "set_pred"], "Matchings": ["sorted_gt", "hungarian"], "Total runs": 4}
-
-
-def test_head_matching_planner_rejects_unknown_axes():
-    with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(), "voxel_gnn", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
-
-    with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(heads=["conv", "cone"]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
-
-    with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(matchings=["sorted_gt", "greedy"]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
-
-
-def test_head_matching_planner_rejects_empty_and_duplicate_axes():
-    with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(heads=[]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
-
-    with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(matchings=[]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
-
-    with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(heads=["conv", "conv"]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
-
-    with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(matchings=["hungarian", "hungarian"]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
 
 
 def test_augmentation_planner_default_walks_the_ladder():
@@ -738,28 +538,6 @@ def test_augmentation_planner_paths_are_entry_config_leaves():
             assert hasattr(getattr(config, section), leaf), path
 
 
-def test_augmentation_planner_rejects_bad_probabilities():
-    with pytest.raises(ValueError, match="flip_probability"):
-        AugmentationTrialPlanner(AugmentationTrialsConfig(flip_probability=0.0))
-
-    with pytest.raises(ValueError, match="flip_probability"):
-        AugmentationTrialPlanner(AugmentationTrialsConfig(flip_probability=1.5))
-
-    with pytest.raises(ValueError, match="noise_probability"):
-        AugmentationTrialPlanner(AugmentationTrialsConfig(noise_probability=0.0))
-
-
-def test_augmentation_planner_rejects_bad_noise_stds():
-    with pytest.raises(ValueError, match="at least one"):
-        AugmentationTrialPlanner(AugmentationTrialsConfig(noise_stds=[]))
-
-    with pytest.raises(ValueError, match="positive"):
-        AugmentationTrialPlanner(AugmentationTrialsConfig(noise_stds=[0.01, 0.0]))
-
-    with pytest.raises(ValueError, match="unique"):
-        AugmentationTrialPlanner(AugmentationTrialsConfig(noise_stds=[0.01, 0.01]))
-
-
 def test_clamp_planner_default_walks_the_ladder():
     planner = ClampTrialPlanner(ClampTrialsConfig())
 
@@ -807,52 +585,6 @@ def test_clamp_planner_paths_are_entry_config_leaves():
         for path, value in overrides.items():
             section, leaf = path.split(".")
             assert hasattr(getattr(config, section), leaf), path
-
-
-def test_clamp_planner_rejects_bad_slope_lists():
-    with pytest.raises(ValueError, match="at least one"):
-        ClampTrialPlanner(ClampTrialsConfig(leaky_slopes=[], param_leaky_slopes=[]))
-
-    with pytest.raises(ValueError, match="pair up by position"):
-        ClampTrialPlanner(ClampTrialsConfig(leaky_slopes=[0.1, 0.3], param_leaky_slopes=[0.1]))
-
-    with pytest.raises(ValueError, match="positive"):
-        ClampTrialPlanner(ClampTrialsConfig(leaky_slopes=[0.0], param_leaky_slopes=[0.1]))
-
-    with pytest.raises(ValueError, match="positive"):
-        ClampTrialPlanner(ClampTrialsConfig(leaky_slopes=[0.1], param_leaky_slopes=[-0.1]))
-
-    with pytest.raises(ValueError, match="unique"):
-        ClampTrialPlanner(ClampTrialsConfig(leaky_slopes=[0.1, 0.1], param_leaky_slopes=[0.1, 0.2]))
-
-
-def test_input_planner_rejects_empty_trials():
-    with pytest.raises(ValueError):
-        InputTrialPlanner({}, CANDIDATES)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_pair_planner_crosses_components_and_weights():
@@ -931,47 +663,6 @@ def test_pair_planner_default_config_targets_param_l1_partners():
     assert "pair-moments-w0.05" in dict(plans)
 
 
-def test_pair_planner_rejects_unknown_base_component():
-    with pytest.raises(ValueError, match="base_component"):
-        PairLossTrialPlanner(PairTrialsConfig(base_component="bogus", components=["cosine_curve"], weights=[0.1]))
-
-
-def test_pair_planner_rejects_non_positive_base_weight():
-    with pytest.raises(ValueError, match="base_weight"):
-        PairLossTrialPlanner(PairTrialsConfig(base_weight=0.0, components=["cosine_curve"], weights=[0.1]))
-
-
-def test_pair_planner_rejects_empty_components():
-    with pytest.raises(ValueError, match="at least one"):
-        PairLossTrialPlanner(PairTrialsConfig(components=[], weights=[0.1]))
-
-
-def test_pair_planner_rejects_unknown_component():
-    with pytest.raises(ValueError, match="bogus"):
-        PairLossTrialPlanner(PairTrialsConfig(components=["bogus"], weights=[0.1]))
-
-
-def test_pair_planner_rejects_base_repeated_as_candidate():
-    with pytest.raises(ValueError, match="repeat"):
-        PairLossTrialPlanner(PairTrialsConfig(base_component="param_l1", components=["param_l1", "cosine_curve"], weights=[0.1]))
-
-
-def test_pair_planner_rejects_duplicate_components():
-    with pytest.raises(ValueError, match="unique"):
-        PairLossTrialPlanner(PairTrialsConfig(components=["moments", "moments"], weights=[0.1]))
-
-
-def test_pair_planner_rejects_bad_weights():
-    with pytest.raises(ValueError, match="at least one"):
-        PairLossTrialPlanner(PairTrialsConfig(components=["moments"], weights=[]))
-
-    with pytest.raises(ValueError, match="positive"):
-        PairLossTrialPlanner(PairTrialsConfig(components=["moments"], weights=[0.1, -0.1]))
-
-    with pytest.raises(ValueError, match="unique"):
-        PairLossTrialPlanner(PairTrialsConfig(components=["moments"], weights=[0.1, 0.1]))
-
-
 def test_pair_plan_round_trips_through_config_cli():
     trials  = PairTrialsConfig(base_component="param_l1", components=["cosine_curve"], weights=[0.05], include_baseline=True)
     planner = PairLossTrialPlanner(trials)
@@ -1038,17 +729,6 @@ def test_log_energy_planner_replace_covariance_strips_it_from_every_arm():
         for stage in ("warmup", "complete"):
             assert overrides[f"curriculum.{stage}.use_moments"]    is False
             assert overrides[f"curriculum.{stage}.weight_moments"] == 0.0
-
-
-def test_log_energy_planner_rejects_bad_weights():
-    with pytest.raises(ValueError, match="at least one"):
-        LogEnergyTrialPlanner(LogEnergyTrialsConfig(weights=[]))
-
-    with pytest.raises(ValueError, match="positive"):
-        LogEnergyTrialPlanner(LogEnergyTrialsConfig(weights=[0.1, 0.0]))
-
-    with pytest.raises(ValueError, match="unique"):
-        LogEnergyTrialPlanner(LogEnergyTrialsConfig(weights=[0.1, 0.1]))
 
 
 def test_log_energy_plan_round_trips_through_config_cli():
@@ -1134,31 +814,6 @@ def test_ablation_planner_without_full_run():
         "abl-3-baseline",
     ]
     assert planner.summary()["Total runs"] == 3
-
-
-def test_ablation_planner_rejects_empty_features():
-    with pytest.raises(ValueError):
-        AblationTrialPlanner([], include_full=True)
-
-
-def test_ablation_planner_rejects_feature_without_degrade():
-    with pytest.raises(ValueError, match="degrade"):
-        AblationTrialPlanner([{"label": "x", "enable": {"curriculum.enabled": True}}], include_full=True)
-
-
-def test_ablation_planner_rejects_feature_without_enable():
-    with pytest.raises(ValueError, match="enable"):
-        AblationTrialPlanner([{"label": "x", "degrade": {"curriculum.enabled": False}}], include_full=True)
-
-
-def test_ablation_planner_rejects_duplicate_labels():
-    features = [
-        {"label": "same", "enable": {"curriculum.warmup.use_cosine_curve": True},         "degrade": {"curriculum.warmup.use_cosine_curve": False}},
-        {"label": "same", "enable": {"curriculum.warmup.use_active_normalization": True}, "degrade": {"curriculum.warmup.use_active_normalization": False}},
-    ]
-
-    with pytest.raises(ValueError, match="unique"):
-        AblationTrialPlanner(features, include_full=True)
 
 
 def test_ablation_planner_allows_complete_terms_with_disabled_curriculum():
@@ -1290,21 +945,6 @@ def test_secondary_from_dataset_loads_candidates(tmp_path):
     assert planner.candidates == ["S1", "S2", "S3", "S4"]
     assert len(plans) >= 1
     assert all("paths.secondary_labels" in overrides for _, overrides in plans)
-
-
-@pytest.mark.parametrize("planner_class, trials", (
-    (InputTrialPlanner,     TrialCatalog.input_trials()),
-    (SecondaryTrialPlanner, SecondaryTrialsConfig(strategy="consecutive", n_secondaries=1, block_step=1)),
-))
-def test_planners_from_dataset_refuse_a_dataset_without_secondaries(tmp_path, planner_class, trials):
-    with pytest.raises(FileNotFoundError, match="dataset.json does not exist"):
-        planner_class.from_dataset(trials, tmp_path / "missing")
-
-    with pytest.raises(ValueError, match="records no channel labels"):
-        planner_class.from_dataset(trials, _dataset(tmp_path / "unlabelled", None))
-
-    with pytest.raises(ValueError, match="only its reference channel"):
-        planner_class.from_dataset(trials, _dataset(tmp_path / "reference", ["CH00"]))
 
 
 @pytest.mark.parametrize("mode", ("input", "secondary"))

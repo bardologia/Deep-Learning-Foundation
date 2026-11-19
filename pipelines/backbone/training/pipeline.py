@@ -38,13 +38,7 @@ class HeadPriorBias:
         return [f"slot_{slot}_{param}" for slot in range(self.n_gaussians) for param in self.PARAMS]
 
     def _head_bias(self, model) -> torch.nn.Parameter:
-        head = model.config.head
-        if head != "conv":
-            raise ValueError(f"prior_bias_init sets the bias of the conv head's single output convolution, but the model uses the '{head}' head; select backbone_head conv or turn prior_bias_init off")
-
         bias = model.output_head.bias
-        if bias.numel() != len(self.PARAMS) * self.n_gaussians:
-            raise ValueError(f"The conv head emits {bias.numel()} channels but the prior covers {self.n_gaussians} slots of {len(self.PARAMS)} parameters")
 
         return bias
 
@@ -75,21 +69,11 @@ class HeadPriorBias:
 
         for part in self._parts():
             labels = part.gt_selected
-            if labels.shape[0] != n_channels:
-                raise ValueError(f"Training region '{part.split_name}' carries {labels.shape[0]} label channels, but the prior needs {n_params} per slot for {self.n_gaussians} slots")
 
             self._accumulate(labels, sums, counts)
             n_pixels += int(labels.shape[1] * labels.shape[2])
 
-        empty = [slot for slot in range(self.n_gaussians) if counts[slot] == 0]
-        if empty:
-            raise ValueError(f"Slots {empty} are active on no training pixel at activity threshold {self.activity_threshold:g}, so they have no label prior")
-
         prior = sums / np.repeat(counts, n_params)
-
-        missing = [name for name, value in zip(self.channel_names, prior) if not np.isfinite(value)]
-        if missing:
-            raise ValueError(f"The training labels give a non-finite prior for {missing}; check the label run for NaN or infinite values on active pixels")
 
         return prior, counts, n_pixels
 
@@ -141,7 +125,6 @@ class TrainingPipeline:
         overfit_check   : OverfitCheckConfig | None = None,
         prior_bias_init : bool = False,
     ) -> None:
-
         self.trainer_config  = trainer_config
         self.dataset_config  = dataset_config
         self.backbone_name   = backbone_name

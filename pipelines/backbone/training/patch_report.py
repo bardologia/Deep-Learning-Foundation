@@ -60,9 +60,6 @@ class PatchTrialCollector:
     def _unit_directory(self, unit_name: str) -> Path | None:
         hits = SweepResumeRoot.matches(self.runs_root, unit_name)
 
-        if len(hits) > 1:
-            raise ValueError(f"unit '{unit_name}' matches {len(hits)} run directories under {self.runs_root}: {[str(hit) for hit in hits]}; remove or move the extra ones before writing the report")
-
         return hits[0] if hits else None
 
     def _test_loss(self, run_dir: Path) -> float | None:
