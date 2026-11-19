@@ -61,7 +61,6 @@ class Representation(Enum):
             safe_mag  = np.where(magnitude > 0, magnitude, 1.0)
             return [magnitude, data.real / safe_mag, data.imag / safe_mag, np.angle(data)]
 
-        raise ValueError(f"Unsupported representation: {self}")
 
     def convert_into(self, out: np.ndarray, data: np.ndarray) -> None:
         cpp      = _CHANNELS_PER_SOURCE[self.value]

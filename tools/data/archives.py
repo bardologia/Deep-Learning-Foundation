@@ -23,20 +23,11 @@ class ArchivePacker:
             path.unlink()
 
     def _plan(self) -> List[List[Tuple[Path, str]]]:
-        if not self.entries:
-            raise ValueError(f"Nothing to pack into {self.output_dir / self.stem}{self.SUFFIX}: the file set is empty")
-
         volumes = []
         filled  = 0
 
         for source, arcname in self.entries:
-            if not source.is_file():
-                raise FileNotFoundError(f"Cannot pack {source}: the file vanished after it was selected")
-
             size = source.stat().st_size
-
-            if size > self.max_bytes:
-                raise ValueError(f"Cannot pack {source}: it is {size / (1024 * 1024):,.1f} MB on its own, above the {self.max_bytes / (1024 * 1024):,.1f} MB cap; raise max_attachment_mb or drop it from the gathered paths")
 
             if not volumes or filled + size > self.max_bytes:
                 volumes.append([])

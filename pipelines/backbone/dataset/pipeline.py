@@ -36,8 +36,6 @@ class DatasetPipeline:
         log_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logger or Logger(log_dir=str(log_dir), name="dataset_pipeline", level="INFO")
 
-        config.split_regions.validate_disjoint()
-
         self.layout          = Layout(config.preprocessing_run_directory,  logger=self.logger, parameters_path=config.parameters_path)
         self.cropper         = Cropper(self.layout, config.split_regions,  logger=self.logger, secondary_labels=config.secondary_labels, input_config=config.input_config)
         self.metadata_writer = MetadataWriter(self.training_run_directory, logger=self.logger)

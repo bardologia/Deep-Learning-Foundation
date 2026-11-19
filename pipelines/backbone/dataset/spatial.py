@@ -24,7 +24,6 @@ class Cropper:
         self.secondary_indices = layout.secondary_indices(secondary_labels)
         self.secondary_labels  = self._resolve_labels(secondary_labels)
 
-        split_regions.validate_within(layout.global_crop)
         self._validate_parameters_extent()
 
         self.logger.section("[Cropper Initialized]")

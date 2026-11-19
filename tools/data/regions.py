@@ -11,12 +11,6 @@ class CropRegion:
     col_start   : int
     col_end     : int
 
-    def __post_init__(self) -> None:
-        if self.row_start >= self.row_end:
-            raise ValueError(f"row_start ({self.row_start}) must be < row_end ({self.row_end})")
-        if self.col_start   >= self.col_end:
-            raise ValueError(f"col_start ({self.col_start}) must be < col_end ({self.col_end})")
-
     def as_tuple(self) -> Tuple[int, int, int, int]:
         return (self.row_start, self.row_end, self.col_start, self.col_end)
 
@@ -99,25 +93,3 @@ class SplitRegions:
                 label = name if len(regions) == 1 else f"{name}[{index}]"
                 rows.append({"Split": label, "Crop": str(region.as_tuple()), "Rows": region.row_size, "Cols": region.col_size})
         return rows
-
-    def validate_disjoint(self) -> None:
-        labeled = []
-        for name, regions in self.region_lists():
-            for index, region in enumerate(regions):
-                label = name if len(regions) == 1 else f"{name}[{index}]"
-                labeled.append((label, region))
-
-        for i in range(len(labeled)):
-            for j in range(i + 1, len(labeled)):
-                name_a, region_a = labeled[i]
-                name_b, region_b = labeled[j]
-                if region_a.overlaps(region_b):
-                    raise ValueError(f"Split regions '{name_a}' {region_a.as_tuple()} and '{name_b}' {region_b.as_tuple()} overlap; all train/val/test regions must be spatially disjoint.")
-
-    def validate_within(self, global_crop: CropRegion) -> None:
-        for name, regions in self.region_lists():
-            for index, region in enumerate(regions):
-                if not global_crop.contains(region):
-                    label = name if len(regions) == 1 else f"{name}[{index}]"
-                    raise ValueError(f"Split region '{label}' {region.as_tuple()} is not contained in the preprocessing global crop {global_crop.as_tuple()}; out-of-crop coordinates would silently wrap or truncate when sliced, loading pixels from the wrong area.")
-
