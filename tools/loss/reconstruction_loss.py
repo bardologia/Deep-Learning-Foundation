@@ -21,13 +21,6 @@ class ReconstructionLoss:
     KINDS = ("mse", "l1", "huber", "charbonnier", "cosine", "log_energy", "tv", "sobolev")
 
     def __init__(self, terms: tuple[ReconstructionTerm, ...], huber_delta: float, charbonnier_eps: float) -> None:
-        if not terms:
-            raise ValueError("Reconstruction loss needs at least one enabled term")
-
-        unknown = [term.kind for term in terms if term.kind not in self.KINDS]
-        if unknown:
-            raise ValueError(f"Unknown reconstruction loss kinds {unknown}. Available: {', '.join(self.KINDS)}")
-
         self.terms           = tuple(terms)
         self.huber_delta     = huber_delta
         self.charbonnier_eps = charbonnier_eps
@@ -44,9 +37,8 @@ class ReconstructionLoss:
         elif kind == "cosine":      return CurveLoss.cosine(prediction, target, axis=1)
         elif kind == "log_energy":  return CurveLoss.log_energy(prediction, target, axis=1)
         elif kind == "tv":          return CurveLoss.l1_diff(diff[:, 1:] - diff[:, :-1])
-        elif kind == "sobolev":     return CurveLoss.mse_diff(CurveLoss.second_difference(diff))
 
-        raise ValueError(f"Unknown reconstruction loss kind '{kind}'. Available: {', '.join(self.KINDS)}")
+        return CurveLoss.mse_diff(CurveLoss.second_difference(diff))
 
     def evaluate(self, prediction: torch.Tensor, target: torch.Tensor) -> tuple[torch.Tensor, dict]:
         diff       = prediction - target

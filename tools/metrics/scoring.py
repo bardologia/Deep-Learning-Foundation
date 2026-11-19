@@ -138,9 +138,6 @@ class RankCorrelation:
         flat_a = np.asarray(a, dtype=np.float64).reshape(-1)
         flat_b = np.asarray(b, dtype=np.float64).reshape(-1)
 
-        if flat_a.size != flat_b.size or flat_a.size < cls.MIN_PAIRS:
-            raise ValueError(f"Spearman needs two matched vectors of at least {cls.MIN_PAIRS} entries, got {flat_a.size} and {flat_b.size}")
-
         both = np.isfinite(flat_a) & np.isfinite(flat_b)
         if int(both.sum()) < cls.MIN_PAIRS:
             return float("nan")
@@ -175,7 +172,6 @@ class MetricOrientation:
             return "lower"
         if any(token in key for token in cls._HIGHER_TOKENS):
             return "higher"
-        raise KeyError(f"Metric '{key}' has no declared orientation; add it to MetricOrientation before a report ranks it")
 
     @classmethod
     def higher_is_better(cls, key: str) -> bool | None:

@@ -24,13 +24,6 @@ class PairedPermutationTest:
         a = np.asarray(a, dtype=np.float64)
         b = np.asarray(b, dtype=np.float64)
 
-        if a.shape != b.shape or a.ndim != 1:
-            raise ValueError(f"Paired test needs two equal-length 1-D samples, got {a.shape} and {b.shape}")
-        if a.size < 2:
-            raise ValueError(f"Paired test needs at least 2 pairs, got {a.size}")
-        if not np.all(np.isfinite(a)) or not np.all(np.isfinite(b)):
-            raise ValueError("Paired test needs only finite values in both samples")
-
         diffs    = a - b
         observed = diffs.mean()
         spread   = float(diffs.std(ddof=1))
@@ -71,9 +64,6 @@ class SignificanceVsLeader:
         self.test = test if test is not None else PairedPermutationTest()
 
     def compute(self, per_seed: dict[str, dict[str, float]], leader: str) -> dict[str, dict]:
-        if leader not in per_seed:
-            raise KeyError(f"Leader '{leader}' is missing from the per-seed values")
-
         leader_values = per_seed[leader]
 
         raw     = {}

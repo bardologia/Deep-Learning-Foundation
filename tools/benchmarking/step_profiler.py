@@ -41,9 +41,6 @@ class StepProfiler:
         )
 
     def _batches(self, loader: DataLoader, total: int):
-        if len(loader) == 0:
-            raise ValueError(f"The profiling loader yields zero batches: {len(self.feed.dataset)} samples at batch size {self.batch_size} with drop_last; lower the batch size")
-
         produced = 0
         while produced < total:
             for batch in loader:
