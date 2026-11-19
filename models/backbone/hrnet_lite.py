@@ -1,9 +1,3 @@
-"""Lightweight HRNet backbone that keeps parallel multi-resolution branches alive.
-
-Unlike an encoder-decoder, every branch runs at its own stride from the stem to the
-output and exchanges information through repeated cross-resolution fusion, so the
-highest-resolution stream never loses its spatial detail.
-"""
 
 from __future__ import annotations
 
@@ -16,27 +10,8 @@ from ..blocks                    import LayerFactory, OutputHeadsMixin, Residual
 
 
 class BranchFusion(nn.Module):
-    """Exchanges features between all resolution branches of an HRNet stage.
-
-    Each target branch sums transformed copies of every source branch: strided
-    convolutions for higher-to-lower resolution, 1x1 projections plus bilinear
-    resampling for lower-to-higher, identity for the branch itself.
-
-    Attributes:
-        n_branches : Number of parallel resolution branches being fused.
-        transforms : Grid of per-(target, source) transform modules.
-        activation : Activation applied to each fused branch.
-    """
 
     def __init__(self, branch_channels: list[int], activation: str, normalization: str, bias: bool):
-        """Builds the cross-resolution transform grid.
-
-        Args:
-            branch_channels : Channel width of each branch, ordered from the highest spatial resolution (index 0) to the lowest.
-            activation      : Activation name resolved by ``LayerFactory.build_activation``.
-            normalization   : 2D normalization name resolved by ``LayerFactory.build_norm2d``.
-            bias            : Whether the transform convolutions carry a bias term.
-        """
         super().__init__()
         n_branches      = len(branch_channels)
         self.n_branches = n_branches
@@ -74,15 +49,6 @@ class BranchFusion(nn.Module):
         self.activation = LayerFactory.build_activation(activation)
 
     def forward(self, branch_inputs: list[torch.Tensor]) -> list[torch.Tensor]:
-        """Fuses every branch into every other branch.
-
-        Args:
-            branch_inputs : One feature map per branch, each of shape (batch, branch_channels[i], height_i, width_i).
-
-        Returns:
-            One fused feature map per branch, each keeping the shape of the
-            corresponding entry of ``branch_inputs``.
-        """
         outputs = []
         for target_index in range(self.n_branches):
             target_size = branch_inputs[target_index].shape[2:]
@@ -100,26 +66,8 @@ class BranchFusion(nn.Module):
 
 
 class HRNetLite(nn.Module, OutputHeadsMixin):
-    """HRNet-style backbone predicting per-pixel Gaussian mixture parameters.
-
-    A stem produces the full-resolution branch; each further stage adds one
-    half-resolution branch, runs residual blocks on every branch and fuses them.
-    All branches are finally upsampled to the stem resolution and concatenated.
-
-    Attributes:
-        config             : Architecture configuration driving widths, depth and head choice.
-        embedding_channels : Channel width of the fused embedding fed to the output head.
-    """
 
     def __init__(self, config: HRNetLiteConfig | None = None):
-        """Builds the stem, the branch ladder, the fusion modules and the output head.
-
-        Args:
-            config : Architecture configuration; defaults to ``HRNetLiteConfig()``.
-
-        Raises:
-            ValueError : If ``config.n_branches`` is smaller than two.
-        """
         super().__init__()
         if config is None:
             config = HRNetLiteConfig()
@@ -184,14 +132,6 @@ class HRNetLite(nn.Module, OutputHeadsMixin):
         LayerFactory.initialize_weights(module=self, mode=config.init_mode)
 
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
-        """Returns the fused multi-resolution embedding at input resolution.
-
-        Args:
-            x : Input feature stack of shape (batch, in_channels, height, width).
-
-        Returns:
-            Embedding of shape (batch, embedding_channels, height, width).
-        """
         branches = [self.stem(x)]
 
         for transition, branch_blocks, fusion in zip(self.transition_modules, self.stage_modules, self.fuse_modules):
@@ -207,14 +147,4 @@ class HRNetLite(nn.Module, OutputHeadsMixin):
         return self.final_fuse(torch.cat(upsampled, dim=1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Maps the input stack to per-pixel outputs through the configured head.
-
-        Args:
-            x : Input feature stack of shape (batch, in_channels, height, width).
-
-        Returns:
-            Tensor of shape (batch, out_channels, height, width) holding the
-            interleaved Gaussian parameters, or the raw embedding when the head
-            is ``none``.
-        """
         return self._head_forward(self.encode_decode(x))

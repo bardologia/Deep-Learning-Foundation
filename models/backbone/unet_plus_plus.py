@@ -1,8 +1,3 @@
-"""UNet++ backbone with a dense grid of nested decoder skip pathways.
-
-Node (i, j) consumes every shallower node on its own level plus the upsampled node
-(i + 1, j - 1), so encoder features reach the output through progressively refined paths.
-"""
 
 from __future__ import annotations
 
@@ -13,22 +8,8 @@ from configuration.architectures import UNetPlusPlusConfig
 from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadsMixin
 
 class UNetPlusPlus(nn.Module, OutputHeadsMixin):
-    """UNet++ backbone predicting per-pixel Gaussian mixture parameters.
-
-    Attributes:
-        config             : Architecture configuration driving widths, depth and head choice.
-        embedding_channels : Channel width of the final dense node fed to the output head.
-    """
 
     def __init__(self, config: UNetPlusPlusConfig | None = None):
-        """Builds the encoder column, the dense decoder nodes and the output head.
-
-        Args:
-            config : Architecture configuration; defaults to ``UNetPlusPlusConfig()``.
-
-        Raises:
-            ValueError : If ``features`` does not hold exactly four channel sizes.
-        """
         super().__init__()
         if config is None:
             config = UNetPlusPlusConfig()
@@ -81,16 +62,6 @@ class UNetPlusPlus(nn.Module, OutputHeadsMixin):
         LayerFactory.initialize_weights(module=self, mode=config.init_mode)
 
     def _upsample_and_match(self, source: torch.Tensor, reference: torch.Tensor, level: str) -> torch.Tensor:
-        """Upsamples a node by two and resizes it onto the reference grid.
-
-        Args:
-            source    : Feature map to upsample, of shape (batch, channels, height, width).
-            reference : Feature map whose spatial size the result must match.
-            level     : Key selecting the transposed convolution for this level; ignored in bilinear mode.
-
-        Returns:
-            Feature map with the channels of ``source`` and the spatial size of ``reference``.
-        """
         if self._upsample_mode == "convtranspose":
             upsampled = self.upsample_modules[level](source)
         else:
@@ -98,14 +69,6 @@ class UNetPlusPlus(nn.Module, OutputHeadsMixin):
         return FeatureGeometry.match_spatial_size(source=upsampled, reference=reference)
 
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
-        """Returns the embedding at input resolution.
-
-        Args:
-            x : Input feature stack of shape (batch, in_channels, height, width).
-
-        Returns:
-            Embedding of shape (batch, embedding_channels, height, width).
-        """
         node_0_0 = self.encoder_0_0(x)
         node_1_0 = self.encoder_1_0(self.pool(node_0_0))
         node_2_0 = self.encoder_2_0(self.pool(node_1_0))
@@ -139,14 +102,4 @@ class UNetPlusPlus(nn.Module, OutputHeadsMixin):
         return node_0_4
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Maps the input stack to per-pixel outputs through the configured head.
-
-        Args:
-            x : Input feature stack of shape (batch, in_channels, height, width).
-
-        Returns:
-            Tensor of shape (batch, out_channels, height, width) holding the
-            interleaved Gaussian parameters, or the raw embedding when the head
-            is ``none``.
-        """
         return self._head_forward(self.encode_decode(x))

@@ -1,8 +1,3 @@
-"""Attention U-Net backbone and its additive skip-connection attention gate.
-
-Implements the Oktay et al. attention gate on top of the standard encoder,
-bottleneck, decoder structure shared by the backbone family.
-"""
 
 from __future__ import annotations
 
@@ -13,13 +8,6 @@ from configuration.architectures import AttentionUNetConfig
 from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadsMixin
 
 class AttentionGate(nn.Module):
-    """Additive attention gate that reweights a U-Net skip connection.
-
-    Projects the coarse decoder gate signal and the finer skip tensor into a
-    shared intermediate space, forms a single-channel sigmoid attention map from
-    their sum, and rescales the skip connection with it before a final
-    projection.
-    """
 
     def __init__(
         self,
@@ -29,15 +17,6 @@ class AttentionGate(nn.Module):
         normalization:         str  = "batch",
         bias:                  bool = False,
     ):
-        """Builds the gate, skip, scoring and output projections.
-
-        Args:
-            gate_channels         : Channel count of the coarse decoder gate signal.
-            skip_channels         : Channel count of the encoder skip connection, also the channel count of the returned tensor.
-            intermediate_channels : Width of the shared space in which the gate and skip projections are summed.
-            normalization         : Normalisation kind passed to ``LayerFactory``.
-            bias                  : Whether the projection convolutions carry a bias term.
-        """
         super().__init__()
         self.gate_projection = nn.Sequential(
             nn.Conv2d(
@@ -79,15 +58,6 @@ class AttentionGate(nn.Module):
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, gate_signal: torch.Tensor, skip_connection: torch.Tensor) -> torch.Tensor:
-        """Returns the attention-weighted skip connection.
-
-        Args:
-            gate_signal     : Decoder feature map of shape (batch, gate_channels, height/2, width/2).
-            skip_connection : Encoder feature map of shape (batch, skip_channels, height, width).
-
-        Returns:
-            Gated skip features of shape (batch, skip_channels, height, width).
-        """
         projected_gate = self.gate_projection(gate_signal)
         projected_skip = self.skip_projection(skip_connection)
 
@@ -99,27 +69,8 @@ class AttentionGate(nn.Module):
         return self.output_transform(skip_connection * attention_weights)
 
 class AttentionUNet(nn.Module, OutputHeadsMixin):
-    """U-Net whose skip connections pass through additive attention gates.
-
-    Encoder blocks halve the resolution at every stage, the decoder upsamples
-    back and concatenates each skip after it has been reweighted by an
-    ``AttentionGate``. The final decoder feature map feeds the output head
-    selected in the configuration.
-
-    Attributes:
-        config             : Architecture configuration in use.
-        embedding_channels : Channel count of the decoder embedding handed to the output head.
-    """
 
     def __init__(self, config: AttentionUNetConfig | None = None):
-        """Builds the encoder, bottleneck, attention-gated decoder and head.
-
-        Args:
-            config : Architecture configuration; a default ``AttentionUNetConfig`` is used when omitted.
-
-        Raises:
-            ValueError : If ``features`` is empty or ``attention_intermediate_ratio`` is not positive.
-        """
         super().__init__()
         if config is None:
             config = AttentionUNetConfig()
@@ -202,15 +153,6 @@ class AttentionUNet(nn.Module, OutputHeadsMixin):
         LayerFactory.initialize_weights(module=self, mode=config.init_mode)
 
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
-        """Returns the decoder embedding for an input patch.
-
-        Args:
-            x : Input stack of shape (batch, in_channels, height, width).
-
-        Returns:
-            Feature map of shape (batch, features[0], height, width), resized
-            back to the spatial size of ``x``.
-        """
         original_input = x
         skip_connections: list[torch.Tensor] = []
         for encoder_block, downsample in zip(self.encoder_blocks, self.downsample_layers):
@@ -235,14 +177,4 @@ class AttentionUNet(nn.Module, OutputHeadsMixin):
         return FeatureGeometry.match_spatial_size(source=x, reference=original_input)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Returns the head output for an input patch.
-
-        Args:
-            x : Input stack of shape (batch, in_channels, height, width).
-
-        Returns:
-            Head output of shape (batch, out_channels, height, width); for the
-            Gaussian heads the channels are the per-slot parameters interleaved
-            as amplitude, mu and sigma.
-        """
         return self._head_forward(self.encode_decode(x))

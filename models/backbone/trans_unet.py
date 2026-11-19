@@ -1,9 +1,3 @@
-"""TransUNet backbone: a convolutional U-Net whose bottleneck is a transformer.
-
-The CNN encoder reduces the input, the bottleneck feature map is tokenized with
-non-overlapping patches and processed by transformer blocks, and the CNN decoder
-restores resolution using the encoder skips.
-"""
 
 from __future__ import annotations
 
@@ -15,24 +9,8 @@ from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory
 
 
 class TransUNet(nn.Module, OutputHeadsMixin):
-    """TransUNet backbone predicting per-pixel Gaussian mixture parameters.
-
-    Attributes:
-        config               : Architecture configuration driving widths, depth and head choice.
-        expected_grid_size   : Token grid side the positional embedding was built for.
-        positional_embedding : Learned positional embedding of shape (1, expected_grid_size ** 2, bottleneck_channels), resampled when the actual grid differs.
-        embedding_channels   : Channel width of the decoded embedding fed to the output head.
-    """
 
     def __init__(self, config: TransUNetConfig | None = None):
-        """Builds the CNN encoder, the transformer bottleneck, the decoder and the head.
-
-        Args:
-            config : Architecture configuration; defaults to ``TransUNetConfig()``.
-
-        Raises:
-            ValueError : If ``cnn_features`` is empty, ``patch_size`` is not positive, the CNN stages reduce the image below one pixel, or ``patch_size`` exceeds the bottleneck feature size.
-        """
         super().__init__()
         if config is None:
             config = TransUNetConfig()
@@ -135,14 +113,6 @@ class TransUNet(nn.Module, OutputHeadsMixin):
         LayerFactory.initialize_weights(module=self, mode=config.init_mode)
 
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
-        """Returns the embedding at input resolution.
-
-        Args:
-            x : Input feature stack of shape (batch, in_channels, height, width).
-
-        Returns:
-            Embedding of shape (batch, embedding_channels, height, width).
-        """
         skip_connections: list[torch.Tensor] = []
         for encoder_block, downsample in zip(self.encoder_blocks, self.downsample_layers):
             x = encoder_block(x)
@@ -171,14 +141,4 @@ class TransUNet(nn.Module, OutputHeadsMixin):
         return x
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Maps the input stack to per-pixel outputs through the configured head.
-
-        Args:
-            x : Input feature stack of shape (batch, in_channels, height, width).
-
-        Returns:
-            Tensor of shape (batch, out_channels, height, width) holding the
-            interleaved Gaussian parameters, or the raw embedding when the head
-            is ``none``.
-        """
         return self._head_forward(self.encode_decode(x))

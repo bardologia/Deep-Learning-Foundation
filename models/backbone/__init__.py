@@ -1,11 +1,3 @@
-"""Registry of the single-trunk backbone architectures and their configurations.
-
-Collects the twenty segmentation-style backbones used as volumetric profile
-predictors, pairs each with its configuration dataclass, and exposes the
-``get_backbone`` factory built on top of those two registries. ``BACKBONE_HEADS``
-lists the selectable output heads and ``BACKBONE_IMAGE_SIZE_MODELS`` names the
-transformer backbones that need an explicit input image size.
-"""
 
 from configuration.architectures import AttentionUNetConfig, ConvNeXtUNetConfig, DeepLabV3PlusConfig, DenseUNetConfig, FPNNetConfig, HRNetLiteConfig, LinkNetConfig, LocalCNNConfig, MultiResUNetConfig, NAFNetConfig, PixelMLPNetConfig, ResUNetConfig, SegFormerLiteConfig, SwinUNetConfig, TransUNetConfig, U2NetLiteConfig, UNETRConfig, UNetConfig, UNetPlusPlusConfig, UNetSkipConfig
 from ..blocks         import DropPath, LayerFactory
