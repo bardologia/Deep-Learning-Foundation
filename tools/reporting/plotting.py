@@ -75,8 +75,6 @@ class PlotBase:
 
     @classmethod
     def use_style(cls, style: str) -> None:
-        if style not in PlotBase.STYLE_RC:
-            raise ValueError(f"unknown figure style '{style}', expected one of {sorted(PlotBase.STYLE_RC)}")
         PlotBase.style = style
 
     @classmethod
@@ -136,9 +134,6 @@ class PlotBase:
     def _quantised_bins(sample: np.ndarray, target_bins: int = 64, span: Tuple[float, float] = (0.5, 99.5)) -> np.ndarray:
         flat = np.asarray(sample).reshape(-1)
 
-        if flat.size == 0:
-            raise ValueError("_quantised_bins received an empty sample; cannot derive bin edges")
-
         low, high = (float(value) for value in np.percentile(flat, span))
 
         if not high > low:
@@ -157,21 +152,13 @@ class PlotBase:
     def _shared_clim(*arrays: np.ndarray, q_low: float = 1.0, q_high: float = 99.0) -> Tuple[float, float]:
         flat = np.concatenate([a.reshape(-1) for a in arrays])
         flat = flat[np.isfinite(flat)]
-        if flat.size == 0:
-            raise ValueError("_shared_clim received no finite values; cannot derive a colour scale from an empty or all-NaN field")
         return float(np.percentile(flat, q_low)), float(np.percentile(flat, q_high))
 
     @staticmethod
     def _amplitude_clim(*arrays: np.ndarray) -> Tuple[float, float]:
         flat = np.concatenate([np.asarray(a).reshape(-1) for a in arrays])
         flat = flat[np.isfinite(flat)]
-        if flat.size == 0:
-            raise ValueError("_amplitude_clim received no finite values; cannot derive an amplitude scale from an empty or all-NaN field")
-
         vmax = 3.0 * float(flat.mean())
-        if vmax <= 0.0:
-            raise ValueError("_amplitude_clim requires a positive mean amplitude; got a non-positive field")
-
         return 0.0, vmax
 
     @staticmethod
@@ -187,8 +174,6 @@ class PlotBase:
     @staticmethod
     def _normalize_01(arr: np.ndarray) -> np.ndarray:
         lo, hi = float(np.nanmin(arr)), float(np.nanmax(arr))
-        if hi - lo < 1e-12:
-            raise ValueError("_normalize_01 received a constant or degenerate field; refusing to flatten it silently to a single colour")
         return ((arr - lo) / (hi - lo)).astype(np.float32)
 
     def _imshow_figure(

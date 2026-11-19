@@ -20,13 +20,7 @@ class DatasetSelector(RunSelector):
         super().__init__(datasets_dir, self.LAYOUT_RELPATH, logger, action="mail")
 
     def _discover(self) -> list[Path]:
-        if not self.runs_dir.is_dir():
-            raise FileNotFoundError(f"Datasets directory does not exist: {self.runs_dir}")
-
         datasets = sorted(child for child in self.runs_dir.iterdir() if child.is_dir() and (child / self.marker).is_file())
-
-        if not datasets:
-            raise FileNotFoundError(f"No dataset with a '{self.marker}' layout found under {self.runs_dir}; run generate_dataset first")
 
         return datasets
 
@@ -53,14 +47,8 @@ class ParamRunSelector(RunSelector):
         super().__init__(params_dir, self.META_FILENAME, logger, action="mail")
 
     def _discover(self) -> list[Path]:
-        if not self.runs_dir.is_dir():
-            raise FileNotFoundError(f"Parameter runs directory does not exist: {self.runs_dir}")
-
         markers  = self.runs_dir.rglob(self.marker)
         run_dirs = sorted({path.parent for path in markers if path.is_file() and (path.parent / self.PARAMETERS_FILENAME).is_file()})
-
-        if not run_dirs:
-            raise FileNotFoundError(f"No parameter run with a '{self.marker}' and a '{self.PARAMETERS_FILENAME}' found under {self.runs_dir}; run extract_params first")
 
         return run_dirs
 
@@ -85,16 +73,10 @@ class RunContentSelector(RunSelector):
         super().__init__(runs_dir, RunDirectoryWalk.MARKER, logger, action="mail")
 
     def _discover(self) -> list[Path]:
-        if not self.runs_dir.is_dir():
-            raise FileNotFoundError(f"Runs directory does not exist: {self.runs_dir}")
-
         if (self.runs_dir / self.marker).is_dir():
             return [self.runs_dir]
 
         run_dirs = sorted(RunDirectoryWalk.walk(self.runs_dir))
-
-        if not run_dirs:
-            raise FileNotFoundError(f"No run with a '{self.marker}' directory found at or below {self.runs_dir}; run {self.SEARCH_ENTRY} first")
 
         return run_dirs
 
@@ -222,9 +204,6 @@ class ArtifactBundle:
         for relative in self.config.required_paths:
             path = self.source_dir / relative
 
-            if not path.exists():
-                raise FileNotFoundError(f"Required artifact '{relative}' is missing from {self.source_dir}")
-
             roots.append(path)
 
         return roots
@@ -287,7 +266,4 @@ class ArtifactBundle:
 class RunContentBundle(ArtifactBundle):
 
     def _required_roots(self) -> List[Path]:
-        if not self.source_dir.is_dir():
-            raise FileNotFoundError(f"Run directory does not exist: {self.source_dir}")
-
         return [self.source_dir]

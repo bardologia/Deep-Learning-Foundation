@@ -27,13 +27,7 @@ class RunReportLocator:
 
     def locate(self) -> List[Path]:
         inference_dir = self.config.inference_directory
-        if not inference_dir.is_dir():
-            raise FileNotFoundError(f"No '{self.config.inference_dirname}' directory at {inference_dir}; expected a training run directory holding inference outputs")
-
         reports = self._report_paths(inference_dir)
-        if not reports:
-            raise FileNotFoundError(f"No '{self.config.report_filename}' found in any inference output under {inference_dir}, neither directly under a stamp nor under a family sub-directory ({', '.join(InferenceLayout.SUBDIRS.values())})")
-
         if self.config.latest_only:
             return [reports[-1]]
         return reports
@@ -55,9 +49,6 @@ class ReportImageRewriter:
             path = self.report_dir / path
 
         path = path.resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f"Report references a missing image: {target} (resolved to {path})")
-
         return path
 
     def _substitute(self, match: re.Match) -> str:
@@ -125,13 +116,6 @@ class ReportCollectionBatch:
         selector = ReportRunSelector(self.entry_config.runs_dir, self.entry_config.inference_dirname, self.entry_config.report_filename, self.logger)
         return selector.resolve(self.entry_config.run_filter)
 
-    def _check_collisions(self, run_dirs: list[Path]) -> None:
-        names      = [ReportCollection.run_label(run_dir) for run_dir in run_dirs]
-        duplicates = sorted({name for name in names if names.count(name) > 1})
-
-        if duplicates:
-            raise ValueError(f"Selected runs share a name, their collected reports would collide: {duplicates}")
-
     def _collect_run(self, run_dir: Path) -> dict:
         config = self.entry_config.to_config(run_dir)
         return ReportCollection(config, self.logger).run()
@@ -140,7 +124,6 @@ class ReportCollectionBatch:
         self.logger.section(f"Report collection into {self.entry_config.collector_dir}")
 
         run_dirs = self._select_runs()
-        self._check_collisions(run_dirs)
 
         FileIO.ensure_dirs(Path(self.entry_config.collector_dir))
         results = [self._collect_run(run_dir) for run_dir in run_dirs]

@@ -82,9 +82,6 @@ class ReportFreshness:
     @staticmethod
     def _written_at(stamp: Path) -> float:
         times = [path.stat().st_mtime for path in stamp.iterdir() if path.is_file()]
-        if not times:
-            raise FileNotFoundError(f"Report stamp {stamp} holds no file")
-
         return max(times)
 
     def _newer_inference(self, runs: list[Path], split: str | None, since: float) -> list[Path]:
@@ -121,9 +118,6 @@ class Experiment:
 
     def trials(self) -> list[Path]:
         trials = self.selected if self.selected is not None else TrialTree.trials(self.trials_dir)
-        if not trials:
-            raise FileNotFoundError(f"No trial run under {self.trials_dir}: expected directories holding a meta directory, or seed<N> runs")
-
         return trials
 
     def inference_split(self) -> str:
@@ -230,8 +224,6 @@ class CrossValidationExperiment(Experiment):
 
         for name in self.AGGREGATE_REPORTS:
             path = stamp / name
-            if not path.is_file():
-                raise FileNotFoundError(f"Aggregate report '{name}' is missing from {stamp}")
             pairs.append((path, name))
 
         split_dirs = sorted(child for child in stamp.iterdir() if child.is_dir())
@@ -241,8 +233,6 @@ class CrossValidationExperiment(Experiment):
         for split_dir in split_dirs:
             for name in self.SPLIT_REPORTS:
                 path = split_dir / name
-                if not path.is_file():
-                    raise FileNotFoundError(f"Split report '{name}' is missing from {split_dir}")
                 pairs.append((path, f"{split_dir.name}_{name}"))
 
         return pairs
@@ -350,9 +340,6 @@ class ExperimentScanner:
             yield from self._walk(child, depth + 1)
 
     def scan(self) -> list[Experiment]:
-        if not self.root.is_dir():
-            raise NotADirectoryError(f"Experiments directory does not exist: {self.root}")
-
         if self.classify(self.root) is None and TrialTree.is_trial(self.root):
             return [Experiment(self.root, self.root.parent, selected=[self.root])]
 
@@ -368,9 +355,6 @@ class ExperimentSelector(RunSelector):
 
     def _discover(self) -> list[Path]:
         found = self.scanner.scan()
-        if not found:
-            raise FileNotFoundError(f"No experiment found at or below {self.runs_dir}: expected a directory of trial runs, a cross-validation run, a benchmark run, or a workspace holding them")
-
         self.experiments = {experiment.root: experiment for experiment in found}
 
         return list(self.experiments)
@@ -431,13 +415,7 @@ class ExperimentReportBundle(ReportBundle):
         reports   = [stamp / self.config.report_filename for stamp in TrialTree.inference_stamps(inference, split)]
         reports   = [path for path in reports if path.is_file()]
 
-        if reports:
-            return reports[-1]
-
-        others = sorted({CompletionMarker.payload(stamp)["split"] for stamp in TrialTree.inference_stamps(inference, None) if (stamp / self.config.report_filename).is_file()})
-        found  = f"; reports exist for split(s) {', '.join(others)}" if others else ""
-
-        raise FileNotFoundError(f"No '{self.config.report_filename}' of a completed '{split}' inference under {inference}{found}; run inference on the '{split}' split of this trial before mailing it")
+        return reports[-1]
 
     def _seed_aggregates(self, trial_dir: Path) -> list[Path]:
         inference = trial_dir / self.config.inference_dirname
@@ -534,8 +512,6 @@ class ExperimentReportBundle(ReportBundle):
         paths = []
         for name in self.experiment.comparison_report_names(self.config.comparison_reports):
             path = stamp / name
-            if not path.is_file():
-                raise FileNotFoundError(f"Comparison report '{name}' is missing from {stamp}")
             paths.append(path)
 
         return paths
@@ -576,9 +552,6 @@ class ReportMailer:
     def _password(self) -> str:
         value = os.environ.get(self.entry_config.password_env, "")
 
-        if not value:
-            raise EnvironmentError(f"SMTP password not found: export {self.entry_config.password_env}=<app password> before running, or set dry_run=True to stage without sending")
-
         return value
 
     def _message(self, subject: str, body: str, attachments: List[Path]) -> EmailMessage:
@@ -607,13 +580,9 @@ class ReportMailer:
         password = self._password()
         start    = time.monotonic()
 
-        try:
-            with smtplib.SMTP_SSL(self.entry_config.smtp_host, self.entry_config.smtp_port, timeout=self.entry_config.smtp_timeout_s) as smtp:
-                smtp.login(self.entry_config.sender, password)
-                smtp.send_message(message)
-        except OSError as error:
-            self.logger.error(f"SMTP submission of '{subject}' failed after {time.monotonic() - start:.1f} s: {type(error).__name__}: {error}")
-            raise
+        with smtplib.SMTP_SSL(self.entry_config.smtp_host, self.entry_config.smtp_port, timeout=self.entry_config.smtp_timeout_s) as smtp:
+            smtp.login(self.entry_config.sender, password)
+            smtp.send_message(message)
 
         self.logger.ok(f"Sent '{subject}' to {self.entry_config.recipient} with {len(attachments)} attachment(s) in {time.monotonic() - start:.1f} s")
 
@@ -626,18 +595,6 @@ class MailTarget:
     def __init__(self, entry_config: ReportMailEntryConfig, logger) -> None:
         self.entry_config = entry_config
         self.logger       = logger
-
-    def settings(self) -> dict:
-        raise NotImplementedError
-
-    def select(self) -> List[Path]:
-        raise NotImplementedError
-
-    def label(self, source_dir: Path) -> str:
-        raise NotImplementedError
-
-    def stage(self, source_dir: Path) -> List[List[Path]]:
-        raise NotImplementedError
 
 
 class ExperimentMailTarget(MailTarget):
@@ -748,9 +705,6 @@ class ReportMailBatch:
     }
 
     def __init__(self, entry_config: ReportMailEntryConfig, logger) -> None:
-        if entry_config.target not in self.TARGETS:
-            raise ValueError(f"Unknown mail target '{entry_config.target}'; choose one of {', '.join(self.TARGETS)}")
-
         self.entry_config = entry_config
         self.logger       = logger
         self.mailer       = ReportMailer(entry_config, logger)
