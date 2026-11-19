@@ -1,4 +1,3 @@
-"""Entry configuration for the dual-trunk inference entry point."""
 
 from __future__ import annotations
 
@@ -12,17 +11,6 @@ _RUNS_ROOT = "runs"
 
 @dataclass
 class DualInferenceEntryConfig:
-    """Fan-out settings for inferring a batch of dual-trunk training runs.
-
-    Attributes:
-        runs_dir        : Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every dual run at any depth below it is scored.
-        run_filter      : Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory whose runs are all taken, or a run's own name; empty selects every run found.
-        skip_completed  : Whether runs already holding a completed inference for the configured split are left alone, so a relaunch over an experiment scores only the runs still missing it.
-        gpus            : GPU device indices available to the inference workers.
-        gpus_file       : Path to a file whose contents override the GPU pool at runtime.
-        poll_interval_s : Seconds between scheduler polls of the worker pool.
-        inference       : Per-run inference settings applied to every selected run.
-    """
 
     runs_dir        : str       = f"{_RUNS_ROOT}/dual"
     run_filter      : List[str] = field(default_factory=list)

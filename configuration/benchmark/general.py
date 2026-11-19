@@ -1,10 +1,3 @@
-"""Configuration of the model benchmark experiment and its per-stage settings.
-
-A benchmark trains every model of a family under matched conditions: an
-optional parameter-count matching stage, a VRAM-bounded batch size probe, the
-training queue itself, inference over the trained runs, and a comparison
-report.
-"""
 
 from __future__ import annotations
 
@@ -23,14 +16,6 @@ from configuration.training.profile_autoencoder import ProfileAeLossConfig
 
 @dataclass
 class MaxBatchConfig:
-    """Settings of the probe that finds the largest batch fitting the VRAM budget.
-
-    Attributes:
-        vram_budget_gb : Memory budget per GPU in gigabytes.
-        max_batch      : Upper bound on the batch size the probe may report.
-        measure_steps  : Training steps timed per candidate batch size.
-        seed           : Random seed for the probe workload.
-    """
 
     vram_budget_gb : float = PretrainConfig.vram_budget_gb
     max_batch      : int   = PretrainConfig.max_batch
@@ -40,26 +25,6 @@ class MaxBatchConfig:
 
 @dataclass
 class FindLrConfig:
-    """Settings of the LR range test run inside each model's max-batch probe job.
-
-    The test rewinds the probe trainer to one captured state before every rung,
-    trains it there at the probed batch size and records the minimum-loss
-    multiplier in the probe result, which the training worker folds into
-    ``training.lr_multiplier`` per model.
-
-    Attributes:
-        enabled           : Whether the range test runs after each passing batch probe.
-        scale_min         : Smallest learning-rate multiplier the range test starts from.
-        scale_max         : Largest learning-rate multiplier the range test ramps to.
-        rungs             : Multiplier rungs of the ramp, each measured from the same rewound trainer state.
-        rung_steps        : Optimizer steps taken at each rung, mirroring the real step including accumulation and clipping.
-        probe_batches     : Held-out batches measured at every rung, the same batches throughout the ramp.
-        divergence_factor : Multiple of the best rung loss that ends the ramp.
-        safety_factor     : Divisor applied to the minimum-loss multiplier.
-        min_improvement   : Smallest relative drop below the first rung that counts as a response.
-        noise_sigmas      : Standard errors of the rung measurement the drop must also clear.
-        seed              : Seed of the shuffle generator drawing the range-test batches.
-    """
 
     enabled           : bool  = False
     scale_min         : float = PretrainConfig.lr_scale_min
@@ -76,18 +41,6 @@ class FindLrConfig:
 
 @dataclass
 class SizeMatchConfig:
-    """Settings of the stage that rescales every model to a matched parameter count.
-
-    Attributes:
-        reference_model : Model whose parameter count all others are matched to.
-        tolerance       : Accepted relative deviation from the reference count.
-        max_iterations  : Maximum bisection steps per model.
-        scale_low       : Lower bound of the initial width-scale bracket.
-        scale_high      : Upper bound of the initial width-scale bracket.
-        scale_ceiling   : Hard cap on the width scale during bracket expansion.
-        in_channels     : Input channel count used when instantiating candidates.
-        locked_params   : Config fields excluded from width scaling.
-    """
 
     reference_model : str             = "unet"
     tolerance       : float           = 0.05
@@ -101,47 +54,6 @@ class SizeMatchConfig:
 
 @dataclass
 class InferenceQueueConfig:
-    """Settings of the inference pass run over every trained benchmark model.
-
-    Attributes:
-        split                    : Dataset split inference runs on.
-        checkpoint_name          : Checkpoint file loaded from each run directory.
-        batch_size               : Inference batch size; ``None`` reuses the training value.
-        num_workers              : Data loader workers used during inference.
-        cpu_workers              : Worker processes used for CPU-side post-processing.
-        gif_workers              : Worker processes rendering animation frames.
-        seed                     : Seed used for the random profile and slice selections.
-        save_plots               : Whether per-run diagnostic plots are written.
-        save_animations          : Whether GIF animations are written.
-        save_cubes               : Whether reconstructed volumetric cubes are saved.
-        stitch_window            : Window applied when stitching overlapping patches.
-        cube_dtype               : NumPy dtype name used when writing cubes.
-        render_amp_floor         : Amplitude below which components are hidden in renders.
-        compute_cube_ssim        : Whether the standard SSIM sweep of the prediction against the raw cube runs, in raw intensity and unit area.
-        compute_flip_consistency : Whether flip-equivariance metrics run.
-        compute_stratified       : Whether metrics are stratified by scene strata.
-        extract_curve_params     : Whether Gaussians are refitted to predicted curves.
-        extract_prominence_frac  : Peak prominence fraction used in curve fitting.
-        n_best_profiles          : Best-reconstructed profiles plotted per run.
-        n_worst_profiles         : Worst-reconstructed profiles plotted per run.
-        n_random_profiles        : Randomly drawn profiles plotted per run.
-        profile_seed             : Seed for the random profile draw.
-        n_col_slices             : Cube slices plotted along the columns.
-        n_row_slices             : Cube slices plotted along the rows.
-        n_z_slices               : Cube slices plotted along z.
-        gif_axes                 : Cube axes animated in the GIF exports.
-        gif_fps                  : Frames per second of the GIF exports, used when gif_duration is None.
-        gif_duration             : Total playback length of each GIF export in seconds, or None to let gif_fps govern.
-        gif_max_frames           : Maximum frames per GIF export.
-        gif_dpi                  : Rendering resolution of animation frames.
-        gif_separate_panels      : Whether each cube is also exported as its own single-panel GIF sized to the slice aspect ratio.
-        cmap_intensity           : Colormap used for intensity imagery.
-        cmap_error               : Colormap used for error imagery.
-        normalize_intensity      : Whether intensity maps are normalized before display.
-        fig_dpi                  : Figure resolution used on screen.
-        save_dpi                 : Figure resolution used when saving.
-        figure_style             : Named matplotlib style applied to the figures.
-    """
 
     split           : str        = "test"
     checkpoint_name : str        = "best_model.pt"
@@ -192,63 +104,20 @@ class InferenceQueueConfig:
 
 @dataclass
 class ComparisonReportConfig:
-    """Settings of the markdown report comparing the benchmarked runs.
-
-    Attributes:
-        embed_images : Whether figures are embedded in the report instead of linked.
-    """
 
     embed_images: bool = False
 
 
 def _default_ae_loss():
-    """Returns the default profile autoencoder loss configuration."""
     return ProfileAeLossConfig()
 
 
 def _default_base_loss():
-    """Returns the complete-stage loss configuration of the standard curriculum."""
     return default_curriculum().complete
 
 
 @dataclass
 class BenchmarkConfig:
-    """Top-level configuration of a model benchmark run.
-
-    Attributes:
-        training_type         : Pipeline family being benchmarked.
-        stage                 : Which staged part of the benchmark to execute.
-        paths                 : Dataset and run path configuration.
-        max_batch             : Batch-size probe settings.
-        find_lr               : LR range test settings, run inside the batch-probe jobs.
-        size_match            : Parameter-count matching settings.
-        training              : Training queue settings shared by all benchmarked runs.
-        inference             : Inference queue settings.
-        comparison            : Comparison report settings.
-        input                 : Input representation and channel selection.
-        geometry              : Acquisition geometry.
-        normalization         : Input and target normalisation settings.
-        augmentation          : Training-time augmentation settings.
-        loss                  : Loss configuration applied to every benchmarked run.
-        probe                 : Loss-scale probe settings.
-        overfit_check         : Pre-training overfit sanity gate settings.
-        ae_loss               : Loss configuration used when benchmarking autoencoders.
-        jepa                  : JEPA coupling settings used when benchmarking JEPA runs.
-        pixel_subsample       : Fraction of pixels retained from the dataset.
-        keep_empty_frac       : Fraction of empty-profile pixels retained.
-        gpus                  : GPU indices available to the run queue.
-        gpus_file             : Path to a file that can resize the GPU pool while running.
-        heads                 : Output heads benchmarked for each backbone.
-        skip_models           : Model names excluded from the benchmark.
-        run_tag               : Optional tag appended to generated run names.
-        resume                : Whether completed units are skipped on a repeated launch.
-        resume_from           : Path at or inside an existing benchmark run to finish; its recorded configuration is loaded, the command-line overrides are applied on top, and only the missing or unfinished model x seed units and inference passes are run.
-        infer_after           : Whether inference runs once training finishes.
-        seed                  : Base random seed.
-        seeds                 : Seeds trained per benchmarked configuration.
-        poll_interval_s       : Scheduler polling interval in seconds.
-        sweep_loss_components : Loss terms swept across benchmark units.
-    """
 
     training_type: str = "backbone"
     stage        : str = "full"
@@ -288,19 +157,12 @@ class BenchmarkConfig:
     sweep_loss_components: list[str] = field(default_factory=lambda: ["param_l1"])
 
     def runs_size_match(self) -> bool:
-        """Returns whether the parameter-count matching stage applies to this run."""
         return self.training_type == "backbone"
 
     def runs_inference(self) -> bool:
-        """Returns whether inference follows training for this benchmark family."""
         return self.infer_after and self.training_type in ("backbone", "jepa")
 
     def size_match_settings(self) -> dict:
-        """Returns the size-matching stage arguments as a serialisable mapping.
-
-        Returns:
-            Reference model, input channels, locked fields and patch size.
-        """
         return {
             "reference_model" : self.size_match.reference_model,
             "in_channels"     : self.size_match.in_channels,
@@ -309,20 +171,6 @@ class BenchmarkConfig:
         }
 
     def max_batch_settings(self) -> dict:
-        """Returns the batch-size probe arguments as a serialisable mapping.
-
-        The key covers every input that defines the base learning rates the
-        probe measured its multiplier against, not just the range-test settings:
-        a recorded multiplier is meaningful only relative to
-        ``training.lr_multiplier``, ``scale_lr_with_batch`` and
-        ``lr_reference_batch_size``, so a cached record must not survive a
-        change to any of them.
-
-        Returns:
-            VRAM budget, batch ceiling, measurement steps, probe seed, patch
-            size, input channel count, the LR range-test settings and the
-            training fields the probed multiplier is relative to.
-        """
         return {
             "budget_gb"               : self.max_batch.vram_budget_gb,
             "ceiling"                 : self.max_batch.max_batch,

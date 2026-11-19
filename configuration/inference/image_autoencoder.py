@@ -1,4 +1,3 @@
-"""Configuration for image-autoencoder inference runs and their entry point."""
 
 from __future__ import annotations
 
@@ -11,14 +10,6 @@ _RUNS_ROOT = "runs"
 
 @dataclass
 class ImageAeInferencePaths:
-    """Subdirectory and file names written inside an image-AE inference directory.
-
-    Attributes:
-        figures_subdir   : Directory holding saved figures.
-        logs_subdir      : Directory holding inference log files.
-        metrics_filename : JSON file collecting the computed metrics.
-        report_filename  : Markdown report file summarising the run.
-    """
 
     figures_subdir   : str = "figures"
     logs_subdir      : str = "logs"
@@ -28,28 +19,6 @@ class ImageAeInferencePaths:
 
 @dataclass
 class ImageAeInferenceConfig:
-    """Settings for one image-autoencoder reconstruction pass over a trained run.
-
-    Attributes:
-        run_directory    : Training run directory holding the checkpoint and config.
-        output_subdir    : Name of the inference output directory inside the run.
-        device           : Torch device string used for the forward passes.
-        log_level        : Logging verbosity for the inference logger.
-        split            : Dataset split evaluated, typically "train", "val" or "test".
-        checkpoint_name  : Checkpoint file name loaded from the run directory.
-        batch_size       : Patch batch size, or None to reuse the training batch size.
-        num_workers      : Dataloader worker processes.
-        save_plots       : Whether figures are written to disk.
-        n_best_patches   : Number of best-reconstructed patches plotted.
-        n_worst_patches  : Number of worst-reconstructed patches plotted.
-        n_random_patches : Number of randomly drawn patches plotted.
-        n_scatter_points : Points subsampled into the prediction-versus-truth scatter.
-        patch_seed       : Seed for the random patch draw.
-        fig_dpi          : Figure resolution used on screen.
-        save_dpi         : Figure resolution used when saving.
-        figure_style     : Named matplotlib style applied to the figures.
-        paths            : Output subdirectory and file-name layout.
-    """
 
     run_directory   : Path
     output_subdir   : Optional[str] = None
@@ -77,17 +46,6 @@ class ImageAeInferenceConfig:
 
 @dataclass
 class ImageAeInferenceEntryConfig:
-    """Fan-out settings for inferring a batch of image-autoencoder runs.
-
-    Attributes:
-        runs_dir        : Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every image-autoencoder run at any depth below it is scored.
-        run_filter      : Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory whose runs are all taken, or a run's own name; empty selects every run found.
-        skip_completed  : Whether runs already holding a completed inference for the configured split are left alone, so a relaunch over an experiment scores only the runs still missing it.
-        gpus            : GPU device indices available to the inference workers.
-        gpus_file       : Path to a file whose contents override the GPU pool at runtime.
-        poll_interval_s : Seconds between scheduler polls of the worker pool.
-        image_inference : Per-run inference settings applied to every selected run.
-    """
 
     runs_dir        : str       = f"{_RUNS_ROOT}/image_autoencoder"
     run_filter      : List[str] = field(default_factory=list)

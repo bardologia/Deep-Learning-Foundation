@@ -1,18 +1,8 @@
-"""Catalog of the named experiment arms swept by the training launchers."""
 
 from __future__ import annotations
 
 
 class TrialCatalog:
-    """Named loss, presence, architecture, augmentation and input sweep arms.
-
-    Each factory returns the config overrides for one experiment axis, keyed by
-    the short label that ends up in the run name.
-
-    Attributes:
-        CURVE_TERMS   : Maps a curve-loss label to its (enable flag, weight) field names.
-        CURVE_WEIGHTS : Curve-loss weights each term is swept over.
-    """
 
 
     CURVE_TERMS = {
@@ -27,19 +17,12 @@ class TrialCatalog:
 
     @staticmethod
     def warmup_losses() -> dict:
-        """Returns the single param-L1 loss arm used during the curriculum warmup phase."""
         return {
             "pL11" : {"use_param_l1": True, "weight_param_l1": 1.0},
         }
 
     @classmethod
     def complete_losses(cls) -> dict:
-        """Builds the loss arms pairing param-L1 with each curve term at each weight.
-
-        Returns:
-            Mapping from arm label to the loss-config overrides that enable
-            param-L1 at weight 1.0 plus one curve term at one of `CURVE_WEIGHTS`.
-        """
         losses = {}
 
         for label, (use_key, weight_key) in cls.CURVE_TERMS.items():
@@ -55,7 +38,6 @@ class TrialCatalog:
 
     @staticmethod
     def presence_trials() -> dict:
-        """Returns the four on/off combinations of active normalization and presence balance."""
         return {
             "none" : {"use_active_normalization": False, "presence_balance": False},
             "A"    : {"use_active_normalization": True,  "presence_balance": False},
@@ -65,12 +47,6 @@ class TrialCatalog:
 
     @staticmethod
     def context_trials() -> list:
-        """Returns the constant-depth rungs walking the context ladder.
-
-        The pixel-MLP rung mirrors ``cnn01``'s exact 1x1 convolution stack on
-        the ``pixel_mlp`` backbone, so the classic no-context baseline enters
-        the ladder at the same depth and parameter budget as the CNN rungs.
-        """
         return [
             {"label" : "mlp",   "backbone" : "pixel_mlp", "features" : [1277] * 20},
             {"label" : "cnn01", "backbone" : "local_cnn", "features" : [1277] * 10, "block_kernels" : [1] * 10},
@@ -81,7 +57,6 @@ class TrialCatalog:
 
     @staticmethod
     def reach_rungs() -> list:
-        """Returns the local-CNN and U-Net arms of the spatial-reach experiment."""
         return [
             {"label" : "cnn33", "backbone" : "local_cnn", "features" : [478] * 8, "dropout" : 0.15, "trunk_wd" : 1e-4},
             {"label" : "unet",  "backbone" : "unet",      "dropout" : 0.15},
@@ -98,13 +73,6 @@ class TrialCatalog:
 
     @classmethod
     def input_trials(cls) -> dict:
-        """Builds the input-channel arms crossing amplitudes, secondaries and derived channels with the aux channel.
-
-        Returns:
-            Mapping from arm label to its input specification, every base arm
-            of `INPUT_TRIAL_BASES` duplicated as an explicit no-aux and
-            with-aux variant.
-        """
         trials = {}
 
         for label, spec in cls.INPUT_TRIAL_BASES.items():
@@ -115,11 +83,9 @@ class TrialCatalog:
 
 
 class ProfileAeTrialCatalog:
-    """Named architecture and loss sweep arms of the profile-autoencoder entry."""
 
     @staticmethod
     def arch_trials() -> list:
-        """Returns one rung per registered profile-autoencoder family at its default settings."""
         return [
             {"label" : "mlp",      "ae_model_name" : "mlp_ae"},
             {"label" : "conv1d",   "ae_model_name" : "conv1d_ae"},
@@ -132,7 +98,6 @@ class ProfileAeTrialCatalog:
 
     @staticmethod
     def loss_trials() -> dict:
-        """Returns the reconstruction-loss arms comparing the pure penalties and mse-anchored shape pairings."""
         return {
             "mse"        : {"use_mse_curve": True, "weight_mse_curve": 1.0},
             "l1"         : {"use_l1_curve": True, "weight_l1_curve": 1.0},
@@ -145,11 +110,9 @@ class ProfileAeTrialCatalog:
 
 
 class JepaTrialCatalog:
-    """Named embedding-loss sweep arms of the JEPA entry."""
 
     @staticmethod
     def embedding_losses() -> dict:
-        """Returns the latent-loss arms comparing pure penalties and mse-anchored regularizer pairings."""
         return {
             "mse1"                : {"use_embedding_mse": True, "weight_embedding_mse": 1.0},
             "sl1"                 : {"use_embedding_smoothl1": True, "weight_embedding_smoothl1": 1.0},

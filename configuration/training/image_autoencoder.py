@@ -1,4 +1,3 @@
-"""Configuration for training the 2D image autoencoder over amplitude patches."""
 
 from __future__ import annotations
 
@@ -18,13 +17,6 @@ from configuration.training.general.trainer         import SharedSubConfigInheri
 
 @dataclass
 class ImageAeLossConfig:
-    """Reconstruction loss applied between the input and reconstructed image patch.
-
-    Attributes:
-        recon_kind      : Reconstruction penalty family, one of mse, l1, huber or charbonnier.
-        huber_delta     : Transition point of the Huber penalty.
-        charbonnier_eps : Smoothing constant of the Charbonnier penalty.
-    """
 
     recon_kind      : str   = "mse"
     huber_delta     : float = 1.0
@@ -33,23 +25,6 @@ class ImageAeLossConfig:
 
 @dataclass
 class ImageAeTrainerConfig(SharedSubConfigInheritance):
-    """Everything the image-autoencoder trainer needs, assembled from sub-configs.
-
-    Attributes:
-        gaussian          : Gaussian label configuration describing the z grid.
-        image_autoencoder : Architecture config of the encoder/decoder pair.
-        ae_loss           : Reconstruction loss settings.
-        geometry          : Acquisition geometry.
-        early_stopping    : Validation-loss stopping rule.
-        warmup            : Learning-rate warmup ramp.
-        scheduler         : Learning-rate schedule.
-        io                : Output root for checkpoints and logs.
-        optimizer         : AdamW hyper-parameters.
-        training          : Epoch loop, precision and resume behaviour.
-        resources         : Resource-monitor cadence and warning levels.
-        memory            : VRAM reservation settings.
-        gradient_clipper  : Gradient-norm clipping strategy.
-    """
 
     gaussian          : object
     image_autoencoder : ImageAutoencoderBaseConfig = field(default_factory=Conv2dImageAutoencoderConfig)
@@ -67,31 +42,6 @@ class ImageAeTrainerConfig(SharedSubConfigInheritance):
 
 @dataclass
 class ImageAeEntryConfig:
-    """Command-line surface of the image-autoencoder training entry point.
-
-    Attributes:
-        run_name        : Explicit run folder name, or None to derive one from the settings.
-        resume          : Whether an interrupted run continues from its last checkpoint.
-        resume_from     : Path of a run directory, a seed sweep root or a trial sweep root to resume, or any run inside them; the configuration it recorded is loaded, the command-line overrides are applied on top, complete units are reused and the rest continue or restart in their own directories. Empty starts a fresh run.
-        gpu             : CUDA device index used for a single-seed run.
-        gpus            : CUDA device indices the seed sweep fans out over, and the rank devices of a DDP run.
-        ddp             : Whether a single-seed run trains data-parallel across the `gpus` devices, one synchronised rank per device sharing the configured global batch.
-        gpus_file       : File listing device indices, re-read to resize the pool live.
-        poll_interval_s : Seconds between scheduler polls of the device pool.
-        seed            : Seed of a single-seed run.
-        seeds           : Seeds trained by the sweep.
-        logdir          : Root directory the run folders are created under.
-        ae_model_name   : Registry key of the image-autoencoder architecture.
-        model_overrides : Architecture fields overridden on top of that default.
-        ae_loss         : Reconstruction loss settings.
-        geometry        : Acquisition geometry.
-        paths           : Dataset and parameter-label locations.
-        training        : Training schedule expanded into the trainer sub-configs.
-        pretrain        : Batch-size and loader probes run before training.
-        normalization   : Input normalization strategy and statistics.
-        augmentation    : Patch augmentation settings.
-        overfit_check   : Pre-training overfit sanity gate.
-    """
 
     run_name        : str | None = None
     resume          : bool       = True

@@ -1,9 +1,3 @@
-"""Dataset configuration for the patch-based training pipelines.
-
-The dataclasses here describe which input channels form the network input, how
-Gaussian component parameters are laid out in the target, how patches are cut
-from the scene, and how the loaders are parameterised.
-"""
 
 from __future__ import annotations
 
@@ -20,17 +14,6 @@ from tools.data.regions                  import SplitRegions
 
 @dataclass
 class InputConfig:
-    """Selection and complex representation of the input channels forming the input.
-
-    Attributes:
-        use_primary                : Whether the primary channel is part of the input stack.
-        primary_representation     : Complex-to-real representation of the primary channel.
-        use_secondaries            : Whether the secondary channels are part of the input stack.
-        secondaries_representation : Complex-to-real representation of the secondary channels.
-        use_derived                : Whether derived channels are part of the input stack.
-        derived_representation     : Complex-to-real representation of the derived channels.
-        use_aux                    : Whether the auxiliary channel is appended.
-    """
 
     use_primary            : bool           = True
     primary_representation : Representation = Representation.MAG_ONLY
@@ -45,7 +28,6 @@ class InputConfig:
 
     @classmethod
     def full_stack(cls) -> "InputConfig":
-        """Returns the standard configuration: primary and secondary magnitudes plus derived phase."""
         return cls(
             use_primary     = True,  primary_representation        = Representation.MAG_ONLY,
             use_secondaries = True,  secondaries_representation    = Representation.MAG_ONLY,
@@ -54,34 +36,21 @@ class InputConfig:
 
     @classmethod
     def no_stack(cls) -> "InputConfig":
-        """Returns a configuration with every input source disabled."""
         return cls(use_primary=False, use_secondaries=False, use_derived=False, use_aux=False)
 
     @property
     def primary_channels_per_source(self) -> int:
-        """Number of real channels contributed by the primary channel, zero if unused."""
         return self.primary_representation.channels_per_source if self.use_primary else 0
 
     @property
     def secondaries_channels_per_source(self) -> int:
-        """Number of real channels contributed by each secondary channel, zero if unused."""
         return self.secondaries_representation.channels_per_source if self.use_secondaries else 0
 
     @property
     def derived_channels_per_source(self) -> int:
-        """Number of real channels contributed by each derived channel, zero if unused."""
         return self.derived_representation.channels_per_source if self.use_derived else 0
 
     def total_channels(self, n_secondaries: int, n_derived: int) -> int:
-        """Returns the channel count of the assembled input stack.
-
-        Args:
-            n_secondaries    : Number of secondary channels available in the scene.
-            n_derived : Number of derived channels available in the scene.
-
-        Returns:
-            Total number of real-valued input channels, Aux included when enabled.
-        """
         n  = self.primary_channels_per_source
         n += n_secondaries    * self.secondaries_channels_per_source
         n += n_derived * self.derived_channels_per_source
@@ -90,15 +59,6 @@ class InputConfig:
         return n
 
     def channel_group_keys(self, n_secondaries: int, n_derived: int) -> list[str]:
-        """Returns the normalisation group key of every input channel, in stack order.
-
-        Args:
-            n_secondaries    : Number of secondary channels available in the scene.
-            n_derived : Number of derived channels available in the scene.
-
-        Returns:
-            One ``source/slot_kind`` key per channel of the assembled stack.
-        """
         keys: list[str] = []
 
         if self.use_primary:
@@ -122,7 +82,6 @@ class InputConfig:
         return keys
 
     def as_dict(self) -> dict:
-        """Returns the JSON-serialisable form of the input selection."""
         return {
             "use_primary"                : self.use_primary,
             "primary_representation"     : self.primary_representation.value,
@@ -135,14 +94,6 @@ class InputConfig:
 
     @classmethod
     def from_dict(cls, payload: dict) -> "InputConfig":
-        """Rebuilds an input configuration from its serialised form.
-
-        Args:
-            payload : Mapping previously produced by :meth:`as_dict`.
-
-        Returns:
-            The reconstructed configuration.
-        """
         return cls(
             use_primary                = bool(payload["use_primary"]),
             primary_representation     = Representation(payload["primary_representation"]),
@@ -156,12 +107,6 @@ class InputConfig:
       
 @dataclass
 class OutputConfig:
-    """Layout and normalisation of the predicted Gaussian component parameters.
-
-    Attributes:
-        ROLE_NAMES        : Parameter roles of one Gaussian: amplitude, mean z and standard deviation.
-        output_strategies : Normalisation strategy per output slot.
-    """
 
     ROLE_NAMES : ClassVar[list[str]] = ["a", "mu", "sig"]
 
@@ -172,53 +117,23 @@ class OutputConfig:
     })
 
     def strategy_for(self, role_key: str) -> ChannelStrategy:
-        """Returns the normalisation strategy registered for an output slot key.
-
-        Args:
-            role_key : Output slot key such as ``out/mu``.
-
-        Returns:
-            The channel normalisation strategy for that slot.
-
-        Raises:
-            KeyError : If no strategy is registered for the key.
-        """
         return self.output_strategies[role_key]
 
     @property
     def role_names(self) -> list[str]:
-        """Parameter role names of a single Gaussian component."""
         return list(self.ROLE_NAMES)
 
     @property
     def params_per_gaussian(self) -> int:
-        """Number of predicted values describing one Gaussian component."""
         return len(self.ROLE_NAMES)
 
     def selected_indices(self, n_gaussians: int) -> list[int]:
-        """Returns the target channel indices kept for the given Gaussian count.
-
-        Args:
-            n_gaussians : Number of Gaussian components predicted per pixel.
-
-        Returns:
-            Channel indices into the target tensor, in slot order.
-        """
         return list(range(n_gaussians * self.params_per_gaussian))
 
     def total_channels(self, n_gaussians: int) -> int:
-        """Returns the number of target channels for the given Gaussian count.
-
-        Args:
-            n_gaussians : Number of Gaussian components predicted per pixel.
-
-        Returns:
-            Total target channel count.
-        """
         return n_gaussians * self.params_per_gaussian
 
     def as_dict(self) -> dict:
-        """Returns the JSON-serialisable form of the output strategies."""
         return {
             "output_strategies" : {
                 k: v.as_dict() for k, v in self.output_strategies.items()
@@ -227,14 +142,6 @@ class OutputConfig:
 
     @classmethod
     def from_dict(cls, payload: dict) -> "OutputConfig":
-        """Rebuilds an output configuration from its serialised form.
-
-        Args:
-            payload : Mapping previously produced by :meth:`as_dict`.
-
-        Returns:
-            The reconstructed configuration.
-        """
         strategies = {key: ChannelStrategy.from_dict(value) for key, value in payload["output_strategies"].items()}
 
         return cls(output_strategies = strategies)
@@ -242,13 +149,6 @@ class OutputConfig:
    
 @dataclass
 class PatchConfig:
-    """Geometry of the patches cut from the scene.
-
-    Attributes:
-        size                  : Patch extent in pixels as (rows, cols).
-        stride                : Step between consecutive patch origins in pixels, (rows, cols).
-        use_symmetric_padding : Whether the scene edges are padded symmetrically so every pixel is covered by a patch.
-    """
 
     size                  : Tuple[int, int] = (64, 32)
     stride                : Tuple[int, int] = (32, 16)
@@ -257,15 +157,6 @@ class PatchConfig:
 
 @dataclass
 class AugmentationConfig:
-    """Probabilities and strengths of the training-time patch augmentations.
-
-    Attributes:
-        p_flip_h  : Probability of a horizontal flip.
-        p_flip_v  : Probability of a vertical flip.
-        p_rot90   : Probability of a 90 degree rotation.
-        noise_std : Standard deviation of the additive Gaussian noise, in normalised input units.
-        p_noise   : Probability of applying the additive noise.
-    """
 
     p_flip_h  : float = 0.5
     p_flip_v  : float = 0.5
@@ -277,27 +168,6 @@ class AugmentationConfig:
 
 @dataclass
 class DatasetConfig:
-    """Full specification of a patch dataset and its loaders.
-
-    Attributes:
-        preprocessing_run_directory : Directory holding the preprocessed scene.
-        split_regions               : Row and column regions defining train, val and test.
-        parameters_path             : Directory holding the extracted Gaussian parameters.
-        secondary_labels            : Labels of the secondary channels to load.
-        patch                       : Patch geometry.
-        input_config                : Input channel selection.
-        output_config               : Target layout and normalisation.
-        normalization               : Input and target normalisation settings.
-        augmentation                : Training-time augmentation settings.
-        batch_size                  : Patches per batch.
-        num_workers                 : Data loader worker processes.
-        prefetch_factor             : Batches prefetched per worker.
-        shuffle_train               : Whether the training split is shuffled.
-        pin_memory                  : Whether loader batches are pinned for faster host-to-device copies.
-        fingerprint_dataset         : Whether the run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance.
-        z_axis                      : Z axis samples in metres, of shape (n_z,).
-        n_gaussians                 : Number of Gaussian components predicted per pixel.
-    """
 
     preprocessing_run_directory : Path
     split_regions               : SplitRegions

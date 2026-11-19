@@ -1,8 +1,3 @@
-"""Configuration dataclasses for the cross-run comparison entry points.
-
-Each dataclass drives one comparison report: trained backbone trials, seed
-groups of the same configuration, or parameter-extraction variants.
-"""
 
 from __future__ import annotations
 
@@ -16,17 +11,6 @@ from configuration.training.general.run import RunPathsConfig
 
 @dataclass
 class TrialComparisonConfig:
-    """Settings of the report comparing several trained runs.
-
-    Attributes:
-        runs_dir        : Directory holding the run folders to compare.
-        run_tags        : Run folder names taking part in the comparison.
-        inference_split : Dataset split whose inference results are read.
-        compare_images  : Whether figures are placed side by side in the report.
-        compare_gifs    : Whether animations are placed side by side in the report.
-        embed_images    : Whether figures are embedded instead of linked.
-        output_dir      : Destination of the report; ``None`` derives it from the runs.
-    """
 
     runs_dir : Path      = Path("runs/backbone")
     run_tags : List[str] = field(default_factory=list)
@@ -41,20 +25,6 @@ class TrialComparisonConfig:
 
 @dataclass
 class SeedComparisonConfig:
-    """Settings of the report aggregating runs that differ only by random seed.
-
-    Attributes:
-        runs_dir             : Root directory holding the seed run folders.
-        group_tags           : Run group names whose seeds are aggregated.
-        split                : Data split every aggregated inference stamp must have been scored on.
-        inference_subdir     : Subdirectory of a run holding its inference results.
-        output_subdir        : Subdirectory receiving the aggregated report.
-        metrics_filename     : File holding the per-run metrics.
-        report_filename      : File name of the generated markdown report.
-        compute_disagreement : Whether inter-seed disagreement maps are computed.
-        compute_ensemble     : Whether the across-seed mean prediction is scored as a deep ensemble.
-        cubes_subdir         : Subdirectory holding the saved cubes used for disagreement.
-    """
 
     runs_dir   : Path      = Path("runs")
     group_tags : List[str] = field(default_factory=list)
@@ -73,26 +43,12 @@ class SeedComparisonConfig:
 
 @dataclass
 class ComparisonPathsConfig:
-    """Paths used by the comparison entry point.
-
-    Attributes:
-        log_base_dir : Root directory receiving comparison logs.
-    """
 
     log_base_dir : Path = RunPathsConfig.log_base_dir
 
 
 @dataclass
 class ComparisonEntryConfig:
-    """Entry configuration of the benchmark comparison report.
-
-    Attributes:
-        run_tag         : Benchmark run whose models are compared.
-        reference_model : Model the others are reported relative to.
-        embed_images    : Whether figures are embedded instead of linked.
-        inference_split : Dataset split whose completed inference stamps supply each run's metrics.
-        paths           : Log path configuration.
-    """
 
     run_tag         : Optional[str] = None
     reference_model : str           = SizeMatchConfig.reference_model
@@ -104,16 +60,6 @@ class ComparisonEntryConfig:
 
 @dataclass
 class ParamExtractionComparisonConfig:
-    """Settings of the report comparing Gaussian parameter-extraction variants.
-
-    Attributes:
-        params_dir   : Directory holding the extracted parameter variants.
-        run_tags     : Parameter folder names taking part in the comparison.
-        pixel_sample : Number of pixels sampled for the statistics.
-        block_size   : Side length in pixels of the blocks used for spatial statistics.
-        make_plots   : Whether comparison figures are produced.
-        output_dir   : Destination of the report; ``None`` derives it from the inputs.
-    """
 
     params_dir : Path      = Path("datasets")
     run_tags   : List[str] = field(default_factory=list)

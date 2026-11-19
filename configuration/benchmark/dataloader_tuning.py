@@ -1,4 +1,3 @@
-"""Entry configuration for the data loader throughput tuning experiment."""
 
 from __future__ import annotations
 
@@ -10,31 +9,6 @@ from configuration.training.general.run import RunPathsConfig
 
 @dataclass
 class DataLoaderTuningEntryConfig:
-    """Configuration of a data loader tuning sweep over batch, worker and prefetch settings.
-
-    Attributes:
-        mode               : Training pipeline whose loader is being tuned.
-        model_name         : Model family used to build the probe workload.
-        gpu                : Index of the GPU the timing runs execute on.
-        seed               : Random seed for sampling and model initialisation.
-        use_amp            : Whether the probe forward and backward pass uses mixed precision.
-        pixel_subsample    : Fraction of pixels kept when building the probe dataset.
-        keep_empty_frac    : Fraction of empty-profile pixels retained.
-        batch_sizes        : Candidate batch sizes to time.
-        worker_counts      : Candidate data loader worker counts to time.
-        prefetch_factors   : Candidate per-worker prefetch factors to time.
-        reference_prefetch : Prefetch factor held fixed while sweeping other axes.
-        warmup_batches     : Batches consumed before timing starts.
-        timed_batches      : Batches consumed while timing.
-        cpu_threads        : Torch intra-op thread count during the probe.
-        data_wait_target   : Target fraction of step time spent waiting on data.
-        refine             : Whether a second refinement pass runs around the best setting.
-        save_figures       : Whether timing figures are written to the output directory.
-        synthetic_samples  : Number of profiles in the synthetic fallback dataset.
-        synthetic_length   : Z samples per synthetic profile.
-        paths              : Dataset and run path configuration.
-        output_dir         : Directory receiving the tuning report and figures.
-    """
 
     mode        : str  = "profile_autoencoder"
     model_name  : str  = ""
@@ -68,29 +42,6 @@ class DataLoaderTuningEntryConfig:
 
 @dataclass
 class TrainingProfileEntryConfig:
-    """Configuration of a torch.profiler capture over full training steps.
-
-    Attributes:
-        mode            : Training family whose feed is profiled.
-        model_name      : Model registry key used to build the workload; empty picks the family default.
-        gpu             : Index of the GPU the profiled steps execute on.
-        seed            : Random seed for sampling and model initialisation.
-        use_amp         : Whether the profiled forward runs under bfloat16 autocast.
-        batch_size      : Samples per profiled step.
-        num_workers     : Data loader worker processes during profiling.
-        prefetch_factor : Batches prefetched per worker.
-        warmup_steps    : Steps the profiler observes without recording.
-        active_steps    : Steps recorded into the trace.
-        record_shapes   : Whether operator input shapes are recorded.
-        profile_memory  : Whether allocator events are recorded.
-        with_stack      : Whether Python stacks are recorded; inflates the trace considerably.
-        pixel_subsample : Fraction of pixels kept when building the probe dataset.
-        keep_empty_frac : Fraction of empty-profile pixels retained.
-        synthetic_samples : Number of profiles in the synthetic fallback dataset.
-        synthetic_length  : Z samples per synthetic profile.
-        paths           : Dataset and run path configuration.
-        output_dir      : Directory receiving one timestamped profile per run.
-    """
 
     mode       : str  = "backbone"
     model_name : str  = ""

@@ -1,4 +1,3 @@
-"""Public re-exports of the cross-validation configuration dataclasses."""
 
 from configuration.cross_validation.general import (
     FoldConfig,

@@ -1,4 +1,3 @@
-"""Configuration for the Optuna hyper-parameter tuning entry point."""
 
 from __future__ import annotations
 
@@ -16,37 +15,15 @@ from configuration.training.profile_autoencoder import ProfileAeLossConfig
 
 
 def _default_ae_loss():
-    """Returns the default profile-autoencoder loss config."""
     return ProfileAeLossConfig()
 
 
 def _default_image_ae_loss():
-    """Returns the default image-autoencoder loss config."""
     return ImageAeLossConfig()
 
 
 @dataclass
 class TuningConfig:
-    """Search budget, search space, seeding, pruning and stop rules of one Optuna study.
-
-    Attributes:
-        n_trials                : Number of trials the study runs.
-        n_epochs                : Epochs each trial trains for.
-        base_seed               : Seed offset from which per-trial seeds are derived.
-        early_stop_patience     : Validation rounds without improvement inside a trial.
-        pruner_n_startup_trials : Trials completed before pruning starts.
-        pruner_n_warmup_steps   : Steps a trial is protected from pruning.
-        search_lr               : Whether the study samples the learning rates, weight decays and dropout of the model configuration.
-        search_arch             : Whether the study samples the architecture fields of the model configuration.
-        search_batch            : Whether the study samples the training batch size from ``batch_sizes``; the trial applies the linear learning-rate scaling the training entries apply, so a tuned rate stays quoted at the reference batch.
-        batch_sizes             : Batch sizes the study may pick when ``search_batch`` is on.
-        plateau_patience        : Finished trials without the best value improving before the study stops; zero runs the trial target out.
-        plateau_min_delta       : Smallest improvement of the best value, relative to the value at the last improvement, that counts as progress for the plateau rule.
-        time_budget_h           : Hours after which a worker starts no further trial; zero sets no budget.
-        emit_trial_docs         : Whether a markdown report is written per trial.
-        emit_study_plots        : Whether study-level plots are rendered at the end.
-        keep_trial_checkpoints  : Whether the checkpoint files of a finished trial stay on disk; off, they are deleted once its objective is read, since nothing loads them again and a long study would otherwise pile up hundreds of gigabytes of weights.
-    """
 
     n_trials : int = 100
     n_epochs : int = 30
@@ -75,30 +52,6 @@ class TuningConfig:
 
 @dataclass
 class TuningEntryConfig:
-    """Command-line surface of the hyper-parameter tuning entry point.
-
-    Attributes:
-        training_type   : Which trainer the study optimises, e.g. backbone or jepa.
-        stage           : Which part of the run to execute: 'prepare' creates the studies, 'compare' writes the reports of finished studies, 'full' does both around the trials.
-        paths           : Dataset locations plus the root the study writes trials under.
-        tuning          : Search budget and pruning settings of the study.
-        gpus            : CUDA device indices trials are fanned out over.
-        n_workers       : Trial workers each study is fanned out over; zero means one per device in the GPU pool.
-        gpus_file       : File listing device indices, re-read to resize the pool live.
-        heads           : Output heads included in the search.
-        skip_models     : Architecture registry keys excluded from the search.
-        run_tag         : Suffix appended to the study folder name.
-        resume_from     : Path at or inside an existing tuning run to continue; its recorded configuration is loaded, the command-line overrides are applied on top, and the studies in its database are topped up to the trial target.
-        training        : Training schedule shared by all trials.
-        curriculum      : Loss curriculum stages applied inside each trial.
-        normalization   : Input normalization strategy and statistics.
-        augmentation    : Patch augmentation settings.
-        ae_loss         : Profile-autoencoder loss config used by autoencoder studies.
-        image_ae_loss   : Image-autoencoder loss config used by image studies.
-        jepa            : Autoencoder coupling used by JEPA studies.
-        pixel_subsample : Fraction of scene pixels kept as profile-training samples.
-        keep_empty_frac : Fraction of empty profiles kept in that sample.
-    """
 
     training_type : str = "backbone"
     stage         : str = "full"
