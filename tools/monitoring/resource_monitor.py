@@ -70,9 +70,6 @@ class ResourceMonitor:
             return None
 
         tokens = [token.strip() for token in raw.split(",") if token.strip()]
-        if not all(token.isdigit() for token in tokens):
-            raise ValueError(f"CUDA_VISIBLE_DEVICES='{raw}' names devices by UUID or MIG identifier; ResourceMonitor needs plain device indices to attribute VRAM to this run")
-
         return [int(token) for token in tokens]
 
     def _init_disk_tracking(self):

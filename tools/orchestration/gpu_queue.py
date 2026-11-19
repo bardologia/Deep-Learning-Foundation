@@ -6,7 +6,6 @@ import signal
 import subprocess
 import sys
 import time
-from collections import Counter
 from dataclasses import dataclass
 from datetime    import datetime, timedelta
 from pathlib     import Path
@@ -95,34 +94,16 @@ class GpuPoolFile:
     def _devices(payload: dict, key: str) -> list[int]:
         requested = payload[key]
 
-        if not isinstance(requested, list):
-            raise ValueError(f"'{key}' must be a list of device ids, got {requested!r}")
-
-        invalid = [gpu for gpu in requested if isinstance(gpu, bool) or not isinstance(gpu, int) or gpu < 0]
-        if invalid:
-            raise ValueError(f"'{key}' must hold non-negative integers, got {invalid}")
-
-        duplicates = sorted({gpu for gpu in requested if requested.count(gpu) > 1})
-        if duplicates:
-            raise ValueError(f"'{key}' must not repeat a device, duplicated: {duplicates}")
-
         return list(requested)
 
     @classmethod
     def validate(cls, payload) -> list[int]:
-        if not isinstance(payload, dict) or "gpus" not in payload:
-            raise ValueError(f"expected an object holding a 'gpus' key, got {payload!r}")
-
         return cls._devices(payload, "gpus")
 
     @classmethod
     def parse(cls, payload) -> PoolEdit:
         gpus    = cls.validate(payload)
         preempt = cls._devices(payload, "preempt") if "preempt" in payload else []
-        overlap = sorted(set(gpus) & set(preempt))
-
-        if overlap:
-            raise ValueError(f"a device cannot stay in 'gpus' and be freed through 'preempt' at the same time, listed in both: {overlap}")
 
         return PoolEdit(gpus=gpus, preempt=preempt)
 
@@ -161,18 +142,8 @@ class GpuProgressFile:
         self.last_write    = float("-inf")
         self.written_units = None
 
-        self._reject_duplicate_logs(jobs)
-
         self.units       = {str(job.log_path): self._fresh_unit(job) for job in jobs}
         self.prior_units = self._load_prior(set(self.units))
-
-    @staticmethod
-    def _reject_duplicate_logs(jobs: list[GpuJob]) -> None:
-        counts     = Counter(str(job.log_path) for job in jobs)
-        duplicates = sorted(log for log, count in counts.items() if count > 1)
-
-        if duplicates:
-            raise ValueError(f"Queued units share log path(s): {', '.join(duplicates)}. Two units writing the same log file would overwrite each other's output and collapse into a single progress entry — rename the runs so their log paths differ")
 
     @classmethod
     def resolve(cls, pool_file: Path) -> Path:
@@ -188,9 +159,6 @@ class GpuProgressFile:
             return []
 
         payload = FileIO.load_json(self.path)
-        if "units" not in payload:
-            raise ValueError(f"progress file {self.path} predates per-unit tracking — delete it and relaunch")
-
         prior = [dict(unit) for unit in payload["units"] if unit["log"] not in current]
         for unit in prior:
             if unit["status"] not in self.TERMINAL:
@@ -315,9 +283,6 @@ class GpuQueue:
     EMPTY_POOL_MESSAGE = "at least one GPU id is required; an empty gpus list would poll forever without launching any job"
 
     def __init__(self, gpus: list[int], logger: Logger, poll_interval_s: float = 5.0, handle_signals: bool = True, terminate_deadline_s: float = 30.0, pool_file: Path | None = None, resume_hint: str = "") -> None:
-        if not gpus:
-            raise ValueError(f"GpuQueue requires {self.EMPTY_POOL_MESSAGE}.")
-
         self.gpus                 = list(gpus)
         self.logger               = logger
         self.poll_interval_s      = poll_interval_s
@@ -499,11 +464,7 @@ class GpuQueue:
         log_fh.write(self._launch_banner(job, gpu_id) + "\n")
         log_fh.flush()
 
-        try:
-            process = subprocess.Popen(command, stdout=log_fh, stderr=log_fh, env=InheritedCudaMask.restored())
-        except BaseException:
-            log_fh.close()
-            raise
+        process = subprocess.Popen(command, stdout=log_fh, stderr=log_fh, env=InheritedCudaMask.restored())
 
         self.logger.info(f"[GPU {gpu_id}] started   {job.name}")
 

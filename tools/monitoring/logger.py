@@ -153,9 +153,6 @@ class Logger:
                 self.logger.removeHandler(handler)
 
         level_name = str(level).upper()
-        if level_name not in self.LOG_LEVELS:
-            raise ValueError(f"Unknown log level '{level}'; expected one of {', '.join(self.LOG_LEVELS)}")
-
         log_level = self.LOG_LEVELS[level_name]
         self.logger.setLevel(log_level)
 
@@ -348,13 +345,13 @@ class Logger:
         start = datetime.now()
         try:
             yield
-        except BaseException as exc:
+        finally:
+            exc     = sys.exc_info()[1]
             elapsed = (datetime.now() - start).total_seconds()
-            self.logger.error(f"{label} failed after {elapsed:.2f}s: {type(exc).__name__}: {exc}", extra={"markup": False})
-            raise
-        else:
-            elapsed = (datetime.now() - start).total_seconds()
-            self.info(f"{label} completed in {elapsed:.2f}s")
+            if exc is None:
+                self.info(f"{label} completed in {elapsed:.2f}s")
+            else:
+                self.logger.error(f"{label} failed after {elapsed:.2f}s: {type(exc).__name__}: {exc}", extra={"markup": False})
 
     @contextmanager
     def track(self, transient: bool = False):
