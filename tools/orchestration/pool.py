@@ -1,8 +1,3 @@
-"""Process-pool runner that fans jobs out to spawned workers and fails fast.
-
-Used by CPU-bound pipeline stages that need parallelism without the GPU pinning
-of the GPU queue.
-"""
 
 from __future__ import annotations
 
@@ -15,32 +10,12 @@ from tools.monitoring.logger import Logger
 
 
 class ProcessPoolRunner:
-    """Runs a callable over a job list in a spawned process pool.
-
-    Attributes:
-        logger      : Logger for per-job completion and failure messages.
-        max_workers : Upper bound on pool size; None uses one worker per job.
-    """
 
     def __init__(self, logger: Logger, max_workers: int | None = None) -> None:
-        """Initializes the runner with its logger and worker cap."""
         self.logger      = logger
         self.max_workers = max_workers
 
     def run(self, jobs: Iterable[Any], worker_fn: Callable[[Any], Any], label_fn: Callable[[Any], str]) -> list[tuple[Any, Any]]:
-        """Executes worker_fn on every job in parallel and returns the paired results.
-
-        Args:
-            jobs      : Job descriptors, each passed whole to worker_fn.
-            worker_fn : Picklable callable executed in a spawned worker process.
-            label_fn  : Maps a job to the name used in log messages.
-
-        Returns:
-            List of (job, result) pairs in completion order.
-
-        Raises:
-            Exception : Re-raises the first worker failure after cancelling the queued futures and waiting, with a warning naming them, for those already running.
-        """
         job_list = list(jobs)
         workers  = max(1, min(self.max_workers, len(job_list)) if self.max_workers is not None else len(job_list))
         results  : list[tuple[Any, Any]] = []

@@ -1,10 +1,3 @@
-"""Scalar coercion, aggregation and orientation helpers for reported metrics.
-
-Provides the guards that keep non-numeric or non-finite entries out of the
-metric tables, seed-level mean and standard deviation aggregation, coefficient
-of determination and Spearman correlation, the rule deciding whether a metric
-key is better high or low, and relative-improvement formatting.
-"""
 
 from __future__ import annotations
 
@@ -17,11 +10,9 @@ import numpy as np
 
 
 class FiniteScalar:
-    """Guards that admit only finite real numbers into metric computations."""
 
     @staticmethod
     def is_finite_number(value: Any) -> bool:
-        """Returns whether a value is a finite real number, excluding booleans."""
         if isinstance(value, bool):
             return False
         if not isinstance(value, numbers.Real):
@@ -30,18 +21,15 @@ class FiniteScalar:
 
     @staticmethod
     def coerce(value: Any) -> float | None:
-        """Returns the value as a float, or None when it is not a finite real number."""
         if FiniteScalar.is_finite_number(value):
             return float(value)
         return None
 
 
 class SeedAggregation:
-    """Aggregation of metrics across the seeds of one trial."""
 
     @staticmethod
     def mean_std(values: list[float]) -> tuple[float, float | None]:
-        """Returns the mean and the sample standard deviation, the latter None for one value."""
         mean = float(np.mean(values))
         std  = float(np.std(values, ddof=1)) if len(values) > 1 else None
 
@@ -49,15 +37,6 @@ class SeedAggregation:
 
     @staticmethod
     def confidence_interval(values: list[float], level: float = 0.95) -> tuple[float, float] | None:
-        """Returns the two-sided t-based confidence interval of the mean.
-
-        Args:
-            values : Per-seed metric values.
-            level  : Coverage of the interval, between zero and one.
-
-        Returns:
-            The (low, high) interval, or None for fewer than two values.
-        """
         if len(values) < 2:
             return None
 
@@ -70,16 +49,6 @@ class SeedAggregation:
 
     @staticmethod
     def aggregate(dicts: list[dict], keys: list[str]) -> tuple[dict, dict]:
-        """Aggregates the requested metric keys across per-seed metric mappings.
-
-        Args:
-            dicts : One metric mapping per seed.
-            keys  : Metric keys to aggregate.
-
-        Returns:
-            Tuple of the mean and standard-deviation mappings; keys no seed
-            reports with a finite value are absent from both.
-        """
         means, stds = {}, {}
 
         for key in keys:
@@ -95,29 +64,10 @@ class SeedAggregation:
 
     @staticmethod
     def contributors(dicts: list[dict], keys: list[str]) -> dict[str, int]:
-        """Returns, per key, how many of the mappings carry a finite value for it.
-
-        Args:
-            dicts : One metric mapping per seed.
-            keys  : Metric keys to count.
-
-        Returns:
-            Mapping from key to the number of seeds whose value entered the mean, zero for a key no seed reports.
-        """
         return {key: sum(1 for d in dicts if FiniteScalar.coerce(d.get(key)) is not None) for key in keys}
 
     @staticmethod
     def shortfall(dicts: list[dict], keys: list[str], names: list[str]) -> dict[str, list[str]]:
-        """Returns, per key some seed lacks, the names of the seeds without a finite value for it.
-
-        Args:
-            dicts : One metric mapping per seed, aligned with names.
-            keys  : Metric keys to check.
-            names : Seed names aligned with dicts.
-
-        Returns:
-            Mapping from key to the names of the seeds that contributed nothing to it; keys every seed reports are absent.
-        """
         missing = {}
 
         for key in keys:
@@ -129,16 +79,6 @@ class SeedAggregation:
 
     @staticmethod
     def intervals(dicts: list[dict], keys: list[str], level: float = 0.95) -> tuple[dict, dict]:
-        """Returns the confidence interval and finite-sample count per metric key.
-
-        Args:
-            dicts : One metric mapping per seed.
-            keys  : Metric keys to aggregate.
-            level : Coverage of the intervals, between zero and one.
-
-        Returns:
-            Tuple of the interval mapping (absent for keys with fewer than two finite values) and the finite-count mapping (absent for keys with none).
-        """
         intervals, counts = {}, {}
 
         for key in keys:
@@ -157,28 +97,11 @@ class SeedAggregation:
 
 
 class R2:
-    """Coefficient of determination computed along one axis.
-
-    A reference that is constant along the reduced axis has no variance to
-    explain, so its coefficient is undefined: such entries are NaN instead of
-    the 1.0 (matching prediction) or the huge negative value (any other
-    prediction) a stabilised denominator would print.
-    """
 
     EPSILON = 1e-12
 
     @staticmethod
     def pixel_map(pred: np.ndarray, ref: np.ndarray, axis: int) -> np.ndarray:
-        """Returns the per-pixel coefficient of determination of a prediction.
-
-        Args:
-            pred : Predicted values with the reduced dimension along axis.
-            ref  : Reference values of the same shape.
-            axis : Dimension the residual and total sums are taken over, usually the z axis of a profile stack.
-
-        Returns:
-            Float32 array with axis removed, holding 1 - SS_res / SS_tot where SS_tot exceeds EPSILON and NaN where the reference is constant.
-        """
         ref_mean = ref.mean(axis=axis, keepdims=True, dtype=np.float64)
 
         ss_res = ((pred - ref) ** 2).sum(axis=axis, dtype=np.float64)
@@ -193,18 +116,15 @@ class R2:
 
     @staticmethod
     def undefined_count(r2_map: np.ndarray) -> int:
-        """Returns how many entries of a coefficient map are undefined, meaning not finite."""
         return int(np.count_nonzero(~np.isfinite(r2_map)))
 
 
 class RankCorrelation:
-    """Tie-corrected Spearman rank correlation between two flattened arrays."""
 
     MIN_PAIRS = 3
 
     @staticmethod
     def ranks(values: np.ndarray) -> np.ndarray:
-        """Returns the zero-based ranks of a flattened array, ties sharing their average rank."""
         flat                      = np.asarray(values, dtype=np.float64).reshape(-1)
         _uniques, inverse, counts = np.unique(flat, return_inverse=True, return_counts=True)
 
@@ -215,19 +135,6 @@ class RankCorrelation:
 
     @classmethod
     def spearman(cls, a: np.ndarray, b: np.ndarray) -> float:
-        """Returns the Spearman correlation over the pairs finite in both arrays.
-
-        Args:
-            a : First array, flattened before pairing.
-            b : Second array with the same number of elements as a.
-
-        Returns:
-            Correlation coefficient, or NaN when fewer than MIN_PAIRS finite
-            pairs remain or either rank vector is constant.
-
-        Raises:
-            ValueError : If the arrays differ in size or hold fewer than MIN_PAIRS elements.
-        """
         flat_a = np.asarray(a, dtype=np.float64).reshape(-1)
         flat_b = np.asarray(b, dtype=np.float64).reshape(-1)
 
@@ -248,12 +155,6 @@ class RankCorrelation:
 
 
 class MetricOrientation:
-    """Decides from a metric key whether larger values are better, worse or neither.
-
-    Every reported key must match one of the declared rules. An undeclared key
-    raises, so a new metric is given an orientation before a report ranks it,
-    instead of being ranked as an error metric by default.
-    """
 
     _HIGHER_OVERRIDES = {"relative_mse_reduction", "fraction_pred_beats_reduced", "failure_frac_ok", "presence_rank_corr", "slot_gt_alignment", "slot_mu_rank_diag", "slot_usage_entropy"}
     _HIGHER_PATTERN   = re.compile(r"^improvement_|valid_fraction")
@@ -264,18 +165,6 @@ class MetricOrientation:
 
     @classmethod
     def direction(cls, key: str) -> str | None:
-        """Returns "higher", "lower", or None for descriptive metrics that must not be ranked.
-
-        Args:
-            key : Metric key as it appears in the reported metric mappings.
-
-        Returns:
-            The orientation, resolved by explicit override, then the neutral
-            pattern, then the lower pattern, then substring tokens.
-
-        Raises:
-            KeyError : If the key matches no declared rule.
-        """
         if key in cls._HIGHER_OVERRIDES or cls._HIGHER_PATTERN.search(key):
             return "higher"
         if cls._NEUTRAL_PATTERN.search(key):
@@ -290,28 +179,14 @@ class MetricOrientation:
 
     @classmethod
     def higher_is_better(cls, key: str) -> bool | None:
-        """Returns the orientation as a boolean, or None for descriptive metrics."""
         direction = cls.direction(key)
         return None if direction is None else direction == "higher"
 
 
 class RelativeImprovement:
-    """Improvement of a model metric over a baseline, as a fraction or a percentage string."""
 
     @staticmethod
     def fraction(baseline: Any, model: Any, higher_is_better: bool = False) -> float:
-        """Returns the signed improvement of the model over the baseline.
-
-        Args:
-            baseline         : Baseline metric value.
-            model            : Model metric value.
-            higher_is_better : Whether larger values count as better.
-
-        Returns:
-            Improvement as a fraction of the absolute baseline, positive when
-            the model is better; NaN when either value is not finite or the
-            baseline is zero.
-        """
         baseline_value = FiniteScalar.coerce(baseline)
         model_value    = FiniteScalar.coerce(model)
 
@@ -323,17 +198,6 @@ class RelativeImprovement:
 
     @staticmethod
     def percent(baseline: Any, model: Any, higher_is_better: bool = False, empty: str = "n/a") -> str:
-        """Returns the improvement as a signed percentage string, or the placeholder when undefined.
-
-        Args:
-            baseline         : Baseline metric value.
-            model            : Model metric value.
-            higher_is_better : Whether larger values count as better.
-            empty            : Text returned when the improvement is undefined.
-
-        Returns:
-            Formatted percentage such as "+12.3%", or the placeholder.
-        """
         value = RelativeImprovement.fraction(baseline, model, higher_is_better)
         if not np.isfinite(value):
             return empty

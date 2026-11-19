@@ -1,9 +1,3 @@
-"""Console, markdown and JSON reporting for the model weight x-ray.
-
-Prints the summary and flagged tensors to the console, assembles the markdown
-report with the findings table, embedded diagnostic plots and the per-tensor
-metric table, and serialises the full report payload to JSON.
-"""
 
 from __future__ import annotations
 
@@ -18,31 +12,12 @@ from configuration.diagnostics import WeightXrayConfig
 
 
 class WeightXrayReport:
-    """Writes the console, markdown and JSON outputs of a weight x-ray.
-
-    Attributes:
-        config : Weight x-ray configuration holding the output paths.
-        assets : Helper that links or embeds the diagnostic plot images.
-    """
 
     def __init__(self, config: WeightXrayConfig) -> None:
-        """Initialises the reporter.
-
-        Args:
-            config : Weight x-ray configuration for the checkpoint.
-        """
         self.config = config
         self.assets = ReportAssets(config.report_directory, embed_images=config.embed_images)
 
     def _log_console(self, logger, reports: list, summary: dict, provenance: dict) -> None:
-        """Prints the summary, severity counts, issue codes and flagged tensors to the console.
-
-        Args:
-            logger     : Logger providing the table renderers.
-            reports    : Per-tensor reports carrying their issues.
-            summary    : Checkpoint-level summary from XraySummarizer.
-            provenance : Report provenance from WeightXray, naming the checkpoint entry and epochs.
-        """
         logger.kv_table({
             "Checkpoint"      : summary["checkpoint"],
             "Entry"           : provenance["checkpoint"]["key"],
@@ -85,7 +60,6 @@ class WeightXrayReport:
         logger.metrics_table(rows, columns=["Tensor", "Role", "Shape", "Severity", "Findings"], title="Flagged tensors")
 
     def _issue_table(self, reports: list) -> MarkdownTable:
-        """Returns the markdown table of every finding, ordered by descending severity."""
         ordering = {"critical": 0, "warning": 1, "info": 2}
         flagged  = sorted((report for report in reports if report.severity != "ok"), key=lambda report: ordering.get(report.severity, 3))
 
@@ -98,7 +72,6 @@ class WeightXrayReport:
 
     @staticmethod
     def _checked_cell(report, check: str, value, fmt: str) -> str:
-        """Returns a metric cell, "skipped" when the check was size-limited and "-" when the tensor has no matrix statistics."""
         if check in report.skipped_checks:
             return "skipped"
         if value is None:
@@ -106,7 +79,6 @@ class WeightXrayReport:
         return format(value, fmt)
 
     def _metric_table(self, reports: list) -> MarkdownTable:
-        """Returns the markdown table of per-tensor metrics in state-dict order."""
         table = MarkdownTable(["Tensor", "Role", "Params", "Std", "Dead %", "Rank ratio", "Spectral", "Dup. pairs", "Severity"], align=["left", "left", "right", "right", "right", "right", "right", "right", "left"])
         for report in reports:
             table.add_row(
@@ -123,7 +95,6 @@ class WeightXrayReport:
         return table
 
     def _provenance_rows(self, provenance: dict) -> dict:
-        """Returns the provenance entries rendered in the report header, from the checkpoint entry to the library versions."""
         checkpoint = provenance["checkpoint"]
 
         architecture = provenance["architecture"]
@@ -142,7 +113,6 @@ class WeightXrayReport:
         }
 
     def _threshold_rows(self, provenance: dict) -> dict:
-        """Returns the decision thresholds and size limits behind every flag, from the effective configuration."""
         config = provenance["config"]
         rows   = {key.split(".", 1)[1]: value for key, value in config.items() if key.startswith("thresholds.")}
 
@@ -151,17 +121,6 @@ class WeightXrayReport:
         return rows
 
     def _build_markdown(self, reports: list, summary: dict, provenance: dict, plot_paths: list) -> Path:
-        """Assembles and saves the markdown report.
-
-        Args:
-            reports    : Per-tensor reports carrying statistics and issues.
-            summary    : Checkpoint-level summary from XraySummarizer.
-            provenance : Report provenance from WeightXray.
-            plot_paths : Diagnostic figure paths to embed.
-
-        Returns:
-            Path of the saved markdown file.
-        """
         doc = MarkdownDoc(title="Model weight x-ray")
 
         doc.bold_kv("Checkpoint", summary["checkpoint"])
@@ -209,11 +168,9 @@ class WeightXrayReport:
 
     @staticmethod
     def _unchecked_text(summary: dict) -> str:
-        """Returns the tensors each size-limited check skipped as one phrase, e.g. "spectral 0, duplicates 3"."""
         return ", ".join(f"{check} {count}" for check, count in summary["unchecked"].items())
 
     def _write_json(self, reports: list, summary: dict, provenance: dict) -> Path:
-        """Serialises the summary, the provenance and every tensor report to JSON and returns the path."""
         payload = {
             "summary"    : summary,
             "provenance" : provenance,
@@ -226,18 +183,6 @@ class WeightXrayReport:
         return path
 
     def write(self, logger, reports: list, summary: dict, provenance: dict, plot_paths: list) -> dict:
-        """Emits the console, markdown and JSON reports.
-
-        Args:
-            logger     : Logger providing the table renderers.
-            reports    : Per-tensor reports carrying statistics and issues.
-            summary    : Checkpoint-level summary from XraySummarizer.
-            provenance : Report provenance from WeightXray: creation time, checkpoint entry and epochs, configuration, code and host.
-            plot_paths : Diagnostic figure paths to embed in the markdown.
-
-        Returns:
-            Mapping of "report" and "json" to the written file paths.
-        """
         self._log_console(logger, reports, summary, provenance)
 
         markdown_path = self._build_markdown(reports, summary, provenance, plot_paths)

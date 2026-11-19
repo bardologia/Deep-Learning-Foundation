@@ -1,9 +1,3 @@
-"""Orchestration of the model weight x-ray diagnostic.
-
-Resolves a parameter tensor mapping out of a checkpoint, analyses every tensor,
-flags anomalies, renders the diagnostic plots and writes the markdown and JSON
-reports, either for a single run or for a batch of matched runs.
-"""
 
 from __future__ import annotations
 
@@ -28,15 +22,6 @@ from .weight_xray_analysis import IssueDetector, LayerReport, ModuleTypes, Weigh
 
 @dataclass
 class ResolvedCheckpoint:
-    """Parameter tensors located inside a checkpoint, with where they came from.
-
-    Attributes:
-        path       : Checkpoint file the tensors were read from.
-        key        : Checkpoint entry holding the tensors, or "(top level)" when the file is the mapping itself.
-        state_dict : Mapping of parameter name to tensor.
-        epoch      : Zero-based epoch stored beside the tensors, or None when the checkpoint records none.
-        best_epoch : Zero-based epoch of the best validation loss stored beside the tensors, or None.
-    """
     path       : Path
     key        : str
     state_dict : dict
@@ -45,42 +30,19 @@ class ResolvedCheckpoint:
 
 
 class StateDictResolver:
-    """Locates the parameter tensor mapping inside a saved checkpoint.
-
-    Attributes:
-        config    : Weight x-ray configuration holding the checkpoint path and the candidate state-dict keys.
-        TOP_LEVEL : Entry name reported when the checkpoint file is the tensor mapping itself.
-    """
 
     TOP_LEVEL = "(top level)"
 
     def __init__(self, config: WeightXrayConfig) -> None:
-        """Initialises the resolver.
-
-        Args:
-            config : Weight x-ray configuration for one checkpoint.
-        """
         self.config = config
 
     def _load_object(self, path: Path):
-        """Loads the checkpoint file onto CPU.
-
-        Args:
-            path : Checkpoint file to load.
-
-        Returns:
-            The unpickled checkpoint object.
-
-        Raises:
-            FileNotFoundError : If no file exists at the path.
-        """
         if not path.is_file():
             raise FileNotFoundError(f"No checkpoint file at {path}; point --checkpoint-path at a .pt file or a run directory containing {self.config.checkpoint_filename}")
 
         return torch.load(str(path), map_location="cpu", weights_only=False)
 
     def _is_tensor_mapping(self, candidate) -> bool:
-        """Returns whether a candidate is a non-empty dict whose values are mostly tensors."""
         if not isinstance(candidate, dict) or not candidate:
             return False
 
@@ -88,19 +50,6 @@ class StateDictResolver:
         return tensor_values >= max(1, int(0.5 * len(candidate)))
 
     def _select_mapping(self, obj, path: Path) -> tuple[str, dict]:
-        """Returns the checkpoint entry name and the tensor mapping it holds.
-
-        Args:
-            obj  : Unpickled checkpoint object.
-            path : Checkpoint file, named in the error.
-
-        Returns:
-            Pair of the entry key and the parameter tensor mapping; the key is
-            TOP_LEVEL when the checkpoint is the mapping itself.
-
-        Raises:
-            ValueError : If the checkpoint is no tensor mapping and none of the configured state-dict keys holds one. The error names the entries that do hold tensors, so the caller picks one explicitly rather than the x-ray silently analysing the first mapping it meets, which for a trainer state would be the raw weights rather than the EMA weights inference uses.
-        """
         if self._is_tensor_mapping(obj):
             return self.TOP_LEVEL, obj
 
@@ -119,13 +68,11 @@ class StateDictResolver:
 
     @staticmethod
     def _stored_epoch(obj, name: str) -> Optional[int]:
-        """Returns the integer epoch entry stored beside the tensors, or None when the checkpoint has none."""
         if isinstance(obj, dict) and name in obj:
             return int(obj[name])
         return None
 
     def resolve(self) -> ResolvedCheckpoint:
-        """Returns the parameter tensor mapping of the configured checkpoint with its entry and epochs."""
         path            = self.config.resolved_checkpoint_path
         obj             = self._load_object(path)
         key, state_dict = self._select_mapping(obj, path)
@@ -140,40 +87,16 @@ class StateDictResolver:
 
 
 class ModuleTypeResolver:
-    """Maps the tensors of a run's checkpoint to the module classes that own them.
-
-    The model is rebuilt on CPU from the architecture config persisted next to
-    the checkpoint, so the analyser can tell a transposed convolution, whose
-    weight is laid out (in_channels, out_channels, kH, kW), from a convolution
-    laid out (out_channels, in_channels, kH, kW). Only the module tree is
-    needed, so the checkpoint weights are never loaded into it.
-
-    Attributes:
-        meta_directory : The run's meta/ directory next to the checkpoint, holding the persisted architecture config.
-        TRANSPOSED     : Module classes whose weight carries the output channels on dim 1.
-    """
 
     TRANSPOSED = (torch.nn.ConvTranspose1d, torch.nn.ConvTranspose2d, torch.nn.ConvTranspose3d)
 
     def __init__(self, checkpoint_path: Path) -> None:
-        """Points the resolver at the meta/ directory beside a checkpoint.
-
-        Args:
-            checkpoint_path : Checkpoint file inside a run directory.
-        """
         self.meta_directory = Path(checkpoint_path).parent / "meta"
 
     def available(self) -> bool:
-        """Returns whether the run persisted its architecture config, without which no model can be rebuilt."""
         return BackboneModelConfigIO.exists(self.meta_directory)
 
     def resolve(self) -> ModuleTypes:
-        """Rebuilds the model and returns which module owns every parameter and buffer.
-
-        Returns:
-            The architecture name with the owning module class per state-dict
-            key and the keys of the transposed-convolution weights.
-        """
         config, name = BackboneModelConfigIO.load(self.meta_directory)
         model, _     = get_backbone(name, config=config)
 
@@ -194,50 +117,24 @@ class ModuleTypeResolver:
 
 
 class WeightXray:
-    """Runs the full weight x-ray for one checkpoint.
-
-    Attributes:
-        config : Weight x-ray configuration for the checkpoint.
-        logger : Logger used for progress reporting.
-    """
 
     def __init__(self, config: WeightXrayConfig, logger) -> None:
-        """Initialises the x-ray.
-
-        Args:
-            config : Weight x-ray configuration for one checkpoint.
-            logger : Logger used for progress reporting.
-        """
         self.config = config
         self.logger = logger
 
     @staticmethod
     def _epoch_text(resolved: ResolvedCheckpoint) -> str:
-        """Returns the stored epoch indices as a phrase, or says the checkpoint stores none."""
         if resolved.epoch is None and resolved.best_epoch is None:
             return "no epoch stored"
         return f"epoch index {resolved.epoch}, best epoch index {resolved.best_epoch}"
 
     def _resolve(self) -> ResolvedCheckpoint:
-        """Loads the checkpoint and returns its parameter tensor mapping, logging which entry it came from."""
         self.logger.subsection(f"Loading checkpoint: {self.config.resolved_checkpoint_path}")
         resolved = StateDictResolver(self.config).resolve()
         self.logger.ok(f"Resolved {len(resolved.state_dict)} tensors from checkpoint entry '{resolved.key}' ({self._epoch_text(resolved)})")
         return resolved
 
     def _module_types(self, resolved: ResolvedCheckpoint) -> ModuleTypes:
-        """Rebuilds the run's model to learn which module owns each tensor, or records that no architecture config exists.
-
-        A checkpoint without a persisted architecture is still x-rayed, with a
-        warning that every weight is read with its output units on dim 0, which
-        mislabels transposed convolutions.
-
-        Args:
-            resolved : Checkpoint whose tensors are about to be analysed.
-
-        Returns:
-            The module ownership, empty when unavailable.
-        """
         resolver = ModuleTypeResolver(resolved.path)
 
         if not resolver.available():
@@ -254,15 +151,6 @@ class WeightXray:
         return types
 
     def _analyze(self, state_dict: dict, module_types: ModuleTypes) -> list[LayerReport]:
-        """Computes the per-tensor statistics of every analysable parameter tensor.
-
-        Every check a size limit skipped is reported with the tensors it left
-        unchecked, so a clean verdict can be read against what was not tested.
-
-        Args:
-            state_dict   : Mapping of parameter name to tensor.
-            module_types : Module ownership deciding which weights are read on dim 1.
-        """
         reports = WeightAnalyzer(self.config, module_types).analyze(state_dict)
         self.logger.ok(f"Analysed {len(reports)} parameter tensors")
 
@@ -275,26 +163,12 @@ class WeightXray:
         return reports
 
     def _detect(self, reports: list[LayerReport], state_dict: dict) -> list[LayerReport]:
-        """Attaches threshold-based issues to every layer report."""
         return IssueDetector(self.config.thresholds).run(reports, state_dict)
 
     def _summarize(self, reports: list[LayerReport]) -> dict:
-        """Returns the checkpoint-level summary of the layer reports."""
         return XraySummarizer().build(reports, self.config.resolved_checkpoint_path)
 
     def _provenance(self, resolved: ResolvedCheckpoint, module_types: ModuleTypes) -> dict:
-        """Returns what produced this report, so a stored verdict can be tied to its thresholds, checkpoint epoch and code.
-
-        Args:
-            resolved     : Checkpoint the tensors were read from.
-            module_types : Module ownership the tensors were analysed with.
-
-        Returns:
-            Mapping with the creation time, the checkpoint path, entry and
-            stored epochs, the architecture the module types came from (None
-            when unavailable), every effective configuration leaf and the
-            commit, host, interpreter and library versions of this process.
-        """
         return {
             "created"      : datetime.now().isoformat(timespec="seconds"),
             "checkpoint"   : {"path": str(resolved.path), "key": resolved.key, "epoch": resolved.epoch, "best_epoch": resolved.best_epoch},
@@ -304,24 +178,15 @@ class WeightXray:
         }
 
     def _plot(self, reports: list[LayerReport], state_dict: dict) -> list[Path]:
-        """Renders the diagnostic plots, or returns an empty list when plotting is disabled."""
         if not self.config.make_plots:
             return []
 
         return WeightXrayPlots(self.config).render(reports, state_dict)
 
     def _report(self, reports: list[LayerReport], summary: dict, provenance: dict, plot_paths: list[Path]) -> dict:
-        """Writes the console, markdown and JSON reports and returns the output paths."""
         return WeightXrayReport(self.config).write(self.logger, reports, summary, provenance, plot_paths)
 
     def run(self) -> dict:
-        """Runs resolve, analysis, detection, plotting and reporting in sequence.
-
-        Returns:
-            Mapping with the checkpoint summary under "summary", the report
-            provenance under "provenance" and the written report paths under
-            "outputs".
-        """
         resolved     = self._resolve()
         state_dict   = resolved.state_dict
         module_types = self._module_types(resolved)
@@ -337,47 +202,22 @@ class WeightXray:
 
 
 class WeightXrayBatch:
-    """Runs the weight x-ray over every run matched by an entry-point filter.
-
-    Attributes:
-        entry_config : Entry configuration holding the run root and filter.
-        logger       : Logger used for progress reporting.
-    """
 
     def __init__(self, entry_config: WeightXrayEntryConfig, logger) -> None:
-        """Initialises the batch x-ray.
-
-        Args:
-            entry_config : Entry configuration holding the run root and filter.
-            logger       : Logger used for progress reporting.
-        """
         self.entry_config = entry_config
         self.logger       = logger
 
     def _log_configuration(self) -> None:
-        """Logs every effective entry setting once, so the thresholds behind each verdict survive in the log."""
         self.logger.kv_table(ConfigCli.to_mapping(self.entry_config), title="Weight x-ray configuration")
 
     def _select_runs(self) -> list[Path]:
-        """Returns the run directories that carry a checkpoint and match the filter."""
         selector = RunSelector(self.entry_config.runs_dir, self.entry_config.checkpoint_filename, self.logger, action="x-ray")
         return selector.resolve(self.entry_config.run_filter)
 
     def _run_label(self, run_dir: Path) -> str:
-        """Returns the run's path below the runs root, which tells nested seed runs apart."""
         return str(Path(run_dir).relative_to(Path(self.entry_config.runs_dir)))
 
     def _xray_run(self, run_dir: Path, position: int, total: int) -> dict:
-        """X-rays one run's checkpoint under a numbered section and returns its summary and output paths.
-
-        Args:
-            run_dir  : Run directory holding the checkpoint.
-            position : One-based position of the run in the batch.
-            total    : Number of runs in the batch.
-
-        Returns:
-            The WeightXray result mapping of the run.
-        """
         self.logger.section(f"Weight x-ray [{position}/{total}] {self._run_label(run_dir)}")
 
         config = self.entry_config.to_config(run_dir)
@@ -387,12 +227,6 @@ class WeightXrayBatch:
         return result
 
     def _summarize(self, run_dirs: list[Path], results: list[dict]) -> None:
-        """Closes the batch with one row per run and the verdict counts, so no verdict has to be grepped out of the log.
-
-        Args:
-            run_dirs : Run directories in batch order.
-            results  : WeightXray result mappings in the same order.
-        """
         rows = []
         for run_dir, result in zip(run_dirs, results):
             summary = result["summary"]
@@ -413,11 +247,6 @@ class WeightXrayBatch:
         self.logger.ok(f"X-rayed {len(results)} run(s): {counted}")
 
     def run(self) -> list[dict]:
-        """Logs the configuration, x-rays every selected run and closes with the batch summary.
-
-        Returns:
-            One result mapping per run, in selection order.
-        """
         self._log_configuration()
 
         run_dirs = self._select_runs()

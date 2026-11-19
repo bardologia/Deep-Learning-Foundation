@@ -1,9 +1,3 @@
-"""Background sampler for host and GPU resource usage during a run.
-
-Polls RAM, swap, /dev/shm, CPU, disk I/O and NVML GPU counters on a daemon
-thread, mirrors a curated subset into TensorBoard through a tracker, warns when
-configured thresholds are crossed, and reports peak usage at shutdown.
-"""
 
 from __future__ import annotations
 
@@ -17,28 +11,11 @@ import pynvml
 
 
 class ResourceMonitor:
-    """Samples system and GPU resource metrics on a background thread.
-
-    Attributes:
-        cfg         : Resource-monitor configuration block supplying thresholds and interval.
-        logger      : Logger used for the startup table, warnings and the peak summary.
-        tracker     : Optional tracker that forwards scalars to TensorBoard.
-        step_getter : Callable returning the training step to tag samples with.
-        peak        : Running maxima of memory and VRAM metrics observed so far.
-    """
 
     TB_SCALARS      = ("ram_pct", "proc_rss_gb", "swap_pct", "shm_pct", "cpu_pct", "proc_cpu_pct", "disk_read_mb_s", "disk_write_mb_s")
     TB_GPU_SCALARS  = ("util_pct", "vram_pct", "temp_c", "power_w")
 
     def __init__(self, config, logger, tracker=None, step_getter=None):
-        """Initializes the monitor and its NVML, disk and threading state.
-
-        Args:
-            config      : Resource-monitor config with enabled, poll_interval_sec, log_to_tensorboard, the warn_*_pct thresholds and warn_cooldown_sec.
-            logger      : Logger for the startup table, threshold warnings and peaks.
-            tracker     : Optional tracker whose log_metrics receives the TensorBoard subset.
-            step_getter : Callable returning the current step; defaults to a constant 0.
-        """
         self.cfg         = config
         self.logger      = logger
         self.tracker     = tracker
@@ -52,7 +29,6 @@ class ResourceMonitor:
         self._init_peak_tracking()
 
     def _load_config(self):
-        """Copies the polling interval, thresholds and toggles out of the config."""
         self.enabled         = bool(self.cfg.enabled)
         self.interval        = float(self.cfg.poll_interval_sec)
         self.log_to_tb       = bool(self.cfg.log_to_tensorboard)
@@ -62,13 +38,11 @@ class ResourceMonitor:
         self.warn_cooldown_s = float(self.cfg.warn_cooldown_sec)
 
     def _init_process(self):
-        """Binds this process handle and primes the CPU-percent counters."""
         self.process = psutil.Process(os.getpid())
         self.process.cpu_percent(None)
         psutil.cpu_percent(None, percpu=False)
 
     def _init_nvml(self):
-        """Opens NVML handles for the visible devices, keeping the failure that leaves GPU sampling off."""
         self._nvml_ok     = False
         self._nvml_error  = ""
         self._nvml_failed = set()
@@ -85,21 +59,12 @@ class ResourceMonitor:
 
     @staticmethod
     def _cuda_available() -> bool:
-        """Whether torch is loaded in this process and can see a CUDA device, read without importing torch."""
         torch = sys.modules.get("torch")
 
         return torch is not None and torch.cuda.is_available()
 
     @staticmethod
     def _visible_indices():
-        """Returns the device indices named by CUDA_VISIBLE_DEVICES, or None when unset.
-
-        Returns:
-            List of non-negative device indices, or None when the variable is absent.
-
-        Raises:
-            ValueError : If the variable names devices by UUID or MIG identifier instead of plain integer indices.
-        """
         raw = os.environ.get("CUDA_VISIBLE_DEVICES")
         if raw is None:
             return None
@@ -111,19 +76,16 @@ class ResourceMonitor:
         return [int(token) for token in tokens]
 
     def _init_disk_tracking(self):
-        """Records the baseline disk I/O counters used for rate differencing."""
         self._last_disk_io = psutil.disk_io_counters()
         self._last_disk_t  = time.time()
 
     def _init_threading(self):
-        """Creates the stop event, sample counter and per-kind warning timestamps."""
         self._stop_evt    = threading.Event()
         self._thread      = None
         self._sample_idx  = 0
         self._last_warn_t = {}
 
     def _init_peak_tracking(self):
-        """Zeroes the peak table for the memory and VRAM metrics that are tracked."""
         self.peak = {
             "ram_used_gb"  : 0.0,
             "ram_pct"      : 0.0,
@@ -136,11 +98,9 @@ class ResourceMonitor:
 
     @staticmethod
     def _bytes_to_gb(x):
-        """Returns the byte count converted to gibibytes."""
         return float(x) / (1024.0 ** 3)
 
     def _get_shm_usage(self):
-        """Returns the (used GB, percent) of /dev/shm, or zeros when it is unreadable."""
         try:
             usage = psutil.disk_usage("/dev/shm")
             return self._bytes_to_gb(usage.used), float(usage.percent)
@@ -148,7 +108,6 @@ class ResourceMonitor:
             return 0.0, 0.0
 
     def _maybe_warn(self, key, message):
-        """Logs a warning for the given kind unless its cooldown has not yet elapsed."""
         now  = time.time()
         last = self._last_warn_t.get(key, 0.0)
         if now - last < self.warn_cooldown_s:
@@ -158,7 +117,6 @@ class ResourceMonitor:
             self.logger.warning(f"[ResourceMonitor] {message}")
 
     def _sample_ram_metrics(self, metrics):
-        """Writes used, available and total system RAM in GB plus the percentage."""
         vm = psutil.virtual_memory()
         metrics["ram_used_gb"]      = self._bytes_to_gb(vm.used)
         metrics["ram_available_gb"] = self._bytes_to_gb(vm.available)
@@ -166,13 +124,11 @@ class ResourceMonitor:
         metrics["ram_pct"]          = float(vm.percent)
 
     def _sample_swap_metrics(self, metrics):
-        """Writes swap usage in GB and percent."""
         sm = psutil.swap_memory()
         metrics["swap_used_gb"] = self._bytes_to_gb(sm.used)
         metrics["swap_pct"]     = float(sm.percent)
 
     def _sample_process_memory_metrics(self, metrics):
-        """Writes this process's RSS, VMS and, when permitted, USS and shared memory in GB."""
         try:
             mi = self.process.memory_full_info()
             metrics["proc_rss_gb"]    = self._bytes_to_gb(mi.rss)
@@ -185,7 +141,6 @@ class ResourceMonitor:
             metrics["proc_vms_gb"] = self._bytes_to_gb(mi.vms)
 
     def _sample_process_stats(self, metrics):
-        """Writes the thread and file-descriptor counts of this process when readable."""
         try:
             metrics["proc_num_threads"] = float(self.process.num_threads())
             metrics["proc_num_fds"]     = float(self.process.num_fds())
@@ -193,7 +148,6 @@ class ResourceMonitor:
             pass
 
     def _sample_process_children(self, metrics):
-        """Writes the number of descendant processes and their summed RSS in GB."""
         try:
             children = self.process.children(recursive=True)
             metrics["proc_num_children"] = float(len(children))
@@ -208,7 +162,6 @@ class ResourceMonitor:
             pass
 
     def _sample_cpu_metrics(self, metrics):
-        """Writes system and process CPU percentages plus the 1/5/15 minute load averages."""
         metrics["cpu_pct"]      = float(psutil.cpu_percent(None, percpu=False))
         metrics["proc_cpu_pct"] = float(self.process.cpu_percent(None))
         try:
@@ -220,13 +173,11 @@ class ResourceMonitor:
             pass
 
     def _sample_shm_metrics(self, metrics):
-        """Writes /dev/shm usage in GB and percent."""
         shm_used_gb, shm_pct = self._get_shm_usage()
         metrics["shm_used_gb"] = shm_used_gb
         metrics["shm_pct"]     = shm_pct
 
     def _sample_disk_io_metrics(self, metrics):
-        """Writes disk read and write throughput in MB/s since the previous sample."""
         now = time.time()
         try:
             io = psutil.disk_io_counters()
@@ -240,14 +191,6 @@ class ResourceMonitor:
             pass
 
     def _sample_gpu_nvml_metrics(self, metrics):
-        """Writes per-device VRAM, utilization, temperature and power, and returns the totals.
-
-        Args:
-            metrics : Metric dictionary to populate with gpu{i}_* entries.
-
-        Returns:
-            Tuple of (used GB, total GB) summed over the visible devices.
-        """
         gpu_total = 0.0
         gpu_used  = 0.0
         
@@ -289,12 +232,6 @@ class ResourceMonitor:
         return gpu_used, gpu_total
 
     def _warn_device(self, index, error):
-        """Warns once per device whose NVML queries fail, since its figures drop out of every later sample.
-
-        Args:
-            index : Position of the device among this run's visible devices.
-            error : Exception the NVML query raised.
-        """
         if index in self._nvml_failed:
             return
 
@@ -304,19 +241,11 @@ class ResourceMonitor:
             self.logger.warning(f"[ResourceMonitor] NVML query failed for gpu{index} ({type(error).__name__}: {error}): its VRAM and utilisation are missing from this run's totals and system/gpu{index}_* scalars from now on")
 
     def _update_peak_metrics(self, metrics):
-        """Raises each tracked peak to the value seen in this sample."""
         for k in list(self.peak.keys()):
             if k in metrics and metrics[k] > self.peak[k]:
                 self.peak[k] = float(metrics[k])
 
     def _check_warnings(self, metrics, gpu_used, gpu_total):
-        """Emits cooldown-gated warnings for RAM, aggregated VRAM and /dev/shm.
-
-        Args:
-            metrics   : Metric dictionary produced by the sampling helpers.
-            gpu_used  : VRAM in use across the visible devices, in GB.
-            gpu_total : Total VRAM across the visible devices, in GB.
-        """
         if metrics["ram_pct"] >= self.warn_ram_pct:
             self._maybe_warn(
                 "ram",
@@ -345,13 +274,6 @@ class ResourceMonitor:
             )
 
     def sample(self):
-        """Collects one full resource snapshot, updating peaks and firing warnings.
-
-        Returns:
-            Mapping of metric name to float value covering RAM, swap, process
-            memory, CPU, /dev/shm, disk throughput and per-GPU counters, plus the
-            aggregated vram_used_gb and vram_pct.
-        """
         metrics = {}
 
         self._sample_ram_metrics(metrics)
@@ -376,7 +298,6 @@ class ResourceMonitor:
         return metrics
 
     def _tb_metrics(self, metrics):
-        """Returns the subset of metrics allowed onto TensorBoard."""
         allowed = set(self.TB_SCALARS)
         for i in range(len(self._gpu_handles)):
             allowed.update(f"gpu{i}_{suffix}" for suffix in self.TB_GPU_SCALARS)
@@ -384,13 +305,11 @@ class ResourceMonitor:
         return {k: v for k, v in metrics.items() if k in allowed}
 
     def _publish(self, metrics):
-        """Logs the TensorBoard subset under the 'system' prefix at the current step."""
         step = int(self.step_getter() or 0)
         if self.log_to_tb and self.tracker is not None:
             self.tracker.log_metrics("system", self._tb_metrics(metrics), step)
 
     def _run(self):
-        """Samples and publishes on the poll interval until the stop event is set."""
         while not self._stop_evt.is_set():
             try:
                 metrics = self.sample()
@@ -401,7 +320,6 @@ class ResourceMonitor:
             self._stop_evt.wait(self.interval)
 
     def _log_startup_info(self):
-        """Logs the monitor's interval, NVML status, TensorBoard wiring and thresholds."""
         if self.logger is None:
             return
         
@@ -422,7 +340,6 @@ class ResourceMonitor:
             self.logger.warning(f"[ResourceMonitor] NVML unavailable ({self._nvml_error}) on a CUDA-capable process: GPU utilisation, the VRAM threshold warnings and the system/gpu* scalars are off for this run")
 
     def start(self):
-        """Starts the daemon sampling thread, or returns immediately when disabled."""
         if not self.enabled:
             if self.logger is not None:
                 self.logger.subsection("[ResourceMonitor] disabled by config")
@@ -438,7 +355,6 @@ class ResourceMonitor:
         self._thread.start()
 
     def _log_peak_metrics(self):
-        """Logs the peak memory and VRAM figures together with the sample count."""
         if self.logger is None:
             return
 
@@ -456,7 +372,6 @@ class ResourceMonitor:
         self.logger.kv_table(peaks)
 
     def _stop_thread(self):
-        """Signals the sampling thread and joins it with a bounded timeout."""
         if self._thread is None:
             return
         
@@ -465,13 +380,11 @@ class ResourceMonitor:
         self._thread = None
 
     def stop(self):
-        """Stops sampling, logs the peak summary and shuts NVML down."""
         self._stop_thread()
         self._log_peak_metrics()
         self._shutdown_nvml()
 
     def _shutdown_nvml(self):
-        """Releases the NVML session if one was successfully opened."""
         if self._nvml_ok:
             try:
                 pynvml.nvmlShutdown()
@@ -480,11 +393,9 @@ class ResourceMonitor:
             self._nvml_ok = False
 
     def __enter__(self):
-        """Starts monitoring and returns this monitor for use as a context manager."""
         self.start()
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        """Stops monitoring on context exit and never suppresses the exception."""
         self.stop()
         return False

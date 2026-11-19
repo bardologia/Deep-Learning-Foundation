@@ -1,10 +1,3 @@
-"""Kernel-level profiling of full training steps with torch.profiler.
-
-`StepProfiler` drives forward, backward and optimizer steps of a feed target
-under the profiler schedule and writes three artifacts: a chrome trace for
-chrome://tracing or Perfetto, a plain-text operator table sorted by self time,
-and a machine-readable summary of the top operators.
-"""
 
 from __future__ import annotations
 
@@ -18,30 +11,11 @@ from tools.data.io import FileIO
 
 
 class StepProfiler:
-    """Profiles training steps of one feed target and writes the trace artifacts.
-
-    Attributes:
-        TOP_OPS         : Number of operators kept in the machine-readable summary.
-        TABLE_ROWS      : Number of rows rendered in the plain-text operator table.
-        feed            : Feed target providing the dataset, model, input mover and loss.
-        device          : Device the profiled steps run on.
-        batch_size      : Samples per profiled step.
-        num_workers     : Loader worker processes.
-        prefetch_factor : Batches prefetched per worker.
-        use_amp         : Whether the forward runs under bfloat16 autocast.
-        warmup_steps    : Steps the profiler observes without recording.
-        active_steps    : Steps recorded into the trace.
-        record_shapes   : Whether operator input shapes are recorded.
-        profile_memory  : Whether allocator events are recorded.
-        with_stack      : Whether Python stacks are recorded (large traces).
-        logger          : Logger receiving the progress and artifact lines.
-    """
 
     TOP_OPS    = 25
     TABLE_ROWS = 50
 
     def __init__(self, feed, device: torch.device, batch_size: int, num_workers: int, prefetch_factor: int, use_amp: bool, warmup_steps: int, active_steps: int, record_shapes: bool, profile_memory: bool, with_stack: bool, logger) -> None:
-        """Stores the feed target and every profiling knob."""
         self.feed            = feed
         self.device          = device
         self.batch_size      = int(batch_size)
@@ -56,7 +30,6 @@ class StepProfiler:
         self.logger          = logger
 
     def _loader(self) -> DataLoader:
-        """Returns the loader feeding the profiled steps."""
         return DataLoader(
             self.feed.dataset,
             batch_size      = self.batch_size,
@@ -68,11 +41,6 @@ class StepProfiler:
         )
 
     def _batches(self, loader: DataLoader, total: int):
-        """Yields exactly `total` batches, restarting the loader between epochs.
-
-        Raises:
-            ValueError : If the loader yields no batch at all.
-        """
         if len(loader) == 0:
             raise ValueError(f"The profiling loader yields zero batches: {len(self.feed.dataset)} samples at batch size {self.batch_size} with drop_last; lower the batch size")
 
@@ -85,7 +53,6 @@ class StepProfiler:
                     return
 
     def _activities(self) -> list:
-        """Returns the profiler activities: CPU always, CUDA when profiling on a GPU."""
         activities = [ProfilerActivity.CPU]
         if self.device.type == "cuda":
             activities.append(ProfilerActivity.CUDA)
@@ -93,13 +60,6 @@ class StepProfiler:
         return activities
 
     def _summary(self, prof, trace_path: Path, table_path: Path) -> dict:
-        """Returns the machine-readable summary of the profiled steps.
-
-        Args:
-            prof       : Finished profiler.
-            trace_path : Written chrome trace path.
-            table_path : Written operator table path.
-        """
         events = prof.key_averages()
         cuda   = self.device.type == "cuda"
 
@@ -130,14 +90,6 @@ class StepProfiler:
         }
 
     def run(self, output_dir: Path) -> dict:
-        """Profiles the configured steps and writes trace, table and summary.
-
-        Args:
-            output_dir : Directory receiving trace.json, op_table.txt and summary.json.
-
-        Returns:
-            The summary payload, also written as summary.json.
-        """
         output_dir = FileIO.ensure_dir(Path(output_dir))
 
         model     = self.feed.model.to(self.device)

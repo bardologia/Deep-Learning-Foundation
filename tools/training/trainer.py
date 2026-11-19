@@ -1,9 +1,3 @@
-"""Generic epoch-driven training loop shared by every training entry point.
-
-`BaseTrainer` wires together the optimizer, LR schedule, warmup, gradient clipping,
-early stopping, checkpointing, EMA, resource monitoring and VRAM reservation, and
-leaves the loss, parameter groups and criterion to subclasses.
-"""
 
 from __future__ import annotations
 
@@ -32,44 +26,11 @@ from tools.runtime.completion        import CompletionMarker
 
 
 class BaseTrainer:
-    """Abstract trainer that runs the epoch loop and owns all training machinery.
-
-    Subclasses supply `_build_param_groups`, `_build_criterion` and `_compute_loss`,
-    and may override the hook methods to inject stage-specific logging or state.
-
-    Attributes:
-        device       : Device the model and batches live on (CUDA when available).
-        distributed  : Data-parallel context; inert outside a DDP fan-out, and otherwise the rank whose gradients and evaluation losses are kept in lockstep with the other ranks.
-        run_dir      : Directory holding checkpoints, trainer state and completion markers.
-        tracker      : Scalar/metric sink backed by the TensorBoard writer.
-        model        : Module being trained, already moved to `device`.
-        z_axis       : Z sampling axis of shape (n_samples,), in metres.
-        optimizer    : AdamW instance built over the subclass parameter groups.
-        base_lrs     : Per-group learning rates after `optimizer.lr_scale` is applied.
-        micro_batch  : Batch size of the training loader, set when training starts; None for an in-memory batch list.
-        global_step  : Number of micro-batches processed so far.
-        train_losses : Mean training loss per completed epoch.
-        val_losses   : Validation loss per epoch, NaN on epochs without evaluation.
-        test_metrics : Result of the final test evaluation, None until `train` ends.
-    """
 
     stage_name    = "Training"
     section_title = "[Training Loop]"
 
     def __init__(self, model, config, run_dir, logger, z_axis, writer=None):
-        """Builds the trainer and every training component from the resolved config.
-
-        Args:
-            model   : Module to train; moved to the selected device.
-            config  : Resolved configuration exposing training, optimizer, memory, early_stopping and resources sections.
-            run_dir : Run directory for checkpoints, trainer state and markers.
-            logger  : Logger used for sections, tables and progress bars.
-            z_axis  : Z sampling axis of shape (n_samples,), in metres.
-            writer  : Optional TensorBoard writer handed to the tracker.
-
-        Raises:
-            ValueError : If AMP is requested on a CUDA device without bfloat16 support.
-        """
         self.logger = logger
         self.config = config
 
@@ -157,13 +118,6 @@ class BaseTrainer:
         self._log_loop_configuration()
 
     def _warn_cpu_device(self) -> None:
-        """Warns that training falls back to the CPU because torch sees no CUDA device.
-
-        The warning names the device mask the process was given and the CUDA
-        build of torch, which separate a missing or mismatched driver from a
-        mask pointing at no device, and says that AMP becomes CPU bfloat16
-        autocast when it is enabled.
-        """
         if self.device.type == "cuda":
             return
 
@@ -173,11 +127,9 @@ class BaseTrainer:
         self.logger.warning(f"CUDA unavailable (CUDA_VISIBLE_DEVICES={mask}, torch CUDA build {torch.version.cuda}): training runs on the CPU at a fraction of GPU speed{amp}")
 
     def _log_init_banner(self) -> None:
-        """Hook for subclasses to print a banner before components are built."""
         pass
 
     def _log_loop_configuration(self) -> None:
-        """Logs the device, loop settings and the optimizer param-group table."""
         training = self.config.training
         memory   = self.config.memory
 
@@ -214,26 +166,18 @@ class BaseTrainer:
         self._log_param_groups()
 
     def _ddp_row(self) -> str:
-        """Returns the DDP row of the loop table, stating which logged quantities are reduced across ranks and which stay on this rank's shard."""
         if not self.distributed.active:
             return "off"
 
         return f"rank {self.distributed.rank + 1}/{self.distributed.world_size} (gradients averaged; loss/train and loss/val reduced across ranks; per-term diagnostics from this rank's shard only)"
 
     def _log_ddp_scope(self) -> None:
-        """States once, in a DDP run, that the per-term diagnostics cover this rank's shard while the total losses cover every rank."""
         if not self.distributed.active:
             return
 
         self.logger.info(f"DDP: loss_terms, loss_monitor, occupancy and param_error are reduced over this rank's shard only, 1/{self.distributed.world_size} of the patches, while loss/train and loss/val are reduced across all ranks; compare the per-term values with a single-GPU run as shard estimates, not as the same sample set")
 
     def _log_param_groups(self) -> None:
-        """Logs each optimizer group's base learning rate after ``lr_scale`` beside the rate its first step uses.
-
-        The optimizer groups already hold the step-0 rates, the base rates
-        scaled by the warmup start factor, so the base rate is read from
-        ``base_lrs`` and the two are printed in separate columns.
-        """
         rows = []
         for i, pg in enumerate(self.optimizer.param_groups):
             rows.append({
@@ -246,7 +190,6 @@ class BaseTrainer:
         self.logger.metrics_table(rows, columns=["Group", "Base LR", "Step-0 LR", "Weight decay"], title="Optimizer Param Groups (base LR after lr_scale; step-0 LR includes the warmup start factor)")
 
     def _optimizer_banner(self) -> str:
-        """Returns the one-line optimizer description for the loop-configuration table."""
         cfg  = self.config.optimizer
         kind = str(getattr(cfg, "type", "adamw"))
 
@@ -256,62 +199,24 @@ class BaseTrainer:
         return f"{kind} (momentum={cfg.momentum:g}, nesterov={cfg.nesterov}, weight_decay={cfg.weight_decay:g}; per-group values below take precedence)"
 
     def _build_param_groups(self) -> list[dict]:
-        """Returns the optimizer parameter groups; implemented by subclasses.
-
-        Raises:
-            NotImplementedError : Always, on the base class.
-        """
         raise NotImplementedError
 
     def _build_criterion(self):
-        """Returns the loss module used by `_compute_loss`; implemented by subclasses.
-
-        Raises:
-            NotImplementedError : Always, on the base class.
-        """
         raise NotImplementedError
 
     def _compute_loss(self, batch) -> dict:
-        """Returns the loss dictionary for one batch; implemented by subclasses.
-
-        Args:
-            batch : One batch as yielded by the data loader.
-
-        Returns:
-            Dictionary carrying at least "total_loss" as a scalar tensor.
-
-        Raises:
-            NotImplementedError : Always, on the base class.
-        """
         raise NotImplementedError
 
     def _eval_step(self, batch) -> dict:
-        """Returns the loss dictionary for one evaluation batch.
-
-        Args:
-            batch : One batch as yielded by the validation or test loader.
-
-        Returns:
-            Dictionary carrying at least "total_loss" as a scalar tensor.
-        """
         return self._compute_loss(batch)
 
     def _set_train_mode(self) -> None:
-        """Puts the model into training mode before an epoch."""
         self.model.train()
 
     def _on_optimizer_step(self) -> None:
-        """Hook fired after every optimizer step and EMA update."""
         pass
 
     def _log_train_banner(self, train_loader: DataLoader, val_loader: DataLoader, test_loader: DataLoader) -> None:
-        """Logs loader sizes, micro-batch and effective batch size, and the device.
-
-        Args:
-            train_loader : Loader iterated during training epochs.
-            val_loader   : Loader iterated during validation.
-            test_loader  : Loader iterated for the final test evaluation.
-        """
         info = {
             "Train batches"      : len(train_loader),
             "Validation batches" : len(val_loader),
@@ -329,72 +234,27 @@ class BaseTrainer:
         self.logger.kv_table(info)
 
     def _scalars_page(self) -> ScalarsPage:
-        """Returns the Custom Scalars page of the run, the loss and the optimiser charts; a subclass adds the categories of its diagnostics."""
         return ScalarsPage().loss().optimiser()
 
     def _before_training(self, train_loader: DataLoader) -> None:
-        """Hook fired once after resume and before the first epoch.
-
-        Args:
-            train_loader : Loader that will drive the training epochs.
-        """
         pass
 
     def _before_epoch(self, epoch: int) -> None:
-        """Hook fired at the start of each epoch.
-
-        Args:
-            epoch : Zero-based epoch index about to run.
-        """
         pass
 
     def _before_validation(self, epoch: int, val_loader: DataLoader) -> None:
-        """Hook fired before each validation pass.
-
-        Args:
-            epoch      : Zero-based epoch index that just finished training.
-            val_loader : Loader about to be evaluated.
-        """
         pass
 
     def _after_eval(self, val_loss: float, epoch: int) -> None:
-        """Hook fired after validation, checkpointing and early stopping.
-
-        Args:
-            val_loss : Mean validation loss of the epoch.
-            epoch    : Zero-based epoch index.
-        """
         pass
 
     def _log_train_epoch_extra(self, avg_loss: float, epoch: int) -> None:
-        """Hook for extra per-epoch training logging.
-
-        Args:
-            avg_loss : Mean training loss over the epoch.
-            epoch    : Zero-based epoch index.
-        """
         pass
 
     def _on_state_restored(self, state: dict) -> None:
-        """Hook fired after trainer state is restored from disk.
-
-        Args:
-            state : Payload read back from the trainer state file.
-        """
         pass
 
     def _build_optimizer(self, param_groups: list[dict]):
-        """Returns the configured optimizer over the given groups, filling shared defaults.
-
-        Args:
-            param_groups : Parameter groups from `_build_param_groups`; missing family hyper-parameters are filled from the config.
-
-        Returns:
-            The configured optimizer of the family named by `optimizer.type`.
-
-        Raises:
-            ValueError : If the configured optimizer type names no known family.
-        """
         cfg  = self.config.optimizer
         kind = str(getattr(cfg, "type", "adamw"))
 
@@ -422,11 +282,6 @@ class BaseTrainer:
         raise ValueError(f"Unknown optimizer type '{kind}'; expected one of adamw, adam, sgd, rmsprop")
 
     def _update_optimizer(self, lrs: list[float]):
-        """Writes new learning rates into the optimizer and logs the ones that changed.
-
-        Args:
-            lrs : One learning rate per optimizer parameter group, in group order.
-        """
         for i, (param_group, lr) in enumerate(zip(self.optimizer.param_groups, lrs)):
             if param_group['lr'] == lr:
                 continue
@@ -436,7 +291,6 @@ class BaseTrainer:
             self.tracker.log_scalar(f"optim/lr/{name}", lr, self.global_step)
 
     def _log_ema_decay(self):
-        """Logs the effective EMA decay of the last update whenever it changed."""
         if not self.ema.enabled or self.ema.last_decay == self._ema_decay_logged:
             return
 
@@ -444,21 +298,11 @@ class BaseTrainer:
         self.tracker.log_scalar("optim/ema_decay", self.ema.last_decay, self.global_step)
 
     def _clear_cuda_cache(self) -> None:
-        """Collects Python garbage and empties the CUDA allocator cache."""
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
     def capture_state(self, epoch: int) -> dict:
-        """Returns the checkpoint payload for the given epoch.
-
-        Args:
-            epoch : Zero-based epoch index the weights correspond to.
-
-        Returns:
-            Dictionary with the epoch index, the model state dict and the
-            z axis of shape (n_samples,) as a NumPy array in metres.
-        """
         return {
             "epoch"  : epoch,
             "params" : self.model.state_dict(),
@@ -466,23 +310,12 @@ class BaseTrainer:
         }
 
     def _apply_memory_format(self, batch):
-        """Returns the batch with every 4-D tensor in channels_last layout, untouched when the toggle is off."""
         if not self.channels_last:
             return batch
 
         return type(batch)(item.contiguous(memory_format=torch.channels_last) if torch.is_tensor(item) and item.dim() == 4 else item for item in batch)
 
     def micro_step(self, batch, window_len: int) -> tuple[dict, float]:
-        """Runs one micro-batch under autocast, scales its loss by the accumulation window and backpropagates it.
-
-        Args:
-            batch      : One batch as yielded by the training loader.
-            window_len : Micro-batches in the accumulation window this batch belongs to.
-
-        Returns:
-            Tuple of the loss dictionary and the window-scaled loss as a float,
-            NaN when the loss was non-finite and no backward pass ran.
-        """
         batch = self._apply_memory_format(batch)
 
         with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.use_amp):
@@ -498,17 +331,6 @@ class BaseTrainer:
         return loss_dict, float(loss.detach())
 
     def apply_gradients(self, global_step: int) -> float:
-        """Clips the accumulated gradients, takes the optimizer step and clears the gradients.
-
-        Args:
-            global_step : Optimizer step index the gradient norm is logged under.
-
-        Returns:
-            The gradient norm measured before any clipping.
-
-        Raises:
-            FloatingPointError : If the gradient norm is non-finite.
-        """
         grad_norm = self.grad_clipper.maybe_clip(self.model, global_step)
         self.grad_clipper.record(grad_norm, global_step)
 
@@ -518,24 +340,6 @@ class BaseTrainer:
         return grad_norm
 
     def train_epoch(self, loader: DataLoader, epoch: int):
-        """Runs one training epoch with gradient accumulation and returns its mean loss.
-
-        Non-finite batch losses either abort the run or are skipped, depending on
-        `abort_on_nonfinite_loss`. Loss terms, throughput and memory are logged.
-        In a DDP group the sampler is reshuffled for the epoch, the accumulated
-        gradients are averaged across ranks at every optimizer window, and the
-        returned mean loss is the cross-rank mean.
-
-        Args:
-            loader : Loader yielding training batches.
-            epoch  : Zero-based epoch index.
-
-        Returns:
-            Mean training loss over the accepted batches, NaN if none were accepted.
-
-        Raises:
-            FloatingPointError : If a batch loss is non-finite and aborting is enabled.
-        """
         self._set_train_mode()
         self.optimizer.zero_grad(set_to_none=True)
 
@@ -612,15 +416,6 @@ class BaseTrainer:
         return avg
 
     def _log_throughput(self, epoch_time: float, data_wait: float, sample_count: int, nonfinite_count: int, epoch: int) -> None:
-        """Logs samples per second, epoch wall time, data-wait fraction and skipped batches.
-
-        Args:
-            epoch_time      : Wall-clock duration of the epoch, in seconds.
-            data_wait       : Time spent blocked on the loader, in seconds.
-            sample_count    : Number of samples seen during the epoch.
-            nonfinite_count : Number of batches skipped for a non-finite loss.
-            epoch           : Zero-based epoch index used as the x value.
-        """
         elapsed = max(epoch_time, 1e-9)
 
         self.tracker.log_scalar("throughput/samples_per_s",    sample_count / elapsed, epoch)
@@ -630,32 +425,10 @@ class BaseTrainer:
 
     @staticmethod
     def _batch_size(batch) -> int:
-        """Returns the number of samples in one loader batch, read from its first tensor."""
         return int(batch[0].shape[0])
 
     @torch.no_grad()
     def evaluate(self, loader: DataLoader, epoch: int, stage="val"):
-        """Evaluates the model over a loader without gradients.
-
-        The average is weighted by batch sample count, so the partial final
-        batch of a drop_last=False loader counts each sample once instead of
-        weighing a small batch like a full one. In a DDP group each rank
-        evaluates its own shard and the sample-weighted loss sums and counts
-        are reduced across ranks, so every rank returns exactly the
-        single-process average and all checkpoint and early-stopping decisions
-        stay identical. The aggregator metrics remain rank-local.
-
-        Args:
-            loader : Loader yielding evaluation batches.
-            epoch  : Zero-based epoch index used for logging.
-            stage  : Metric stage label, "val" or "test".
-
-        Returns:
-            Dictionary with "avg_loss" (the sample-weighted mean, NaN with a warning when no batch was accepted), "num_batches" (finite-loss batches) and "num_samples" (samples behind the mean).
-
-        Raises:
-            FloatingPointError : If a batch loss is non-finite and aborting is enabled.
-        """
         self.model.eval()
 
         loss_sum, batch_count, sample_count = 0.0, 0, 0
@@ -698,34 +471,11 @@ class BaseTrainer:
         return {"avg_loss": avg, "num_batches": int(batch_count), "num_samples": int(sample_count)}
 
     def _nonfinite_detail(self, loss_dict: dict, batch) -> str:
-        """Returns the clause naming the non-finite loss terms of a failed batch.
-
-        Appended to the non-finite loss messages of the training and evaluation
-        loops, which otherwise report the weighted total alone. Subclasses extend
-        the clause with what they know about the batch layout.
-
-        Args:
-            loss_dict : Loss output of the failed batch, whose "components" hold every weighted term as a scalar tensor.
-            batch     : The batch the loss was computed on, as yielded by the loader; unused here.
-
-        Returns:
-            A clause such as "; non-finite terms: ['covariance_match']".
-        """
         bad = [name for name, value in loss_dict["components"].items() if not torch.isfinite(torch.as_tensor(value)).all()]
 
         return f"; non-finite terms: {bad if bad else 'none (every weighted term is finite)'}"
 
     def _log_epoch_metrics(self, stage: str, aggregator: MetricAggregator, epoch: int) -> None:
-        """Logs the reduced loss terms, monitors, occupancy and parameter errors.
-
-        Ground-truth occupancy statistics are dataset constants, so they are printed
-        once per stage as a table instead of being logged every epoch.
-
-        Args:
-            stage      : Metric stage label, "train", "val" or "test".
-            aggregator : Aggregator holding the epoch's per-batch loss dictionaries.
-            epoch      : Zero-based epoch index used as the x value.
-        """
         self.tracker.log_staged("loss_terms", aggregator.reduce_components(), stage, epoch)
 
         monitor = aggregator.reduce_monitor()
@@ -747,11 +497,6 @@ class BaseTrainer:
             self.tracker.log_staged("param_error", physical, stage, epoch)
 
     def _maybe_snapshot(self, epoch: int) -> None:
-        """Writes a periodic epoch snapshot when `snapshot_every_n_epochs` says so.
-
-        Args:
-            epoch : Zero-based epoch index that just finished.
-        """
         every = self.config.training.snapshot_every_n_epochs
         if every <= 0 or (epoch + 1) % every != 0:
             return
@@ -764,19 +509,6 @@ class BaseTrainer:
         self.logger.subsection(f"Epoch snapshot -> {path}")
 
     def _maybe_resume(self, loader_generator) -> int:
-        """Restores trainer state from disk when resuming and returns the start epoch.
-
-        The resume table lists the restored early-stopping, warmup and
-        learning-rate position next to the epoch and step counts. A state saved
-        after early stopping fired is warned about, since `train` then skips
-        the epoch loop and goes straight to the final phase.
-
-        Args:
-            loader_generator : The training loader's RNG generator, whose state is restored alongside the trainer state.
-
-        Returns:
-            Zero-based epoch index the loop should start from; 0 when not resuming.
-        """
         if not self.resume:
             return 0
 
@@ -803,18 +535,6 @@ class BaseTrainer:
         return start_epoch
 
     def _evaluate_test(self, test_loader: DataLoader, epoch: int) -> dict:
-        """Runs the final test evaluation and logs which weights produced it.
-
-        With `restore_best` the already-restored best checkpoint is used as is;
-        otherwise the EMA weights, when enabled, are applied for the pass.
-
-        Args:
-            test_loader : Loader yielding test batches.
-            epoch       : Zero-based index of the last epoch that ran.
-
-        Returns:
-            Dictionary with "avg_loss" and "num_batches" from `evaluate`.
-        """
         if self.restore_best and self.checkpoint.best_epoch >= 0:
             kind    = "EMA snapshot" if self.ema.enabled else "raw weights"
             weights = f"restored best checkpoint (epoch {self.checkpoint.best_epoch + 1}, {kind})"
@@ -830,21 +550,6 @@ class BaseTrainer:
         return test
 
     def _finalize_swa(self, train_loader: DataLoader, val_loader: DataLoader, last_epoch: int) -> float | None:
-        """Refreshes, scores and saves the stochastic weight average when enabled.
-
-        The averaged weights are applied, the batch-norm running statistics are
-        re-estimated over one pass of the training loader, the averaged model is
-        scored on the validation split and written to swa_model.pt, and the live
-        model is restored with its original parameters and buffers.
-
-        Args:
-            train_loader : Loader driving the batch-norm refresh.
-            val_loader   : Loader scoring the averaged weights.
-            last_epoch   : Zero-based index of the last epoch that ran.
-
-        Returns:
-            The validation loss of the averaged weights, or None when SWA is off or averaged nothing.
-        """
         if not self.swa.enabled or self.swa.n_averaged == 0:
             if self.swa.enabled:
                 self.logger.warning(f"SWA averaged no epoch: the start epoch {self.swa_start_epoch + 1} lies past the last completed epoch {last_epoch + 1}; no swa_model.pt written")
@@ -867,25 +572,6 @@ class BaseTrainer:
         return float(swa_val["avg_loss"])
 
     def train(self, train_loader: DataLoader, val_loader: DataLoader, test_loader: DataLoader):
-        """Runs the full training schedule and returns the loss history.
-
-        Writes the Custom Scalars page, resolves the warmup fraction into a step count over the run's optimizer-step
-        budget, then sequences resume, the epoch loop with periodic validation, checkpointing,
-        snapshots and early stopping, then the final-weights checkpoint, the final
-        test evaluation and the completion marker. The final-epoch weights (EMA
-        when enabled) are always written to final_model.pt before any best-checkpoint
-        restore, so the end-of-training model stays loadable regardless of where
-        the best validation loss landed. The resource monitor is always stopped on exit.
-
-        Args:
-            train_loader : Loader yielding training batches.
-            val_loader   : Loader yielding validation batches.
-            test_loader  : Loader yielding test batches.
-
-        Returns:
-            Tuple of the per-epoch training losses, the per-epoch validation losses
-            (NaN on epochs without evaluation) and the best validation loss seen.
-        """
         self.micro_batch = train_loader.batch_size if isinstance(train_loader, DataLoader) else None
 
         self.logger.section(self.section_title)

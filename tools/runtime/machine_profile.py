@@ -1,14 +1,3 @@
-"""Per-machine profile: the values that change from one installation to the next.
-
-The installer (``install.sh`` and ``scripts/setup_machine.py``) writes one JSON file
-per machine and user. ``ConfigCli`` reads it to rebase the checkout-relative path
-defaults and the hardware-shaped defaults of every entry configuration, the web
-console reads it for its interpreter, roots and notification settings, and
-``webui/run.sh`` reads the shell twin written beside it. The file location follows
-``MLTEMPLATE_MACHINE_PROFILE``; an empty value disables the profile entirely, which is
-how the test suite keeps a developer's profile out of its expectations. Without a
-profile every default keeps the reference layout, which is the checkout itself.
-"""
 
 from __future__ import annotations
 
@@ -25,15 +14,6 @@ from configuration.reference_layout import ReferenceLayout
 
 @dataclass(frozen=True)
 class FieldRule:
-    """One profile-driven rewrite of configuration leaves selected by field name.
-
-    Attributes:
-        field   : Name of the dataclass field the rule applies to.
-        kind    : ``set`` replaces the value, ``cap`` lowers an integer to at most the rule value.
-        value   : Value written, or the ceiling for a cap.
-        owner   : Dataclass name the field must belong to, or None for every dataclass.
-        expects : Type the current value must have for the rule to apply, or None for any.
-    """
 
     field   : str
     kind    : str
@@ -43,12 +23,6 @@ class FieldRule:
 
 
 class MachineProfile:
-    """Reads, writes and interprets the per-machine profile file.
-
-    Attributes:
-        path : Location of the profile file, or None when profiles are disabled.
-        data : Loaded profile mapping; empty when no profile exists.
-    """
 
     ENV_VAR       = "MLTEMPLATE_MACHINE_PROFILE"
     FILE_NAME     = "machine.json"
@@ -66,27 +40,15 @@ class MachineProfile:
     }
 
     def __init__(self, path: Path | None, data: dict | None = None) -> None:
-        """Binds the profile to its file and content.
-
-        Args:
-            path : Profile file location, or None when profiles are disabled.
-            data : Profile mapping; None or empty stands for an absent profile.
-        """
         self.path = path
         self.data = dict(data or {})
 
     @classmethod
     def default_path(cls) -> Path:
-        """Returns the profile location used when the environment names none."""
         return Path.home() / ".config" / "ml-template" / cls.FILE_NAME
 
     @classmethod
     def location(cls) -> Path | None:
-        """Returns the profile path selected by the environment, or None when disabled.
-
-        ``MLTEMPLATE_MACHINE_PROFILE`` names the file; set but empty it disables the
-        profile; unset it falls back to ``default_path``.
-        """
         raw = os.environ.get(cls.ENV_VAR)
 
         if raw is None:
@@ -98,20 +60,6 @@ class MachineProfile:
 
     @classmethod
     def current(cls) -> "MachineProfile":
-        """Returns the profile the environment selects.
-
-        A disabled profile and a missing file at the unset default location both
-        yield an absent profile, the latter being how a checkout runs before the
-        installer wrote one. A file named explicitly by ``MLTEMPLATE_MACHINE_PROFILE``
-        must exist, so a mistyped or moved path fails here instead of silently
-        running with the reference-layout defaults.
-
-        Returns:
-            The loaded profile, or an absent one when profiles are disabled or the default location holds none.
-
-        Raises:
-            FileNotFoundError : If ``MLTEMPLATE_MACHINE_PROFILE`` names a file that does not exist.
-        """
         named = os.environ.get(cls.ENV_VAR)
         path  = cls.location()
 
@@ -127,18 +75,6 @@ class MachineProfile:
 
     @classmethod
     def load(cls, path: Path) -> "MachineProfile":
-        """Loads a profile file, refusing any schema other than the current one.
-
-        Args:
-            path : Profile file to read.
-
-        Returns:
-            The loaded profile.
-
-        Raises:
-            FileNotFoundError : If the file does not exist.
-            ValueError        : If the file carries another schema version; rerun the installer to regenerate it.
-        """
         path = Path(path)
 
         if not path.is_file():
@@ -154,24 +90,20 @@ class MachineProfile:
 
     @property
     def exists(self) -> bool:
-        """Whether a profile was loaded, as opposed to being absent or disabled."""
         return bool(self.data)
 
     @property
     def env_path(self) -> Path | None:
-        """Location of the shell twin, beside the profile file."""
         return None if self.path is None else self.path.with_name(self.ENV_FILE_NAME)
 
     @property
     def state(self) -> str:
-        """``loaded`` when a file was read, ``absent`` when the location holds none, ``disabled`` when profiles are off."""
         if self.path is None:
             return "disabled"
 
         return "loaded" if self.exists else "absent"
 
     def describe(self) -> str:
-        """Returns one line naming the profile file and its state, for run logs and provenance records."""
         if self.path is None:
             return f"disabled by an empty {self.ENV_VAR}"
         if self.exists:
@@ -180,81 +112,53 @@ class MachineProfile:
         return f"absent at {self.path}; the reference-layout defaults apply"
 
     def section(self, name: str) -> dict:
-        """Returns one section merged over its defaults.
-
-        Args:
-            name : Section name, one of the keys of ``DEFAULTS``.
-
-        Returns:
-            Mapping with every default key present.
-
-        Raises:
-            KeyError : If the section name is unknown.
-        """
         return {**self.DEFAULTS[name], **self.data.get(name, {})}
 
     @property
     def machine(self) -> dict:
-        """Interpreter, environment name and detected host facts."""
         return self.section("machine")
 
     @property
     def console(self) -> dict:
-        """Bind address and port of the web console."""
         return self.section("console")
 
     @property
     def roots(self) -> dict:
-        """Local roots that replace the reference-layout roots."""
         return self.section("roots")
 
     @property
     def dataset(self) -> dict:
-        """Default dataset directory and parameter file on this machine."""
         return self.section("dataset")
 
     @property
     def hardware(self) -> dict:
-        """GPU pool and worker counts the hardware-shaped defaults are rewritten to."""
         return self.section("hardware")
 
     @property
     def mail(self) -> dict:
-        """Sender, recipient and SMTP endpoint of the report mailer."""
         return self.section("mail")
 
     @property
     def ntfy(self) -> dict:
-        """Seed of the console's ntfy notification settings."""
         return self.section("ntfy")
 
     @property
     def config_overrides(self) -> dict:
-        """Explicit ``Class.field`` overrides applied after the derived rules."""
         return dict(self.data.get("config_overrides", {}))
 
     @property
     def interpreter(self) -> str:
-        """Path of the project interpreter recorded by the installer."""
         return self.machine["interpreter"]
 
     @property
     def env_name(self) -> str:
-        """Name of the project conda environment."""
         return self.machine["env_name"]
 
     @property
     def gpu_pool(self) -> list:
-        """CUDA device indices the entry points may use by default."""
         return [int(index) for index in self.hardware["gpu_pool"]]
 
     def path_anchors(self) -> list[tuple[str, str]]:
-        """Returns the reference roots to rebase, paired with their local replacement.
-
-        Only roots the profile sets are returned, and an absent profile returns none;
-        the list is ordered longest anchor first so the most specific root wins when
-        several match.
-        """
         if not self.exists:
             return []
 
@@ -273,15 +177,6 @@ class MachineProfile:
 
     @staticmethod
     def rebase(text: str, anchors: list[tuple[str, str]]) -> str | None:
-        """Rewrites a path onto the first matching anchor's replacement.
-
-        Args:
-            text    : Path as text, relative to the checkout or absolute.
-            anchors : Anchor and replacement pairs, most specific first.
-
-        Returns:
-            The rebased path, or None when no anchor matches.
-        """
         for anchor, target in anchors:
             root = anchor.rstrip("/")
 
@@ -291,11 +186,6 @@ class MachineProfile:
         return None
 
     def field_rules(self) -> list[FieldRule]:
-        """Returns the field-name rewrites derived from the hardware and mail sections.
-
-        Rules with an empty or zero source value are omitted so an unset profile entry
-        leaves the configuration default alone, and an absent profile yields none.
-        """
         if not self.exists:
             return []
 
@@ -332,7 +222,6 @@ class MachineProfile:
         return rules
 
     def summary(self) -> dict:
-        """Returns the facts the console shows about this profile."""
         return {
             "path"       : None if self.path is None else str(self.path),
             "exists"     : self.exists,
@@ -346,7 +235,6 @@ class MachineProfile:
         }
 
     def env_lines(self) -> list[str]:
-        """Returns the shell twin content: one exported variable per line."""
         console = self.console
         values  = {
             "MLTEMPLATE_MACHINE_PROFILE": str(self.path),
@@ -361,14 +249,6 @@ class MachineProfile:
         return [f"export {key}={shlex.quote(str(value))}" for key, value in values.items()]
 
     def save(self) -> Path:
-        """Writes the profile and its shell twin atomically.
-
-        Returns:
-            The profile file path.
-
-        Raises:
-            RuntimeError : If the profile has no location because profiles are disabled.
-        """
         if self.path is None:
             raise RuntimeError(f"cannot save a machine profile while {self.ENV_VAR} is set to an empty value")
 
@@ -383,7 +263,6 @@ class MachineProfile:
 
     @staticmethod
     def _write_atomic(path: Path, content: str) -> None:
-        """Writes text to a temporary sibling and renames it into place at mode 0600."""
         temporary = path.with_name(path.name + ".tmp")
 
         with open(temporary, "w", encoding="utf-8") as handle:

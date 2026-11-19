@@ -1,9 +1,3 @@
-"""Publication-quality figures for the activation x-ray diagnostic.
-
-Draws depth-ordered series of per-layer activation statistics, colour-coded by
-module family and ringed where the issue detector flagged a layer, plus the
-magnitude histogram of an individual layer.
-"""
 
 from __future__ import annotations
 
@@ -16,7 +10,6 @@ from tools.reporting.plotting import PlotBase
 
 
 class ModuleFamilies:
-    """Maps torch module class names to plotting families and their colours."""
 
     FAMILIES = (
         ("linear",     ("Conv1d", "Conv2d", "Conv3d", "ConvTranspose1d", "ConvTranspose2d", "ConvTranspose3d", "Linear")),
@@ -35,7 +28,6 @@ class ModuleFamilies:
 
     @classmethod
     def of(cls, module_type: str) -> str:
-        """Returns the plotting family of a module class name, or "other" when unlisted."""
         for family, types in cls.FAMILIES:
             if module_type in types:
                 return family
@@ -43,24 +35,13 @@ class ModuleFamilies:
 
 
 class ActivationXrayPlots(PlotBase):
-    """Renders the activation x-ray figure set for one capture.
-
-    Attributes:
-        config : Activation x-ray configuration supplying the threshold values drawn as reference lines.
-    """
 
     SEVERITY_EDGE = {"critical": "#B22222", "warning": "#E69F00"}
 
     def __init__(self, config) -> None:
-        """Initialises the plotter.
-
-        Args:
-            config : Configuration exposing the detector thresholds.
-        """
         self.config = config
 
     def _annotate_extreme(self, ax, depth: np.ndarray, values: np.ndarray, stats: list[dict], take_min: bool) -> None:
-        """Labels the layer holding the smallest or largest finite value of the series."""
         finite = np.isfinite(values)
         if not finite.any():
             return
@@ -83,22 +64,6 @@ class ActivationXrayPlots(PlotBase):
         flagged    : dict[str, str] | None = None,
         annotate_min : bool = False,
     ) -> Path:
-        """Renders one per-layer quantity against forward-call depth.
-
-        Args:
-            stats        : Per-layer statistics in forward-call order.
-            values       : One value per layer; None entries are drawn as gaps.
-            ylabel       : Axis label for the plotted quantity.
-            title        : Figure title.
-            path         : Destination file for the figure.
-            log          : Whether to use a logarithmic y axis.
-            references   : Tuples of (value, label, colour) drawn as horizontal threshold lines.
-            flagged      : Severity keyed by layer name; flagged points get a ring.
-            annotate_min : Whether to annotate the minimum instead of the maximum.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         series = np.array([np.nan if v is None else float(v) for v in values], dtype=np.float64)
@@ -136,7 +101,6 @@ class ActivationXrayPlots(PlotBase):
         return self._save(fig, path)
 
     def zero_frac_by_depth(self, stats: list[dict], flagged: dict[str, str], path: Path) -> Path:
-        """Plots the exact-zero activation fraction against depth with dead-layer thresholds."""
         references = (
             (self.config.dead_zero_frac_warn,     f"warn ({self.config.dead_zero_frac_warn:.2f})",     self.SEVERITY_EDGE["warning"]),
             (self.config.dead_zero_frac_critical, f"critical ({self.config.dead_zero_frac_critical:.2f})", self.SEVERITY_EDGE["critical"]),
@@ -145,46 +109,31 @@ class ActivationXrayPlots(PlotBase):
         return self._depth_series(stats, [s["zero_frac"] for s in stats], "Exact-zero fraction", "Exact-zero activation fraction by depth", path, references=references, flagged=flagged)
 
     def std_by_depth(self, stats: list[dict], flagged: dict[str, str], path: Path) -> Path:
-        """Plots the activation standard deviation against depth on a log axis."""
         references = ((self.config.constant_std_threshold, f"constant ({self.config.constant_std_threshold:.0e})", self.SEVERITY_EDGE["warning"]),)
         values     = [max(s["std"], 1e-12) for s in stats]
 
         return self._depth_series(stats, values, "Activation standard deviation", "Activation spread by depth", path, log=True, references=references, flagged=flagged, annotate_min=True)
 
     def dead_channels_by_depth(self, stats: list[dict], flagged: dict[str, str], path: Path) -> Path:
-        """Plots the dead-channel fraction against depth with its warning threshold."""
         references = ((self.config.dead_channel_frac_warn, f"warn ({self.config.dead_channel_frac_warn:.2f})", self.SEVERITY_EDGE["warning"]),)
 
         return self._depth_series(stats, [s["dead_channel_frac"] for s in stats], "Dead-channel fraction", "Dead-channel fraction by depth", path, references=references, flagged=flagged)
 
     def max_abs_by_depth(self, stats: list[dict], flagged: dict[str, str], path: Path) -> Path:
-        """Plots the peak absolute activation against depth on a log axis."""
         references = ((self.config.explode_abs_threshold, f"explode ({self.config.explode_abs_threshold:.0e})", self.SEVERITY_EDGE["critical"]),)
         values     = [max(s["max_abs"], 1e-12) for s in stats]
 
         return self._depth_series(stats, values, "Peak |activation|", "Peak activation magnitude by depth", path, log=True, references=references, flagged=flagged)
 
     def effective_channels_by_depth(self, stats: list[dict], flagged: dict[str, str], path: Path) -> Path:
-        """Plots the entropy-effective channel fraction against depth."""
         references = ((self.config.channel_collapse_frac_warn, f"collapse ({self.config.channel_collapse_frac_warn:.2f})", self.SEVERITY_EDGE["warning"]),)
 
         return self._depth_series(stats, [s["effective_channel_frac"] for s in stats], "Effective channel fraction", "Channel utilisation by depth (entropy-effective channels / channels)", path, references=references, flagged=flagged, annotate_min=True)
 
     def dynamic_range_by_depth(self, stats: list[dict], flagged: dict[str, str], path: Path) -> Path:
-        """Plots the p99/p50 ratio of |activation| against depth on a log axis."""
         return self._depth_series(stats, [s["dynamic_range"] for s in stats], "p99 / p50 of |activation|", "Activation dynamic range by depth", path, log=True, flagged=flagged)
 
     def layer_histogram(self, stats: dict, edges: np.ndarray, path: Path) -> Path:
-        """Renders the |activation| histogram of one layer with its percentile markers.
-
-        Args:
-            stats : Finalised statistics of the layer to plot.
-            edges : Log-spaced histogram bin edges, of length one more than the number of interior bins.
-            path  : Destination file for the figure.
-
-        Returns:
-            Path of the saved figure.
-        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH, aspect=0.55))

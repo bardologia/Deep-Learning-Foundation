@@ -1,4 +1,3 @@
-"""Dataloader feed benchmarking: sweep specs, GPU sampling and reporting."""
 from tools.benchmarking.dataloader_tuning import (
     LoaderSpec,
     GpuUtilizationSampler,

@@ -1,8 +1,3 @@
-"""Cyclic phase colormap used for derived phase figures.
-
-Holds the TAXI phase palette as explicit 8-bit channel tables and registers it
-with matplotlib on first use, so phase maps across the project share one scale.
-"""
 
 from __future__ import annotations
 
@@ -13,14 +8,6 @@ from matplotlib.colors import ListedColormap
 
 
 class PhaseColormap:
-    """Cyclic TAXI phase palette exposed as a matplotlib colormap.
-
-    Attributes:
-        NAME : Name the colormap is registered under.
-        R    : Red channel of the 256-entry palette, in 0-255.
-        G    : Green channel of the 256-entry palette, in 0-255.
-        B    : Blue channel of the 256-entry palette, in 0-255.
-    """
 
     NAME = "taxi_phase"
 
@@ -62,7 +49,6 @@ class PhaseColormap:
 
     @classmethod
     def colormap(cls) -> ListedColormap:
-        """Returns the phase colormap, building and registering it on first call."""
         if cls._cached is None:
             alpha       = np.full(len(cls.R), 255)
             rgba        = np.column_stack([cls.R, cls.G, cls.B, alpha]) / 255.0

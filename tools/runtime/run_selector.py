@@ -1,10 +1,3 @@
-"""Discovery and selection of run directories for the analysis entry points.
-
-Finds run directories by the marker file they contain, prints them as a table,
-and resolves a selection either from an explicit filter, an interactive prompt,
-or by taking all of them when stdin is not a terminal. Subclasses adapt the
-discovery and the table to reports and TensorBoard event files.
-"""
 
 from __future__ import annotations
 
@@ -15,35 +8,14 @@ from pipelines.shared.inference.run_classifier import InferenceLayout
 
 
 class RunSelector:
-    """Selects run directories that contain a given marker file.
-
-    Attributes:
-        runs_dir : Root searched recursively for runs.
-        marker   : File or directory name identifying a run.
-        logger   : Logger used for the run table and selection messages.
-        action   : Verb shown in the interactive prompt.
-    """
 
     def __init__(self, runs_dir: Path, marker: str, logger, action: str = "process") -> None:
-        """Initializes the selector.
-
-        Args:
-            runs_dir : Root searched recursively for runs.
-            marker   : File name whose presence marks a run directory.
-            logger   : Logger for the run table and selection messages.
-            action   : Verb used in the interactive prompt.
-        """
         self.runs_dir = Path(runs_dir)
         self.marker   = marker
         self.logger   = logger
         self.action   = action
 
     def _discover(self) -> list[Path]:
-        """Returns the sorted directories holding the marker file.
-
-        Raises:
-            FileNotFoundError : If the runs root is missing or holds no marker.
-        """
         if not self.runs_dir.is_dir():
             raise FileNotFoundError(f"Runs directory does not exist: {self.runs_dir}")
 
@@ -56,7 +28,6 @@ class RunSelector:
         return run_dirs
 
     def _present(self, run_dirs: list[Path]) -> None:
-        """Logs a numbered table of the runs with each checkpoint's size in MB."""
         rows = []
         for index, run_dir in enumerate(run_dirs, start=1):
             checkpoint = run_dir / self.marker
@@ -70,7 +41,6 @@ class RunSelector:
         self.logger.metrics_table(rows, columns=["#", "Run", "Checkpoint"], title=f"Runs under {self.runs_dir}")
 
     def _prompt(self, run_dirs: list[Path]) -> list[Path]:
-        """Asks the operator which listed runs to use and returns them."""
         raw       = input(f"Select run(s) to {self.action} [1-{len(run_dirs)}, comma-separated, or 'all']: ").strip()
         selection = self._parse(raw, run_dirs)
 
@@ -78,18 +48,6 @@ class RunSelector:
         return selection
 
     def _parse(self, raw: str, run_dirs: list[Path]) -> list[Path]:
-        """Turns a prompt answer into the runs it names.
-
-        Args:
-            raw      : Answer text; empty, 'all' or '*' select every run, otherwise a comma or space separated list of 1-based indices.
-            run_dirs : Runs as listed in the table.
-
-        Returns:
-            The selected runs, deduplicated and in listing order.
-
-        Raises:
-            ValueError : If a token is not a number or falls outside the listing.
-        """
         if raw == "" or raw.lower() in ("all", "*"):
             return run_dirs
 
@@ -108,7 +66,6 @@ class RunSelector:
         return [run_dirs[index - 1] for index in ordered]
 
     def _nested(self, run_dirs: list[Path], name: str) -> list[Path]:
-        """Returns the runs living beneath a directory of the given name."""
         nested = [run_dir for run_dir in run_dirs if run_dir.parent.name == name or str(run_dir.relative_to(self.runs_dir)).startswith(f"{name}/")]
 
         if nested:
@@ -116,23 +73,6 @@ class RunSelector:
         return nested
 
     def _lookup(self, run_dirs: list[Path], names: list[str]) -> list[Path]:
-        """Resolves run names or relative paths, expanding parent names to their runs.
-
-        A bare name shared by several runs, such as the seed directory name every
-        trial of a sweep carries, is refused with the candidates listed, since
-        reporting it as missing would send the user hunting for a run that exists.
-
-        Args:
-            run_dirs : Discovered runs.
-            names    : Run names or paths relative to the runs root.
-
-        Returns:
-            The matched runs, deduplicated and in resolution order.
-
-        Raises:
-            ValueError        : If a name matches several runs; the message lists them relative to the runs root.
-            FileNotFoundError : If a name matches neither a run nor a parent directory holding runs.
-        """
         by_key    = {}
         ambiguous = {}
         for run_dir in run_dirs:
@@ -165,33 +105,22 @@ class RunSelector:
         return ordered
 
     def select(self) -> list[Path]:
-        """Discovers and lists the runs, then returns the ones chosen at the prompt."""
         run_dirs = self._discover()
         self._present(run_dirs)
         return self._prompt(run_dirs)
 
     def filter(self, names: list[str]) -> list[Path]:
-        """Discovers and lists the runs, then returns the ones matching the given names."""
         run_dirs = self._discover()
         self._present(run_dirs)
         return self._lookup(run_dirs, names)
 
     def all(self) -> list[Path]:
-        """Discovers and lists the runs, then returns every one of them."""
         run_dirs = self._discover()
         self._present(run_dirs)
         self.logger.ok(f"Selected all {len(run_dirs)} run(s)")
         return run_dirs
 
     def resolve(self, run_filter: list[str] | None) -> list[Path]:
-        """Resolves the runs to process from the filter, the terminal, or all of them.
-
-        Args:
-            run_filter : Explicit run names, or None or empty to fall back to the interactive prompt on a terminal and to every run otherwise.
-
-        Returns:
-            The selected run directories.
-        """
         if run_filter:
             return self.filter(run_filter)
         if sys.stdin.isatty():
@@ -201,29 +130,12 @@ class RunSelector:
 
 
 class ReportRunSelector(RunSelector):
-    """Selects runs by the Markdown reports under their inference directory.
-
-    Reports are looked for directly under an inference stamp and, for the
-    families that nest their stamps, under the family sub-directory first.
-
-    Attributes:
-        report_filename : Report file name looked for inside each inference output.
-    """
 
     def __init__(self, runs_dir: Path, inference_dirname: str, report_filename: str, logger) -> None:
-        """Initializes the selector for report collection.
-
-        Args:
-            runs_dir          : Root searched recursively for runs.
-            inference_dirname : Directory inside a run holding the inference outputs.
-            report_filename   : Report file name marking a usable inference output.
-            logger            : Logger for the run table and selection messages.
-        """
         super().__init__(runs_dir, inference_dirname, logger, action="collect")
         self.report_filename = report_filename
 
     def _reports_of(self, inference_dir: Path) -> list[Path]:
-        """Returns the reports under one inference directory, direct stamps and family sub-directories alike, ordered by stamp name."""
         reports = list(inference_dir.glob(f"*/{self.report_filename}"))
 
         for family in InferenceLayout.SUBDIRS.values():
@@ -232,11 +144,6 @@ class ReportRunSelector(RunSelector):
         return sorted((path for path in reports if path.is_file()), key=lambda path: path.parent.name)
 
     def _discover(self) -> list[Path]:
-        """Returns the sorted runs holding at least one report in either inference layout.
-
-        Raises:
-            FileNotFoundError : If the runs root is missing or holds no report.
-        """
         if not self.runs_dir.is_dir():
             raise FileNotFoundError(f"Runs directory does not exist: {self.runs_dir}")
 
@@ -249,7 +156,6 @@ class ReportRunSelector(RunSelector):
         return run_dirs
 
     def _present(self, run_dirs: list[Path]) -> None:
-        """Logs a numbered table of the runs with their report count and newest stamp."""
         rows = []
         for index, run_dir in enumerate(run_dirs, start=1):
             reports = self._reports_of(run_dir / self.marker)
@@ -263,30 +169,13 @@ class ReportRunSelector(RunSelector):
 
 
 class TensorboardRunSelector(RunSelector):
-    """Selects runs by the TensorBoard event files under their log directory.
-
-    Attributes:
-        EVENT_PATTERN : Glob matching TensorBoard event files.
-    """
 
     EVENT_PATTERN = "events.out.tfevents.*"
 
     def __init__(self, runs_dir: Path, tensorboard_dirname: str, logger) -> None:
-        """Initializes the selector for TensorBoard export.
-
-        Args:
-            runs_dir            : Root searched recursively for runs.
-            tensorboard_dirname : Directory inside a run holding the event files.
-            logger              : Logger for the run table and selection messages.
-        """
         super().__init__(runs_dir, tensorboard_dirname, logger, action="export")
 
     def _discover(self) -> list[Path]:
-        """Returns the sorted runs holding at least one event file.
-
-        Raises:
-            FileNotFoundError : If the runs root is missing or holds no event file.
-        """
         if not self.runs_dir.is_dir():
             raise FileNotFoundError(f"Runs directory does not exist: {self.runs_dir}")
 
@@ -299,7 +188,6 @@ class TensorboardRunSelector(RunSelector):
         return run_dirs
 
     def _present(self, run_dirs: list[Path]) -> None:
-        """Logs a numbered table of the runs with their event-file count and total size."""
         rows = []
         for index, run_dir in enumerate(run_dirs, start=1):
             events  = [path for path in (run_dir / self.marker).glob(self.EVENT_PATTERN) if path.is_file()]

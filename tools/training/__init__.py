@@ -1,4 +1,3 @@
-"""Reusable training components: metrics, schedules, clipping, checkpointing, trainer base."""
 
 from .aggregation      import MetricAggregator, ScalarsPage
 from .scheduling       import Scheduler, Warmup
