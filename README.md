@@ -549,9 +549,9 @@ non-zero when a reported model is not `DONE`. The `prepare` and `full` stages re
 existing study without `--resume` or `resume_from`.
 
 `tune_dataloader.py` writes each sweep into its own
-`<output_dir>/<mode>/<model>_<timestamp>/` with its logs, figures, `resolved_config.json`
+`<output_dir>/<model>_<timestamp>/` with its logs, figures, `resolved_config.json`
 and a `results.json` that carries the status, the settings, the provenance and the GPU it
-measured, found by its NVML UUID. `<mode>/work/` is scratch space the sweeps share.
+measured, found by its NVML UUID. `<output_dir>/work/` is scratch space the sweeps share.
 
 `main/processing/extract_params.py` fits parameter runs onto a dataset. It refuses a
 permutation whose `params/<run>` already exists unless `overwrite` is on, which deletes

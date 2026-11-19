@@ -1274,7 +1274,7 @@
         "refine": "run a second sweep over prefetch_factors x pin_memory around the best main-phase batch_size/num_workers before finalizing",
         "save_figures": "export the four sweep plots (throughput vs batch size, data-wait vs workers, gpu utilization vs throughput, feed ratio vs workers) to the figures subdirectory of the sweep's own directory",
         "paths": "RunPathsConfig sub-config supplying the dataset/parameters paths consumed when mode requires a real dataset",
-        "output_dir": "base directory; every sweep writes into its own <mode>/<model>_<launch time> subdirectory holding logs/, figures/, resolved_config.json and results.json (with the sweep's settings, code version, device and status), while <mode>/work/ is the scratch directory the sweeps of a mode share"
+        "output_dir": "base directory; every sweep writes into its own <model>_<launch time> subdirectory holding logs/, figures/, resolved_config.json and results.json (with the sweep's settings, code version, device and status), while work/ is the scratch directory the sweeps share"
       }
     },
     "benchmark/general::MaxBatchConfig": {

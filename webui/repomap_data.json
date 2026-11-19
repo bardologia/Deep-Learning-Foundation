@@ -3295,7 +3295,7 @@
               "label": "DataLoaderTuningEntryConfig",
               "module": "configuration/benchmark/dataloader_tuning.py",
               "role": "config",
-              "fn": "DataLoader tuning configuration: mode, model_name, batch_sizes, worker_counts, prefetch_factors, timed_batches, data_wait_target and the refine flag.",
+              "fn": "DataLoader tuning configuration: model_name, batch_sizes, worker_counts, prefetch_factors, timed_batches, data_wait_target and the refine flag.",
               "col": 0,
               "reads": [],
               "writes": [],
@@ -3316,7 +3316,7 @@
             },
             {
               "id": "adapters",
-              "label": "FEED_ADAPTERS / build_feed_target",
+              "label": "FeedAdapter",
               "module": "pipelines/dataloader_tuning/adapters.py",
               "role": "transform",
               "fn": "Builds a FeedTarget (dataset, model, to_model_input, forward_loss) for the backbone, reusing the real dataset and model builders.",
