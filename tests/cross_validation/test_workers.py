@@ -9,8 +9,6 @@ import pytest
 import pipelines.backbone.inference.pipeline as pipeline_module
 import pipelines.backbone.training.pipeline  as backbone_pipeline_module
 from configuration.cross_validation     import CrossValidationConfig, FoldConfig
-from configuration.dataset              import InputConfig, ProfileAugmentationConfig
-from configuration.training.jepa        import JepaCurriculumConfig
 from pipelines.cross_validation.folds   import FoldNaming
 from pipelines.cross_validation.workers import (
     CrossValidationWorker,
@@ -28,26 +26,11 @@ from configuration.training.general.run import DEFAULT_PARAMS_RUN
 from tests.conftest import RecordingLogger, make_file_logger
 
 
-def worker_config(test_data_dir: Path, training_type: str = "backbone") -> CrossValidationConfig:
-    config                       = CrossValidationConfig(training_type=training_type)
+def worker_config(test_data_dir: Path) -> CrossValidationConfig:
+    config                       = CrossValidationConfig()
     config.paths.dataset_path    = test_data_dir
     config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     config.folds                 = FoldConfig(n_folds=5, row_start=1000, row_end=1512)
-    return config
-
-
-def jepa_worker_config(test_data_dir: Path, tmp_path: Path) -> CrossValidationConfig:
-    from configuration.architectures                import GruAutoencoderConfig
-    from pipelines.shared.config.config_persistence import ProfileAutoencoderConfigIO
-
-    ProfileAutoencoderConfigIO.save(GruAutoencoderConfig(), "gru_ae", tmp_path / "gru_run" / "meta")
-
-    config                                 = worker_config(test_data_dir, "jepa")
-    config.backbone_head                   = "conv"
-    config.paths.log_base_dir              = tmp_path
-    config.jepa.profile_autoencoder_logdir = tmp_path
-    config.jepa.profile_autoencoder_run    = "gru_run"
-
     return config
 
 
@@ -80,7 +63,7 @@ def build_run_dir(tmp_path: Path, fold_names: list[str], inference_folds: dict[s
 
 def test_collector_points_at_folds_subdir(tmp_path):
     run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=make_file_logger(tmp_path, "workers_test"))
 
     assert collector.training_dir == run_dir / "folds"
     assert collector.splits       == ["test"]
@@ -89,7 +72,7 @@ def test_collector_points_at_folds_subdir(tmp_path):
 def test_collector_collects_every_fold(tmp_path):
     names     = [FoldNaming.name(i) for i in range(5)]
     run_dir   = build_run_dir(tmp_path, names, {})
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=make_file_logger(tmp_path, "workers_test"))
 
     base, by_split = collector.collect_by_split()
 
@@ -100,7 +83,7 @@ def test_collector_collects_every_fold(tmp_path):
 
 def test_collector_attaches_training_results(tmp_path):
     run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
-    collector = FoldCollector(run_dir=run_dir, splits=[], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
+    collector = FoldCollector(run_dir=run_dir, splits=[], logger=make_file_logger(tmp_path, "workers_test"))
 
     base, _ = collector.collect_by_split()
 
@@ -110,7 +93,7 @@ def test_collector_attaches_training_results(tmp_path):
 
 def test_collector_split_view_loads_metrics_when_present(tmp_path):
     run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {"fold_0": {"test": {"curve_rmse_gt": 2.5}}})
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=make_file_logger(tmp_path, "workers_test"))
 
     _, by_split = collector.collect_by_split()
     records     = by_split["test"]
@@ -120,23 +103,9 @@ def test_collector_split_view_loads_metrics_when_present(tmp_path):
     assert CompletionMarker.payload(records[0].inference_dir)["split"] == "test"
 
 
-def test_collector_reads_autoencoder_metrics_under_the_family_subdir(tmp_path):
-    run_dir = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
-
-    for name in ("fold_0", "fold_1"):
-        stamp_split_inference(run_dir / "folds" / name / "inference" / "profile_ae", "test", {"mse_mean": 0.5})
-
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="profile_autoencoder", logger=make_file_logger(tmp_path, "workers_test"))
-
-    _, by_split = collector.collect_by_split()
-
-    assert by_split["test"][0].metrics                   == {"mse_mean": 0.5}
-    assert by_split["test"][0].inference_dir.parent.name == "profile_ae"
-
-
 def test_collector_split_view_empty_when_metrics_absent(tmp_path):
     run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {"fold_0": {"test": {"curve_rmse_gt": 2.5}}})
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=make_file_logger(tmp_path, "workers_test"))
 
     _, by_split = collector.collect_by_split()
     records     = by_split["test"]
@@ -156,7 +125,7 @@ def test_collector_aggregates_seeds_per_fold(tmp_path):
     }
 
     run_dir   = build_run_dir(tmp_path, names, inference)
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=make_file_logger(tmp_path, "workers_test"))
 
     base, by_split = collector.collect_by_split()
 
@@ -175,7 +144,7 @@ def test_collector_multiple_splits_independent(tmp_path):
         ["fold_0", "fold_1"],
         {"fold_0": {"val": {"curve_rmse_gt": 1.0}, "test": {"curve_rmse_gt": 2.0}}},
     )
-    collector = FoldCollector(run_dir=run_dir, splits=["val", "test"], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
+    collector = FoldCollector(run_dir=run_dir, splits=["val", "test"], logger=make_file_logger(tmp_path, "workers_test"))
 
     _, by_split = collector.collect_by_split()
 
@@ -290,134 +259,6 @@ def test_training_worker_passes_planned_split_regions(test_data_dir, tmp_path, m
 
 
 @pytest.mark.dataset
-def test_training_worker_dispatch_routes_by_type(test_data_dir, tmp_path, monkeypatch):
-    from configuration.architectures                import GruAutoencoderConfig
-    from pipelines.shared.config.config_persistence import ProfileAutoencoderConfigIO
-
-    seen = {}
-
-    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone",            lambda self, i, seed, sr, run_name: seen.update(kind="backbone"),  raising=True)
-    monkeypatch.setattr(FoldTrainingWorker, "_run_jepa",                lambda self, i, seed, sr, run_name: seen.update(kind="jepa"),      raising=True)
-    monkeypatch.setattr(FoldTrainingWorker, "_run_profile_autoencoder", lambda self, i, seed, sr, run_name: seen.update(kind="ae"),        raising=True)
-    monkeypatch.setattr(FoldTrainingWorker, "_run_image_autoencoder",   lambda self, i, seed, sr, run_name: seen.update(kind="image_ae"),  raising=True)
-
-    def rooted(training_type: str) -> CrossValidationConfig:
-        config                    = worker_config(test_data_dir, training_type)
-        config.paths.log_base_dir = tmp_path
-        return config
-
-    FoldTrainingWorker(rooted("backbone"), run_tag="rt").run(0)
-    assert seen["kind"] == "backbone"
-
-    ProfileAutoencoderConfigIO.save(GruAutoencoderConfig(), "gru_ae", tmp_path / "gru_run" / "meta")
-    jepa_config                                 = rooted("jepa")
-    jepa_config.jepa.profile_autoencoder_logdir = tmp_path
-    jepa_config.jepa.profile_autoencoder_run    = "gru_run"
-
-    FoldTrainingWorker(jepa_config, run_tag="rt").run(0)
-    assert seen["kind"] == "jepa"
-
-    FoldTrainingWorker(rooted("profile_autoencoder"), run_tag="rt").run(0)
-    assert seen["kind"] == "ae"
-
-    FoldTrainingWorker(rooted("image_autoencoder"), run_tag="rt").run(0)
-    assert seen["kind"] == "image_ae"
-
-
-@pytest.mark.dataset
-def test_training_worker_rejects_unknown_type(test_data_dir):
-    config               = worker_config(test_data_dir)
-    config.training_type = "bogus"
-
-    with pytest.raises(ValueError, match="Unknown training_type"):
-        FoldTrainingWorker(config, run_tag="rt").run(0)
-
-
-
-
-
-@pytest.mark.dataset
-def test_ae_fold_entry_carries_the_cross_validated_profile_augmentation(test_data_dir):
-    config                                  = worker_config(test_data_dir, "profile_autoencoder")
-    config.autoencoder.profile_augmentation = ProfileAugmentationConfig(p_flip=0.25, p_shift=0.75, max_shift=7, p_amp_scale=0.4, p_noise=0.6, noise_std=0.02)
-
-    entry = FoldTrainingWorker(config, run_tag="rt")._ae_entry_config("fold_0", 3)
-
-    assert entry.profile_augmentation is config.autoencoder.profile_augmentation
-
-
-@pytest.mark.dataset
-def test_ae_fold_entry_carries_the_cross_validated_learning_rates(test_data_dir):
-    config                        = worker_config(test_data_dir, "profile_autoencoder")
-    config.autoencoder.encoder_lr = 1.5e-3
-    config.autoencoder.decoder_lr = 2.5e-3
-    config.autoencoder.encoder_wd = 5e-4
-    config.autoencoder.decoder_wd = 7e-4
-
-    entry = FoldTrainingWorker(config, run_tag="rt")._ae_entry_config("fold_0", 3)
-
-    assert (entry.encoder_lr, entry.decoder_lr, entry.encoder_wd, entry.decoder_wd) == (1.5e-3, 2.5e-3, 5e-4, 7e-4)
-
-
-@pytest.mark.dataset
-def test_ae_fold_pipeline_samples_with_the_cross_validated_profile_augmentation(test_data_dir, tmp_path):
-    from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
-
-    config                                  = worker_config(test_data_dir, "profile_autoencoder")
-    config.paths.log_base_dir               = tmp_path
-    config.autoencoder.profile_augmentation = ProfileAugmentationConfig(p_flip=0.25, p_shift=0.75, p_noise=0.6, noise_std=0.02)
-
-    worker   = FoldTrainingWorker(config, run_tag="rt")
-    entry    = worker._ae_entry_config(worker.fold_run_name(0, None), None)
-    pipeline = TrainingPipeline(entry, split_regions=worker.factory.planner().plan(0).split_regions)
-
-    assert pipeline.dataset_config.augmentation.p_flip    == 0.25
-    assert pipeline.dataset_config.augmentation.p_shift   == 0.75
-    assert pipeline.dataset_config.augmentation.p_noise   == 0.6
-    assert pipeline.dataset_config.augmentation.noise_std == 0.02
-
-
-@pytest.mark.dataset
-def test_jepa_fold_entry_carries_the_cross_validated_input_channels(test_data_dir, tmp_path):
-    config       = jepa_worker_config(test_data_dir, tmp_path)
-    config.input = InputConfig(use_primary=True, use_secondaries=False, use_derived=False, use_aux=True)
-
-    entry = FoldTrainingWorker(config, run_tag="rt")._jepa_entry_config("fold_0", 3)
-
-    assert entry.input is config.input
-
-
-@pytest.mark.dataset
-def test_jepa_fold_entry_carries_the_cross_validated_curriculum(test_data_dir, tmp_path):
-    config                 = jepa_worker_config(test_data_dir, tmp_path)
-    config.jepa.curriculum = JepaCurriculumConfig(enabled=True, swap_epoch=4, reset_lr=True, reset_warmup=True, reset_optimizer=True)
-
-    entry = FoldTrainingWorker(config, run_tag="rt")._jepa_entry_config("fold_0", 3)
-
-    assert entry.curriculum is config.jepa.curriculum
-
-
-@pytest.mark.dataset
-def test_jepa_fold_pipeline_trains_on_the_cross_validated_channels_and_curriculum(test_data_dir, tmp_path):
-    from pipelines.jepa.training.pipeline import TrainingPipeline
-
-    config                 = jepa_worker_config(test_data_dir, tmp_path)
-    config.input           = InputConfig(use_primary=True, use_secondaries=False, use_derived=False, use_aux=True)
-    config.jepa.curriculum = JepaCurriculumConfig(enabled=True, swap_epoch=4, reset_lr=True)
-
-    worker   = FoldTrainingWorker(config, run_tag="rt")
-    entry    = worker._jepa_entry_config(worker.fold_run_name(0, None), None)
-    pipeline = TrainingPipeline(entry, split_regions=worker.factory.planner().plan(0).split_regions)
-
-    assert pipeline.dataset_config.input_config.use_aux            is True
-    assert pipeline.dataset_config.input_config.use_derived is False
-    assert pipeline.dataset_config.input_config.use_secondaries    is False
-    assert pipeline.trainer_config.curriculum.enabled              is True
-    assert pipeline.trainer_config.curriculum.swap_epoch           == 4
-    assert pipeline.trainer_config.curriculum.reset_lr             is True
-
-
-@pytest.mark.dataset
 def test_inference_worker_builds_run_directory(test_data_dir, tmp_path, monkeypatch):
     config                       = worker_config(test_data_dir)
     config.paths.log_base_dir    = tmp_path
@@ -427,9 +268,8 @@ def test_inference_worker_builds_run_directory(test_data_dir, tmp_path, monkeypa
     captured = {}
 
     class FakePipeline:
-        def __init__(self, inference_config, components=None):
-            captured["config"]     = inference_config
-            captured["components"] = components
+        def __init__(self, inference_config):
+            captured["config"] = inference_config
 
         def run(self):
             captured["ran"] = True
@@ -458,7 +298,7 @@ def test_inference_worker_runs_every_configured_split(test_data_dir, tmp_path, m
     ran = []
 
     class FakePipeline:
-        def __init__(self, inference_config, components=None):
+        def __init__(self, inference_config):
             self.split = inference_config.split
 
         def run(self):
@@ -485,7 +325,7 @@ def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_pat
     ran = []
 
     class FakePipeline:
-        def __init__(self, inference_config, components=None):
+        def __init__(self, inference_config):
             self.split = inference_config.split
 
         def run(self):
@@ -497,47 +337,6 @@ def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_pat
 
     assert ran == ["test"]
     assert done.exists()
-
-
-@pytest.mark.dataset
-def test_inference_worker_routes_autoencoders_to_their_pipelines(test_data_dir, tmp_path, monkeypatch):
-    import pipelines.image_autoencoder.inference.pipeline   as image_ae_module
-    import pipelines.profile_autoencoder.inference.pipeline as profile_ae_module
-
-    seen = {}
-
-    def fake(kind, module, attribute):
-        class FakePipeline:
-            def __init__(self, config):
-                seen["kind"]   = kind
-                seen["config"] = config
-
-            def run(self):
-                seen["ran"] = True
-
-        monkeypatch.setattr(module, attribute, FakePipeline, raising=True)
-
-    fake("profile_ae", profile_ae_module, "ProfileAeInferencePipeline")
-    fake("image_ae",   image_ae_module,   "ImageAeInferencePipeline")
-
-    profile_config                    = worker_config(test_data_dir, "profile_autoencoder")
-    profile_config.paths.log_base_dir = tmp_path
-    profile_config.inference_splits   = ["val"]
-
-    FoldInferenceWorker(profile_config, run_tag="rt").run(1)
-    assert seen["kind"]                 == "profile_ae"
-    assert seen["config"].split         == "val"
-    assert seen["config"].output_subdir is None
-    assert seen["ran"]                  is True
-
-    image_config                    = worker_config(test_data_dir, "image_autoencoder")
-    image_config.paths.log_base_dir = tmp_path
-    image_config.inference_splits   = ["test"]
-
-    FoldInferenceWorker(image_config, run_tag="rt").run(1)
-    assert seen["kind"]                 == "image_ae"
-    assert seen["config"].split         == "test"
-    assert seen["config"].output_subdir is None
 
 
 @pytest.mark.dataset
@@ -584,7 +383,7 @@ def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_p
 
     CompletionMarker.stamp(run_dir / "folds" / "fold_0", {"stage": "training", "epochs_completed": 2})
 
-    collector = FoldCollector(run_dir=run_dir, splits=[], training_type="backbone", logger=make_file_logger(tmp_path, "workers_test"))
+    collector = FoldCollector(run_dir=run_dir, splits=[], logger=make_file_logger(tmp_path, "workers_test"))
 
     base, _ = collector.collect_by_split()
 
@@ -602,7 +401,7 @@ def test_collector_warns_when_a_seed_has_no_metrics_and_records_the_coverage(tmp
 
     run_dir   = build_run_dir(tmp_path, names, inference)
     logger    = RecordingLogger()
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=logger)
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=logger)
 
     _, by_split = collector.collect_by_split()
 
@@ -624,7 +423,7 @@ def test_collector_marks_a_fold_partial_and_names_the_seed_that_did_not_finish(t
     FileIO.save_json(results, run_dir / "pipeline" / "training_results.json")
 
     logger    = RecordingLogger()
-    collector = FoldCollector(run_dir=run_dir, splits=[], training_type="backbone", logger=logger)
+    collector = FoldCollector(run_dir=run_dir, splits=[], logger=logger)
 
     base, _ = collector.collect_by_split()
 
@@ -642,7 +441,7 @@ def test_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path):
 
     run_dir   = build_run_dir(tmp_path, names, inference)
     logger    = RecordingLogger()
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=logger)
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=logger)
 
     _, by_split = collector.collect_by_split()
 
@@ -661,7 +460,7 @@ def test_collector_stays_quiet_when_every_seed_contributed(tmp_path):
         torch.save({"best_val_loss": 0.1, "best_epoch": 2, "epoch": 3}, run_dir / "folds" / name / "best_model.pt")
 
     logger    = RecordingLogger()
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=logger)
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=logger)
 
     collector.collect_by_split()
 
@@ -680,32 +479,13 @@ def test_collector_names_a_metric_non_finite_in_every_fold_once_per_split(tmp_pa
 
     run_dir   = build_run_dir(tmp_path, names, inference)
     logger    = RecordingLogger()
-    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=logger)
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=logger)
 
     collector.collect_by_split()
 
     omitted = [message for level, message in logger.messages if level == "warning" and message.startswith("split test:")]
 
     assert omitted == ["split test: ['overall_r2_gt'] non-finite in every fold, omitted from the cross-fold aggregate (cv_aggregate_report.md, cv_summary.json)"]
-
-
-def test_collector_sees_autoencoder_inference_under_the_family_subdir_and_counts_every_split(tmp_path):
-    run_dir = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
-
-    for name in ("fold_0", "fold_1"):
-        stamp_split_inference(run_dir / "folds" / name / "inference" / "profile_ae", "val", {"mse_mean": 0.5})
-    stamp_split_inference(run_dir / "folds" / "fold_0" / "inference" / "profile_ae", "test", {"mse_mean": 0.4})
-
-    logger    = RecordingLogger()
-    collector = FoldCollector(run_dir=run_dir, splits=["val", "test"], training_type="profile_autoencoder", logger=logger)
-    records   = collector.collect()
-
-    collector.collect_by_split()
-
-    assert all(record.has_inference for record in records)
-    assert collector.scored_splits == {"fold_0": ["val", "test"], "fold_1": ["val"]}
-    assert ("info", "split val: 2/2 fold runs hold a completed inference with metrics") in logger.messages
-    assert ("warning", "split test: 1/2 fold runs hold a completed inference with metrics; missing: ['fold_1']") in logger.messages
 
 
 @pytest.mark.dataset
@@ -737,7 +517,7 @@ def test_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directory(tm
     FileIO.save_json(results, run_dir / "pipeline" / "training_results.json")
 
     logger    = RecordingLogger()
-    collector = FoldCollector(run_dir=run_dir, splits=[], training_type="backbone", logger=logger)
+    collector = FoldCollector(run_dir=run_dir, splits=[], logger=logger)
 
     base, _ = collector.collect_by_split()
 

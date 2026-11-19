@@ -8,7 +8,6 @@ from types       import SimpleNamespace
 import pytest
 
 import pipelines.shared.training.seed_sweep as mod
-import pipelines.shared.training.training_launcher as launcher_mod
 from pipelines.shared.training.seed_sweep import SeedFanoutScheduler, SeedSet, SeedSweepRunner
 from tools.runtime.completion             import CompletionMarker
 
@@ -442,63 +441,3 @@ def test_results_file_of_an_earlier_launch_is_merged_not_replaced(tmp_path):
     assert [record["name"] for record in results] == ["label_exp/seed0", "label_exp/seed1"]
     assert [record["status"] for record in results] == ["DONE", "DONE"]
     assert "seed_sweep_results.json already holds 2 entry(ies)" in (scheduler.log_dir / "seed_sweep.log").read_text()
-
-
-@dataclass
-class _LauncherConfig:
-    run_name        : str | None = None
-    resume_from     : str        = ""
-    seed            : int        = 0
-    seeds           : list[int]  = field(default_factory=list)
-    logdir          : Path       = Path("/logs")
-    gpus            : list[int]  = field(default_factory=lambda: [0, 1])
-    ddp             : bool       = False
-    gpus_file       : str        = ""
-    poll_interval_s : float      = 5.0
-    infer_after     : bool       = False
-    infer_at_end    : bool       = False
-
-
-class _FakeScheduler:
-    captured = {}
-
-    @classmethod
-    def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False, infer_after=False):
-        cls.captured = {"infer_at_end": infer_at_end, "infer_after": infer_after}
-        return cls()
-
-    def run(self):
-        pass
-
-
-def _launcher(supports_infer_at_end: bool):
-    return launcher_mod.SeedSweepLauncher(_LauncherConfig(seeds=[0, 1]), _factory([]), "test sweep", entry_script=Path("/entry/train.py"), supports_infer_at_end=supports_infer_at_end)
-
-
-def test_launcher_rejects_infer_after_together_with_infer_at_end():
-    with pytest.raises(SystemExit, match="mutually exclusive"):
-        _launcher(True).run(argv=["--infer_after", "True", "--infer_at_end", "True"])
-
-
-def test_launcher_forwards_infer_at_end_to_the_fanout(monkeypatch):
-    monkeypatch.setattr(launcher_mod, "SeedFanoutScheduler", _FakeScheduler)
-
-    _launcher(True).run(argv=["--infer_at_end", "True"])
-
-    assert _FakeScheduler.captured == {"infer_at_end": True, "infer_after": False}
-
-
-def test_launcher_forwards_infer_after_to_the_fanout(monkeypatch):
-    monkeypatch.setattr(launcher_mod, "SeedFanoutScheduler", _FakeScheduler)
-
-    _launcher(True).run(argv=["--infer_after", "True"])
-
-    assert _FakeScheduler.captured == {"infer_at_end": False, "infer_after": True}
-
-
-def test_launcher_without_support_never_batches_inference(monkeypatch):
-    monkeypatch.setattr(launcher_mod, "SeedFanoutScheduler", _FakeScheduler)
-
-    _launcher(False).run(argv=["--infer_at_end", "True"])
-
-    assert _FakeScheduler.captured == {"infer_at_end": False, "infer_after": False}

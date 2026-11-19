@@ -121,11 +121,11 @@ class UnitResume:
 
         return False
 
-    def skip_inference(self, split: str, subdir: str | None = None) -> bool:
+    def skip_inference(self, split: str) -> bool:
         if not self.enabled:
             return False
 
-        inference_dir = self.run_directory / "inference" / subdir if subdir else self.run_directory / "inference"
+        inference_dir = self.run_directory / "inference"
         if not inference_dir.is_dir():
             return False
 

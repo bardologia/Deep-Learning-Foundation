@@ -64,18 +64,9 @@ def test_a_later_stage_process_keeps_the_earlier_stage_history(tmp_path):
     assert set(state["stages"]) == {"size_match", "prepare", "pipeline"}
 
 
-def test_runs_gating_for_backbone(tmp_path):
-    config = _config(tmp_path, training_type="backbone")
-
-    assert config.runs_size_match() is True
-    assert config.runs_inference()  is True
-
-
-def test_runs_gating_for_profile_autoencoder(tmp_path):
-    config = _config(tmp_path, training_type="profile_autoencoder")
-
-    assert config.runs_size_match() is False
-    assert config.runs_inference()  is False
+def test_runs_inference_follows_infer_after(tmp_path):
+    assert _config(tmp_path).runs_inference()                  is True
+    assert _config(tmp_path, infer_after=False).runs_inference() is False
 
 
 def _patch_stage_methods(pipeline, monkeypatch, order):
@@ -101,30 +92,6 @@ def test_run_executes_stages_in_expected_order(tmp_path, monkeypatch):
     assert state["stages"]["pipeline"]["status"] == "completed"
 
 
-@pytest.mark.slow
-def test_run_skips_size_match_and_inference_for_autoencoder(tmp_path, monkeypatch):
-    pipeline = BenchmarkPipeline(_config(tmp_path, training_type="profile_autoencoder"), entry_script=ENTRY)
-
-    order = []
-    _patch_stage_methods(pipeline, monkeypatch, order)
-    monkeypatch.delattr(pipeline, "_run_inference")
-
-    pipeline.run()
-
-    state = FileIO.load_json(pipeline.state_path)
-    text  = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
-
-    assert "size_match" not in order
-    assert "inference"  not in order
-    assert "max_batch"  in order
-    assert "training"   in order
-    assert "comparison" in order
-    assert state["stages"]["inference"]["status"] == "skipped"
-    assert "infer_after is on, but training_type 'profile_autoencoder' has no inference stage in the benchmark; it is ignored" in text
-    assert "Inference skipped: training_type 'profile_autoencoder' has no inference stage" in text
-    assert "Inference       : stage skipped" in text
-
-
 def test_run_with_infer_after_off_logs_and_marks_the_skipped_inference(tmp_path, monkeypatch):
     pipeline = BenchmarkPipeline(_config(tmp_path, infer_after=False), entry_script=ENTRY)
 
@@ -141,13 +108,6 @@ def test_run_with_infer_after_off_logs_and_marks_the_skipped_inference(tmp_path,
     assert state["stages"]["inference"]["status"] == "skipped"
     assert "Inference skipped: infer_after is off" in text
     assert "has no inference stage in the benchmark" not in text
-
-
-def test_run_rejects_unsupported_training_type(tmp_path):
-    pipeline = BenchmarkPipeline(_config(tmp_path, training_type="nonexistent_type"), entry_script=ENTRY)
-
-    with pytest.raises(SystemExit, match="nonexistent_type"):
-        pipeline.run()
 
 
 def _recording_pipeline(tmp_path, monkeypatch, **kwargs):
@@ -223,9 +183,9 @@ def test_an_abort_overrides_the_completed_mark_of_an_earlier_launch(tmp_path, mo
     earlier._mark_stage("pipeline", "completed")
     earlier.logger.close()
 
-    pipeline = BenchmarkPipeline(_config(tmp_path, training_type="dual"), entry_script=ENTRY)
+    pipeline = BenchmarkPipeline(_config(tmp_path, stage="bogus"), entry_script=ENTRY)
 
-    with pytest.raises(SystemExit, match="dual"):
+    with pytest.raises(SystemExit, match="bogus"):
         pipeline.run()
 
     state = FileIO.load_json(pipeline.state_path)

@@ -15,16 +15,16 @@ from tools.runtime.event_stream           import JsonEventStream
 from tools.runtime.git_state              import RunProvenance
 from tools.runtime.reproducibility        import Reproducibility
 from tools.runtime.run_tag                import RunTag
-from pipelines.dataloader_tuning.adapters import FeedTargetFactory
+from pipelines.dataloader_tuning.adapters import FeedAdapter
 
 
 class DataLoaderTuningPipeline:
 
     def __init__(self, config) -> None:
         self.config     = config
-        self.model_name = FeedTargetFactory.model_name(config)
-        self.output_dir = Path(config.output_dir) / config.mode / f"{self.model_name}_{RunTag.now()}"
-        self.work_dir   = Path(config.output_dir) / config.mode / "work"
+        self.model_name = config.model_name or FeedAdapter.DEFAULT_MODEL
+        self.output_dir = Path(config.output_dir) / f"{self.model_name}_{RunTag.now()}"
+        self.work_dir   = Path(config.output_dir) / "work"
         self.figure_dir = self.output_dir / "figures"
 
         self.output_dir.mkdir(parents=True)
@@ -40,7 +40,6 @@ class DataLoaderTuningPipeline:
     def _build_target(self):
         self.logger.section("[DataLoader Tuning]")
         self.logger.kv_table({
-            "Mode"          : self.config.mode,
             "Device"        : "cuda" if torch.cuda.is_available() else "cpu",
             "Batch sizes"   : self.config.batch_sizes,
             "Worker counts" : self.config.worker_counts,
@@ -49,7 +48,7 @@ class DataLoaderTuningPipeline:
             "Output dir"    : str(self.output_dir),
         })
 
-        return FeedTargetFactory.build(self.config, self.work_dir, self.logger)
+        return FeedAdapter(self.config, self.work_dir, self.logger).build()
 
     def _gpu(self) -> dict:
         if not torch.cuda.is_available():
@@ -217,7 +216,6 @@ class DataLoaderTuningPipeline:
     def _write(self, target, device, main_results, refine_results, recommendation, final, status: str) -> Path:
         payload = {
             "status"         : status,
-            "mode"           : self.config.mode,
             "device"         : str(device),
             "gpu"            : self.gpu,
             "model_name"     : target.model_name,
@@ -247,7 +245,6 @@ class DataLoaderTuningPipeline:
             main_specs        = self._main_specs()
 
             self.events.emit("meta", {
-                "mode"        : self.config.mode,
                 "device"      : str(device),
                 "model_name"  : target.model_name,
                 "parameters"  : parameter_count,

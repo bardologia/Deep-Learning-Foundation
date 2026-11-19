@@ -135,7 +135,7 @@ Gaussian slot counts as active. It is chosen once, by `SynthesisConfig.activity_
 when the generator writes the labels or by `fit_activity_threshold` when `extract_params`
 fits them (1e-3 by default in both), and recorded in `param_extraction_meta.json`.
 Training (loss masks, slot matching, slot diagnostics, output normalization statistics),
-inference, the profile autoencoder, the seed comparison and the console all read it from
+inference, the seed comparison and the console all read it from
 there, and none of them has a threshold setting of its own. A slot is active only when
 its amplitude is strictly above the threshold.
 
@@ -312,16 +312,6 @@ at the training-label prior in normalized output space and writes
 `meta/head_prior_bias.json`; it needs `--backbone_head conv`. Attention backbones run
 torch's fused `scaled_dot_product_attention`; only the attention-capture analysis
 switches to the explicit path that exposes the weights.
-
-The autoencoder and JEPA entries follow the same resume and provenance rules. A JEPA run
-couples only finished autoencoder runs (a `complete.json` in the run directory), records
-each imported checkpoint and its dataset provenance in `meta/coupled_autoencoders.json`,
-and refuses an image autoencoder trained on another input selection or other secondary
-labels; a different preprocessing run, parameter run or input statistics only warn. The
-JEPA curriculum swap resets the best-checkpoint baseline, so `best_model.pt` comes from
-the main loss stage. The profile autoencoder takes `pixel_subsample` in (0, 1] and
-`keep_empty_frac` in [0, 1], and refuses a training split whose sampled curves are
-near-constant.
 
 ### Finishing a run that broke
 
@@ -505,8 +495,8 @@ holds the kill front end button, which stops every console server on the same pr
 root; running and detached jobs survive it and are adopted again on the next start.
 
 On the launch pages the secondary-channel field is a picker filled from the selected
-dataset's channel labels, and the cross-validation and JEPA forms show the architecture
-fields of the model their training type selects. An ended job's console tile has a Retry
+dataset's channel labels, and the cross-validation form shows the architecture
+fields of the selected backbone. An ended job's console tile has a Retry
 button that reopens the launch page with the job's overrides, interpreter and finalize
 switches. A dropped job stream reconnects and replays from its last event. TensorBoard
 runs are picked from a folder tree, and a data-parallel job opens rank zero's run.
@@ -545,8 +535,7 @@ inference split, which fold runs hold a completed inference.
 `tune.py` samples three groups of settings, each with its own switch:
 `tuning.search_lr` (learning rates, weight decays and dropout), `tuning.search_arch`
 (architecture fields) and `tuning.search_batch` (a batch size from `tuning.batch_sizes`,
-with the optimizer rescaled by the training batch rule). JEPA studies search the
-architecture only. `plateau_patience` and `plateau_min_delta` stop a study whose best
+with the optimizer rescaled by the training batch rule). `plateau_patience` and `plateau_min_delta` stop a study whose best
 value has stalled, and `time_budget_h` stops workers from starting new trials; these may
 change on resume, the search groups may not. The workers of one model share its study
 in the run's SQLite database (`optuna.db`), whose heartbeat lets a dead worker's trials
@@ -595,8 +584,7 @@ write `comparison_summary.json` and state their split, seed means show the seeds
 cover as used/total, and leaderboards name the smallest p-value the seed count allows.
 The weight x-ray records its checkpoint entry, thresholds and provenance and reads
 transposed convolutions on their output axis; the activation x-ray records the leaf
-modules that are reused or never fire. `collect_reports.py` also gathers the reports of
-profile and image autoencoder runs, which stamp under `inference/<family>/`.
+modules that are reused or never fire.
 
 ## Repository map
 
@@ -631,9 +619,8 @@ regenerated, not converted. These changes, made in October 2026, affect existing
 
 - Parameter runs need `activity_threshold` in `param_extraction_meta.json`. Generate or
   extract them again.
-- Trainer states saved before `last.pt` recorded the batch geometry cannot be resumed,
-  and profile autoencoder runs whose `profile_dataset_config.json` lacks
-  `activity_threshold` cannot be loaded. Retrain them.
+- Trainer states saved before `last.pt` recorded the batch geometry cannot be resumed.
+  Retrain them.
 - Inference stamps scored before `metrics.json` recorded the activity threshold are
   refused by the seed comparison and by the cube explorer's parameter overlays, and
   stamps without a completion marker are ignored by the split-aware readers. Metric

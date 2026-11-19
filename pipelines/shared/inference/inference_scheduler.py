@@ -4,9 +4,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from configuration.inference.general           import InferenceConfig
 from pipelines.shared.inference.metadata       import CompletedInference, TargetDataset
-from pipelines.shared.inference.run_classifier import InferenceLayout, RunClassifier, RunDirectoryWalk
+from pipelines.shared.inference.run_classifier import InferenceLayout, RunArtifacts, RunDirectoryWalk
 from tools.monitoring.logger                   import Logger
 from tools.orchestration.gpu_queue             import GpuJob, GpuJobResult, GpuPoolFile, GpuQueue
 from tools.runtime.config_cli                  import ConfigCli
@@ -45,16 +44,15 @@ class RunSelection:
 
 class InferenceScheduler:
 
-    def __init__(self, config, entry_script: Path, run_type: str, block) -> None:
+    def __init__(self, config, entry_script: Path) -> None:
         self.config          = config
         self.entry_script    = entry_script
-        self.run_type        = run_type
-        self.block           = block
-        self.split           = block.split
-        self.checkpoint_name = block.checkpoint_name
-        self.target          = TargetDataset.of(block) if isinstance(block, InferenceConfig) else None
+        self.block           = config.inference
+        self.split           = self.block.split
+        self.checkpoint_name = self.block.checkpoint_name
+        self.target          = TargetDataset.of(self.block)
         self.runs_dir        = Path(config.runs_dir).expanduser()
-        self.work_dir        = Path("logs") / "inference" / run_type / RunTag.now()
+        self.work_dir        = Path("logs") / "inference" / RunTag.now()
         self.pool_file       = GpuPoolFile.resolve(config.gpus_file, self.work_dir)
         self.skipped         = []
 
@@ -80,30 +78,17 @@ class InferenceScheduler:
     def _name(self, run_dir: Path) -> str:
         return RunSelection(self.runs_dir, []).relative(run_dir)
 
-    def _classified(self, candidates: list[Path], logger: Logger) -> list[Path]:
-        matched  = []
-        rejected = []
-
-        for directory in candidates:
-            try:
-                family = RunClassifier.classify(directory)
-            except ValueError as error:
-                logger.warning(f"{self._name(directory)} is left out: {error}")
-                rejected.append({"Run": self._name(directory), "Family": "unclassifiable", "Reason": "no recognised model config under meta/"})
-                continue
-
-            if family == self.run_type:
-                matched.append(directory)
-            else:
-                rejected.append({"Run": self._name(directory), "Family": family, "Reason": f"not of type '{self.run_type}'"})
+    def _trained(self, candidates: list[Path], logger: Logger) -> list[Path]:
+        matched  = [directory for directory in candidates if RunArtifacts.is_run(directory)]
+        rejected = [{"Run": self._name(directory), "Reason": f"no meta/{RunArtifacts.BACKBONE_CONFIG}"} for directory in candidates if directory not in matched]
 
         if rejected:
-            logger.metrics_table(rejected, columns=["Run", "Family", "Reason"], title=f"Skipping {len(rejected)} run(s) not of type '{self.run_type}'")
+            logger.metrics_table(rejected, columns=["Run", "Reason"], title=f"Skipping {len(rejected)} directory(ies) that hold no trained model")
 
         return matched
 
     def _inference_state(self, run_dir: Path, logger: Logger) -> tuple[str, bool]:
-        base   = InferenceLayout.base(run_dir, self.run_type) if self.target is None else InferenceLayout.target_base(run_dir, self.run_type, self.target.name)
+        base   = InferenceLayout.base(run_dir) if self.target is None else InferenceLayout.target_base(run_dir, self.target.name)
         stamps = CompletedInference.stamps(base, self.split)
 
         if self.target is not None:
@@ -114,9 +99,6 @@ class InferenceScheduler:
 
             if self.checkpoint_name in recorded:
                 return "done", True
-
-            if None in recorded:
-                return "done (checkpoint not recorded)", True
 
             others = ", ".join(sorted(set(recorded)))
             logger.warning(f"{self._name(run_dir)}: its stamps on split '{self.split}' were scored with {others}, not the requested {self.checkpoint_name}; the run is scored again")
@@ -137,10 +119,10 @@ class InferenceScheduler:
 
     def _run_dirs(self, logger: Logger) -> list[Path]:
         candidates = self._candidate_dirs()
-        matched    = self._classified(candidates, logger)
+        matched    = self._trained(candidates, logger)
 
         if not matched:
-            raise FileNotFoundError(f"No run of type '{self.run_type}' found under {self.runs_dir}: {len(candidates)} candidate director(ies) were walked and all were rejected. Check runs_dir and the entry point family.")
+            raise FileNotFoundError(f"No trained run found under {self.runs_dir}: {len(candidates)} candidate director(ies) were walked and none holds meta/{RunArtifacts.BACKBONE_CONFIG}. Check runs_dir.")
 
         column = f"Inference ({self.split})" if self.target is None else f"Inference on {self.target.name}"
         rows   = []
@@ -153,7 +135,7 @@ class InferenceScheduler:
             if skip:
                 self.skipped.append(directory)
 
-        logger.metrics_table(rows, columns=["Run", column, "Action"], title=f"{len(matched)} {self.run_type} run(s) under {self.runs_dir}")
+        logger.metrics_table(rows, columns=["Run", column, "Action"], title=f"{len(matched)} run(s) under {self.runs_dir}")
 
         return [directory for directory in matched if directory not in self.skipped]
 
@@ -187,12 +169,11 @@ class InferenceScheduler:
             scored   = f"'{self.split}'" if self.target is None else f"the target {self.target.name} (same labels, secondary channels and crop)"
 
             logger.kv_table({
-                "Run type"       : self.run_type,
                 "Split"          : self.split,
                 "Target dataset" : self.target.describe() if self.target is not None else "none (runs scored on their own split)",
                 "Checkpoint"     : self.checkpoint_name,
                 "Runs to score"  : len(run_dirs),
-                "Runs skipped"   : f"{len(self.skipped)} (already scored on {scored} with {self.checkpoint_name} or an unrecorded checkpoint)",
+                "Runs skipped"   : f"{len(self.skipped)} (already scored on {scored} with {self.checkpoint_name})",
                 "GPUs"           : self.config.gpus,
                 "GPU pool file"  : str(self.pool_file),
                 "Runs dir"       : str(self.runs_dir),

@@ -11,8 +11,8 @@ from configuration.cross_validation      import CrossValidationConfig, FoldConfi
 from pipelines.cross_validation.pipeline import CrossValidationPipeline
 
 
-def pipeline_config(tmp_path: Path, test_data_dir: Path, training_type: str = "backbone") -> CrossValidationConfig:
-    config                    = CrossValidationConfig(training_type=training_type)
+def pipeline_config(tmp_path: Path, test_data_dir: Path) -> CrossValidationConfig:
+    config                    = CrossValidationConfig()
     config.paths.log_base_dir = tmp_path
     config.paths.dataset_path = test_data_dir
     config.folds              = FoldConfig(n_folds=5, row_start=1000, row_end=1512)
@@ -133,24 +133,11 @@ def test_pipeline_inference_partial_when_failed(tmp_path, test_data_dir, monkeyp
 
 
 @pytest.mark.dataset
-def test_pipeline_runs_inference_for_every_training_type(tmp_path, test_data_dir, monkeypatch):
-    for training_type in ("backbone", "profile_autoencoder", "image_autoencoder"):
-        order = []
-        install_fake_stages(monkeypatch, order)
-
-        config   = pipeline_config(tmp_path / training_type, test_data_dir, training_type=training_type)
-        pipeline = CrossValidationPipeline(config, entry_script=Path("e.py"))
-        pipeline.run()
-
-        assert "inference" in order
-
-
-@pytest.mark.dataset
 def test_pipeline_skips_inference_without_splits(tmp_path, test_data_dir, monkeypatch):
     order = []
     install_fake_stages(monkeypatch, order)
 
-    config                  = pipeline_config(tmp_path, test_data_dir, training_type="profile_autoencoder")
+    config                  = pipeline_config(tmp_path, test_data_dir)
     config.inference_splits = []
     pipeline                = CrossValidationPipeline(config, entry_script=Path("e.py"))
     pipeline.run()

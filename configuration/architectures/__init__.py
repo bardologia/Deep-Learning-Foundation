@@ -21,21 +21,3 @@ from configuration.architectures.backbone import (
     LocalCNNConfig,
     NAFNetConfig,
 )
-from configuration.architectures.image_autoencoder import (
-    ImageAutoencoderBaseConfig,
-    Conv2dImageAutoencoderConfig,
-    ResNet2dImageAutoencoderConfig,
-    ConvNeXt2dImageAutoencoderConfig,
-    DilatedConv2dImageAutoencoderConfig,
-    ViTImageAutoencoderConfig,
-)
-from configuration.architectures.profile_autoencoder import (
-    ProfileAutoencoderBaseConfig,
-    MlpAutoencoderConfig,
-    Conv1dAutoencoderConfig,
-    Transformer1dAutoencoderConfig,
-    ResMlpAutoencoderConfig,
-    TcnAutoencoderConfig,
-    GruAutoencoderConfig,
-    CnnAttnAutoencoderConfig,
-)

@@ -22,7 +22,7 @@ def main() -> None:
     from tools.monitoring.logger                   import Logger
     from tools.runtime.config_cli                  import ConfigCli
 
-    entry = ConfigCli(TrainingProfileEntryConfig(), description="Build the configured family's real (dataset, model, loss) feed and profile full training steps with torch.profiler: warmup steps are observed, active steps recorded, and the run writes a chrome trace for chrome://tracing, a per-operator time table and a machine-readable summary").apply()
+    entry = ConfigCli(TrainingProfileEntryConfig(), description="Build the backbone's real (dataset, model, loss) feed and profile full training steps with torch.profiler: warmup steps are observed, active steps recorded, and the run writes a chrome trace for chrome://tracing, a per-operator time table and a machine-readable summary").apply()
 
     with Logger(log_dir="logs", name="profile_training") as logger:
         TrainingProfilePipeline(entry, logger).run()

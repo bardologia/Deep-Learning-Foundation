@@ -61,9 +61,6 @@ class InferenceConfig:
     compute_flip_consistency : bool  = False
     compute_stratified       : bool  = True
 
-    extract_curve_params    : bool  = True
-    extract_prominence_frac : float = 0.05
-
     n_best_profiles   : int = 12
     n_worst_profiles  : int = 12
     n_random_profiles : int = 12

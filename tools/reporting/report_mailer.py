@@ -61,12 +61,12 @@ class TrialTree:
 
     @staticmethod
     def inference_stamps(inference_dir: Path, split: str | None) -> list[Path]:
-        bases = [Path(inference_dir)] + [Path(inference_dir) / family for family in InferenceLayout.SUBDIRS.values()]
+        base = Path(inference_dir)
 
         if split is None:
-            stamps = [stamp for base in bases if base.is_dir() for stamp in base.iterdir() if stamp.is_dir() and CompletionMarker.is_complete(stamp)]
+            stamps = [stamp for stamp in base.iterdir() if stamp.is_dir() and CompletionMarker.is_complete(stamp)] if base.is_dir() else []
         else:
-            stamps = [stamp for base in bases for stamp in CompletedInference.stamps(base, split)]
+            stamps = CompletedInference.stamps(base, split)
 
         return sorted(stamps, key=lambda stamp: stamp.name)
 

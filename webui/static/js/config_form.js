@@ -27,7 +27,6 @@ class ConfigForm {
     this.builder         = null;
     this.modelFamilies   = null;
     this.modelHeads      = null;
-    this.modelEndpoint   = null;
     this.layoutEl        = null;
     this.navHost         = null;
     this.pinsEl          = null;
@@ -240,14 +239,13 @@ class ConfigForm {
       const leaf     = this.byPath.get(panel.fields[0]);
       const headLeaf = panel.fields.length > 1 ? this.byPath.get(panel.fields[1]) : null;
       if (!leaf || !this.modelFamilies || !this.modelFamilies.length) return this._buildPathsPanel("Model", panel.fields);
-      return new window.ModelCardPanel(this, leaf, headLeaf, panel.headGate || null).build();
+      return new window.ModelCardPanel(this, leaf, headLeaf).build();
     }
 
     if (panel.panel === "arch_overrides") {
-      const leaf       = this.byPath.get(panel.fields[0]);
-      const modelLeaf  = panel.modelFrom ? this.byPath.get(panel.modelFrom) : null;
-      const switchLeaf = panel.modelBy ? this.byPath.get(panel.modelBy.field) : null;
-      if (!leaf || !(modelLeaf || switchLeaf) || !this.modelFamilies || !this.modelFamilies.length) return this._buildPathsPanel(panel.title || "Architecture overrides", panel.fields);
+      const leaf      = this.byPath.get(panel.fields[0]);
+      const modelLeaf = panel.modelFrom ? this.byPath.get(panel.modelFrom) : null;
+      if (!leaf || !modelLeaf || !this.modelFamilies || !this.modelFamilies.length) return this._buildPathsPanel(panel.title || "Architecture overrides", panel.fields);
       return new window.ArchOverridesPanel(this, leaf, modelLeaf, panel).build();
     }
 
@@ -325,11 +323,6 @@ class ConfigForm {
   }
 
   _buildEntry(entry, host, pathMap) {
-    if (entry.gateOn) {
-      this._buildValueGate(entry, host, pathMap);
-      return;
-    }
-
     if (!entry.gate) {
       host.appendChild(this._buildRow(this.byPath.get(this._mapPath(entry.path, pathMap)), this._section));
       return;
@@ -353,19 +346,6 @@ class ConfigForm {
 
     this.gates.push({ leaf: lead, states: gatedRows });
     host.appendChild(cell);
-  }
-
-  _buildValueGate(entry, host, pathMap) {
-    const condition = { ...entry.gateOn, field: this._mapPath(entry.gateOn.field, pathMap) };
-    const lead      = this.byPath.get(condition.field);
-
-    const start = this.states.length;
-    entry.fields.forEach((sub) => this._buildEntry(sub, host, pathMap));
-
-    const states = this.states.slice(start);
-    states.forEach(({ row }) => row.classList.add("cfg-edit__row--dependent"));
-
-    this.gates.push({ leaf: lead, states, test: () => !this._conditionFails(condition) });
   }
 
   _gateLabel(short) {
@@ -862,7 +842,7 @@ class ConfigForm {
     });
 
     this.gates.forEach((gate) => {
-      const open = gate.test ? gate.test() : this._effective(gate.leaf) === "True";
+      const open = this._effective(gate.leaf) === "True";
       if (!open) gate.states.forEach(({ row }) => (row.dataset.gated = "1"));
     });
 

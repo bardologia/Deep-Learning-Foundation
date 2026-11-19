@@ -99,8 +99,7 @@ def _cfg_stub():
         save_animations=False, n_best_profiles=4, n_worst_profiles=4, n_random_profiles=4,
         n_col_slices=3, n_row_slices=3, n_z_slices=3, gif_axes=["col"],
         gif_fps=12, gif_duration=None, gif_max_frames=10, gif_separate_panels=False, device="cpu", num_workers=2,
-        checkpoint_name="last_model.pt", region_override=None, render_amp_floor=0.02, extract_curve_params=True,
-        extract_prominence_frac=0.05,
+        checkpoint_name="last_model.pt", region_override=None, render_amp_floor=0.02,
     )
 
 
@@ -277,7 +276,6 @@ def test_report_metric_taxonomy_routes_keys():
     assert _metric_group("slot_mu_rank_diag")         == "3.9c Slot internal organization (emergent)"
     assert _metric_group("slot_gt_alignment")         == "3.9c Slot internal organization (emergent)"
     assert _metric_group("matched_mu_mae")            == "3.10 Matched Gaussian errors (permutation-invariant)"
-    assert _metric_group("jepa_embedding_mse")        == "3.12 JEPA embedding diagnostics"
 
 
 def test_report_metric_sections_render_in_display_order():
@@ -293,8 +291,6 @@ def test_report_is_per_slice_ssim_classifier():
     assert Report._is_per_slice_ssim("z_mae_gt_7")     is True
     assert Report._is_per_slice_ssim("ssim_gt_z_mean") is False
     assert Report._is_per_slice_ssim("curve_mse_gt")      is False
-
-
 
 
 def test_report_figure_sections_absent_without_figures(tmp_path):
@@ -338,45 +334,6 @@ def test_report_full_metrics_excludes_per_slice(tmp_path):
     assert "3.1 Dataset statistics" in joined
 
 
-def _extraction_metrics():
-    gm = _global_metrics()
-
-    gm["params_source"]                  = "extracted"
-    gm["extract_fit_r2_mean"]            = 0.98
-    gm["extract_fit_r2_median"]          = 0.99
-    gm["extract_fit_r2_p5"]              = 0.91
-    gm["extract_floor_matched_mu_mae"]   = 0.12
-    gm["extract_floor_matched_sig_mae"]  = 0.08
-    gm["extract_floor_matched_amp_mae"]  = 0.03
-    gm["extract_floor_matched_recall"]   = 0.97
-
-    return gm
-
-
-def _jepa_metrics():
-    gm = _global_metrics()
-
-    gm.update({
-        "jepa_embedding_mse"          : 0.02,
-        "jepa_embedding_rmse"         : 0.1414,
-        "jepa_embedding_nmse"         : 0.05,
-        "jepa_embedding_cosine"       : 0.97,
-        "jepa_embedding_dim_rmse_min" : 0.05,
-        "jepa_embedding_dim_rmse_max" : 0.30,
-        "jepa_embedding_dim_rmse_std" : 0.07,
-        "jepa_decode_mse_norm"        : 0.010,
-        "jepa_chain_mse_norm"         : 0.025,
-        "jepa_predictor_excess_mse"   : 0.015,
-        "jepa_decoder_floor_frac"     : 0.4,
-        "jepa_decode_amplification"   : 0.75,
-        "jepa_embedding_err_p95"      : 0.06,
-        "jepa_embedding_cosine_p5"    : 0.90,
-        "jepa_embedding_error_corr"   : 0.42,
-    })
-
-    return gm
-
-
 def _report_with(gm, tmp_path, figure_paths=None):
     return Report(
         output_dir       = tmp_path,
@@ -390,44 +347,6 @@ def _report_with(gm, tmp_path, figure_paths=None):
     )
 
 
-def test_report_includes_the_extraction_floor_section(tmp_path):
-    text = _report_with(_extraction_metrics(), tmp_path).assemble().read_text(encoding="utf-8")
-
-    assert "Curve-parameter extraction and its measurement floor" in text
-    assert "measurement floor" in text
-    assert "Floor μ MAE" in text
-
-
-def test_cross_references_follow_the_extraction_section(tmp_path):
-    plain = _report_with(_global_metrics(), tmp_path)
-    plain.assemble()
-
-    shifted = _report_with(_extraction_metrics(), tmp_path)
-    text    = shifted.assemble().read_text(encoding="utf-8")
-
-    assert plain._anchors["slot_occupancy"]   == "2.4"
-    assert shifted._anchors["extraction"]     == "2.4"
-    assert shifted._anchors["slot_occupancy"] == "2.5"
-
-    assert "§2.5 gives the corresponding emission fractions" in text
-    assert "§2.4 gives the corresponding emission fractions" not in text
-
-
-def test_report_omits_the_extraction_section_for_parameter_models(tmp_path):
-    text = _report_with(_global_metrics(), tmp_path).assemble().read_text(encoding="utf-8")
-
-    assert "Curve-parameter extraction" not in text
-
-
-def test_report_renders_the_deepened_jepa_headline(tmp_path):
-    text = _report_with(_jepa_metrics(), tmp_path).assemble().read_text(encoding="utf-8")
-
-    assert "Predictor excess MSE"   in text
-    assert "Decoder floor fraction" in text
-    assert "Decode amplification"   in text
-    assert "Embedding-error corr"   in text
-
-
 def test_report_renders_the_roughness_section(tmp_path):
     text = _report_with(_global_metrics(), tmp_path).assemble().read_text(encoding="utf-8")
 
@@ -435,20 +354,5 @@ def test_report_renders_the_roughness_section(tmp_path):
     assert "Roughness ratio"  in text
 
 
-def test_report_lists_the_embedding_figure_section(tmp_path):
-    figures = {"embedding_error_map": [tmp_path / "err.png"], "embedding_chain_map": [tmp_path / "chain.png"]}
-
-    for path in (tmp_path / "err.png", tmp_path / "chain.png"):
-        path.write_bytes(b"")
-
-    text = _report_with(_jepa_metrics(), tmp_path, figures).assemble().read_text(encoding="utf-8")
-
-    assert "6c. Embedding-space diagnostics" in text
-    assert "6c.1 Per-pixel embedding error"  in text
-
-
-def test_report_taxonomy_routes_the_new_metric_families():
-    assert _metric_group("extract_fit_r2_mean")          == "3.12b Curve-parameter extraction"
-    assert _metric_group("extract_floor_matched_mu_mae") == "3.12b Curve-parameter extraction"
-    assert _metric_group("params_source")                == "3.12b Curve-parameter extraction"
-    assert _metric_group("roughness_ratio")              == "3.12c Curve roughness"
+def test_report_taxonomy_routes_the_roughness_metrics():
+    assert _metric_group("roughness_ratio") == "3.12 Curve roughness"

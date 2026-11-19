@@ -1439,7 +1439,7 @@
               "label": "infer_backbone.py",
               "module": "main/inference/infer_backbone.py",
               "role": "entry",
-              "fn": "Thin bootstrap that constructs the shared InferenceEntry with RunType.BACKBONE.",
+              "fn": "Thin bootstrap that constructs the InferenceEntry and runs it.",
               "col": 0,
               "reads": [],
               "writes": [],
@@ -1714,1788 +1714,6 @@
       ]
     },
     {
-      "folder": "profile_autoencoder",
-      "title": "Profile Autoencoder",
-      "blurb": "Standalone per-pixel profile-autoencoder subsystem that compresses Gaussian-mixture z profiles into latent embeddings: it builds per-pixel curve datasets, trains a reconstruction autoencoder whose checkpoint seeds the JEPA target encoder, and runs reconstruction inference with metrics and reports.",
-      "diagrams": [
-        {
-          "key": "profileae-dataset",
-          "stage": "Dataset",
-          "title": "Per-pixel Profile Dataset",
-          "entry": "",
-          "blurb": "Turns the preprocessing Gaussian-parameter volume into per-split, per-pixel intensity-curve DataLoaders, fitting a log1p-standardize normalizer on the training split.",
-          "nodes": [
-            {
-              "id": "cfg",
-              "label": "ProfileDatasetConfig",
-              "module": "configuration/dataset/__init__.py",
-              "role": "config",
-              "fn": "Holds profile dataset settings: split regions, gaussian axis bounds, pixel subsample and keep-empty fractions, loader params and augmentation config.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "layout",
-              "label": "Layout",
-              "module": "pipelines/shared/dataset/dataset_spatial.py",
-              "role": "io",
-              "fn": "Resolves the preprocessing run layout and memory-maps the extracted Gaussian-parameter volume plus its global crop and profile length.",
-              "col": 2,
-              "reads": [
-                "parameters.npy"
-              ],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "pipeline",
-              "label": "ProfileDatasetPipeline",
-              "module": "pipelines/profile_autoencoder/dataset/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Sequences dataset construction: builds the z axis, crops per-split parameters, fits the normalizer on train, then assembles the three DataLoaders.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "cropper",
-              "label": "ParameterCropper",
-              "module": "pipelines/profile_autoencoder/dataset/splitting.py",
-              "role": "io",
-              "fn": "Slices the memmapped parameter volume into per-split train/val/test region arrays validated against the global crop.",
-              "col": 3,
-              "reads": [
-                "parameters.npy"
-              ],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "curve",
-              "label": "GaussianAxis / GaussianMixture",
-              "module": "tools/data/gaussians.py",
-              "role": "transform",
-              "fn": "Builds the shared z axis and evaluates Gaussian-mixture (amp, mu, sigma) parameters into per-pixel intensity curves.",
-              "col": 2,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "dataset",
-              "label": "ProfileDataset",
-              "module": "pipelines/profile_autoencoder/dataset/datasets.py",
-              "role": "data",
-              "fn": "Per-pixel Dataset that stacks amp/mu/sigma channels, selects active vs empty pixels, and on access synthesizes, augments and normalizes one profile curve.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "augment",
-              "label": "ProfileAugmenter",
-              "module": "pipelines/profile_autoencoder/dataset/augmentation.py",
-              "role": "transform",
-              "fn": "Applies train-only amplitude scaling, circular shift, flip and post-normalization Gaussian noise to each curve.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "norm",
-              "label": "ProfileStatsComputer / ProfileNormalizer",
-              "module": "pipelines/profile_autoencoder/dataset/normalization.py",
-              "role": "transform",
-              "fn": "Fits log1p-then-standardize statistics on sampled train curves, normalizes/denormalizes curves, and persists the stats JSON.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "profile_normalization_stats.json"
-              ],
-              "row": 0
-            },
-            {
-              "id": "loader",
-              "label": "Loader",
-              "module": "pipelines/shared/dataset/loaders.py",
-              "role": "io",
-              "fn": "Wraps the three ProfileDatasets into seeded, pinned train/val/test DataLoaders.",
-              "col": 5,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            }
-          ],
-          "edges": [
-            {
-              "from": "cfg",
-              "to": "pipeline",
-              "label": "ProfileDatasetConfig",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "layout",
-              "label": "run dir + params_path",
-              "kind": "control"
-            },
-            {
-              "from": "layout",
-              "to": "cropper",
-              "label": "crop + memmap params",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "curve",
-              "label": "axis bounds -> z_axis",
-              "kind": "control"
-            },
-            {
-              "from": "cropper",
-              "to": "dataset",
-              "label": "per-split param arrays",
-              "kind": "data"
-            },
-            {
-              "from": "curve",
-              "to": "dataset",
-              "label": "z_axis + curve eval",
-              "kind": "data"
-            },
-            {
-              "from": "augment",
-              "to": "dataset",
-              "label": "amp/shift/flip + noise",
-              "kind": "data"
-            },
-            {
-              "from": "dataset",
-              "to": "norm",
-              "label": "sampled curves -> stats",
-              "kind": "data"
-            },
-            {
-              "from": "norm",
-              "to": "loader",
-              "label": "log1p+standardize curves",
-              "kind": "data"
-            },
-            {
-              "from": "dataset",
-              "to": "loader",
-              "label": "train/val/test datasets",
-              "kind": "data"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "parameters.npy",
-              "producer": "Preprocessing parameter-extraction",
-              "consumers": [
-                "Layout",
-                "ParameterCropper"
-              ],
-              "fmt": "npy (memmap, C x row x col)",
-              "desc": "Extracted Gaussian-mixture profile parameters (amp/mu/sigma channels) per pixel from the preprocessing run.",
-              "scope": "cross"
-            },
-            {
-              "name": "profile_normalization_stats.json",
-              "producer": "ProfileStatsComputer",
-              "consumers": [
-                "ProfileAeRunLoader",
-                "JepaTrainingPipeline"
-              ],
-              "fmt": "json",
-              "desc": "log1p transform loc/scale used to normalize curves; reloaded at profile inference and by JEPA to match the AE's input space.",
-              "scope": "cross"
-            },
-            {
-              "name": "train/val/test DataLoaders",
-              "producer": "ProfileDatasetPipeline",
-              "consumers": [
-                "AutoencoderTrainingPipeline",
-                "AutoencoderTrainer"
-              ],
-              "fmt": "in-memory DataLoader",
-              "desc": "Curve batches plus z_axis and profile length handed to the training stage.",
-              "scope": "cross"
-            }
-          ],
-          "ncol": 6,
-          "nrow": 3
-        },
-        {
-          "key": "profileae-training",
-          "stage": "Training",
-          "title": "Reconstruction Training",
-          "entry": "main/training/train_profile_autoencoder.py",
-          "blurb": "Trains a per-pixel profile autoencoder to reconstruct intensity curves; the resulting checkpoint is reused by JEPA as the frozen/finetune target encoder producing latent-embedding targets.",
-          "nodes": [
-            {
-              "id": "entry",
-              "label": "train_profile_autoencoder.py",
-              "module": "main/training/train_profile_autoencoder.py",
-              "role": "entry",
-              "fn": "Thin bootstrap that pins the GPU and hands ProfileAeEntryConfig + SingleTrainRunner to the SeedSweepLauncher.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "cfg",
-              "label": "ProfileAeEntryConfig",
-              "module": "configuration/training/profile_autoencoder.py",
-              "role": "config",
-              "fn": "Entry config for a profile-AE run: AE model name, AE loss, seed sweep, pixel subsample, augmentation and training knobs.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "runner",
-              "label": "SingleTrainRunner",
-              "module": "pipelines/profile_autoencoder/training/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Per-seed runner (EntryConfigTrainRunner) that instantiates and runs the TrainingPipeline for the selected AE model.",
-              "col": 2,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "datasetpipe",
-              "label": "ProfileDatasetPipeline",
-              "module": "pipelines/profile_autoencoder/dataset/pipeline.py",
-              "role": "external",
-              "fn": "Dataset stage that supplies the train/val/test DataLoaders, z_axis and profile length consumed here (see Dataset diagram).",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "pipeline",
-              "label": "TrainingPipeline (AutoencoderTrainingPipeline)",
-              "module": "pipelines/profile_autoencoder/training/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Profile-AE training orchestrator built on the shared AutoencoderTrainingPipeline.run scheduler: prepares data, builds the model, saves metadata, runs the overfit gate, then trains.",
-              "col": 3,
-              "reads": [],
-              "writes": [
-                "run_summary.json",
-                "profile_ae config json",
-                "profile_dataset config json"
-              ],
-              "row": 1
-            },
-            {
-              "id": "model",
-              "label": "get_profile_autoencoder",
-              "module": "models/profile_autoencoder/base.py",
-              "role": "model",
-              "fn": "Builds the selected profile autoencoder (encoder->embedding->decoder) from the registry; reconstruct() returns curve_hat and latent z.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "trainer",
-              "label": "Trainer",
-              "module": "pipelines/profile_autoencoder/training/trainer.py",
-              "role": "transform",
-              "fn": "Profile trainer hook: reshapes each batch to (B, L, 1, 1), calls model.reconstruct and scores it with the reconstruction Loss.",
-              "col": 4,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "loss",
-              "label": "Loss (ReconstructionLoss)",
-              "module": "pipelines/profile_autoencoder/training/loss.py",
-              "role": "metric",
-              "fn": "Curve reconstruction loss (huber/charbonnier/curve_kind) comparing reconstructed against input profiles.",
-              "col": 5,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "aetrainer",
-              "label": "AutoencoderTrainer",
-              "module": "pipelines/autoencoder_common/trainer.py",
-              "role": "orchestrator",
-              "fn": "Shared AE trainer (extends tools BaseTrainer): builds model_cfg param groups, runs the epoch/validation loop and checkpoints best_model.pt.",
-              "col": 5,
-              "reads": [],
-              "writes": [
-                "best_model.pt"
-              ],
-              "row": 1
-            }
-          ],
-          "edges": [
-            {
-              "from": "cfg",
-              "to": "entry",
-              "label": "ProfileAeEntryConfig",
-              "kind": "control"
-            },
-            {
-              "from": "entry",
-              "to": "runner",
-              "label": "runs per seed",
-              "kind": "control"
-            },
-            {
-              "from": "runner",
-              "to": "pipeline",
-              "label": "builds TrainingPipeline",
-              "kind": "control"
-            },
-            {
-              "from": "datasetpipe",
-              "to": "pipeline",
-              "label": "loaders + z_axis + z_len",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "model",
-              "label": "builds autoencoder",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "aetrainer",
-              "label": "loaders + trainer_config",
-              "kind": "data"
-            },
-            {
-              "from": "model",
-              "to": "trainer",
-              "label": "reconstruct(curve)",
-              "kind": "data"
-            },
-            {
-              "from": "trainer",
-              "to": "loss",
-              "label": "builds Loss criterion",
-              "kind": "data"
-            },
-            {
-              "from": "loss",
-              "to": "aetrainer",
-              "label": "per-batch loss",
-              "kind": "data"
-            },
-            {
-              "from": "trainer",
-              "to": "aetrainer",
-              "label": "loss/criterion hooks",
-              "kind": "control"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "best_model.pt",
-              "producer": "AutoencoderTrainer",
-              "consumers": [
-                "ProfileAeRunLoader",
-                "JepaTrainingPipeline"
-              ],
-              "fmt": "PyTorch checkpoint (params state_dict, z_axis, epoch, best_val_loss)",
-              "desc": "Trained profile-AE weights; JEPA loads it as the target-provider encoder yielding latent-embedding targets, and profile inference loads it to reconstruct.",
-              "scope": "cross"
-            },
-            {
-              "name": "run_summary.json",
-              "producer": "TrainingRunMetadata",
-              "consumers": [
-                "ProfileAeRunLoader",
-                "JepaTrainingPipeline"
-              ],
-              "fmt": "json",
-              "desc": "Run summary recording model_name=profile_ae, out_channels=embedding_dim, x_axis_length and seed, validated at load time.",
-              "scope": "cross"
-            },
-            {
-              "name": "profile_ae + dataset config JSON",
-              "producer": "TrainingPipeline",
-              "consumers": [
-                "ProfileAeRunLoader",
-                "JepaTrainingPipeline"
-              ],
-              "fmt": "json",
-              "desc": "Persisted autoencoder architecture config and profile dataset config (ProfileAutoencoderConfigIO + ProfileDatasetConfigIO) used to rebuild the model and dataset downstream.",
-              "scope": "cross"
-            }
-          ],
-          "ncol": 6,
-          "nrow": 3
-        },
-        {
-          "key": "profileae-inference",
-          "stage": "Inference",
-          "title": "Reconstruction Inference",
-          "entry": "main/inference/infer_profile_autoencoder.py",
-          "blurb": "Reloads a trained profile-AE run, reconstructs the chosen split's curves, and emits latent embeddings, reconstruction metrics, figures and a markdown report.",
-          "nodes": [
-            {
-              "id": "entry",
-              "label": "infer_profile_autoencoder.py",
-              "module": "main/inference/infer_profile_autoencoder.py",
-              "role": "entry",
-              "fn": "Thin bootstrap that runs InferenceEntry with RunType.PROFILE_AE to launch the profile-AE inference pipeline.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "cfg",
-              "label": "ProfileAeInferenceConfig",
-              "module": "configuration/inference/profile_autoencoder.py",
-              "role": "config",
-              "fn": "Inference config: run directory, split, device, checkpoint name, batch/worker params and plotting/curve-sampling options.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "pipeline",
-              "label": "ProfileAeInferencePipeline",
-              "module": "pipelines/profile_autoencoder/inference/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Sequences inference: loads the run, reconstructs curves, saves embeddings, computes metrics, composes figures and writes the report.",
-              "col": 1,
-              "reads": [],
-              "writes": [
-                "embeddings.npy"
-              ],
-              "row": 1
-            },
-            {
-              "id": "metadata",
-              "label": "ProfileAeInferenceMetadata (AeInferenceMetadata)",
-              "module": "pipelines/shared/inference/metadata.py",
-              "role": "io",
-              "fn": "Shared inference metadata: mints the timestamped output directory and the figures/logs/metrics/report paths.",
-              "col": 4,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "loader",
-              "label": "ProfileAeRunLoader",
-              "module": "pipelines/profile_autoencoder/inference/loader.py",
-              "role": "io",
-              "fn": "Reads run_summary, AE/dataset config and normalization stats, rebuilds the dataset, model and checkpoint into a ProfileAeRun.",
-              "col": 2,
-              "reads": [
-                "best_model.pt",
-                "profile_normalization_stats.json",
-                "run_summary.json",
-                "profile_ae config json"
-              ],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "predictor",
-              "label": "ProfileAePredictor (AeReconstructionPredictor)",
-              "module": "pipelines/autoencoder_common/inference/predictor.py",
-              "role": "transform",
-              "fn": "Shared reconstruction loop; the profile subclass reshapes curves to (B,L,1,1), runs model.reconstruct, denormalizes to gt/pred and collects embeddings into an AeResult.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "metrics",
-              "label": "ProfileAeMetrics (AeMetricsBase)",
-              "module": "pipelines/profile_autoencoder/inference/metrics.py",
-              "role": "metric",
-              "fn": "Computes physical, normalized, shape, power/peak and latent-embedding metrics over the reconstructed curves.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "metrics.json"
-              ],
-              "row": 1
-            },
-            {
-              "id": "plots",
-              "label": "ProfileAePlots (AePlotsBase)",
-              "module": "pipelines/profile_autoencoder/inference/plots.py",
-              "role": "io",
-              "fn": "Renders and saves reconstruction overlays, mean profile, error histogram, power scatter and embedding-norm figures.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "figures/*.png"
-              ],
-              "row": 2
-            },
-            {
-              "id": "report",
-              "label": "ProfileAeReport (AeReportBase)",
-              "module": "pipelines/profile_autoencoder/inference/report.py",
-              "role": "io",
-              "fn": "Assembles the metric tables and figure sections into a markdown inference report.",
-              "col": 5,
-              "reads": [],
-              "writes": [
-                "report.md"
-              ],
-              "row": 1
-            }
-          ],
-          "edges": [
-            {
-              "from": "cfg",
-              "to": "pipeline",
-              "label": "inference config",
-              "kind": "control"
-            },
-            {
-              "from": "entry",
-              "to": "pipeline",
-              "label": "builds & runs pipeline",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "metadata",
-              "label": "output dirs + paths",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "loader",
-              "label": "run dir + split + device",
-              "kind": "control"
-            },
-            {
-              "from": "loader",
-              "to": "predictor",
-              "label": "ProfileAeRun",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "metrics",
-              "label": "AeResult (gt, pred, emb)",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "plots",
-              "label": "curves + emb + MSE",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "pipeline",
-              "label": "embeddings.npy",
-              "kind": "data"
-            },
-            {
-              "from": "metrics",
-              "to": "report",
-              "label": "metrics dict",
-              "kind": "data"
-            },
-            {
-              "from": "plots",
-              "to": "report",
-              "label": "figure-path dict",
-              "kind": "data"
-            },
-            {
-              "from": "metadata",
-              "to": "report",
-              "label": "output_dir + report_path",
-              "kind": "data"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "best_model.pt",
-              "producer": "AutoencoderTrainer",
-              "consumers": [
-                "ProfileAeRunLoader"
-              ],
-              "fmt": "PyTorch checkpoint (params, z_axis)",
-              "desc": "Trained profile-AE weights reloaded to reconstruct the split's curves and produce latent embeddings.",
-              "scope": "cross"
-            },
-            {
-              "name": "run meta JSON bundle",
-              "producer": "Profile AE training run",
-              "consumers": [
-                "ProfileAeRunLoader"
-              ],
-              "fmt": "json",
-              "desc": "run_summary.json, profile_normalization_stats.json and AE/dataset config used to rebuild the model, normalizer and dataset and validate profile length.",
-              "scope": "cross"
-            },
-            {
-              "name": "embeddings.npy",
-              "producer": "ProfileAeInferencePipeline",
-              "consumers": [],
-              "fmt": "npy (N x embedding_dim)",
-              "desc": "Per-curve latent embeddings for the selected split.",
-              "scope": "within"
-            },
-            {
-              "name": "metrics.json",
-              "producer": "ProfileAeMetrics",
-              "consumers": [
-                "ProfileAeReport"
-              ],
-              "fmt": "json",
-              "desc": "Reconstruction, shape, power/peak and embedding metrics for the split.",
-              "scope": "within"
-            },
-            {
-              "name": "report.md + figures",
-              "producer": "ProfileAeReport",
-              "consumers": [],
-              "fmt": "markdown + png",
-              "desc": "Assembled inference report with metric tables and reconstruction/embedding figures.",
-              "scope": "within"
-            }
-          ],
-          "ncol": 6,
-          "nrow": 3
-        }
-      ]
-    },
-    {
-      "folder": "image_autoencoder",
-      "title": "Image Autoencoder",
-      "blurb": "A 2D convolutional autoencoder that reconstructs multi-channel input patches to learn a latent input embedding; its trained checkpoint feeds JEPA as an image-embedding front-end, while a standalone inference path scores reconstruction quality per run.",
-      "diagrams": [
-        {
-          "key": "imageae-dataset",
-          "stage": "Dataset",
-          "title": "Image-AE DataLoader source",
-          "entry": "",
-          "blurb": "The image autoencoder does not own a dataset layer: BackboneDatasetPreparation runs the backbone DatasetPipeline and hands back input-image patch DataLoaders, of which the AE reads only the input-image channel of each batch.",
-          "nodes": [
-            {
-              "id": "prep",
-              "label": "BackboneDatasetPreparation",
-              "module": "pipelines/backbone/dataset/pipeline.py",
-              "role": "io",
-              "fn": "Sets n_gaussians from the gaussian config and builds the GaussianAxis, then runs the backbone DatasetPipeline and returns the train/val/test DataLoaders plus the PatchDataset dict.",
-              "col": 0,
-              "reads": [
-                "DatasetConfig",
-                "TrainerConfig.gaussian"
-              ],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "dspipe",
-              "label": "DatasetPipeline (backbone)",
-              "module": "pipelines/backbone/dataset/pipeline.py",
-              "role": "external",
-              "fn": "External backbone dataset pipeline that crops, patches and normalizes the input stack and builds the DataLoaders via shared Loader.build (documented in the backbone map).",
-              "col": 1,
-              "reads": [],
-              "writes": [
-                "meta/stats",
-                "meta/dataset_creation_config.json"
-              ],
-              "row": 0
-            },
-            {
-              "id": "loaders",
-              "label": "train/val/test DataLoaders",
-              "module": "pipelines/shared/dataset/loaders.py",
-              "role": "data",
-              "fn": "Train/val/test DataLoaders yielding PatchDataset tuples whose first element (batch[0]) is the normalized multi-channel input image the AE reconstructs.",
-              "col": 2,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "consumer",
-              "label": "TrainingPipeline (image-AE)",
-              "module": "pipelines/image_autoencoder/training/pipeline.py",
-              "role": "external",
-              "fn": "Image-autoencoder training consumer that reads only batch[0], the input-image patch, from each loader (see the Training diagram).",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            }
-          ],
-          "edges": [
-            {
-              "from": "prep",
-              "to": "dspipe",
-              "label": "config + GaussianAxis",
-              "kind": "control"
-            },
-            {
-              "from": "dspipe",
-              "to": "loaders",
-              "label": "loaders + PatchDatasets",
-              "kind": "data"
-            },
-            {
-              "from": "loaders",
-              "to": "consumer",
-              "label": "input patches batch[0]",
-              "kind": "data"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "meta/stats (normalization)",
-              "producer": "DatasetPipeline",
-              "consumers": [
-                "PatchDataset/Normalizer (training)",
-                "ImageAeRunLoader"
-              ],
-              "fmt": "npz/json",
-              "desc": "Per-channel input normalization statistics reused to normalize patches in training and to denormalize reconstructions at inference.",
-              "scope": "cross"
-            },
-            {
-              "name": "meta/dataset_creation_config.json",
-              "producer": "DatasetPipeline",
-              "consumers": [
-                "ImageAeRunLoader"
-              ],
-              "fmt": "json",
-              "desc": "Serialized dataset/split/patch configuration that the inference loader replays to rebuild the exact split PatchDataset.",
-              "scope": "cross"
-            }
-          ],
-          "ncol": 4,
-          "nrow": 1
-        },
-        {
-          "key": "imageae-training",
-          "stage": "Training",
-          "title": "Image-AE training",
-          "entry": "main/training/train_image_autoencoder.py",
-          "blurb": "Trains the image autoencoder to reconstruct its own multi-channel input patches with a reconstruction loss, persisting best_model.pt and the architecture config as the image-embedding front-end later loaded by JEPA.",
-          "nodes": [
-            {
-              "id": "entry",
-              "label": "train_image_autoencoder.py",
-              "module": "main/training/train_image_autoencoder.py",
-              "role": "entry",
-              "fn": "Pins the GPU, then hands ImageAeEntryConfig and SingleTrainRunner to SeedSweepLauncher to execute one seed sweep.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "cfg",
-              "label": "ImageAeEntryConfig / ImageAeTrainerConfig",
-              "module": "configuration/training/image_autoencoder.py",
-              "role": "config",
-              "fn": "Entry and trainer config carrying ae_model_name, model_overrides, ae_loss, geometry and dataset paths for the run.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "pipeline",
-              "label": "TrainingPipeline (AutoencoderTrainingPipeline)",
-              "module": "pipelines/image_autoencoder/training/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Sequences data prep, model build, metadata save, overfit check and training, then returns the run results and directory.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "data",
-              "label": "BackboneDatasetPreparation",
-              "module": "pipelines/backbone/dataset/pipeline.py",
-              "role": "external",
-              "fn": "External dataset preparation supplying the input-image patch DataLoaders and the derived in_channels (see the Dataset diagram).",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "model",
-              "label": "get_image_autoencoder / IMAGE_AE_CONFIG_REGISTRY",
-              "module": "models/image_autoencoder/__init__.py",
-              "role": "model",
-              "fn": "Builds the image autoencoder (encoder-decoder exposing reconstruct) from the registry config, wiring in_channels from the dataset.",
-              "col": 2,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "loss",
-              "label": "Loss (ReconstructionLoss)",
-              "module": "pipelines/image_autoencoder/training/loss.py",
-              "role": "metric",
-              "fn": "Reconstruction loss (mse/huber/charbonnier) between the decoded image and the original input image.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "trainer",
-              "label": "Trainer (AutoencoderTrainer / BaseTrainer)",
-              "module": "pipelines/image_autoencoder/training/trainer.py",
-              "role": "transform",
-              "fn": "Runs the epoch loop reconstructing batch[0] via model.reconstruct, scores it against itself with the criterion, and saves the best checkpoint.",
-              "col": 3,
-              "reads": [],
-              "writes": [
-                "best_model.pt"
-              ],
-              "row": 1
-            },
-            {
-              "id": "configio",
-              "label": "ImageAutoencoderConfigIO + run_summary",
-              "module": "pipelines/shared/config/config_persistence.py",
-              "role": "io",
-              "fn": "Persists the image-autoencoder architecture config and the run_summary (model_name=image_ae, in/out channels, seed) to the run meta directory.",
-              "col": 2,
-              "reads": [],
-              "writes": [
-                "meta/image_autoencoder config",
-                "meta/run_summary.json"
-              ],
-              "row": 2
-            },
-            {
-              "id": "jepa",
-              "label": "JepaTrainingPipeline",
-              "module": "pipelines/jepa/training/pipeline.py",
-              "role": "external",
-              "fn": "Downstream JEPA training that loads best_model.pt and the arch config as a frozen or finetuned image-embedding front-end.",
-              "col": 4,
-              "reads": [
-                "best_model.pt",
-                "meta/image_autoencoder config"
-              ],
-              "writes": [],
-              "row": 1
-            }
-          ],
-          "edges": [
-            {
-              "from": "entry",
-              "to": "pipeline",
-              "label": "via SeedSweepLauncher",
-              "kind": "control"
-            },
-            {
-              "from": "cfg",
-              "to": "pipeline",
-              "label": "model, loss, geom, paths",
-              "kind": "data"
-            },
-            {
-              "from": "data",
-              "to": "pipeline",
-              "label": "loaders + in_channels",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "model",
-              "label": "in_channels + ae config",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "trainer",
-              "label": "loaders, z_axis, run_dir",
-              "kind": "control"
-            },
-            {
-              "from": "model",
-              "to": "trainer",
-              "label": "image autoencoder module",
-              "kind": "data"
-            },
-            {
-              "from": "loss",
-              "to": "trainer",
-              "label": "ReconstructionLoss",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "configio",
-              "label": "config + run_summary",
-              "kind": "control"
-            },
-            {
-              "from": "trainer",
-              "to": "jepa",
-              "label": "best_model.pt checkpoint",
-              "kind": "data"
-            },
-            {
-              "from": "configio",
-              "to": "jepa",
-              "label": "config + embedding_dim",
-              "kind": "data"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "best_model.pt",
-              "producer": "Trainer (BaseTrainer)",
-              "consumers": [
-                "JepaTrainingPipeline",
-                "ImageAeRunLoader"
-              ],
-              "fmt": "torch checkpoint (params, z_axis, best_epoch, best_val_loss)",
-              "desc": "Trained image-AE weights = latent input-embedding front-end consumed by JEPA and reloaded by inference.",
-              "scope": "cross"
-            },
-            {
-              "name": "meta/image_autoencoder config",
-              "producer": "ImageAutoencoderConfigIO",
-              "consumers": [
-                "JepaTrainingPipeline",
-                "ImageAeRunLoader"
-              ],
-              "fmt": "json",
-              "desc": "Architecture name, embedding_dim and in_channels of the trained autoencoder.",
-              "scope": "cross"
-            },
-            {
-              "name": "meta/run_summary.json",
-              "producer": "TrainingRunMetadata",
-              "consumers": [
-                "ImageAeRunLoader"
-              ],
-              "fmt": "json",
-              "desc": "Run identity: model_name=image_ae, in/out channels, x_axis_length and seed, checked at inference load.",
-              "scope": "cross"
-            }
-          ],
-          "ncol": 5,
-          "nrow": 3
-        },
-        {
-          "key": "imageae-inference",
-          "stage": "Inference",
-          "title": "Image-AE inference",
-          "entry": "main/inference/infer_image_autoencoder.py",
-          "blurb": "Reconstructs a trained image-AE run over a chosen split, saving pooled latent embeddings, reconstruction and embedding metrics, diagnostic figures and a markdown report.",
-          "nodes": [
-            {
-              "id": "entry",
-              "label": "infer_image_autoencoder.py",
-              "module": "main/inference/infer_image_autoencoder.py",
-              "role": "entry",
-              "fn": "Routes the IMAGE_AE run type into InferenceEntry, which schedules per-run reconstruction scoring via ImageAeInferenceRunner.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "pipeline",
-              "label": "ImageAeInferencePipeline",
-              "module": "pipelines/image_autoencoder/inference/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Sequences setup, run load, reconstruction, embedding save, metrics, plots and report for one image-AE run.",
-              "col": 1,
-              "reads": [],
-              "writes": [
-                "embeddings.npy"
-              ],
-              "row": 1
-            },
-            {
-              "id": "meta",
-              "label": "ImageAeInferenceMetadata (AeInferenceMetadata)",
-              "module": "pipelines/shared/inference/metadata.py",
-              "role": "io",
-              "fn": "Creates the output/figures/logs directories under run/inference/image_ae and holds the metrics and report paths.",
-              "col": 5,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "loader",
-              "label": "ImageAeRunLoader (RunLoader)",
-              "module": "pipelines/image_autoencoder/inference/loader.py",
-              "role": "io",
-              "fn": "Reads run_summary and dataset config, rebuilds the AE model, loads best_model.pt and norm stats, and rebuilds the split PatchDataset and DataLoader into an ImageAeRun.",
-              "col": 2,
-              "reads": [
-                "best_model.pt",
-                "meta/run_summary.json",
-                "meta/dataset_creation_config.json",
-                "meta/stats"
-              ],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "predictor",
-              "label": "ImageAePredictor (AeReconstructionPredictor)",
-              "module": "pipelines/image_autoencoder/inference/predictor.py",
-              "role": "transform",
-              "fn": "Iterates the loader, reconstructs batch[0], denormalizes gt/pred and pools the latent into a per-patch embedding, yielding an AeResult.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "metrics",
-              "label": "ImageAeMetrics (AeMetricsBase)",
-              "module": "pipelines/image_autoencoder/inference/metrics.py",
-              "role": "metric",
-              "fn": "Computes physical, normalized and per-channel reconstruction errors plus latent embedding statistics.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "metrics.json"
-              ],
-              "row": 1
-            },
-            {
-              "id": "plots",
-              "label": "ImageAePlots (AePlotsBase)",
-              "module": "pipelines/image_autoencoder/inference/plots.py",
-              "role": "io",
-              "fn": "Renders the reconstruction triplets, per-channel MSE bar, error histogram, intensity scatter and embedding-norm histogram (whole plot family).",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "figures/*.png"
-              ],
-              "row": 2
-            },
-            {
-              "id": "report",
-              "label": "ImageAeReport (AeReportBase)",
-              "module": "pipelines/image_autoencoder/inference/report.py",
-              "role": "io",
-              "fn": "Assembles a markdown report grouping the metric tables and figure sections for the run.",
-              "col": 5,
-              "reads": [],
-              "writes": [
-                "report.md"
-              ],
-              "row": 1
-            }
-          ],
-          "edges": [
-            {
-              "from": "entry",
-              "to": "pipeline",
-              "label": "config + run_dir",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "meta",
-              "label": "run_directory",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "loader",
-              "label": "run_directory + device",
-              "kind": "control"
-            },
-            {
-              "from": "loader",
-              "to": "predictor",
-              "label": "ImageAeRun bundle",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "metrics",
-              "label": "AeResult (gt/pred/emb)",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "plots",
-              "label": "gt/pred/embeddings",
-              "kind": "data"
-            },
-            {
-              "from": "metrics",
-              "to": "plots",
-              "label": "channel + patch MSE",
-              "kind": "data"
-            },
-            {
-              "from": "metrics",
-              "to": "report",
-              "label": "metrics dict",
-              "kind": "data"
-            },
-            {
-              "from": "plots",
-              "to": "report",
-              "label": "figures dict",
-              "kind": "data"
-            },
-            {
-              "from": "meta",
-              "to": "report",
-              "label": "output_dir + report_path",
-              "kind": "io"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "best_model.pt",
-              "producer": "Trainer (training)",
-              "consumers": [
-                "ImageAeRunLoader"
-              ],
-              "fmt": "torch checkpoint",
-              "desc": "Trained image-AE checkpoint the loader restores to reconstruct the split.",
-              "scope": "cross"
-            },
-            {
-              "name": "embeddings.npy",
-              "producer": "ImageAeInferencePipeline",
-              "consumers": [],
-              "fmt": "npy",
-              "desc": "Per-patch pooled latent embeddings for the evaluated split.",
-              "scope": "within"
-            },
-            {
-              "name": "metrics.json",
-              "producer": "ImageAeMetrics",
-              "consumers": [
-                "ImageAeReport"
-              ],
-              "fmt": "json",
-              "desc": "Reconstruction (physical/normalized/per-channel) and embedding metrics for the run/split.",
-              "scope": "within"
-            },
-            {
-              "name": "figures/*.png",
-              "producer": "ImageAePlots",
-              "consumers": [
-                "ImageAeReport"
-              ],
-              "fmt": "png",
-              "desc": "Reconstruction triplets, per-channel MSE bar, error histogram, intensity scatter and embedding-norm plots.",
-              "scope": "within"
-            },
-            {
-              "name": "report.md",
-              "producer": "ImageAeReport",
-              "consumers": [],
-              "fmt": "markdown",
-              "desc": "Assembled inference report embedding the metric tables and figure sections.",
-              "scope": "within"
-            }
-          ],
-          "ncol": 6,
-          "nrow": 3
-        }
-      ]
-    },
-    {
-      "folder": "jepa",
-      "title": "JEPA",
-      "blurb": "JEPA trains a spatial backbone to predict a pretrained profile-autoencoder's latent embedding of each pixel's z profile (optionally behind an image-autoencoder frontend), then at inference decodes those embeddings back into z curves and scores them.",
-      "diagrams": [
-        {
-          "key": "jepa-training",
-          "stage": "Training",
-          "title": "JEPA Predictor Training",
-          "entry": "main/training/train_jepa.py",
-          "blurb": "Couples one or two pretrained autoencoders to a spatial backbone and trains that backbone to predict, in latent space, the profile-autoencoder embedding of each pixel's z curve.",
-          "nodes": [
-            {
-              "id": "entry",
-              "label": "train_jepa.py",
-              "module": "main/training/train_jepa.py",
-              "role": "entry",
-              "fn": "Pins the GPU environment, builds JepaEntryConfig, and launches SingleTrainRunner through the SeedSweepLauncher.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "cfg",
-              "label": "JepaEntryConfig",
-              "module": "configuration/training/jepa.py",
-              "role": "config",
-              "fn": "Dataclass carrying the backbone name, the profile/image autoencoder runs and freeze-or-finetune modes, target_provider, embedding_loss and param_loss knobs.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "pipeline",
-              "label": "TrainingPipeline",
-              "module": "pipelines/jepa/training/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Resolves the autoencoder runs, assembles JepaTrainerConfig, builds the module, runs the overfit gate, and launches the trainer.",
-              "col": 1,
-              "reads": [
-                "profile_autoencoder best_model.pt",
-                "image_autoencoder best_model.pt"
-              ],
-              "writes": [
-                "JEPA run meta (configs + ProfileStats)"
-              ],
-              "row": 1
-            },
-            {
-              "id": "preproc",
-              "label": "Preprocessing arrays",
-              "module": "pipelines/processing",
-              "role": "external",
-              "fn": "Preprocessing run supplying the input channel stack and per-pixel Gaussian-parameter arrays consumed by the dataset preparation.",
-              "col": 1,
-              "reads": [],
-              "writes": [
-                "preprocessing input + parameter arrays"
-              ],
-              "row": 0
-            },
-            {
-              "id": "prof_ckpt",
-              "label": "Profile-AE checkpoint",
-              "module": "pipelines/profile_autoencoder",
-              "role": "external",
-              "fn": "Pretrained profile-autoencoder best_model.pt plus its config and ProfileStats, owned by the profile-autoencoder pipeline.",
-              "col": 3,
-              "reads": [],
-              "writes": [
-                "profile_autoencoder best_model.pt"
-              ],
-              "row": 2
-            },
-            {
-              "id": "img_ckpt",
-              "label": "Image-AE checkpoint",
-              "module": "pipelines/image_autoencoder",
-              "role": "external",
-              "fn": "Pretrained image-autoencoder best_model.pt plus its config, owned by the image-autoencoder pipeline, used as an optional spatial frontend.",
-              "col": 2,
-              "reads": [],
-              "writes": [
-                "image_autoencoder best_model.pt"
-              ],
-              "row": 2
-            },
-            {
-              "id": "dataprep",
-              "label": "BackboneDatasetPreparation",
-              "module": "pipelines/backbone/dataset/pipeline.py",
-              "role": "data",
-              "fn": "Shared preparation that crops patches and yields train/val/test DataLoaders of (input stack, GT params) plus the z x-axis.",
-              "col": 2,
-              "reads": [
-                "preprocessing input + parameter arrays"
-              ],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "module",
-              "label": "JepaModule",
-              "module": "pipelines/jepa/training/trainer.py",
-              "role": "model",
-              "fn": "Composes the backbone with the loaded profile and/or image autoencoders into one module whose forward maps a patch to a latent embedding.",
-              "col": 3,
-              "reads": [
-                "profile_autoencoder best_model.pt",
-                "image_autoencoder best_model.pt"
-              ],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "coupling",
-              "label": "CouplingMode / TargetProvider",
-              "module": "pipelines/jepa/training/coupling.py",
-              "role": "transform",
-              "fn": "Freezes or fine-tunes each autoencoder and supplies the target embedding branch (stopgrad or live) that the backbone is trained to match.",
-              "col": 4,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "trainer",
-              "label": "Trainer",
-              "module": "pipelines/jepa/training/trainer.py",
-              "role": "transform",
-              "fn": "Trains the backbone predictor (optionally fine-tuning the autoencoders) in latent space and updates the EMA target after each optimizer step.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "JEPA predictor best_model.pt"
-              ],
-              "row": 0
-            },
-            {
-              "id": "loss",
-              "label": "EmbeddingLoss",
-              "module": "pipelines/jepa/training/loss.py",
-              "role": "transform",
-              "fn": "Scores predicted vs autoencoder-encoded GT embeddings via MSE/cosine/smooth-L1 plus optional curve reconstruction, falling back to backbone ParameterLoss when no profile AE is present.",
-              "col": 5,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "out_ckpt",
-              "label": "JEPA predictor checkpoint",
-              "module": "pipelines/jepa/training/trainer.py",
-              "role": "io",
-              "fn": "Best predictor checkpoint holding the backbone plus any coupled autoencoder weights and the x-axis, written by the trainer.",
-              "col": 5,
-              "reads": [
-                "JEPA predictor best_model.pt"
-              ],
-              "writes": [],
-              "row": 0
-            }
-          ],
-          "edges": [
-            {
-              "from": "entry",
-              "to": "cfg",
-              "label": "builds JepaEntryConfig",
-              "kind": "control"
-            },
-            {
-              "from": "cfg",
-              "to": "pipeline",
-              "label": "trainer + dataset config",
-              "kind": "control"
-            },
-            {
-              "from": "preproc",
-              "to": "dataprep",
-              "label": "input stack + GT params",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "dataprep",
-              "label": "dataset + trainer config",
-              "kind": "control"
-            },
-            {
-              "from": "dataprep",
-              "to": "module",
-              "label": "input_channels + z_len",
-              "kind": "data"
-            },
-            {
-              "from": "dataprep",
-              "to": "trainer",
-              "label": "train/val/test loaders",
-              "kind": "data"
-            },
-            {
-              "from": "prof_ckpt",
-              "to": "module",
-              "label": "profile AE weights",
-              "kind": "io"
-            },
-            {
-              "from": "img_ckpt",
-              "to": "module",
-              "label": "image AE weights",
-              "kind": "io"
-            },
-            {
-              "from": "pipeline",
-              "to": "module",
-              "label": "builds JepaModule",
-              "kind": "control"
-            },
-            {
-              "from": "module",
-              "to": "coupling",
-              "label": "backbone + AE encoders",
-              "kind": "data"
-            },
-            {
-              "from": "module",
-              "to": "trainer",
-              "label": "JepaModule",
-              "kind": "data"
-            },
-            {
-              "from": "coupling",
-              "to": "trainer",
-              "label": "freeze / finetune",
-              "kind": "control"
-            },
-            {
-              "from": "coupling",
-              "to": "loss",
-              "label": "target embedding z*",
-              "kind": "data"
-            },
-            {
-              "from": "trainer",
-              "to": "loss",
-              "label": "z_hat + GT params",
-              "kind": "data"
-            },
-            {
-              "from": "trainer",
-              "to": "out_ckpt",
-              "label": "predictor best_model.pt",
-              "kind": "io"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "profile_autoencoder best_model.pt",
-              "producer": "profile autoencoder training",
-              "consumers": [
-                "TrainingPipeline",
-                "JepaModule"
-              ],
-              "fmt": "pt",
-              "desc": "Pretrained profile-autoencoder weights (frozen or fine-tuned) loaded into the JEPA module.",
-              "scope": "cross"
-            },
-            {
-              "name": "image_autoencoder best_model.pt",
-              "producer": "image autoencoder training",
-              "consumers": [
-                "TrainingPipeline",
-                "JepaModule"
-              ],
-              "fmt": "pt",
-              "desc": "Pretrained image-autoencoder weights used as the optional spatial frontend.",
-              "scope": "cross"
-            },
-            {
-              "name": "preprocessing input + parameter arrays",
-              "producer": "preprocessing pipeline",
-              "consumers": [
-                "BackboneDatasetPreparation"
-              ],
-              "fmt": "npy",
-              "desc": "Input channel stack and per-pixel Gaussian-parameter ground truth for the scene.",
-              "scope": "cross"
-            },
-            {
-              "name": "JEPA run meta (configs + ProfileStats)",
-              "producer": "TrainingPipeline",
-              "consumers": [
-                "JepaRunLoader"
-              ],
-              "fmt": "json/npz",
-              "desc": "Backbone and autoencoder configs, run_summary and profile normalization stats persisted for inference.",
-              "scope": "cross"
-            },
-            {
-              "name": "JEPA predictor best_model.pt",
-              "producer": "Trainer",
-              "consumers": [
-                "JepaRunLoader"
-              ],
-              "fmt": "pt",
-              "desc": "Trained backbone (plus coupled AE) predictor checkpoint with the z x-axis.",
-              "scope": "cross"
-            }
-          ],
-          "ncol": 6,
-          "nrow": 3
-        },
-        {
-          "key": "jepa-inference",
-          "stage": "Inference",
-          "title": "JEPA Curve Inference",
-          "entry": "",
-          "blurb": "Reloads a trained JEPA run, decodes backbone embeddings back into z curves across the scene, and scores both curve-space and embedding-space accuracy.",
-          "nodes": [
-            {
-              "id": "resolver",
-              "label": "InferenceComponentsResolver",
-              "module": "pipelines/shared/inference/inference_components.py",
-              "role": "io",
-              "fn": "Inspects the run's meta configs and selects the JEPA (profile) or JEPA-param (image-only) inference component set.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "in_ckpt",
-              "label": "JEPA predictor checkpoint",
-              "module": "pipelines/jepa/training/trainer.py",
-              "role": "external",
-              "fn": "Trained JEPA predictor best_model.pt with meta configs and ProfileStats produced by JEPA training.",
-              "col": 1,
-              "reads": [],
-              "writes": [
-                "JEPA predictor best_model.pt",
-                "JEPA run meta (configs + ProfileStats)"
-              ],
-              "row": 1
-            },
-            {
-              "id": "components",
-              "label": "JEPA_INFERENCE_COMPONENTS",
-              "module": "pipelines/jepa/inference/pipeline.py",
-              "role": "config",
-              "fn": "Immutable binding of loader, predictor, embedding-evaluator classes and the param_space flag for a JEPA run.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "pipeline",
-              "label": "InferencePipeline",
-              "module": "pipelines/backbone/inference/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Shared orchestrator that loads the run, predicts, evaluates metrics and embeddings, then writes figures and the report.",
-              "col": 2,
-              "reads": [],
-              "writes": [
-                "metrics.json"
-              ],
-              "row": 0
-            },
-            {
-              "id": "loader",
-              "label": "JepaRunLoader",
-              "module": "pipelines/jepa/inference/loader.py",
-              "role": "io",
-              "fn": "Rebuilds JepaModule from meta configs and best_model.pt and wraps it as a curve-predicting adapter (JepaParamRunLoader variant for image-only param runs).",
-              "col": 2,
-              "reads": [
-                "JEPA predictor best_model.pt",
-                "JEPA run meta (configs + ProfileStats)"
-              ],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "adapter",
-              "label": "JepaInferenceModel",
-              "module": "pipelines/jepa/inference/loader.py",
-              "role": "model",
-              "fn": "Runs backbone -> profile-AE decode -> denormalize, turning an input patch into a physical z curve.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "predictor",
-              "label": "JepaCurvePredictor",
-              "module": "pipelines/jepa/inference/predictor.py",
-              "role": "transform",
-              "fn": "Runs the GPU forward pass, stitches predicted and GT curve cubes, and computes per-pixel MSE/MAE/R2/cosine maps.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "pred/gt curve cubes + pixel maps"
-              ],
-              "row": 1
-            },
-            {
-              "id": "embed_eval",
-              "label": "JepaEmbeddingEvaluator",
-              "module": "pipelines/jepa/inference/embedding.py",
-              "role": "metric",
-              "fn": "Scores embedding MSE/cosine and decoder-only versus full-chain curve MSE between predicted and GT-encoded embeddings.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "curve_cubes",
-              "label": "Curve cubes + pixel maps",
-              "module": "pipelines/jepa/inference/predictor.py",
-              "role": "io",
-              "fn": "pred_curves and gt_curves cubes with per-pixel metric maps saved as .npy for figures and the report.",
-              "col": 5,
-              "reads": [
-                "pred/gt curve cubes + pixel maps"
-              ],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "metrics_json",
-              "label": "metrics.json",
-              "module": "pipelines/backbone/inference/pipeline.py",
-              "role": "io",
-              "fn": "Aggregated pixel-space and JEPA embedding diagnostics written to metrics.json.",
-              "col": 4,
-              "reads": [
-                "metrics.json"
-              ],
-              "writes": [],
-              "row": 2
-            }
-          ],
-          "edges": [
-            {
-              "from": "resolver",
-              "to": "components",
-              "label": "selects JEPA components",
-              "kind": "control"
-            },
-            {
-              "from": "components",
-              "to": "pipeline",
-              "label": "class bindings",
-              "kind": "control"
-            },
-            {
-              "from": "in_ckpt",
-              "to": "loader",
-              "label": "best_model.pt + meta",
-              "kind": "io"
-            },
-            {
-              "from": "pipeline",
-              "to": "loader",
-              "label": "run dir, split, ckpt",
-              "kind": "control"
-            },
-            {
-              "from": "loader",
-              "to": "adapter",
-              "label": "JepaModule + normalizer",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "predictor",
-              "label": "stitch/window config",
-              "kind": "control"
-            },
-            {
-              "from": "adapter",
-              "to": "predictor",
-              "label": "model(images) -> curves",
-              "kind": "data"
-            },
-            {
-              "from": "adapter",
-              "to": "embed_eval",
-              "label": "z_hat + decode",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "curve_cubes",
-              "label": "cubes + maps (.npy)",
-              "kind": "io"
-            },
-            {
-              "from": "predictor",
-              "to": "metrics_json",
-              "label": "pixel MSE/MAE/R2 metrics",
-              "kind": "io"
-            },
-            {
-              "from": "embed_eval",
-              "to": "metrics_json",
-              "label": "embed MSE/cosine + chain",
-              "kind": "io"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "JEPA predictor best_model.pt",
-              "producer": "Trainer (JEPA training)",
-              "consumers": [
-                "JepaRunLoader"
-              ],
-              "fmt": "pt",
-              "desc": "Trained backbone-plus-autoencoder predictor checkpoint reloaded for inference.",
-              "scope": "cross"
-            },
-            {
-              "name": "JEPA run meta (configs + ProfileStats)",
-              "producer": "TrainingPipeline",
-              "consumers": [
-                "JepaRunLoader"
-              ],
-              "fmt": "json/npz",
-              "desc": "Backbone/autoencoder configs, run_summary and profile stats used to rebuild the module.",
-              "scope": "cross"
-            },
-            {
-              "name": "pred/gt curve cubes + pixel maps",
-              "producer": "JepaCurvePredictor",
-              "consumers": [
-                "FigureComposer",
-                "Report"
-              ],
-              "fmt": "npy",
-              "desc": "Stitched predicted and GT z-curve cubes with per-pixel MSE/MAE/R2/cosine/peak maps.",
-              "scope": "within"
-            },
-            {
-              "name": "metrics.json",
-              "producer": "InferencePipeline",
-              "consumers": [
-                "Report",
-                "webui Repo Map"
-              ],
-              "fmt": "json",
-              "desc": "Global pixel-space metrics merged with JEPA embedding and chain diagnostics.",
-              "scope": "cross"
-            }
-          ],
-          "ncol": 6,
-          "nrow": 3
-        }
-      ]
-    },
-    {
       "folder": "shared",
       "title": "Shared Foundation",
       "blurb": "The shared foundation layer every per-model pipeline plugs into: config construction and persistence, dataset and loader scaffolding, model instantiation, seed-sweep training with an overfit gate, typed inference dispatch, and reusable sweep and session orchestrators.",
@@ -3548,20 +1766,16 @@
             },
             {
               "id": "config_io",
-              "label": "ConfigIO family",
+              "label": "BackboneModelConfigIO",
               "module": "pipelines/shared/config/config_persistence.py",
               "role": "io",
-              "fn": "Serializes and reloads backbone/profile-AE/image-AE model and dataset configs to and from meta JSON via the config registries.",
+              "fn": "Serializes and reloads the backbone model config to and from meta/model_config.json through the backbone config registry.",
               "col": 3,
               "reads": [
-                "model_config.json",
-                "profile_dataset_config.json"
+                "model_config.json"
               ],
               "writes": [
-                "model_config.json",
-                "profile_autoencoder_config.json",
-                "image_autoencoder_config.json",
-                "profile_dataset_config.json"
+                "model_config.json"
               ],
               "row": 1
             },
@@ -3578,10 +1792,10 @@
             },
             {
               "id": "inference",
-              "label": "inference resolver",
-              "module": "pipelines/shared/inference/inference_components.py",
+              "label": "RunLoader",
+              "module": "pipelines/backbone/inference/loader.py",
               "role": "external",
-              "fn": "Reloads the persisted meta configs to reconstruct the architecture at inference time.",
+              "fn": "Reloads the persisted model config to reconstruct the architecture at inference time.",
               "col": 4,
               "reads": [
                 "model_config.json"
@@ -3628,20 +1842,10 @@
               "producer": "config_io",
               "consumers": [
                 "inference",
-                "RunClassifier"
+                "RunArtifacts"
               ],
               "fmt": "json",
               "desc": "Persisted architecture name and fields to faithfully rebuild the backbone net at inference.",
-              "scope": "cross"
-            },
-            {
-              "name": "profile_dataset_config.json",
-              "producer": "config_io",
-              "consumers": [
-                "profile-AE inference"
-              ],
-              "fmt": "json",
-              "desc": "Split regions and dataset knobs that make a profile-autoencoder run self-describing.",
               "scope": "cross"
             },
             {
@@ -3685,7 +1889,7 @@
           "stage": "Dataset",
           "title": "Shared dataset & loaders",
           "entry": "",
-          "blurb": "Shared dataset scaffolding: Layout resolves preprocessing artifacts, BackboneDatasetPreparation drives the backbone DatasetPipeline and derives the Gaussian axis, and Loader builds reproducible train/val/test DataLoaders reused by the backbone, JEPA and image-autoencoder pipelines.",
+          "blurb": "Shared dataset scaffolding: Layout resolves preprocessing artifacts, BackboneDatasetPreparation drives the backbone DatasetPipeline and derives the Gaussian axis, and Loader builds reproducible train/val/test DataLoaders used by the backbone pipeline.",
           "nodes": [
             {
               "id": "ds_cfg",
@@ -3863,7 +2067,7 @@
               "label": "config registries",
               "module": "models/__init__.py",
               "role": "io",
-              "fn": "Maps model names to their config-dataclass constructors for backbone, image-AE and profile-AE families.",
+              "fn": "Maps backbone names to their config-dataclass constructors.",
               "col": 1,
               "reads": [],
               "writes": [],
@@ -3936,8 +2140,7 @@
               "name": "model_config.json",
               "producer": "net",
               "consumers": [
-                "InferenceComponentsResolver",
-                "RunClassifier",
+                "RunArtifacts",
                 "backbone inference"
               ],
               "fmt": "json",
@@ -3962,15 +2165,15 @@
           "key": "shared-training",
           "stage": "Training",
           "title": "Seed-sweep training scaffolding",
-          "entry": "main/training/train_jepa.py",
-          "blurb": "The shared training scaffolding every train_* entry uses: SeedSweepLauncher parses the CLI, SeedSweepRunner fans out over seeds, EntryConfigTrainRunner runs the pretrain preflight then the per-model pipeline, WorkerBase backs the benchmark/CV subprocess workers, and OverfitCheck gates training by memorizing a handful of examples.",
+          "entry": "main/training/train_backbone.py",
+          "blurb": "The training scaffolding behind train_backbone: BackboneTrainingLauncher parses the CLI, SeedSweepRunner fans out over seeds, SingleTrainRunner runs the pretrain preflight then the training pipeline, WorkerBase backs the benchmark and cross-validation subprocess workers, and OverfitCheck gates training by memorising a few examples first.",
           "nodes": [
             {
               "id": "entry",
-              "label": "train_*.py",
-              "module": "main/training/train_jepa.py",
+              "label": "train_backbone",
+              "module": "main/training/train_backbone.py",
               "role": "entry",
-              "fn": "Thin bootstrap that pins the GPU env and hands an entry config plus runner class to SeedSweepLauncher.",
+              "fn": "Thin bootstrap that pins the GPU env and hands control to BackboneTrainingLauncher.",
               "col": 0,
               "reads": [],
               "writes": [],
@@ -3978,10 +2181,10 @@
             },
             {
               "id": "seed_launcher",
-              "label": "SeedSweepLauncher",
-              "module": "pipelines/shared/training/training_launcher.py",
+              "label": "BackboneTrainingLauncher",
+              "module": "pipelines/backbone/training/launcher.py",
               "role": "orchestrator",
-              "fn": "Applies ConfigCli to the entry config and forwards it to the seed sweep.",
+              "fn": "Applies ConfigCli to the entry config and forwards it to the seed sweep or the trial sweep.",
               "col": 1,
               "reads": [],
               "writes": [],
@@ -4011,10 +2214,10 @@
             },
             {
               "id": "train_runner",
-              "label": "EntryConfigTrainRunner",
-              "module": "pipelines/shared/training/training_runner.py",
+              "label": "SingleTrainRunner",
+              "module": "pipelines/backbone/training/launcher.py",
               "role": "orchestrator",
-              "fn": "Runs the pretrain preflight then hands the config to the concrete per-model training pipeline.",
+              "fn": "Resolves the run directory, runs the pretrain preflight, then hands the config to the training pipeline and optionally to inference.",
               "col": 3,
               "reads": [],
               "writes": [],
@@ -4036,7 +2239,7 @@
               "label": "per-model training pipeline",
               "module": "pipelines/backbone/training/pipeline.py",
               "role": "external",
-              "fn": "Builds the trainer and dataset then runs the training loop for backbone, JEPA or autoencoder.",
+              "fn": "Builds the trainer and dataset then runs the backbone training loop.",
               "col": 4,
               "reads": [],
               "writes": [
@@ -4154,14 +2357,14 @@
           "stage": "Inference",
           "title": "Typed inference dispatch",
           "entry": "main/inference/_inference_entry.py",
-          "blurb": "InferenceEntry runs either as a scheduler that discovers and type-filters run roots then spawns per-run GPU workers, or as a worker that resolves the typed runner and inference components for one swept run directory.",
+          "blurb": "InferenceEntry runs either as a scheduler that discovers trained runs under runs_dir then spawns per-run GPU workers, or as a worker that scores one run directory.",
           "nodes": [
             {
               "id": "entry",
               "label": "InferenceEntry",
               "module": "main/inference/_inference_entry.py",
               "role": "entry",
-              "fn": "Dispatches to scheduler or worker mode by --worker and selects the runner/config for the run type.",
+              "fn": "Dispatches to scheduler or worker mode by --worker.",
               "col": 0,
               "reads": [],
               "writes": [],
@@ -4172,7 +2375,7 @@
               "label": "InferenceScheduler",
               "module": "pipelines/shared/inference/inference_scheduler.py",
               "role": "orchestrator",
-              "fn": "Discovers run directories under the roots, keeps only the matching run type, saves the resolved config, and builds one GPU job per run.",
+              "fn": "Discovers run directories under runs_dir, keeps those holding meta/model_config.json, saves the resolved config, and builds one GPU job per run.",
               "col": 1,
               "reads": [],
               "writes": [
@@ -4182,15 +2385,13 @@
             },
             {
               "id": "run_classifier",
-              "label": "RunClassifier",
+              "label": "RunArtifacts",
               "module": "pipelines/shared/inference/run_classifier.py",
               "role": "io",
-              "fn": "Classifies a run directory as backbone, profile-AE or image-AE by which meta config file exists.",
+              "fn": "Names the run artifacts, places inference stamps under a run, and walks a runs tree for run directories.",
               "col": 1,
               "reads": [
-                "model_config.json",
-                "profile_autoencoder_config.json",
-                "image_autoencoder_config.json"
+                "model_config.json"
               ],
               "writes": [],
               "row": 0
@@ -4211,28 +2412,13 @@
               "label": "inference dispatch runners",
               "module": "pipelines/shared/inference/inference_dispatch.py",
               "role": "orchestrator",
-              "fn": "Per-type worker that rebuilds the InferenceConfig for one run and launches its typed inference pipeline.",
+              "fn": "Worker that rebuilds the InferenceConfig for one run and scores it once per stored region of the split.",
               "col": 3,
               "reads": [
                 "resolved_config.json"
               ],
               "writes": [],
               "row": 1
-            },
-            {
-              "id": "resolver",
-              "label": "InferenceComponentsResolver",
-              "module": "pipelines/shared/inference/inference_components.py",
-              "role": "io",
-              "fn": "Chooses backbone vs JEPA spatial inference components by the meta configs present in the run.",
-              "col": 3,
-              "reads": [
-                "model_config.json",
-                "profile_autoencoder_config.json",
-                "image_autoencoder_config.json"
-              ],
-              "writes": [],
-              "row": 2
             },
             {
               "id": "infer_pipeline",
@@ -4252,13 +2438,13 @@
             {
               "from": "entry",
               "to": "scheduler",
-              "label": "scheduler mode, run_type",
+              "label": "scheduler mode",
               "kind": "control"
             },
             {
               "from": "scheduler",
               "to": "run_classifier",
-              "label": "run dir + type filter",
+              "label": "run dir",
               "kind": "control"
             },
             {
@@ -4272,18 +2458,6 @@
               "to": "worker",
               "label": "worker: run_dir + config",
               "kind": "control"
-            },
-            {
-              "from": "worker",
-              "to": "resolver",
-              "label": "run_directory",
-              "kind": "control"
-            },
-            {
-              "from": "resolver",
-              "to": "infer_pipeline",
-              "label": "InferenceComponents",
-              "kind": "data"
             },
             {
               "from": "worker",
@@ -4575,7 +2749,7 @@
               "label": "FoldTrainingWorker",
               "module": "pipelines/cross_validation/workers.py",
               "role": "transform",
-              "fn": "Runs one fold's training in a GPU subprocess by dispatching to the backbone, JEPA, or profile-autoencoder training pipeline with the fold's split_regions.",
+              "fn": "Runs one fold's backbone training in a GPU subprocess with the fold's split_regions.",
               "col": 3,
               "reads": [],
               "writes": [],
@@ -4626,7 +2800,7 @@
               "label": "shared training pipeline",
               "module": "pipelines/shared/training",
               "role": "external",
-              "fn": "Trains one fold's model to convergence and saves its checkpoint (backbone/JEPA/AE training pipeline behind WorkerBase).",
+              "fn": "Trains one fold's model to convergence and saves its checkpoint (backbone training pipeline behind WorkerBase).",
               "col": 4,
               "reads": [],
               "writes": [
@@ -5145,7 +3319,7 @@
               "label": "FEED_ADAPTERS / build_feed_target",
               "module": "pipelines/dataloader_tuning/adapters.py",
               "role": "transform",
-              "fn": "Builds a FeedTarget (dataset, model, to_model_input, forward_loss) for the selected feed mode - synthetic, profile_autoencoder, image_autoencoder or backbone - reusing the real dataset and model builders.",
+              "fn": "Builds a FeedTarget (dataset, model, to_model_input, forward_loss) for the backbone, reusing the real dataset and model builders.",
               "col": 3,
               "reads": [],
               "writes": [],
@@ -5324,7 +3498,7 @@
               "label": "TuningEntryConfig",
               "module": "configuration/tuning/general.py",
               "role": "config",
-              "fn": "Dataclass defining the tuning run: training_type, GPU list, skip_models, trial/epoch budget, pruner settings and run paths.",
+              "fn": "Dataclass defining the tuning run: GPU list, skip_models, trial/epoch budget, pruner settings and run paths.",
               "col": 0,
               "reads": [],
               "writes": [],
@@ -5372,10 +3546,10 @@
             },
             {
               "id": "tuner",
-              "label": "Tuner / AeTuner / JepaTuner",
+              "label": "Tuner",
               "module": "pipelines/tuning/tuners.py",
               "role": "transform",
-              "fn": "Assembles the search space from the config's tunable lr/arch params and drives study.optimize, running one training pipeline per trial (backbone / profile-AE / image-AE / JEPA variants).",
+              "fn": "Assembles the search space from the config's tunable lr/arch params and drives study.optimize, running one backbone training pipeline per trial.",
               "col": 3,
               "reads": [],
               "writes": [],
@@ -5569,7 +3743,7 @@
               "name": "best_config.json",
               "producer": "bestwriter",
               "consumers": [
-                "backbone/AE/JEPA training pipelines"
+                "backbone training pipeline"
               ],
               "fmt": "json",
               "desc": "Best trial's decoded hyperparameters, exported to configure a full training run of that model.",

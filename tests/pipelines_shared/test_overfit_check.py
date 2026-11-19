@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch
 
-from configuration.training                  import OverfitCheckConfig, ProfileAeTrainerConfig
+from configuration.training                  import BackboneTrainerConfig, OverfitCheckConfig
 from pipelines.shared.training.overfit_check import OverfitCheck
 
 from tests.conftest import SilentLogger
@@ -84,7 +84,7 @@ def test_epoch_steps_and_planned_epochs(tmp_path):
 
 def test_sanitized_trainer_config_disables_regularization(tmp_path):
     check    = _check(tmp_path, n_examples=4, max_steps=100, steps_per_epoch=20, stop_threshold=1e-5)
-    original = ProfileAeTrainerConfig(gaussian=None)
+    original = BackboneTrainerConfig(gaussian=None)
 
     original.optimizer.weight_decay = 0.1
     original.training.use_ema       = True

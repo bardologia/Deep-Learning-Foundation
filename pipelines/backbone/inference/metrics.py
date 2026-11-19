@@ -38,10 +38,6 @@ class Result:
 
     params_pred      : Optional[np.ndarray]        = None
     params_gt        : Optional[np.ndarray]        = None
-    params_source    : str                         = "model"
-    extract_r2       : Optional[np.ndarray]        = None
-    extract_floor    : Optional[Dict[str, float]]  = None
-    embedding_maps   : Optional[object]            = None
     label_r2         : Optional[np.ndarray]        = None
     flip_consistency : Optional[np.ndarray]        = None
     stratified       : Optional[dict]              = None
@@ -623,7 +619,7 @@ class Metrics:
 
         return out
 
-    def compute(self, *, z_indices  : Optional[np.ndarray] = None, col_indices : Optional[np.ndarray] = None, row_indices : Optional[np.ndarray] = None, param_space : bool = True, slot_organization : bool = True, match_tol : float = 5.0) -> Dict[str, float]:
+    def compute(self, *, z_indices  : Optional[np.ndarray] = None, col_indices : Optional[np.ndarray] = None, row_indices : Optional[np.ndarray] = None, param_space : bool = True, match_tol : float = 5.0) -> Dict[str, float]:
 
         pred = self.result.pred_curves
         gt   = self.result.gt_curves
@@ -674,9 +670,7 @@ class Metrics:
             metrics.update(self._active_count_stats())
             metrics.update(self._param_population_stats())
             metrics.update(self.matched_gaussian_metrics(match_tol=match_tol))
-
-            if slot_organization:
-                metrics.update(self._slot_organization_stats())
+            metrics.update(self._slot_organization_stats())
 
         return metrics
 

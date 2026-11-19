@@ -23,35 +23,10 @@ class ScriptCatalog:
             "category"  : "Training",
             "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: loss-curriculum combinations, single-stage losses, slot-presence balance matrices, loss-pair searches, secondary-channel selections, rectangular patch-shape grids under a constant pixel budget, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, weight-EMA on/off ladders, mixed-precision on/off pairs, or cumulative normalization-strategy ladders.",
         },
-        "train_profile_autoencoder": {
-            "title"     : "Train Profile Autoencoder",
-            "category"  : "Training",
-            "purpose"   : "Train the per-pixel profile autoencoder that learns the latent embedding targets consumed by JEPA.",
-        },
-        "train_image_autoencoder": {
-            "title"     : "Train Image Autoencoder",
-            "category"  : "Training",
-            "purpose"   : "Train the 2D image autoencoder that learns the latent input embedding consumed as a JEPA front-end.",
-        },
-        "train_jepa": {
-            "title"     : "Train JEPA",
-            "category"  : "Training",
-            "purpose"   : "Train the JEPA predictor in latent space. Operates in three modes depending on which autoencoder runs are selected: backbone + profile autoencoder, image autoencoder + backbone, or image autoencoder + backbone + profile autoencoder. Each autoencoder is imported pretrained and either frozen or fine-tuned.",
-        },
         "infer_backbone": {
             "title"     : "Infer Backbone",
             "category"  : "Inference",
-            "purpose"   : "Backbone and JEPA inference: sliding-window prediction, stitched cubes, and reports. Scores every backbone or JEPA run found under the path given, whether that is one run, a sweep, an experiment or a whole runs tree, and leaves alone the runs already scored on the split.",
-        },
-        "infer_profile_autoencoder": {
-            "title"     : "Infer Profile AE",
-            "category"  : "Inference",
-            "purpose"   : "Profile-autoencoder inference: reconstruction scoring over every standalone profile-autoencoder run found under the path given, leaving alone the runs already scored on the split.",
-        },
-        "infer_image_autoencoder": {
-            "title"     : "Infer Image AE",
-            "category"  : "Inference",
-            "purpose"   : "Image-autoencoder inference: reconstruction scoring over every standalone image-autoencoder run found under the path given, leaving alone the runs already scored on the split.",
+            "purpose"   : "Backbone inference: sliding-window prediction, stitched cubes, and reports. Scores every backbone run found under the path given, whether that is one run, a sweep, an experiment or a whole runs tree, and leaves alone the runs already scored on the split.",
         },
         "benchmark": {
             "title"     : "Benchmark",
@@ -71,7 +46,7 @@ class ScriptCatalog:
         "tune_dataloader": {
             "title"     : "Feed Tuner",
             "category"  : "Experiments",
-            "purpose"   : "Sweep DataLoader settings (batch size, workers, prefetch, pin-memory) per training mode and recommend the configuration that keeps the GPU fed, ending data starvation.",
+            "purpose"   : "Sweep DataLoader settings (batch size, workers, prefetch, pin-memory) for one backbone and recommend the configuration that keeps the GPU fed, ending data starvation.",
         },
         "analyze_param_extraction": {
             "title"     : "Analyze Param Extraction",
@@ -166,7 +141,7 @@ class ScriptCatalog:
         "profile_training": {
             "title"     : "Profile Training Steps",
             "category"  : "Analysis",
-            "purpose"   : "Record full forward, backward and optimizer steps of one model family under torch.profiler: a chrome trace to open in chrome://tracing or Perfetto, a per-operator time table and a machine-readable summary of the top operators.",
+            "purpose"   : "Record full forward, backward and optimizer steps of one backbone under torch.profiler: a chrome trace to open in chrome://tracing or Perfetto, a per-operator time table and a machine-readable summary of the top operators.",
         },
         "export_result_tables": {
             "title"     : "Export Result Tables",
@@ -213,27 +188,6 @@ class ScriptCatalog:
     }
 
     GROUPS = {
-        "train": {
-            "title"    : "Train",
-            "category" : "Training",
-            "purpose"  : "Train one model end to end. Pick the stage to train: the supervised backbone, the profile autoencoder, the image autoencoder or the JEPA predictor.",
-            "members"  : [
-                ("train_backbone",            "Backbone"),
-                ("train_profile_autoencoder", "Profile AE"),
-                ("train_image_autoencoder",   "Image AE"),
-                ("train_jepa",                "JEPA"),
-            ],
-        },
-        "infer": {
-            "title"    : "Infer",
-            "category" : "Inference",
-            "purpose"  : "Run inference end to end. Pick the stage to infer: the supervised backbone (and JEPA), the profile autoencoder or the image autoencoder.",
-            "members"  : [
-                ("infer_backbone",            "Backbone"),
-                ("infer_profile_autoencoder", "Profile AE"),
-                ("infer_image_autoencoder",   "Image AE"),
-            ],
-        },
         "analyze": {
             "title"    : "Analyze",
             "category" : "Analysis",

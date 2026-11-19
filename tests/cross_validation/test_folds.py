@@ -5,10 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from configuration.cross_validation   import CrossValidationConfig, FoldConfig
-from pipelines.cross_validation.folds import FoldConfigFactory, FoldFamily, FoldNaming, FoldPlan, FoldPlanner, StoredFoldPlanner
-from tools.data.regions               import CropRegion, SplitRegions
-from tools.runtime.completion         import CompletionMarker
+from configuration.cross_validation      import CrossValidationConfig, FoldConfig
+from pipelines.cross_validation.folds    import FoldConfigFactory, FoldNaming, FoldPlan, FoldPlanner, StoredFoldPlanner
+from pipelines.shared.inference.metadata import CompletedInference
+from tools.data.regions                  import CropRegion, SplitRegions
+from tools.runtime.completion            import CompletionMarker
 
 
 def make_config(n_folds: int, row_start: int = 1000, row_end: int = 2000, guard: int = 0) -> CrossValidationConfig:
@@ -363,35 +364,22 @@ def stamp_inference(base: Path, name: str, split: str) -> Path:
     return stamp
 
 
-def test_family_inference_base_nests_autoencoders(tmp_path):
-    run_dir = tmp_path / "fold_0"
-
-    assert FoldFamily.inference_base(run_dir, "backbone")            == run_dir / "inference"
-    assert FoldFamily.inference_base(run_dir, "jepa")                == run_dir / "inference"
-    assert FoldFamily.inference_base(run_dir, "profile_autoencoder") == run_dir / "inference" / "profile_ae"
-    assert FoldFamily.inference_base(run_dir, "image_autoencoder")   == run_dir / "inference" / "image_ae"
-
-
-def test_family_split_inference_dir_matches_payload_not_name(tmp_path):
+def test_split_inference_dir_matches_payload_not_name(tmp_path):
     run_dir = tmp_path / "fold_0"
     stamp   = stamp_inference(run_dir / "inference", "20260101_000000", "test")
     stamp_inference(run_dir / "inference", "20260102_000000", "val")
 
-    assert FoldFamily.split_inference_dir(run_dir, "backbone", "test")  == stamp
-    assert FoldFamily.split_inference_dir(run_dir, "backbone", "train") is None
+    assert CompletedInference.latest(run_dir / "inference", "test")  == stamp
+    assert CompletedInference.latest(run_dir / "inference", "train") is None
 
 
-def test_family_split_inference_dir_picks_latest_and_skips_incomplete(tmp_path):
+def test_split_inference_dir_picks_latest_and_skips_incomplete(tmp_path):
     run_dir = tmp_path / "fold_0"
     stamp_inference(run_dir / "inference", "20260101_000000", "test")
     latest = stamp_inference(run_dir / "inference", "20260102_000000", "test")
     (run_dir / "inference" / "20260103_000000").mkdir()
 
-    assert FoldFamily.split_inference_dir(run_dir, "backbone", "test") == latest
-
-
-def test_family_split_inference_dir_missing_base_is_none(tmp_path):
-    assert FoldFamily.split_inference_dir(tmp_path / "fold_0", "profile_autoencoder", "test") is None
+    assert CompletedInference.latest(run_dir / "inference", "test") == latest
 
 
 def test_fold_naming_recognises_tagged_and_bare_fold_names():

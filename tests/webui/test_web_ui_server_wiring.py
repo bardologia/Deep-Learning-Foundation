@@ -5,7 +5,7 @@ import pytest
 from gpu_activity            import GpuActivityLog
 from host_history            import HostHistoryLog
 from request_router          import RequestRouter
-from routers.library_routers import BackboneRouter, ContentLibraryRouter, ModelLibraryRouter
+from routers.library_routers import BackboneRouter, ContentLibraryRouter
 from system_monitor          import ActiveUsers, SystemHistory, SystemMonitor
 from web_ui_server           import WebUIServer
 
@@ -19,9 +19,6 @@ FRONTEND_PATHS = [
     "/api/repomap",
     "/api/configs",
     "/api/backbones",
-    "/api/profile-autoencoders",
-    "/api/image-autoencoders",
-    "/api/jepa-variants",
 ]
 
 
@@ -72,27 +69,24 @@ def test_the_library_envelopes_match_what_the_frontend_reads(server):
     assert list(_get(server, "/api/configs")[1])   == ["groups"]
 
 
-def test_the_model_endpoints_answer_with_families(server):
-    assert list(_get(server, "/api/profile-autoencoders")[1]) == ["families"]
-    assert list(_get(server, "/api/image-autoencoders")[1])   == ["families"]
-    assert list(_get(server, "/api/jepa-variants")[1])        == ["families"]
-    assert sorted(_get(server, "/api/backbones")[1])          == ["families", "heads"]
+def test_the_model_endpoint_answers_with_families_and_heads(server):
+    assert sorted(_get(server, "/api/backbones")[1]) == ["families", "heads"]
 
 
 def test_a_model_note_is_served_and_an_unknown_key_is_a_404(server):
-    status, payload = _get(server, "/api/profile-autoencoders/mlp_ae/note")
+    status, payload = _get(server, "/api/backbones/unet/note")
 
     assert status == 200
-    assert payload["key"] == "mlp_ae"
+    assert payload["key"] == "unet"
     assert payload["markdown"].strip()
 
-    assert _get(server, "/api/profile-autoencoders/no_such_model/note")[0] == 404
+    assert _get(server, "/api/backbones/no_such_model/note")[0] == 404
 
 
 def test_every_library_router_is_bound_to_a_real_library(server):
-    routers = [sub for sub in server.router.routers if isinstance(sub, (ContentLibraryRouter, ModelLibraryRouter, BackboneRouter))]
+    routers = [sub for sub in server.router.routers if isinstance(sub, (ContentLibraryRouter, BackboneRouter))]
 
-    assert len(routers) == 9
+    assert len(routers) == 6
     assert all(sub.library is not None for sub in routers)
     assert all(callable(getattr(sub.library, "collect")) for sub in routers)
 

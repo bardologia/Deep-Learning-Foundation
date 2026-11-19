@@ -171,8 +171,8 @@ class TrainingRunMetadata:
 
         return out_path
 
-    def save_model_config(self, model_config, model_name: str, config_io=BackboneModelConfigIO) -> Path:
-        out_path = config_io.save(model_config, model_name, self.metadata_directory)
+    def save_model_config(self, model_config, model_name: str) -> Path:
+        out_path = BackboneModelConfigIO.save(model_config, model_name, self.metadata_directory)
         self.logger.info(f"Model config saved: {out_path}")
 
         return out_path

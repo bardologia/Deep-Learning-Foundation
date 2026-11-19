@@ -237,8 +237,7 @@ class DatasetBrowser:
                 yield from self._walk_runs(entry, depth + 1)
 
     def _has_inference(self, run_dir: Path, split: str = "") -> bool:
-        from pipelines.shared.inference.metadata       import CompletedInference
-        from pipelines.shared.inference.run_classifier import InferenceLayout
+        from pipelines.shared.inference.metadata import CompletedInference
 
         inference_dir = run_dir / self.INFERENCE_DIR
         if not inference_dir.is_dir():
@@ -247,9 +246,7 @@ class DatasetBrowser:
         if not split:
             return any(entry.is_dir() for entry in inference_dir.iterdir())
 
-        bases = [inference_dir] + [inference_dir / name for name in InferenceLayout.SUBDIRS.values()]
-
-        return any(CompletedInference.latest(base, split) is not None for base in bases)
+        return CompletedInference.latest(inference_dir, split) is not None
 
     def _directory(self, raw: str) -> Path | None:
         if not raw or not raw.strip():

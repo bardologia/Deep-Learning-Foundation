@@ -100,23 +100,18 @@ def test_orientation_undefined_counts_are_neutral():
         assert MetricOrientation.direction(key) is None, key
 
 
-def test_orientation_undeclared_key_raises():
-    with pytest.raises(KeyError, match="some_unknown_thing"):
-        MetricOrientation.direction("some_unknown_thing")
-
-
 def test_orientation_slot_organization_and_failure_ok_are_higher():
     for key in ("slot_gt_alignment", "slot_mu_rank_diag", "slot_usage_entropy", "failure_frac_ok", "presence_rank_corr"):
         assert MetricOrientation.direction(key) == "higher", key
 
 
 def test_orientation_fractions_of_faults_are_lower():
-    for key in ("count_over_frac", "count_under_frac", "clamp_amp_ceil_frac", "failure_frac_missed", "failure_miss_rate", "norm_in_ch2_overflow_frac", "norm_in_ch1_nonfinite_frac", "norm_in_nonfinite_frac", "norm_in_worst_abs_mean", "z_ce_gt_12", "pixel_peak_idx_d_gt_p95", "pixel_peak_idx_d_gt_nonempty_mean", "pixel_peak_err_units_mean_gt_nonempty", "roughness_excess_frac", "label_r2_frac_below_half", "jepa_embedding_nmse"):
+    for key in ("count_over_frac", "count_under_frac", "clamp_amp_ceil_frac", "failure_frac_missed", "failure_miss_rate", "norm_in_ch2_overflow_frac", "norm_in_ch1_nonfinite_frac", "norm_in_nonfinite_frac", "norm_in_worst_abs_mean", "z_ce_gt_12", "pixel_peak_idx_d_gt_p95", "pixel_peak_idx_d_gt_nonempty_mean", "pixel_peak_err_units_mean_gt_nonempty", "roughness_excess_frac", "label_r2_frac_below_half"):
         assert MetricOrientation.direction(key) == "lower", key
 
 
 def test_orientation_descriptive_slot_and_audit_keys_are_neutral():
-    for key in ("slot_1_amp_active_gt_mean", "slot_3_mu_global_pred_std", "slot_0_mu_gt_mean", "norm_in_ch0_mean", "clamp_n_active", "activity_threshold", "roughness_ratio", "checkpoint_epoch", "n_pixels_gt_empty", "gt_empty_frac", "strat_label_r2_spearman", "strat_gt_active_count_n_bins", "strat_label_r2_pixels_dropped", "ssim_gt_z_n_scored", "ssim_norm_col_n_nonfinite", "ssim_cube_norm_row_n_nonfinite", "jepa_decoder_floor_frac", "jepa_decode_amplification"):
+    for key in ("slot_1_amp_active_gt_mean", "slot_3_mu_global_pred_std", "slot_0_mu_gt_mean", "norm_in_ch0_mean", "clamp_n_active", "activity_threshold", "roughness_ratio", "checkpoint_epoch", "n_pixels_gt_empty", "gt_empty_frac", "strat_label_r2_spearman", "strat_gt_active_count_n_bins", "strat_label_r2_pixels_dropped", "ssim_gt_z_n_scored", "ssim_norm_col_n_nonfinite", "ssim_cube_norm_row_n_nonfinite"):
         assert MetricOrientation.direction(key) is None, key
 
 
@@ -128,12 +123,12 @@ def test_orientation_spreads_are_not_ranked():
     assert MetricOrientation.direction("pixel_mae_gt_mean")    == "lower"
 
 
-def test_orientation_autoencoder_keys_are_declared():
+def test_orientation_reconstruction_error_keys_are_declared():
     for key in ("rmse", "mse_mean", "mse_median", "mse_mean_normalized", "mae_mean", "mae_mean_normalized", "relative_l2_mean", "relative_l2_median", "curve_l1", "curve_l1_p90"):
         assert MetricOrientation.direction(key) == "lower", key
     for key in ("pearson_mean", "pearson_median"):
         assert MetricOrientation.direction(key) == "higher", key
-    for key in ("n_curves", "n_active_curves", "n_valid_pixels", "num_batches", "profile_length", "patch_height", "embedding_dim", "embedding_norm_mean", "seed", "extract_floor_matched_n_pairs"):
+    for key in ("n_curves", "n_active_curves", "n_valid_pixels", "num_batches", "profile_length", "patch_height", "seed"):
         assert MetricOrientation.direction(key) is None, key
 
 
@@ -210,14 +205,6 @@ def test_rank_correlation_is_nan_without_variance():
 
     assert math.isnan(RankCorrelation.spearman(constant, np.arange(5.0)))
     assert math.isnan(RankCorrelation.spearman(np.array([1.0, np.nan, np.nan, 4.0, 5.0]), np.array([1.0, 2.0, 3.0, np.nan, np.nan])))
-
-
-def test_rank_correlation_rejects_unmatched_or_tiny_vectors():
-    with pytest.raises(ValueError, match="matched vectors"):
-        RankCorrelation.spearman(np.arange(4.0), np.arange(5.0))
-
-    with pytest.raises(ValueError, match="matched vectors"):
-        RankCorrelation.spearman(np.array([1.0, 2.0]), np.array([1.0, 2.0]))
 
 
 def test_relative_improvement_scales_with_the_baseline_magnitude():

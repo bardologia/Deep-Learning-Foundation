@@ -1,5 +1,3 @@
-"""Tests for the cube explorer's metric layers: overlays, class legends, histograms, pixel readouts, colour bars, selective scoring and region statistics."""
-
 from __future__ import annotations
 
 import io
@@ -21,11 +19,9 @@ def _loaded_explorer(base: Path) -> tuple[CubeExplorer, str]:
 
 
 def _class_explorer(base: Path) -> tuple[CubeExplorer, str]:
-    """Loads a cube whose stamp carries failure-mode, label-suspect and extract-fit maps beside the continuous layers."""
     stamp = make_cube_run(base, with_metrics=True)
     np.save(stamp / "cubes" / "failure_mode.npy", np.tile(np.arange(N_COLS) % 6, (N_ROWS, 1)).astype(np.float32))
     np.save(stamp / "cubes" / "label_suspect.npy", (np.arange(N_ROWS * N_COLS).reshape(N_ROWS, N_COLS) % 2).astype(np.float32))
-    np.save(stamp / "cubes" / "extract_r2.npy", np.full((N_ROWS, N_COLS), 0.5, dtype=np.float32))
 
     explorer, cube_ids = open_explorer(base, expected=1)
     load_cube(explorer, cube_ids[0])
@@ -58,7 +54,6 @@ def test_metric_overlay_png(tmp_path):
 
 
 def test_metric_overlay_greys_the_primary_with_the_cached_limits(tmp_path):
-    """The overlay's grey base uses the primary colour limits cached at load, not percentiles recomputed per request."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     primary = explorer.loaded["primary"]
@@ -107,7 +102,6 @@ def test_cbar_png_whitelist(tmp_path):
 
 
 def test_metric_histogram(tmp_path):
-    """Continuous layers bin over the robust range with the tails counted apart, and class layers count per class."""
     explorer, cube_id = _class_explorer(tmp_path)
 
     hist = explorer.metric_histogram(cube_id, "pixel_r2")
@@ -126,7 +120,6 @@ def test_metric_histogram(tmp_path):
 
 
 def test_metric_hist_route_answers_through_the_cube_router(tmp_path):
-    """The /api/cubes/metric_hist route answers a known layer with its counts and an unknown one with an error status."""
     explorer, cube_id = _class_explorer(tmp_path)
     router            = CubeRouter(explorer)
 
@@ -139,14 +132,13 @@ def test_metric_hist_route_answers_through_the_cube_router(tmp_path):
 
 
 def test_metric_histogram_rejects_a_layer_without_finite_values(tmp_path):
-    """A layer holding no finite value reports that instead of binning an empty array."""
     stamp = make_cube_run(tmp_path, with_metrics=True)
-    np.save(stamp / "cubes" / "embedding_error.npy", np.full((N_ROWS, N_COLS), np.nan, dtype=np.float32))
+    np.save(stamp / "cubes" / "label_r2.npy", np.full((N_ROWS, N_COLS), np.nan, dtype=np.float32))
 
     explorer, cube_ids = open_explorer(tmp_path, expected=1)
     load_cube(explorer, cube_ids[0])
 
-    result = explorer.metric_histogram(cube_ids[0], "embedding_error")
+    result = explorer.metric_histogram(cube_ids[0], "label_r2")
     assert result["ok"] is False and "no finite value" in result["error"]
 
 
@@ -177,7 +169,6 @@ def test_selective_metrics_reject_unknown_layer(tmp_path):
 
 
 def test_class_layers_carry_named_legend(tmp_path):
-    """Class layers publish a named, coloured legend over their class index range while continuous layers carry none."""
     explorer, _ = _class_explorer(tmp_path)
 
     layers = {layer["key"]: layer for layer in explorer.load_status()["cube"]["metric_maps"]}
@@ -187,11 +178,9 @@ def test_class_layers_carry_named_legend(tmp_path):
     assert [entry["name"] for entry in layers["failure_mode"]["classes"]] == ["ok", "missed", "hallucinated", "position", "width", "amplitude"]
     assert layers["failure_mode"]["vmin"] == 0.0 and layers["failure_mode"]["vmax"] == 5.0
     assert all(entry["color"].startswith("#") for entry in layers["failure_mode"]["classes"])
-    assert layers["extract_r2"]["label"] == "extract R2"
 
 
 def test_class_layer_value_names_and_overlay(tmp_path):
-    """Class layers answer point queries with the class name and still render overlays."""
     explorer, cube_id = _class_explorer(tmp_path)
 
     assert explorer.metric_value_at(cube_id, "failure_mode", row=0, col=2)["name"] == "hallucinated"
@@ -203,7 +192,6 @@ def test_class_layer_value_names_and_overlay(tmp_path):
 
 
 def test_class_overlay_paints_each_class_in_its_legend_colour(tmp_path):
-    """At full opacity every pixel of a class layer shows its class colour instead of a viridis shade."""
     explorer, cube_id = _class_explorer(tmp_path)
 
     png    = explorer.metric_overlay_png(cube_id, "failure_mode", vmin=0.0, vmax=5.0, keep_min=float("-inf"), keep_max=float("inf"), alpha=1.0)
@@ -217,7 +205,6 @@ def test_class_overlay_paints_each_class_in_its_legend_colour(tmp_path):
 
 
 def test_region_metrics(tmp_path):
-    """Region means cover the clipped rectangle, scene means the whole map, and mean profiles cover the curve sources."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     result = explorer.region_metrics(cube_id, row0=1, row1=3, col0=2, col1=4)
@@ -242,7 +229,6 @@ def test_region_metrics(tmp_path):
 
 
 def test_region_profiles_average_the_region_on_the_ascending_z_axis(tmp_path):
-    """Each source's region profile is the mean over the rectangle's pixels, ordered by ascending z."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     result = explorer.region_metrics(cube_id, row0=0, row1=1, col0=0, col1=2)
@@ -255,7 +241,6 @@ def test_region_profiles_average_the_region_on_the_ascending_z_axis(tmp_path):
 
 
 def test_region_bounds_clip_into_the_cube_and_leave_the_reference_cube_out(tmp_path):
-    """Bounds beyond the cube clip to its edges, and the full reference cube on bin indices gets no region profile."""
     explorer, cube_id = loaded_cube(tmp_path, with_full=True, with_metrics=True)
 
     result = explorer.region_metrics(cube_id, row0=-5, row1=99, col0=99, col1=-5)
@@ -268,7 +253,6 @@ def test_region_bounds_clip_into_the_cube_and_leave_the_reference_cube_out(tmp_p
 
 
 def test_region_reports_none_for_a_region_without_finite_values(tmp_path):
-    """A region holding only NaN pixels of a layer reports None for its region mean and still the scene mean."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     row = next(row for row in explorer.region_metrics(cube_id, 0, 0, 0, 0)["rows"] if row["key"] == "pixel_r2")
@@ -276,7 +260,6 @@ def test_region_reports_none_for_a_region_without_finite_values(tmp_path):
 
 
 def test_region_route_answers_through_the_cube_router(tmp_path):
-    """The /api/cubes/region route answers a loaded cube with its statistics and another id with an error status."""
     explorer, cube_id = _loaded_explorer(tmp_path)
     router            = CubeRouter(explorer)
 

@@ -5,18 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from configuration.training.backbone                    import BackboneEntryConfig
-from configuration.training.jepa                        import JepaEntryConfig
-from configuration.training.profile_autoencoder         import ProfileAeEntryConfig
-from pipelines.backbone.training.launcher               import BackboneTrainingLauncher, TrainScheduler
-from pipelines.jepa.training.launcher                   import JepaTrainingLauncher, JepaTrialScheduler
-from pipelines.profile_autoencoder.training.launcher    import ProfileAeTrainingLauncher, ProfileAeTrialScheduler
-from tools.data.io                                      import FileIO
-from tools.runtime.completion                           import CompletionMarker
+from configuration.training.backbone      import BackboneEntryConfig
+from pipelines.backbone.training.launcher import BackboneTrainingLauncher, TrainScheduler
+from tools.data.io                        import FileIO
+from tools.runtime.completion             import CompletionMarker
 
 
-JEPA_ENTRY    = Path("main/training/train_jepa.py")
-PROFILE_ENTRY = Path("main/training/train_profile_autoencoder.py")
+ENTRY = Path("main/training/train_backbone.py")
 
 
 class FakeStage:
@@ -43,13 +38,13 @@ class FakeStage:
         pass
 
 
-def _scheduler(logdir: Path, launcher_class=JepaTrainingLauncher, entry: Path = JEPA_ENTRY, mode: str = "ema", **overrides):
+def _scheduler(logdir: Path, mode: str = "ema", **overrides):
     argv = ["--trials_enabled", "true", "--trials_mode", mode, "--seeds", "[0]", "--logdir", str(logdir)]
 
     for key, value in overrides.items():
         argv += [f"--{key}", str(value)]
 
-    return launcher_class(entry_script=entry).build_scheduler(argv)
+    return BackboneTrainingLauncher(entry_script=ENTRY).build_scheduler(argv)
 
 
 def _complete_run(root: Path, name: str, inference: bool = False, split: str = "test") -> Path:
@@ -66,16 +61,8 @@ def _complete_run(root: Path, name: str, inference: bool = False, split: str = "
 
 
 def test_sweep_name_qualifies_the_mode_with_its_entry(tmp_path):
-    jepa    = _scheduler(tmp_path)
-    profile = _scheduler(tmp_path, ProfileAeTrainingLauncher, PROFILE_ENTRY)
-
-    assert jepa.sweep_name    == "sweep_jepa_ema"
-    assert profile.sweep_name == "sweep_profile_autoencoder_ema"
-    assert jepa.sweep_name != profile.sweep_name
-
-
-def test_sweep_name_still_names_the_mode(tmp_path):
-    assert _scheduler(tmp_path, mode="amp").sweep_name == "sweep_jepa_amp"
+    assert _scheduler(tmp_path).sweep_name             == "sweep_backbone_ema"
+    assert _scheduler(tmp_path, mode="amp").sweep_name == "sweep_backbone_amp"
 
 
 def test_run_directories_stay_under_the_mode_subdirectory(tmp_path):
@@ -279,36 +266,18 @@ def test_seed_expanded_units_override_the_forwarded_seed_list(tmp_path):
     assert argv[argv.index("--seeds") + 1] == "[3]"
 
 
-@pytest.mark.parametrize(("scheduler_class", "config_class"), (
-    (TrainScheduler,          BackboneEntryConfig),
-    (JepaTrialScheduler,      JepaEntryConfig),
-    (ProfileAeTrialScheduler, ProfileAeEntryConfig),
-))
-def test_scheduler_fields_name_real_entry_config_fields(scheduler_class, config_class):
-    config  = config_class()
-    unknown = [field for field in scheduler_class.SCHEDULER_FIELDS if not hasattr(config, field)]
+def test_scheduler_fields_name_real_entry_config_fields():
+    config  = BackboneEntryConfig()
+    unknown = [field for field in TrainScheduler.SCHEDULER_FIELDS if not hasattr(config, field)]
 
     assert unknown == []
 
 
-@pytest.mark.parametrize(("scheduler_class", "config_class"), (
-    (TrainScheduler,          BackboneEntryConfig),
-    (JepaTrialScheduler,      JepaEntryConfig),
-    (ProfileAeTrialScheduler, ProfileAeEntryConfig),
-))
-def test_every_trial_mode_claims_its_planner_settings(scheduler_class, config_class):
-    config = config_class()
+def test_every_trial_mode_claims_its_planner_settings():
+    config = BackboneEntryConfig()
 
-    for mode in scheduler_class.MODE_SUBDIRS:
+    for mode in TrainScheduler.MODE_SUBDIRS:
         field = f"{mode}_trials"
 
         if hasattr(config, field):
-            assert field in scheduler_class.SCHEDULER_FIELDS
-
-
-def test_backbone_and_jepa_sweeps_do_not_share_a_mode_directory(tmp_path):
-    backbone = _scheduler(tmp_path, BackboneTrainingLauncher, Path("main/training/train_backbone.py"))
-    jepa     = _scheduler(tmp_path)
-
-    assert backbone.sweep_name == "sweep_backbone_ema"
-    assert jepa.sweep_name     == "sweep_jepa_ema"
+            assert field in TrainScheduler.SCHEDULER_FIELDS

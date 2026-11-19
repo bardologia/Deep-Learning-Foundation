@@ -10,15 +10,6 @@ from web_logger          import WebLogger
 
 class SequenceDecisions:
 
-    FAMILY_NAMESPACES = {
-        "backbone"            : "",
-        "jepa"                : "jepa",
-        "profile_autoencoder" : "autoencoder",
-        "image_autoencoder"   : "image_autoencoder",
-    }
-
-    FAMILY_SCOPED_PATHS = ("model_overrides",)
-
     def __init__(self, resolver, launcher, logger: WebLogger) -> None:
         self.resolver = resolver
         self.launcher = launcher
@@ -74,32 +65,6 @@ class SequenceDecisions:
 
         return defaults
 
-    def _namespace(self, block: dict, defaults: dict) -> str:
-        if "training_type" not in defaults:
-            return ""
-
-        family = block["overrides"].get("training_type", defaults["training_type"])
-        if family not in self.FAMILY_NAMESPACES:
-            raise ValueError(f"cannot apply the sequence decisions to block '{block['title']}': training_type '{family}' is none of {sorted(self.FAMILY_NAMESPACES)}")
-
-        return self.FAMILY_NAMESPACES[family]
-
-    def _family(self, block: dict, defaults: dict) -> str:
-        if "training_type" in defaults:
-            return block["overrides"].get("training_type", defaults["training_type"])
-
-        script = block["script"]
-
-        return script.removeprefix("train_") if script.startswith("train_") else ""
-
-    def _resolve(self, path: str, namespace: str, defaults: dict) -> str:
-        namespaced = f"{namespace}.{path}"
-
-        if namespace and namespaced in defaults:
-            return namespaced
-
-        return path if path in defaults else ""
-
     def _stamp(self, block: dict, path: str, value: str, note: str, defaults: dict) -> None:
         block["field_notes"][path] = note
 
@@ -118,9 +83,7 @@ class SequenceDecisions:
             return ""
 
         try:
-            defaults   = self._defaults({block["script"] for block in blocks})
-            namespaces = {block["block_id"]: self._namespace(block, defaults[block["script"]]) for block in blocks}
-            families   = {block["block_id"]: self._family(block, defaults[block["script"]]) for block in blocks}
+            defaults = self._defaults({block["script"] for block in blocks})
         except ValueError as error:
             return str(error)
 
@@ -130,12 +93,8 @@ class SequenceDecisions:
             for decision in decider["decisions"]:
                 path = decision["path"]
                 for target in blocks:
-                    if path in self.FAMILY_SCOPED_PATHS and families[target["block_id"]] != families[block_id]:
-                        continue
-
                     entry_defaults = defaults[target["script"]]
-                    entry_path     = self._resolve(path, namespaces[target["block_id"]], entry_defaults)
-                    if not entry_path:
+                    if path not in entry_defaults:
                         continue
 
                     frozen = target["block_id"] in reach[block_id] and bool(decision["choice"])
@@ -143,7 +102,7 @@ class SequenceDecisions:
                     if not value:
                         continue
 
-                    self._stamp(target, entry_path, value, "frozen" if frozen else "waiting", entry_defaults)
+                    self._stamp(target, path, value, "frozen" if frozen else "waiting", entry_defaults)
 
         return ""
 

@@ -19,31 +19,22 @@ from configuration.benchmark.general        import BenchmarkConfig
 from configuration.comparison               import ComparisonEntryConfig
 from configuration.cross_validation.general import CrossValidationConfig
 from configuration.diagnostics              import ReportCollectionEntryConfig, ReportMailEntryConfig, TensorboardExportEntryConfig
-from configuration.inference                import BackboneInferenceEntryConfig, ImageAeInferenceEntryConfig, ProfileAeInferenceEntryConfig
-from configuration.training                 import BackboneEntryConfig, JepaEntryConfig, ProfileAeEntryConfig, ImageAeEntryConfig
+from configuration.inference                import BackboneInferenceEntryConfig
+from configuration.training                 import BackboneEntryConfig
 from configuration.tuning.general           import TuningEntryConfig
-from pipelines.jepa.training.coupling                import TargetProvider
-from pipelines.jepa.training.experiments             import CouplingTrialPlanner, CurveTrialPlanner, JepaCurriculumTrialPlanner, MaskingTrialPlanner
-from pipelines.jepa.training.launcher                import JepaTrialScheduler
-from pipelines.profile_autoencoder.training.launcher import ProfileAeTrialScheduler
 from pipelines.backbone.training.loss_terms import LossComponentCatalog
 from tests.webui.conftest import WEBUI_ROOT
 
 _TRAINING_PAGES = [
-    ("train_backbone",            BackboneEntryConfig),
-    ("train_jepa",                JepaEntryConfig),
-    ("train_profile_autoencoder", ProfileAeEntryConfig),
-    ("train_image_autoencoder",   ImageAeEntryConfig),
-    ("benchmark",                 BenchmarkConfig),
-    ("cross_validate",            CrossValidationConfig),
-    ("tune",                      TuningEntryConfig),
+    ("train_backbone", BackboneEntryConfig),
+    ("benchmark",      BenchmarkConfig),
+    ("cross_validate", CrossValidationConfig),
+    ("tune",           TuningEntryConfig),
 ]
 
 
 _INFERENCE_PAGES = [
-    ("infer_backbone",            BackboneInferenceEntryConfig),
-    ("infer_profile_autoencoder", ProfileAeInferenceEntryConfig),
-    ("infer_image_autoencoder",   ImageAeInferenceEntryConfig),
+    ("infer_backbone", BackboneInferenceEntryConfig),
 ]
 
 
@@ -104,7 +95,7 @@ def test_the_target_dataset_pickers_read_the_target_scene(key, flow_config):
     assert widgets["inference.target.secondary_labels"]["datasetFrom"] == "inference.target.dataset_path"
 
 
-@pytest.mark.parametrize("key, flow_config", [("train_backbone", BackboneEntryConfig), ("train_jepa", JepaEntryConfig)])
+@pytest.mark.parametrize("key, flow_config", [("train_backbone", BackboneEntryConfig)])
 def test_the_training_pages_hide_the_target_dataset_block(key, flow_config):
     paths  = [path for path, _value in ConfigCli._leaves(flow_config())]
     layout = LaunchLayout().build(key, [{"path": path} for path in paths])
@@ -148,21 +139,6 @@ def test_sweep_loss_choices_match_the_component_catalog():
     assert choices == set(LossComponentCatalog.names())
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def test_pair_components_in_experiment_builder_match_the_catalog():
     js    = (WEBUI_ROOT / "static" / "js" / "experiment_builder.js").read_text()
     block = js.split("static PAIR_COMPONENTS = [", 1)[1].split("];", 1)[0]
@@ -171,51 +147,9 @@ def test_pair_components_in_experiment_builder_match_the_catalog():
     assert names == set(LossComponentCatalog.names())
 
 
-def _builder_js() -> str:
-    return (WEBUI_ROOT / "static" / "js" / "experiment_builder.js").read_text()
-
-
-def _js_string_list(name: str) -> list[str]:
-    block = re.split(rf"static\s+{name}\s+=\s+\[", _builder_js(), maxsplit=1)[1].split("];", 1)[0]
-    return re.findall(r'"([a-z0-9_]+)"', block)
-
-
-def _js_mode_keys() -> set:
-    block = _builder_js().split("static MODES = [", 1)[1].split("\n  ];", 1)[0]
-    return set(re.findall(r'key:\s*"([a-z0-9_]+)"', block))
-
-
-@pytest.mark.parametrize(("catalog", "expected"), (
-    ("CURVE_KINDS",        CurveTrialPlanner.KINDS),
-    ("MASK_STRATEGIES",    MaskingTrialPlanner.STRATEGIES),
-    ("MASK_FILLS",         MaskingTrialPlanner.FILLS),
-    ("MASK_LOSS_TARGETS",  MaskingTrialPlanner.LOSS_ON),
-    ("CURRICULUM_RESETS",  tuple(JepaCurriculumTrialPlanner.RESETS)),
-    ("COUPLING_MODES",     CouplingTrialPlanner.MODES),
-    ("COUPLING_PROVIDERS", TargetProvider.VALID),
-))
-def test_experiment_builder_catalogs_match_the_planners(catalog, expected):
-    assert _js_string_list(catalog) == list(expected)
-
-
-@pytest.mark.parametrize(("scheduler", "trials"), (
-    (ProfileAeTrialScheduler, LaunchLayout.PROFILE_AE_EXPERIMENT_TRIALS),
-    (JepaTrialScheduler,      LaunchLayout.JEPA_EXPERIMENT_TRIALS),
-))
-def test_experiment_builder_offers_every_scheduler_mode(scheduler, trials):
-    missing = sorted(mode for mode in scheduler.MODE_SUBDIRS if mode not in _js_mode_keys())
-
-    assert missing == []
-    assert "trials_mode" in trials
-
-
-@pytest.mark.parametrize(("entry_config", "trials"), (
-    (ProfileAeEntryConfig, LaunchLayout.PROFILE_AE_EXPERIMENT_TRIALS),
-    (JepaEntryConfig,      LaunchLayout.JEPA_EXPERIMENT_TRIALS),
-    (BackboneEntryConfig,  LaunchLayout.EXPERIMENT_TRIALS),
-))
-def test_experiment_panel_claims_every_trial_field_of_its_entry(entry_config, trials):
-    leaves = [path for path, _ in ConfigCli._leaves(entry_config())]
+def test_experiment_panel_claims_every_trial_field_of_its_entry():
+    leaves = [path for path, _ in ConfigCli._leaves(BackboneEntryConfig())]
+    trials = LaunchLayout.EXPERIMENT_TRIALS
     hidden = {"ablation_features", "ablation_include_full"}
 
     for path in leaves:
@@ -284,100 +218,27 @@ def _section(layout, key):
     return next(section for section in layout["sections"] if section["key"] == key)
 
 
-def test_jepa_loss_sections_swap_on_the_profile_autoencoder_run():
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(JepaEntryConfig())]
-    layout = LaunchLayout().build("train_jepa", leaves)
-
-    assert _section(layout, "loss-embedding")["when"] == {"field": "profile_autoencoder_run", "set": True}
-    assert _section(layout, "loss-param")["when"]     == {"field": "profile_autoencoder_run", "set": False}
-
-
-@pytest.mark.parametrize("key, flow_config", [("benchmark", BenchmarkConfig), ("cross_validate", CrossValidationConfig), ("tune", TuningEntryConfig)])
-def test_shared_jepa_loss_sections_gate_on_type_and_profile_run(key, flow_config):
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(flow_config())]
-    layout = LaunchLayout().build(key, leaves)
-
-    assert _section(layout, "jepa-embedding-loss")["when"] == [{"field": "training_type", "in": ["jepa"]}, {"field": "jepa.profile_autoencoder_run", "set": True}]
-    assert _section(layout, "jepa-param-loss")["when"]     == [{"field": "training_type", "in": ["jepa"]}, {"field": "jepa.profile_autoencoder_run", "set": False}]
-
-
-def test_jepa_finetune_rates_are_value_gated_on_the_mode():
-    engine = LaunchLayout()
-    layout = engine._expand("train_jepa")
-
-    conditions = engine._gate_conditions(layout)
-
-    assert {"field": "profile_autoencoder_run", "set": True} in conditions
-    assert {"field": "profile_autoencoder_mode", "in": ["finetune"]} in conditions
-    assert {"field": "image_autoencoder_mode", "in": ["finetune"]} in conditions
-
-
 def test_a_when_condition_with_both_in_and_set_is_rejected():
     engine = LaunchLayout()
-    layout = engine._expand("train_jepa")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(JepaEntryConfig())]
+    layout = engine._expand("mail_experiment_reports")
+    leaves = [{"path": path} for path, _value in ConfigCli._leaves(ReportMailEntryConfig())]
 
-    _section(layout, "loss-embedding")["when"] = {"field": "profile_autoencoder_run", "set": True, "in": ["x"]}
-
-    with pytest.raises(LayoutError):
-        engine._validate("train_jepa", layout, leaves)
-
-
-def test_a_value_gate_on_an_unknown_field_is_rejected():
-    engine = LaunchLayout()
-    layout = engine._expand("train_jepa")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(JepaEntryConfig())]
-
-    panel = next(panel for panel in _section(layout, "model")["panels"] if panel.get("title") == "Autoencoders")
-    gate  = next(entry for group in panel["groups"] for entry in group["fields"] if "gateOn" in entry)
-    gate["gateOn"]["field"] = "no_such_field"
+    _section(layout, "runs")["when"] = {"field": "target", "set": True, "in": ["runs"]}
 
     with pytest.raises(LayoutError):
-        engine._validate("train_jepa", layout, leaves)
-
-
-def test_an_essentials_value_gate_on_an_unknown_field_is_rejected():
-    engine = LaunchLayout()
-    layout = engine._expand("train_jepa")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(JepaEntryConfig())]
-
-    layout["essentials"][0] = {"gateOn": {"field": "no_such_field", "set": True}, "fields": [layout["essentials"][0]]}
-
-    with pytest.raises(LayoutError):
-        engine._validate("train_jepa", layout, leaves)
-
-
-def test_an_essentials_value_gate_needs_exactly_one_of_in_or_set():
-    engine = LaunchLayout()
-    layout = engine._expand("train_jepa")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(JepaEntryConfig())]
-
-    layout["essentials"][0] = {"gateOn": {"field": "profile_autoencoder_run", "set": True, "in": ["x"]}, "fields": [layout["essentials"][0]]}
-
-    with pytest.raises(LayoutError):
-        engine._validate("train_jepa", layout, leaves)
-
-
-@pytest.mark.parametrize("key, flow_config", [("train_profile_autoencoder", ProfileAeEntryConfig), ("train_image_autoencoder", ImageAeEntryConfig)])
-def test_the_ae_pages_carry_an_arch_panel_reading_the_model_field(key, flow_config):
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(flow_config())]
-    layout = LaunchLayout().build(key, leaves)
-
-    panels = [panel for section in layout["sections"] for panel in section["panels"] if panel.get("panel") == "arch_overrides"]
-
-    assert panels == [{"kind": "special", "panel": "arch_overrides", "fields": ["model_overrides"], "modelFrom": "ae_model_name"}]
+        engine._validate("mail_experiment_reports", layout, leaves)
 
 
 def test_an_arch_panel_reading_an_unknown_model_field_is_rejected():
     engine = LaunchLayout()
-    layout = engine._expand("train_profile_autoencoder")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(ProfileAeEntryConfig())]
+    layout = engine._expand("train_backbone")
+    leaves = [{"path": path} for path, _value in ConfigCli._leaves(BackboneEntryConfig())]
 
     panel = next(panel for section in layout["sections"] for panel in section["panels"] if panel.get("panel") == "arch_overrides")
     panel["modelFrom"] = "no_such_field"
 
     with pytest.raises(LayoutError):
-        engine._validate("train_profile_autoencoder", layout, leaves)
+        engine._validate("train_backbone", layout, leaves)
 
 
 def test_the_backbone_page_carries_an_arch_panel_reading_the_backbone_field():
@@ -395,125 +256,10 @@ def _arch_panels(key, flow_config) -> list:
     return [panel for section in layout["sections"] for panel in section["panels"] if panel.get("panel") == "arch_overrides"]
 
 
-def test_the_cross_validation_page_switches_its_arch_panel_on_the_training_type():
-    panels   = _arch_panels("cross_validate", CrossValidationConfig)
-    by_field = {panel["fields"][0]: panel for panel in panels}
-
-    switch = by_field["model_overrides"]["modelBy"]
-    assert switch["field"] == "training_type"
-    assert switch["models"] == {"backbone": "backbone_name", "jepa": "backbone_name", "profile_autoencoder": "autoencoder.ae_model_name", "image_autoencoder": "image_autoencoder.ae_model_name"}
-    assert "modelFrom" not in by_field["model_overrides"]
-
-
-def test_the_jepa_page_carries_an_arch_panel_reading_the_backbone_field():
-    panels = _arch_panels("train_jepa", JepaEntryConfig)
+def test_the_cross_validation_page_carries_an_arch_panel_reading_the_backbone_field():
+    panels = _arch_panels("cross_validate", CrossValidationConfig)
 
     assert panels == [{"kind": "special", "panel": "arch_overrides", "fields": ["model_overrides"], "modelFrom": "backbone_name"}]
-
-
-def test_an_arch_panel_switching_on_an_unknown_field_is_rejected():
-    engine = LaunchLayout()
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(CrossValidationConfig())]
-
-    for broken in ({"field": "no_such_field", "models": {"backbone": "backbone_name"}}, {"field": "training_type", "models": {"backbone": "no_such_model"}}):
-        layout = engine._expand("cross_validate")
-        panel  = next(panel for section in layout["sections"] for panel in section["panels"] if panel.get("fields") == ["model_overrides"])
-        panel["modelBy"] = broken
-
-        with pytest.raises(LayoutError):
-            engine._validate("cross_validate", layout, leaves)
-
-
-def test_an_arch_panel_with_both_model_sources_is_rejected():
-    engine = LaunchLayout()
-    layout = engine._expand("cross_validate")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(CrossValidationConfig())]
-
-    panel = next(panel for section in layout["sections"] for panel in section["panels"] if panel.get("fields") == ["model_overrides"])
-    panel["modelFrom"] = "backbone_name"
-
-    with pytest.raises(LayoutError):
-        engine._validate("cross_validate", layout, leaves)
-
-
-
-
-
-
-def _model_card(layout):
-    return next(panel for section in layout["sections"] for panel in section["panels"] if panel.get("panel") == "model_card")
-
-
-def test_the_jepa_model_card_locks_the_head_to_conv_with_a_profile_ae():
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(JepaEntryConfig())]
-    layout = LaunchLayout().build("train_jepa", leaves)
-    gate   = _model_card(layout)["headGate"]
-
-    assert gate["when"] == {"field": "profile_autoencoder_run", "set": True}
-    assert gate["only"] == ["conv"]
-    assert gate["hint"]
-
-
-def test_the_cross_validation_model_card_locks_the_head_only_on_the_jepa_type():
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(CrossValidationConfig())]
-    layout = LaunchLayout().build("cross_validate", leaves)
-    gate   = _model_card(layout)["headGate"]
-
-    assert gate["when"] == [{"field": "training_type", "in": ["jepa"]}, {"field": "jepa.profile_autoencoder_run", "set": True}]
-    assert gate["only"] == ["conv"]
-
-
-def test_the_cross_validation_tabs_cover_every_training_family():
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(CrossValidationConfig())]
-    layout = LaunchLayout().build("cross_validate", leaves)
-
-    assert [option[0] for option in layout["type_tab"]["options"]] == ["backbone", "profile_autoencoder", "image_autoencoder", "jepa"]
-
-    assert _section(layout, "image-autoencoder")["when"] == {"field": "training_type", "in": ["image_autoencoder"]}
-    assert "when" not in _section(layout, "inference")
-
-
-def test_a_head_gate_on_an_unknown_field_is_rejected():
-    engine = LaunchLayout()
-    layout = engine._expand("train_jepa")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(JepaEntryConfig())]
-
-    _model_card(layout)["headGate"]["when"] = {"field": "no_such_field", "set": True}
-
-    with pytest.raises(LayoutError):
-        engine._validate("train_jepa", layout, leaves)
-
-
-def test_the_benchmark_sweep_axes_only_show_for_the_backbone_type():
-    engine = LaunchLayout()
-    layout = engine._expand("benchmark")
-
-    conditions = engine._gate_conditions(layout)
-
-    assert conditions.count({"field": "training_type", "in": ["backbone"]}) == 2
-    for path in ("heads", "sweep_loss_components"):
-        assert path in engine._claims(layout)
-
-
-def test_the_tune_heads_widget_locks_to_conv_with_a_profile_ae():
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(TuningEntryConfig())]
-    layout = LaunchLayout().build("tune", leaves)
-    gate   = layout["widgets"]["heads"]["choiceGate"]
-
-    assert gate["when"] == [{"field": "training_type", "in": ["jepa"]}, {"field": "jepa.profile_autoencoder_run", "set": True}]
-    assert gate["only"] == ["conv"]
-    assert gate["hint"]
-
-
-def test_a_choice_gate_on_an_unknown_field_is_rejected():
-    engine = LaunchLayout()
-    layout = engine._expand("tune")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(TuningEntryConfig())]
-
-    layout["widgets"]["heads"] = {**layout["widgets"]["heads"], "choiceGate": {"when": {"field": "no_such_field", "set": True}, "only": ["conv"], "hint": "x"}}
-
-    with pytest.raises(LayoutError):
-        engine._validate("tune", layout, leaves)
 
 
 def test_no_layout_constant_is_bound_twice():

@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from backbone_model_library      import BackboneModelLibrary
@@ -110,3 +112,75 @@ def test_arch_keeps_the_learning_rate_fields_for_the_backbone_page(collected):
 
     assert "encoder_lr" in arch["unet"]
     assert "trunk_lr"   in arch["local_cnn"]
+
+
+class TempNoteLibrary(BackboneModelLibrary):
+
+    NOTE_FILES      = {"demo": "Demo Model.md", "other": "Other Model.md"}
+    HEAD_NOTE_FILES = {}
+
+    def __init__(self, directory: Path) -> None:
+        self.directory = directory
+
+    def _notes_dir(self) -> Path:
+        return self.directory
+
+
+NOTE = """# Demo Model
+
+An encoder-decoder with skip connections.
+
+## Correction
+
+The stride was wrong and got fixed on 2026-07-03.
+
+### Still inside the correction
+
+Dropped as well.
+
+## Architecture
+
+Four levels (reviewed 2026-07-03) of downsampling.
+The receptive field is 41 pixels. This claim was flagged in the audit.
+"""
+
+
+@pytest.fixture
+def temp_notes(tmp_path):
+    (tmp_path / "Demo Model.md").write_text(NOTE)
+    return TempNoteLibrary(tmp_path)
+
+
+def test_a_missing_note_file_yields_nothing(temp_notes):
+    assert temp_notes.note("other")  is None
+    assert temp_notes.note("absent") is None
+
+
+def test_a_note_links_every_sibling_model(temp_notes):
+    note = temp_notes.note("demo")
+
+    assert note["note"]  == "Demo Model"
+    assert note["links"] == {"Demo Model": "demo", "Other Model": "other"}
+
+
+def test_an_operational_heading_takes_its_whole_subtree_with_it(temp_notes):
+    markdown = temp_notes.note("demo")["markdown"]
+
+    assert "## Correction"     not in markdown
+    assert "The stride"        not in markdown
+    assert "Still inside"      not in markdown
+    assert "Dropped as well"   not in markdown
+    assert "## Architecture"       in markdown
+
+
+def test_dated_parentheticals_and_flagged_sentences_are_removed(temp_notes):
+    markdown = temp_notes.note("demo")["markdown"]
+
+    assert "(reviewed 2026-07-03)"  not in markdown
+    assert "flagged in the audit"   not in markdown
+    assert "Four levels of downsampling." in markdown
+    assert "The receptive field is 41 pixels." in markdown
+
+
+def test_stripping_never_leaves_a_run_of_blank_lines(temp_notes):
+    assert "\n\n\n" not in temp_notes.note("demo")["markdown"]

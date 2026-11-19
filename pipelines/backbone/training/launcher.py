@@ -9,35 +9,38 @@ from pathlib     import Path
 
 import torch
 
-from configuration.training                      import BackboneEntryConfig, CurriculumInheritance, default_curriculum
-from configuration.training.general.loss         import ParamMatching
-from configuration.training.general.optimization import ClipMode, WarmupMode
-from models                                      import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
-from pipelines.backbone.inference.pipeline       import InferencePipeline
-from pipelines.backbone.training.experiments     import AblationTrialPlanner, AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
-from pipelines.backbone.training.patch_report    import PatchTrialsReport
-from pipelines.backbone.training.pipeline        import TrainingPipeline
-from pipelines.shared.config.config_factory      import ConfigFactory
-from pipelines.shared.model.model_builder        import ModelBuilder
-from pipelines.shared.training.ddp_fanout        import DdpDispatch
-from pipelines.shared.training.resume_source     import ResumeLauncher
-from pipelines.shared.training.run_naming        import RunNaming
-from pipelines.shared.training.seed_sweep        import SeedFanoutScheduler, SeedSet, SeedSweepRunner
-from pipelines.shared.training.training_runner   import RunDirectorySettledMarker, SingleTrainRunner as BaseSingleTrainRunner
-from pipelines.shared.training.trial_planners    import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
-from pipelines.shared.training.trial_sweep       import TrialSweepScheduler
-from tools.data.gaussians                        import GaussianHead
-from tools.runtime.config_cli                    import ConfigCli
-from tools.runtime.run_tag                       import RunTag
+from configuration.training                       import BackboneEntryConfig, CurriculumInheritance, default_curriculum
+from configuration.training.general.loss          import ParamMatching
+from configuration.training.general.optimization  import ClipMode, WarmupMode
+from models                                       import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
+from pipelines.backbone.inference.pipeline        import InferencePipeline
+from pipelines.backbone.training.experiments      import AblationTrialPlanner, AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
+from pipelines.backbone.training.patch_report     import PatchTrialsReport
+from pipelines.backbone.training.pipeline         import TrainingPipeline
+from pipelines.shared.config.config_factory       import ConfigFactory
+from pipelines.shared.model.model_builder         import ModelBuilder
+from pipelines.shared.training.ddp_fanout         import DdpDispatch
+from pipelines.shared.training.pretrain_preflight import PretrainPreflight
+from pipelines.shared.training.resume_source      import ResumeLauncher
+from pipelines.shared.training.run_naming         import RunNaming
+from pipelines.shared.training.seed_sweep         import SeedFanoutScheduler, SeedSet, SeedSweepRunner
+from pipelines.shared.training.training_runner    import RunDirectorySettledMarker
+from pipelines.shared.training.trial_planners     import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
+from pipelines.shared.training.trial_sweep        import TrialSweepScheduler
+from pipelines.shared.training.unit_resume        import UnitResume
+from tools.data.gaussians                         import GaussianHead
+from tools.runtime.config_cli                     import ConfigCli
+from tools.runtime.run_tag                        import RunTag
+from tools.training.checkpoint                    import TrainerState
 
 
-class SingleTrainRunner(BaseSingleTrainRunner):
-
-    pipeline_class = TrainingPipeline
+class SingleTrainRunner:
 
     def __init__(self, config) -> None:
-        super().__init__(config)
-        self.factory = ConfigFactory(config)
+        self.config        = config
+        self.run_directory = None
+        self.unit_resume   = None
+        self.factory       = ConfigFactory(config)
 
     @property
     def model_name(self) -> str:
@@ -56,8 +59,28 @@ class SingleTrainRunner(BaseSingleTrainRunner):
         n_gaussians = self.factory.gaussian_config().n_default_gaussians
         return RunNaming.training_tag(self.model_name, self.model_head, self.config.curriculum, n_gaussians, self.config.augmentation)
 
+    def _apply_resume_from(self) -> None:
+        target = Path(self.config.resume_from).expanduser()
+
+        self.config.logdir          = target.parent
+        self.config.run_name        = target.name
+        self.config.resume          = True
+        self.config.training.resume = TrainerState.path(target).is_file()
+
     def _resolve_run_name(self) -> str:
         return RunNaming.compose(self.label, self.config.run_name or RunTag.now())
+
+    def _resolve_run_directory(self) -> None:
+        if self.config.resume_from:
+            self._apply_resume_from()
+        else:
+            self.config.run_name = self._resolve_run_name()
+
+        self.run_directory = Path(self.config.logdir) / self.config.run_name
+
+    def _build_unit_resume(self) -> UnitResume:
+        self.unit_resume = UnitResume(self.run_directory, enabled=self.config.resume, trainer_resume=self.config.training.resume, config=self.config)
+        return self.unit_resume
 
     def _model_config(self):
         return ModelBuilder.config_from_registry(self.config.backbone_name, self.config.model_overrides, head=self.config.backbone_head)
@@ -69,7 +92,7 @@ class SingleTrainRunner(BaseSingleTrainRunner):
         dataset_config              = self.factory.training_dataset_config()
         dataset_config.input_config = self.config.input
 
-        return self.pipeline_class(
+        return TrainingPipeline(
             trainer_config  = trainer_config,
             dataset_config  = dataset_config,
             backbone_name   = self.model_name,
@@ -85,8 +108,14 @@ class SingleTrainRunner(BaseSingleTrainRunner):
 
         return self._pipeline(work_dir).build_pretrain_trainer(work_dir, logger)
 
-    def _inference_components(self):
-        return None
+    def _pretrain_preflight(self) -> None:
+        PretrainPreflight(
+            pretrain_config = self.config.pretrain,
+            training_config = self.config.training,
+            build_trainer   = self._build_pretrain_trainer,
+            run_directory   = self.run_directory,
+            label           = self.label,
+        ).run()
 
     def _run_inference(self, run_directory: Path):
         gc.collect()
@@ -95,7 +124,7 @@ class SingleTrainRunner(BaseSingleTrainRunner):
 
         inference_config = replace(self.config.inference, run_directory=Path(run_directory), output_subdir=None)
 
-        return InferencePipeline(inference_config, components=self._inference_components()).run()
+        return InferencePipeline(inference_config).run()
 
     def run(self):
         self._resolve_run_directory()

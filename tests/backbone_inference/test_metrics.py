@@ -717,7 +717,7 @@ def test_metrics_stage_warns_about_gt_empty_pixels(tmp_path, monkeypatch):
     meta.create_dirs()
 
     run    = SimpleNamespace(n_gaussians=N_GAUSSIANS, activity_threshold=1e-4, split_name="test", split_region=CropRegion(0, 4, 0, 5), core_region=None, checkpoint_meta={"epoch": 3, "best_epoch": 3, "best_val_loss": 0.1})
-    result = SimpleNamespace(params_pred=None, params_gt=None, params_source="model", extract_r2=None, extract_floor=None)
+    result = SimpleNamespace(params_pred=None, params_gt=None)
 
     for n_empty, expected in ((3, 1), (0, 0)):
         monkeypatch.setattr(Metrics, "compute", lambda self, **kwargs: {"n_pixels": 20, "n_pixels_gt_empty": n_empty, "gt_empty_frac": n_empty / 20})
@@ -801,19 +801,6 @@ def test_roughness_ratio_exceeds_one_when_the_prediction_carries_jitter():
     assert metrics["roughness_ratio"] > 2.0
     assert metrics["roughness_excess_frac"] > 0.5
 
-
-def test_slot_organization_can_be_switched_off():
-    z_axis = _x_axis()
-    params = _gaussian_params(seed=4)
-    curves = _curves_from_params(params, z_axis, N_GAUSSIANS)
-    result = _make_result(curves.copy(), curves, params_pred=params.copy(), params_gt=params)
-
-    with_slots    = Metrics(result, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger()).compute(param_space=True, slot_organization=True)
-    without_slots = Metrics(result, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger()).compute(param_space=True, slot_organization=False)
-
-    assert "slot_usage_entropy" in with_slots
-    assert "slot_usage_entropy" not in without_slots
-    assert "matched_mu_mae"     in without_slots
 
 
 def _legacy_cubes(seed: int = 0, n_slices: int = 3) -> tuple:

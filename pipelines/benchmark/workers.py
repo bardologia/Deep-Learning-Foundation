@@ -77,68 +77,13 @@ class BenchmarkWorker(WorkerBase):
 
         return float(multiplier) if multiplier is not None else None
 
-    def _ae_entry_config(self, model_name: str, logdir: Path, run_name: str | None = None, seed: int | None = None):
-        from configuration.training import ProfileAeEntryConfig
-
-        return ProfileAeEntryConfig(
-            run_name        = run_name or model_name,
-            seed            = self.config.seed if seed is None else seed,
-            logdir          = logdir,
-            pixel_subsample = self.config.pixel_subsample,
-            keep_empty_frac = self.config.keep_empty_frac,
-            ae_model_name   = model_name,
-            ae_loss         = self.config.ae_loss,
-            paths           = self.config.paths,
-            training        = self.config.training,
-            overfit_check   = self.config.overfit_check,
-        )
-
-    def _jepa_entry_config(self, model_name: str, logdir: Path, run_name: str | None = None, seed: int | None = None):
-        from configuration.training import JepaEntryConfig
-        from pipelines.shared.model.model_builder import ModelBuilder
-
-        jepa       = self.config.jepa
-        name, head = ModelBuilder.split_key(model_name)
-
-        return JepaEntryConfig(
-            run_name      = run_name or model_name,
-            backbone_name = name,
-            backbone_head = head,
-            seed          = self.config.seed if seed is None else seed,
-            logdir        = logdir,
-            paths         = self.config.paths,
-            training      = self.config.training,
-            normalization = self.config.normalization,
-            augmentation  = self.config.augmentation,
-            overfit_check = self.config.overfit_check,
-            probe         = self.config.probe,
-            **jepa.entry_kwargs(),
-        )
-
 
 class MaxBatchWorker(BenchmarkWorker):
 
     def _build_probe(self, model_name: str, work_dir: Path):
-        from pipelines.benchmark.batch_probe import EntryMaxBatchProbe, MaxBatchProbe
+        from pipelines.benchmark.batch_probe import MaxBatchProbe
 
-        training_type = self.config.training_type
-
-        if training_type == "backbone":
-            return MaxBatchProbe(config=self.config, model_name=model_name, overrides=self._size_overrides(model_name), work_dir=work_dir)
-
-        if training_type == "jepa":
-            from pipelines.jepa.training.pipeline import TrainingPipeline
-
-            entry = self._jepa_entry_config(model_name, work_dir)
-            return EntryMaxBatchProbe(config=self.config, model_name=model_name, work_dir=work_dir, build_trainer=TrainingPipeline(entry).build_pretrain_trainer)
-
-        if training_type == "profile_autoencoder":
-            from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
-
-            entry = self._ae_entry_config(model_name, work_dir)
-            return EntryMaxBatchProbe(config=self.config, model_name=model_name, work_dir=work_dir, build_trainer=TrainingPipeline(entry).build_pretrain_trainer)
-
-        raise ValueError(f"Unknown training_type '{training_type}', expected one of ['backbone', 'jepa', 'profile_autoencoder']")
+        return MaxBatchProbe(config=self.config, model_name=model_name, overrides=self._size_overrides(model_name), work_dir=work_dir)
 
     def run(self, model_name: str) -> None:
         stage_dir   = self.run_dir / "max_batch"
@@ -154,22 +99,6 @@ class MaxBatchWorker(BenchmarkWorker):
 
 
 class TrainingWorker(BenchmarkWorker):
-
-    def _run_profile_autoencoder(self, model_name: str, run_name: str, seed: int | None) -> None:
-        from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
-
-        self._apply_probed_overrides(model_name)
-
-        entry = self._ae_entry_config(model_name, self.run_dir / "training", run_name=run_name, seed=seed)
-        TrainingPipeline(entry).run()
-
-    def _run_jepa(self, model_name: str, run_name: str, seed: int | None) -> None:
-        from pipelines.jepa.training.pipeline import TrainingPipeline
-
-        self._apply_probed_overrides(model_name)
-
-        entry = self._jepa_entry_config(model_name, self.run_dir / "training", run_name=run_name, seed=seed)
-        TrainingPipeline(entry).run()
 
     def _run_backbone(self, model_name: str, run_name: str, seed: int | None, loss_component: str | None) -> None:
         from pipelines.backbone.training.pipeline import TrainingPipeline
@@ -212,23 +141,11 @@ class TrainingWorker(BenchmarkWorker):
     def run(self, model_name: str, seed: int | None = None, loss_component: str | None = None, run_name: str | None = None) -> None:
         from pipelines.benchmark.stages import BenchmarkUnitManifest
 
-        training_type = self.config.training_type
-        if training_type not in ("backbone", "jepa", "profile_autoencoder"):
-            raise ValueError(f"Unknown training_type '{training_type}', expected one of ['backbone', 'jepa', 'profile_autoencoder']")
-
         run_name = self.unit_run_name(model_name, loss_component, seed, run_name)
 
         BenchmarkUnitManifest.write(self.run_dir / "training" / run_name, run_tag=self.run_tag, unit=run_name, model=model_name, loss_component=loss_component, seed=seed)
 
         if self.skip_complete(self.run_dir / "training" / run_name, "benchmark_training", self.config.resume):
-            return
-
-        if training_type == "profile_autoencoder":
-            self._run_profile_autoencoder(model_name, run_name, seed)
-            return
-
-        if training_type == "jepa":
-            self._run_jepa(model_name, run_name, seed)
             return
 
         self._run_backbone(model_name, run_name, seed, loss_component)
@@ -238,13 +155,10 @@ class InferenceWorker(BenchmarkWorker):
 
     def run(self, model_name: str, seed: int | None = None, loss_component: str | None = None, run_name: str | None = None) -> None:
         from pipelines.backbone.inference.pipeline import InferencePipeline
-        from pipelines.shared.inference.inference_components import InferenceComponentsResolver
 
         run_directory = self.run_dir / "training" / self.unit_run_name(model_name, loss_component, seed, run_name)
 
         if UnitResume(run_directory, enabled=self.config.resume).skip_inference(self.config.inference.split):
             return
 
-        components = InferenceComponentsResolver.for_run(run_directory)
-        pipeline   = InferencePipeline(self.factory.inference_config(run_directory), components=components)
-        pipeline.run()
+        InferencePipeline(self.factory.inference_config(run_directory)).run()

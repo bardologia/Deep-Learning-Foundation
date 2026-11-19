@@ -6,17 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from configuration.inference.general             import InferencePaths, InferenceConfig
-from configuration.inference.backbone            import BackboneInferenceEntryConfig
-from configuration.inference.image_autoencoder   import ImageAeInferenceEntryConfig
-from configuration.inference.profile_autoencoder import ProfileAeInferenceEntryConfig
-from configuration.inference.image_autoencoder   import ImageAeInferenceConfig
-from configuration.inference.profile_autoencoder import ProfileAeInferenceConfig
+from configuration.inference.general  import InferencePaths, InferenceConfig
+from configuration.inference.backbone import BackboneInferenceEntryConfig
 
 from configuration.tuning.general import TuningConfig, TuningEntryConfig
 
-from configuration.cross_validation.general             import FoldConfig, CrossValidationConfig
-from configuration.cross_validation.profile_autoencoder import AeCvConfig
+from configuration.cross_validation.general import FoldConfig, CrossValidationConfig
 
 from configuration.benchmark.general import (
     MaxBatchConfig,
@@ -25,10 +20,8 @@ from configuration.benchmark.general import (
     ComparisonReportConfig,
     BenchmarkConfig,
 )
-from configuration.benchmark.dataloader_tuning  import DataLoaderTuningEntryConfig
-from configuration.training.general.run         import RunPathsConfig, TrainingQueueConfig
-from configuration.training.jepa               import JepaCouplingConfig
-from configuration.training.profile_autoencoder import ProfileAeLossConfig
+from configuration.benchmark.dataloader_tuning import DataLoaderTuningEntryConfig
+from configuration.training.general.run        import RunPathsConfig, TrainingQueueConfig
 
 from configuration.dataset                  import AugmentationConfig, InputConfig
 from configuration.training.general.runtime import OverfitCheckConfig
@@ -38,14 +31,10 @@ from configuration.normalization.general import NormalizationConfig
 DEFAULT_CONFIGS = [
     InferencePaths,
     BackboneInferenceEntryConfig,
-    ProfileAeInferenceEntryConfig,
-    ImageAeInferenceEntryConfig,
     TuningConfig,
     TuningEntryConfig,
-    JepaCouplingConfig,
     FoldConfig,
     CrossValidationConfig,
-    AeCvConfig,
     RunPathsConfig,
     MaxBatchConfig,
     SizeMatchConfig,
@@ -93,30 +82,15 @@ def test_backbone_inference_entry_config_holds_inference():
 
 def test_run_directory_inference_defaults_come_from_one_factory():
     from configuration.training.backbone import BackboneEntryConfig
-    from configuration.training.jepa     import JepaEntryConfig
 
     standalone = [BackboneInferenceEntryConfig().inference]
-    training   = [BackboneEntryConfig().inference, JepaEntryConfig().inference]
+    training   = [BackboneEntryConfig().inference]
 
     for cfg in standalone + training:
         assert cfg.run_directory == Path(".")
         assert cfg.save_cubes  is True
         assert cfg.cpu_workers == 16
         assert cfg.gif_axes    == ["z", "col", "row"]
-
-
-
-def test_ae_inference_entry_configs_expose_only_their_tree():
-    profile = ProfileAeInferenceEntryConfig()
-    image   = ImageAeInferenceEntryConfig()
-
-    assert isinstance(profile.profile_inference, ProfileAeInferenceConfig)
-    assert isinstance(image.image_inference, ImageAeInferenceConfig)
-    assert not hasattr(profile, "inference")
-    assert not hasattr(image, "inference")
-    assert not hasattr(BackboneInferenceEntryConfig(), "profile_inference")
-    assert profile.runs_dir.endswith("/profile_autoencoder")
-    assert image.runs_dir.endswith("/image_autoencoder")
 
 
 def test_tuning_config_positive_trials():
@@ -158,15 +132,9 @@ def test_training_queue_lr_scale_follows_the_batch_rule():
 def test_tuning_entry_config_subconfigs():
     cfg = TuningEntryConfig()
     assert isinstance(cfg.tuning, TuningConfig)
-    assert isinstance(cfg.jepa, JepaCouplingConfig)
     assert isinstance(cfg.paths, RunPathsConfig)
     assert isinstance(cfg.gpus, list)
     assert cfg.training.batch_size > 0
-
-
-def test_tuning_entry_ae_loss_default_factory():
-    cfg = TuningEntryConfig()
-    assert isinstance(cfg.ae_loss, ProfileAeLossConfig)
 
 
 def test_fold_config_defaults():
@@ -178,8 +146,6 @@ def test_fold_config_defaults():
 def test_cross_validation_config_subconfigs():
     cfg = CrossValidationConfig()
     assert isinstance(cfg.folds, FoldConfig)
-    assert isinstance(cfg.jepa, JepaCouplingConfig)
-    assert isinstance(cfg.autoencoder, AeCvConfig)
     assert cfg.inference_splits == ["val", "test"]
 
 
@@ -206,9 +172,8 @@ def test_cross_validation_fold_inference_saves_cubes():
 
 
 def test_cross_validation_runs_inference_logic():
-    assert CrossValidationConfig(training_type="backbone").runs_inference() is True
-    assert CrossValidationConfig(training_type="profile_autoencoder").runs_inference() is True
-    assert CrossValidationConfig(training_type="image_autoencoder", inference_splits=[]).runs_inference() is False
+    assert CrossValidationConfig().runs_inference() is True
+    assert CrossValidationConfig(inference_splits=[]).runs_inference() is False
 
 
 def test_benchmark_paths_defaults_are_paths():
@@ -240,24 +205,15 @@ def test_max_batch_config_budget_positive():
     assert cfg.max_batch > 0
 
 
-def test_benchmark_config_dispatch_methods():
-    backbone = BenchmarkConfig(training_type="backbone")
-    assert backbone.runs_size_match() is True
-    assert backbone.runs_inference() is True
-
-    pae = BenchmarkConfig(training_type="profile_autoencoder")
-    assert pae.runs_size_match() is False
-    assert pae.runs_inference() is False
-
-    jepa = BenchmarkConfig(training_type="jepa")
-    assert jepa.runs_inference() is True
+def test_benchmark_config_runs_inference_when_infer_after_is_on():
+    assert BenchmarkConfig().runs_inference() is True
+    assert BenchmarkConfig(infer_after=False).runs_inference() is False
 
 
 def test_benchmark_config_subconfigs():
     cfg = BenchmarkConfig()
     assert isinstance(cfg.max_batch, MaxBatchConfig)
     assert isinstance(cfg.size_match, SizeMatchConfig)
-    assert isinstance(cfg.jepa, JepaCouplingConfig)
 
 
 def test_benchmark_config_exposes_training_recipe_sections():

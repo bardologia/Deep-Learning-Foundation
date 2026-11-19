@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as functional
 from torch.utils.data import Dataset
 
-from tools.data.gaussians import GaussianAxis, GaussianHead, GaussianMixture
+from tools.data.gaussians import GaussianAxis, GaussianHead
 
 
 @dataclass
@@ -26,198 +26,7 @@ class FeedTarget:
     config_hint    : str
 
 
-class FeedLosses:
-
-    @staticmethod
-    def reconstruction(model: torch.nn.Module, model_input: torch.Tensor) -> torch.Tensor:
-        reconstruction, _ = model.reconstruct(model_input)
-        return functional.mse_loss(reconstruction, model_input)
-
-    @staticmethod
-    def supervised(model: torch.nn.Module, model_input: torch.Tensor) -> torch.Tensor:
-        prediction = model(model_input)
-        return functional.mse_loss(prediction, torch.zeros_like(prediction))
-
-
-class SyntheticCurveDataset(Dataset):
-
-    def __init__(self, n_samples: int, profile_length: int, seed: int) -> None:
-        self.n_samples      = int(n_samples)
-        self.profile_length = int(profile_length)
-        self.z_axis         = np.linspace(0.0, 1.0, self.profile_length, dtype=np.float32)
-        self.rng_seed       = int(seed)
-
-    def __len__(self) -> int:
-        return self.n_samples
-
-    def __getitem__(self, index: int):
-        rng = np.random.default_rng(self.rng_seed + index)
-
-        amplitudes = rng.uniform(0.2, 1.0, size=(1, 3)).astype(np.float32)
-        means      = rng.uniform(0.2, 0.8, size=(1, 3)).astype(np.float32)
-        sigmas     = rng.uniform(0.02, 0.08, size=(1, 3)).astype(np.float32)
-
-        curve = GaussianMixture.evaluate_batch(self.z_axis, amplitudes, means, sigmas)[0]
-
-        return curve.astype(np.float32)
-
-
-class ProfileFeedAdapter:
-
-    DEFAULT_MODEL = "mlp_ae"
-
-    def __init__(self, config, work_dir: Path, logger) -> None:
-        self.config     = config
-        self.work_dir   = Path(work_dir)
-        self.logger     = logger
-        self.model_name = config.model_name or self.DEFAULT_MODEL
-
-    @staticmethod
-    def to_model_input(batch, device: torch.device) -> torch.Tensor:
-        return batch[0].to(device, non_blocking=True).unsqueeze(-1).unsqueeze(-1)
-
-    def _training_pipeline(self):
-        from configuration.training import ProfileAeEntryConfig
-        from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
-
-        entry = ProfileAeEntryConfig(ae_model_name=self.model_name, seed=self.config.seed)
-        entry.paths           = self.config.paths
-        entry.pixel_subsample = self.config.pixel_subsample
-        entry.keep_empty_frac = self.config.keep_empty_frac
-
-        return TrainingPipeline(entry)
-
-    def _dataset(self, training_pipeline):
-        from pipelines.profile_autoencoder.dataset.pipeline import ProfileDatasetPipeline
-
-        profile_dataset_config = training_pipeline.dataset_config
-        dataset_pipeline       = ProfileDatasetPipeline(profile_dataset_config, self.work_dir, logger=self.logger, seed=self.config.seed)
-
-        (_loaders, datasets, _axis, profile_length, _normalizer) = dataset_pipeline.run()
-
-        return datasets["train"], profile_length
-
-    def _model(self, training_pipeline, profile_length: int):
-        from models.profile_autoencoder import get_profile_autoencoder
-
-        model, _ = get_profile_autoencoder(self.model_name, training_pipeline.autoencoder_cfg, profile_length=profile_length)
-        return model
-
-    def build(self) -> FeedTarget:
-        training_pipeline       = self._training_pipeline()
-        dataset, profile_length = self._dataset(training_pipeline)
-        model                   = self._model(training_pipeline, profile_length)
-
-        return FeedTarget(
-            dataset        = dataset,
-            model          = model,
-            to_model_input = self.to_model_input,
-            forward_loss   = FeedLosses.reconstruction,
-            model_name     = self.model_name,
-            sample_text    = f"profile curves, length {profile_length}, {len(dataset):,} samples",
-            item_source    = "ProfileDataset.__getitem__ (per-profile GaussianMixture.evaluate_batch synthesis)",
-            config_hint    = "configuration/dataset/profile_autoencoder.py ProfileDatasetConfig",
-        )
-
-
-class ImageFeedAdapter:
-
-    DEFAULT_MODEL = "conv2d_ae"
-
-    def __init__(self, config, work_dir: Path, logger) -> None:
-        self.config     = config
-        self.work_dir   = Path(work_dir)
-        self.logger     = logger
-        self.model_name = config.model_name or self.DEFAULT_MODEL
-
-    @staticmethod
-    def to_model_input(batch, device: torch.device) -> torch.Tensor:
-        return batch[0].to(device, non_blocking=True)
-
-    def _training_pipeline(self):
-        from configuration.training.image_autoencoder import ImageAeEntryConfig
-        from pipelines.image_autoencoder.training.pipeline import TrainingPipeline
-
-        entry       = ImageAeEntryConfig(ae_model_name=self.model_name, seed=self.config.seed)
-        entry.paths = self.config.paths
-
-        return TrainingPipeline(entry)
-
-    def _dataset(self, training_pipeline):
-        from pipelines.backbone.dataset.pipeline import DatasetPipeline
-
-        dataset_config  = training_pipeline.dataset_config
-        gaussian_config = training_pipeline.trainer_config.gaussian
-
-        dataset_config.n_gaussians = gaussian_config.n_default_gaussians
-
-        dataset_pipeline = DatasetPipeline(dataset_config, self.work_dir, activity_threshold=gaussian_config.activity_threshold, logger=self.logger, seed=self.config.seed)
-        profile_length   = dataset_pipeline.profile_length
-
-        dataset_config.z_axis = GaussianAxis.build(gaussian_config.x_min, gaussian_config.x_max, profile_length)
-
-        _train_loader, _val_loader, _test_loader, datasets = dataset_pipeline.run()
-
-        return datasets["train"]
-
-    def _model(self, training_pipeline, input_channels: int):
-        from models.image_autoencoder import get_image_autoencoder
-
-        model, _ = get_image_autoencoder(self.model_name, training_pipeline.autoencoder_cfg, in_channels=input_channels)
-        return model
-
-    def build(self) -> FeedTarget:
-        training_pipeline = self._training_pipeline()
-        dataset           = self._dataset(training_pipeline)
-        input_channels    = dataset.input_channels
-        model             = self._model(training_pipeline, input_channels)
-
-        sample = np.asarray(dataset[0][0])
-
-        return FeedTarget(
-            dataset        = dataset,
-            model          = model,
-            to_model_input = self.to_model_input,
-            forward_loss   = FeedLosses.reconstruction,
-            model_name     = self.model_name,
-            sample_text    = f"patches {tuple(sample.shape)}, {len(dataset):,} samples, {input_channels} channels",
-            item_source    = "PatchDataset.__getitem__ (patch extraction + complex->representation conversion)",
-            config_hint    = "configuration/dataset/general/dataset.py DatasetConfig",
-        )
-
-
-class SyntheticFeedAdapter:
-
-    DEFAULT_MODEL = "mlp_ae"
-
-    def __init__(self, config, work_dir: Path, logger) -> None:
-        self.config     = config
-        self.logger     = logger
-        self.model_name = config.model_name or self.DEFAULT_MODEL
-
-    @staticmethod
-    def to_model_input(batch, device: torch.device) -> torch.Tensor:
-        return batch.to(device, non_blocking=True).unsqueeze(-1).unsqueeze(-1)
-
-    def build(self) -> FeedTarget:
-        from models.profile_autoencoder import get_profile_autoencoder
-
-        dataset = SyntheticCurveDataset(self.config.synthetic_samples, self.config.synthetic_length, self.config.seed)
-        model, _ = get_profile_autoencoder(self.model_name, None, profile_length=self.config.synthetic_length)
-
-        return FeedTarget(
-            dataset        = dataset,
-            model          = model,
-            to_model_input = self.to_model_input,
-            forward_loss   = FeedLosses.reconstruction,
-            model_name     = self.model_name,
-            sample_text    = f"synthetic curves, length {self.config.synthetic_length}, {len(dataset):,} samples",
-            item_source    = "SyntheticCurveDataset.__getitem__ (in-process Gaussian synthesis)",
-            config_hint    = "configuration/benchmark/dataloader_tuning.py DataLoaderTuningEntryConfig",
-        )
-
-
-class BackboneFeedAdapter:
+class FeedAdapter:
 
     DEFAULT_MODEL = "resunet"
 
@@ -230,6 +39,11 @@ class BackboneFeedAdapter:
     @staticmethod
     def to_model_input(batch, device: torch.device) -> torch.Tensor:
         return batch[0].to(device, non_blocking=True)
+
+    @staticmethod
+    def forward_loss(model: torch.nn.Module, model_input: torch.Tensor) -> torch.Tensor:
+        prediction = model(model_input)
+        return functional.mse_loss(prediction, torch.zeros_like(prediction))
 
     def _config_factory(self):
         from configuration.training          import BackboneEntryConfig
@@ -253,7 +67,7 @@ class BackboneFeedAdapter:
 
         name, _head              = ModelBuilder.split_key(self.model_name)
         patch                    = dataset_config.patch
-        patch.size, patch.stride = ModelBuilder.square_patch([name], patch.size, patch.stride)
+        patch.size, patch.stride = ModelBuilder.square_patch(name, patch.size, patch.stride)
 
         dataset_pipeline = DatasetPipeline(dataset_config, self.work_dir, activity_threshold=gaussian_cfg.activity_threshold, logger=self.logger, seed=self.config.seed)
         profile_length   = dataset_pipeline.profile_length
@@ -288,38 +102,9 @@ class BackboneFeedAdapter:
             dataset        = dataset,
             model          = model,
             to_model_input = self.to_model_input,
-            forward_loss   = FeedLosses.supervised,
+            forward_loss   = self.forward_loss,
             model_name     = self.model_name,
             sample_text    = f"patches {tuple(sample.shape)}, {len(dataset):,} samples, {input_channels} channels",
             item_source    = "PatchDataset.__getitem__ (patch extraction + complex->representation conversion)",
             config_hint    = "configuration/dataset/general/dataset.py DatasetConfig",
         )
-
-
-class FeedTargetFactory:
-
-    ADAPTERS = {
-        "synthetic"           : SyntheticFeedAdapter,
-        "profile_autoencoder" : ProfileFeedAdapter,
-        "image_autoencoder"   : ImageFeedAdapter,
-        "backbone"            : BackboneFeedAdapter,
-    }
-
-    @classmethod
-    def modes(cls) -> tuple[str, ...]:
-        return tuple(cls.ADAPTERS)
-
-    @classmethod
-    def adapter(cls, mode: str):
-        if mode not in cls.ADAPTERS:
-            raise ValueError(f"Unknown tuning mode '{mode}'. Available: {list(cls.ADAPTERS)}")
-
-        return cls.ADAPTERS[mode]
-
-    @classmethod
-    def model_name(cls, config) -> str:
-        return config.model_name or cls.adapter(config.mode).DEFAULT_MODEL
-
-    @classmethod
-    def build(cls, config, work_dir: Path, logger) -> FeedTarget:
-        return cls.adapter(config.mode)(config, work_dir, logger).build()

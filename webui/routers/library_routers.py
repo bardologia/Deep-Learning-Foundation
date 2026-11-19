@@ -1,8 +1,7 @@
 
 from __future__ import annotations
 
-from model_library_base import ModelNoteLibrary
-from routers.dispatch   import HttpExchange, RouteTable, SubRouter
+from routers.dispatch import HttpExchange, RouteTable, SubRouter
 
 
 class ContentLibraryRouter(SubRouter):
@@ -22,9 +21,9 @@ class ContentLibraryRouter(SubRouter):
         exchange.send_json({self.envelope: collected} if self.envelope else collected)
 
 
-class ModelLibraryRouter(SubRouter):
+class BackboneRouter(SubRouter):
 
-    def __init__(self, section: str, library: ModelNoteLibrary) -> None:
+    def __init__(self, section: str, library) -> None:
         self.section = section
         self.library = library
 
@@ -35,7 +34,7 @@ class ModelLibraryRouter(SubRouter):
         table.wildcard("GET", f"{self.section}/", "/note", self.note)
 
     def families(self, exchange: HttpExchange) -> None:
-        exchange.send_json({"families": self.library.collect()})
+        exchange.send_json({"families": self.library.collect(), "heads": self.library.heads()})
 
     def note(self, exchange: HttpExchange, key: str) -> None:
         note = self.library.note(key)
@@ -44,9 +43,3 @@ class ModelLibraryRouter(SubRouter):
             return
 
         exchange.send_json(note)
-
-
-class BackboneRouter(ModelLibraryRouter):
-
-    def families(self, exchange: HttpExchange) -> None:
-        exchange.send_json({"families": self.library.collect(), "heads": self.library.heads()})

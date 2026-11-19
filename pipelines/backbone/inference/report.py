@@ -43,8 +43,6 @@ class ReportPayloadBuilder:
             "target_dataset"          : run.target.describe() if run.target is not None else "none (scored on its own split)",
             "region_override"         : cfg.region_override,
             "render_amp_floor"        : cfg.render_amp_floor,
-            "extract_curve_params"    : cfg.extract_curve_params,
-            "extract_prominence_frac" : cfg.extract_prominence_frac,
             "code_commit"             : GitState.commit(),
             "stitch_window"           : cfg.stitch_window,
             "cube_dtype"              : cfg.cube_dtype,
@@ -202,8 +200,6 @@ class Report:
             ("code_commit",             cfg["code_commit"]),
             ("region_override",         cfg["region_override"]),
             ("render_amp_floor",        cfg["render_amp_floor"]),
-            ("extract_curve_params",    cfg["extract_curve_params"]),
-            ("extract_prominence_frac", cfg["extract_prominence_frac"]),
             ("device",                  cfg["device"]),
             ("batch_size",              cfg["batch_size"]),
             ("num_workers",             cfg["num_workers"]),
@@ -287,12 +283,10 @@ class Report:
         self._subsection_index = 3
         self._anchors          = {}
 
-        out += self._build_extraction_headline()
         out += self._build_active_count_headline()
         out += self._build_param_population_headline()
         out += self._build_matched_headline()
         out += self._build_slot_organization_headline()
-        out += self._build_jepa_headline()
         out += self._build_roughness_headline()
         out += self._build_cube_ssim_headline()
 
@@ -311,33 +305,6 @@ class Report:
             return ""
 
         return template.format(section=self._anchors[anchor])
-
-    def _build_extraction_headline(self) -> List[str]:
-        gm = self.global_metrics
-        if gm.get("params_source") != "extracted":
-            return []
-
-        out = [f"\n### {self._next_subsection('extraction')} Curve-parameter extraction and its measurement floor\n"]
-        out.append(
-            "This run predicts z curves, not Gaussian parameters, so every parameter-space number in "
-            "this report comes from refitting K Gaussians to the predicted curve. The same extractor was run on "
-            "the GT curves and scored against the exact GT parameters: that is the measurement floor, the error "
-            "the extraction alone produces when the curve is perfect. Read the matched errors in the parameter "
-            "sections against this floor, not against zero; a parameter error at the floor means the extraction "
-            "is the limit, not the model.\n"
-        )
-        out.append(self._three_col_table([
-            ("Fit R² mean",      gm["extract_fit_r2_mean"],           "Refit Gaussians vs the predicted curve they were fit to"),
-            ("Fit R² median",    gm["extract_fit_r2_median"],         "Median over pixels"),
-            ("Fit R² p5",        gm["extract_fit_r2_p5"],             "5th percentile (worst tail)"),
-            ("Floor μ MAE",      gm["extract_floor_matched_mu_mae"],  "Extractor on GT curves vs exact GT parameters"),
-            ("Floor σ MAE",      gm["extract_floor_matched_sig_mae"], "Extractor on GT curves vs exact GT parameters"),
-            ("Floor amp MAE",    gm["extract_floor_matched_amp_mae"], "Extractor on GT curves vs exact GT parameters"),
-            ("Floor recall",     gm["extract_floor_matched_recall"],  "Detection recall achievable by the extractor alone"),
-        ], header=("Metric", "Value", "Description")))
-        out.append("")
-
-        return out
 
     def _build_active_count_headline(self) -> List[str]:
         gm = self.global_metrics
@@ -493,44 +460,6 @@ class Report:
 
         return out
 
-    def _build_jepa_headline(self) -> List[str]:
-        gm = self.global_metrics
-        if "jepa_embedding_mse" not in gm:
-            return []
-
-        out = [f"\n### {self._next_subsection('jepa')} JEPA embedding diagnostics\n"]
-        out.append(
-            "The JEPA objective is measured directly in embedding space: the backbone's predicted profile "
-            "embedding is compared against the checkpoint encoder's embedding of the GT curve, both in the "
-            "decoder's normalised embedding space. The decoder-only error isolates the profile-autoencoder "
-            "reconstruction floor; the full-chain error is the decoded prediction against the GT curve in "
-            "normalised curve space, so chain − decoder gauges how much error the predictor itself adds.\n"
-        )
-        rows = [
-            ("Embedding MSE",           gm["jepa_embedding_mse"],          "Predicted vs target embedding, normalised space"),
-            ("Embedding RMSE",          gm["jepa_embedding_rmse"],         "Per-component error spread; the scale a decoder must tolerate"),
-            ("Embedding NMSE",          gm["jepa_embedding_nmse"],         "Error power divided by target power, so scale-free across autoencoders"),
-            ("Embedding cosine",        gm["jepa_embedding_cosine"],       "Mean cosine similarity along the embedding dimension"),
-            ("Per-dim RMSE min",        gm["jepa_embedding_dim_rmse_min"], "Best-predicted embedding component"),
-            ("Per-dim RMSE max",        gm["jepa_embedding_dim_rmse_max"], "Worst-predicted embedding component"),
-            ("Per-dim RMSE std",        gm["jepa_embedding_dim_rmse_std"], "Spread across components; a large value means the error concentrates in a few directions"),
-            ("Decoder-only MSE (norm)", gm["jepa_decode_mse_norm"],        "decode(encode(GT)) vs GT, normalised curves"),
-            ("Full-chain MSE (norm)",   gm["jepa_chain_mse_norm"],         "decode(predicted embedding) vs GT, normalised curves"),
-            ("Predictor excess MSE",    gm["jepa_predictor_excess_mse"],   "Full chain minus decoder floor: the error the predictor itself adds"),
-            ("Decoder floor fraction",  gm["jepa_decoder_floor_frac"],     "Share of the chain error already present with a perfect embedding"),
-            ("Decode amplification",    gm["jepa_decode_amplification"],   "Curve MSE added per unit of embedding MSE; how harshly the decoder magnifies latent error"),
-            ("Embedding err p95",       gm["jepa_embedding_err_p95"],      "95th percentile of the per-pixel embedding MSE"),
-            ("Embedding cosine p5",     gm["jepa_embedding_cosine_p5"],    "5th percentile of the per-pixel cosine (worst tail)"),
-        ]
-
-        if "jepa_embedding_error_corr" in gm:
-            rows.append(("Embedding-error corr", gm["jepa_embedding_error_corr"], "Correlation of the per-pixel embedding error with the per-pixel curve MSE"))
-
-        out.append(self._three_col_table(rows, header=("Metric", "Value", "Description")))
-        out.append("")
-
-        return out
-
     def _build_roughness_headline(self) -> List[str]:
         gm = self.global_metrics
         if "roughness_ratio" not in gm:
@@ -588,9 +517,7 @@ class Report:
 
     _METRIC_TAXONOMY = (
         ("3.1 Dataset statistics",                               lambda k: k in Report._DATASET_KEYS or k.endswith("_status")),
-        ("3.12 JEPA embedding diagnostics",                      lambda k: k.startswith("jepa_")),
-        ("3.12b Curve-parameter extraction",                     lambda k: k.startswith(("extract_", "params_source"))),
-        ("3.12c Curve roughness",                                lambda k: k.startswith("roughness_")),
+        ("3.12 Curve roughness",                                 lambda k: k.startswith("roughness_")),
         ("3.13 Label quality (GT fit vs raw cube)",              lambda k: k.startswith("label_")),
         ("3.14 Normalization & clamp health",                    lambda k: k.startswith(("norm_in_", "clamp_"))),
         ("3.15 Flip-equivariance consistency",                   lambda k: k.startswith("flip_")),
@@ -696,8 +623,7 @@ class Report:
             ("stratified_errors",     "5.6 Error stratified by scene covariates"),
             ("failure_mode_map",      "5.7 Dominant failure mode per pixel"),
             ("miss_by_separation",    "5.8 Miss rate by GT component separation"),
-            ("extract_r2_map",        "5.9 Extraction fit R\u00b2 map (refit Gaussians vs predicted curve)"),
-            ("metric_histograms",     "5.10 Metric distributions"),
+            ("metric_histograms",     "5.9 Metric distributions"),
         )
         if any(fp.get(key) for key, _title in pixel_groups):
             out.append("\n## 5. Per-pixel metric maps\n")
@@ -727,25 +653,6 @@ class Report:
                 f"as parameter bias.{self._reference('matched_errors', ' For aggregate ordering-independent accuracy see §{section}.')}\n"
             )
             self._section(out, param_groups)
-
-        embedding_groups = (
-            ("embedding_error_map",  "6c.1 Per-pixel embedding error"),
-            ("embedding_cosine_map", "6c.2 Per-pixel embedding cosine similarity"),
-            ("embedding_decode_map", "6c.3 Decoder-only error (autoencoder floor)"),
-            ("embedding_chain_map",  "6c.4 Full-chain error (decoded prediction vs GT)"),
-            ("embedding_histograms", "6c.5 Embedding metric distributions"),
-        )
-        if any(fp.get(key) for key, _title in embedding_groups):
-            out.append("\n## 6c. Embedding-space diagnostics\n")
-            out.append(
-                "Where the JEPA prediction lives before it becomes a curve. The error map (6c.1) is the "
-                "per-pixel distance between the predicted embedding and the encoder's embedding of the GT "
-                "curve. Comparing the decoder-only map (6c.3) against the full-chain map (6c.4) separates the "
-                "autoencoder's own reconstruction floor from the error the predictor adds: pixels that are "
-                "bright in both are limited by the autoencoder, pixels bright only in 6c.4 are prediction "
-                "failures.\n"
-            )
-            self._section(out, embedding_groups)
 
         org_groups = [(key, title) for key, title in (
             ("slot_usage",      "Per-slot activation frequency"),

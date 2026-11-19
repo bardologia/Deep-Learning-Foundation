@@ -166,7 +166,6 @@ class App {
       document.getElementById("model-detail")
     );
     this.modelGallery.load();
-    this._initModelZoo();
 
     this.configBrowser = new window.ConfigBrowser(
       document.getElementById("config-list"),
@@ -480,19 +479,6 @@ class App {
     }
 
     this.figureDock.mount(route, page, () => view.figureTag());
-  }
-
-  _initModelZoo() {
-    const wrap = document.getElementById("model-zoo");
-    if (!wrap) return;
-    wrap.querySelectorAll(".model-zoo__btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (btn.classList.contains("is-active")) return;
-        wrap.querySelectorAll(".model-zoo__btn").forEach((b) => b.classList.toggle("is-active", b === btn));
-        wrap.closest(".page__head").querySelector(".page__figure").setAttribute("name", btn.dataset.figure);
-        this.modelGallery.reload(btn.dataset.endpoint, btn.dataset.zoo);
-      });
-    });
   }
 
   _initModelMode() {

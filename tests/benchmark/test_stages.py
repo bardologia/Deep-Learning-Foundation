@@ -415,13 +415,6 @@ def test_sweep_components_unknown_name_fails(config):
         SeedExpandedStage.components(config)
 
 
-def test_sweep_components_collapse_for_non_backbone(config):
-    config.training_type         = "profile_autoencoder"
-    config.sweep_loss_components = []
-
-    assert SeedExpandedStage.components(config) == [None]
-
-
 @pytest.mark.dataset
 def test_training_seed_sweep_job_uses_base_model_and_seed(data_config, logger_stub):
     data_config.seeds = [7]

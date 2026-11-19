@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 
-from pipelines.dataloader_tuning.adapters import FeedTargetFactory
+from pipelines.dataloader_tuning.adapters import FeedAdapter
 from tools.benchmarking.step_profiler     import StepProfiler
 from tools.runtime.run_tag                import RunTag
 
@@ -21,7 +21,7 @@ class TrainingProfilePipeline:
 
     def run(self) -> dict:
         output_dir = Path(self.entry.output_dir) / RunTag.now()
-        feed       = FeedTargetFactory.build(self.entry, output_dir / "feed", self.logger)
+        feed       = FeedAdapter(self.entry, output_dir / "feed", self.logger).build()
 
         profiler = StepProfiler(
             feed            = feed,

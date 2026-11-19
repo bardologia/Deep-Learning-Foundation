@@ -101,23 +101,8 @@ def test_image_size_override_rectangular_patch_takes_the_bigger_dimension():
 
 
 def test_square_patch_squares_size_and_stride_for_square_only_backbones():
-    assert ModelBuilder.square_patch(["swin_unet"], (64, 32), (32, 16)) == ((64, 64), (32, 32))
+    assert ModelBuilder.square_patch("swin_unet", (64, 32), (32, 16)) == ((64, 64), (32, 32))
 
 
 def test_square_patch_keeps_rectangles_for_convolutional_backbones():
-    assert ModelBuilder.square_patch(["resunet"], (64, 32), (32, 16)) == ((64, 32), (32, 16))
-
-
-def test_squaring_note_names_both_geometries_and_the_square_only_backbone():
-    note = ModelBuilder.squaring_note(["resunet", "swin_unet"], (32, 16), (16, 8))
-
-    assert note.startswith("patch 32x16 with stride 16x8 squared to 32x32 with stride 16x16: swin_unet need a square input")
-
-
-def test_squaring_note_is_none_when_the_geometry_stays():
-    assert ModelBuilder.squaring_note(["resunet"], (64, 32), (32, 16))   is None
-    assert ModelBuilder.squaring_note(["swin_unet"], (32, 32), (16, 16)) is None
-
-
-def test_square_patch_squares_when_any_dual_trunk_is_square_only():
-    assert ModelBuilder.square_patch(["resunet", "transunet"], (64, 32), (32, 16)) == ((64, 64), (32, 32))
+    assert ModelBuilder.square_patch("resunet", (64, 32), (32, 16)) == ((64, 32), (32, 16))

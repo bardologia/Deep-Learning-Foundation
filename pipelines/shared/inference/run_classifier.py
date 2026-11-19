@@ -1,43 +1,29 @@
-
 from __future__ import annotations
 
 from pathlib import Path
 
 
-class RunType:
-
-    BACKBONE   = "backbone"
-    PROFILE_AE = "profile_ae"
-    IMAGE_AE   = "image_ae"
-
-
 class RunArtifacts:
 
-    BACKBONE_CONFIG   = "model_config.json"
-    PROFILE_AE_CONFIG = "profile_autoencoder_config.json"
-    IMAGE_AE_CONFIG   = "image_autoencoder_config.json"
+    BACKBONE_CONFIG = "model_config.json"
+
+    @classmethod
+    def is_run(cls, run_directory: Path) -> bool:
+        return (Path(run_directory) / "meta" / cls.BACKBONE_CONFIG).is_file()
 
 
 class InferenceLayout:
 
     DIRNAME        = "inference"
     TARGET_DIRNAME = "cross_dataset"
-    SUBDIRS        = {
-        RunType.PROFILE_AE : RunType.PROFILE_AE,
-        RunType.IMAGE_AE   : RunType.IMAGE_AE,
-    }
 
     @classmethod
-    def base(cls, run_directory: Path, run_type: str) -> Path:
-        base = Path(run_directory) / cls.DIRNAME
-
-        return base / cls.SUBDIRS[run_type] if run_type in cls.SUBDIRS else base
+    def base(cls, run_directory: Path) -> Path:
+        return Path(run_directory) / cls.DIRNAME
 
     @classmethod
-    def target_base(cls, run_directory: Path, run_type: str, dataset_name: str) -> Path:
-        base = Path(run_directory) / cls.TARGET_DIRNAME / dataset_name
-
-        return base / cls.SUBDIRS[run_type] if run_type in cls.SUBDIRS else base
+    def target_base(cls, run_directory: Path, dataset_name: str) -> Path:
+        return Path(run_directory) / cls.TARGET_DIRNAME / dataset_name
 
 
 class RunDirectoryWalk:
@@ -55,22 +41,3 @@ class RunDirectoryWalk:
                 yield entry
             elif depth < cls.MAX_DEPTH:
                 yield from cls.walk(entry, depth + 1)
-
-
-class RunClassifier:
-
-    TYPE_ARTIFACTS = (
-        (RunType.BACKBONE,   RunArtifacts.BACKBONE_CONFIG),
-        (RunType.PROFILE_AE, RunArtifacts.PROFILE_AE_CONFIG),
-        (RunType.IMAGE_AE,   RunArtifacts.IMAGE_AE_CONFIG),
-    )
-
-    @classmethod
-    def classify(cls, run_directory: Path) -> str:
-        meta = Path(run_directory) / "meta"
-
-        for run_type, filename in cls.TYPE_ARTIFACTS:
-            if (meta / filename).is_file():
-                return run_type
-
-        raise ValueError(f"Run '{run_directory}' has no recognized model config under meta/ (no backbone, profile-autoencoder or image-autoencoder config); cannot infer.")

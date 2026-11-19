@@ -69,38 +69,3 @@ def test_position_dependent_model_disagrees():
     assert flip_map.mean() > 1e-4
     center_col = (W - 1) / 2.0
     assert flip_map[:, 0].mean() > flip_map[:, int(round(center_col))].mean()
-
-
-def _equivariant_curve_model(images: torch.Tensor) -> np.ndarray:
-    x      = images.numpy()
-    curves = np.abs(x[:, 0:1]) + 0.5
-
-    return np.repeat(curves, N_Z, axis=1).astype(np.float32)
-
-
-def _position_curve_model(images: torch.Tensor) -> np.ndarray:
-    B      = images.shape[0]
-    cols   = np.arange(W, dtype=np.float32)[None, None, None, :]
-    curves = np.broadcast_to(cols, (B, N_Z, H, W))
-
-    return np.ascontiguousarray(curves, dtype=np.float32)
-
-
-def test_curve_model_skips_param_rendering_and_scores_zero_when_equivariant():
-    evaluator = FlipConsistencyEvaluator(_run(_equivariant_curve_model), SilentLogger(), window_kind="uniform", render_params=False)
-
-    assert evaluator.renderer is None
-
-    flip_map = evaluator.run()
-
-    assert flip_map.shape == (H, W)
-    assert np.allclose(flip_map, 0.0, atol=1e-10)
-
-
-def test_curve_model_disagrees_when_position_dependent():
-    evaluator = FlipConsistencyEvaluator(_run(_position_curve_model), SilentLogger(), window_kind="uniform", render_params=False)
-
-    flip_map = evaluator.run()
-
-    assert flip_map.mean() > 1e-4
-    assert flip_map[:, 0].mean() > flip_map[:, int(round((W - 1) / 2.0))].mean()

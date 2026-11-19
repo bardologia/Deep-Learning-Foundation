@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from configuration.cross_validation import CrossValidationConfig
-from pipelines.cross_validation.folds               import FoldConfigFactory, FoldFamily, FoldPlanner
+from pipelines.cross_validation.folds               import FoldConfigFactory, FoldPlanner
 from pipelines.cross_validation.stages              import CrossValidationReportStage, FoldInferenceStage, FoldTrainingStage
 from pipelines.shared.orchestration.staged_pipeline import StagedPipeline
 
@@ -21,8 +21,6 @@ class CrossValidationPipeline(StagedPipeline):
 
     @classmethod
     def validate_sweep(cls, config: CrossValidationConfig) -> None:
-        FoldFamily.validate(config.training_type)
-
         if config.stage not in cls.STAGES:
             raise SystemExit(f"unknown cross-validation stage '{config.stage}'; valid: {', '.join(cls.STAGES)}")
 
@@ -89,8 +87,7 @@ class CrossValidationPipeline(StagedPipeline):
         self.logger.section("Cross-validation pipeline")
         self.logger.kv_table({
             "Run tag"          : self.run_tag,
-            "Training type"    : self.config.training_type,
-            "Model"            : FoldFamily.model_label(self.config),
+            "Model"            : self.config.backbone_name,
             "Folds"            : self.config.folds.n_folds,
             "Row extent"       : f"[{self.config.folds.row_start}, {self.config.folds.row_end})",
             "Inference splits" : ", ".join(self.config.inference_splits),

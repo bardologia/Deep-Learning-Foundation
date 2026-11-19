@@ -45,13 +45,13 @@ talking to one group of JSON endpoints.
 | Tab | Route | Backed by | What it does |
 |---|---|---|---|
 | Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/gpu-activity`, `/api/host-history`, `/api/server-log`, `/api/notify/*`, `/api/impact/*` | Live host and GPU telemetry as a board of cards: the watchdog, notify and GPU week control cards (a kill switches card stacked under notify), the CUDA devices beside the processor, storage and memory, the day/week/month GPU activity timeline with intrusion markers, the neighbour-impact card, the persistent host history (CPU, RAM and network on a scaled time axis with a hover readout), the jobs card, the GPU guard history, the server's own log, the 30-day GPU heatmap calendar, and the active users and processes at the end. Alerts show for 90 s after they first appear and then hide; the watchdog status reopens them and the dismiss button hides them at once. The watchdog card also holds the launch politeness select and the auto-throttle toggle (`/api/impact/politeness`), and keep-alive, which detaches the server from the terminal and the login session into its own `ml-template-webui-<pid>.scope` systemd scope; the kill switches card pairs the nuke, which kills every process of this user on this machine but the console, with kill front end, which stops every console server on the same project root (`/api/system/shutdown` force-kills the siblings, then stops itself and returns their pids); running and detached jobs survive and are adopted again on the next start. |
-| Model | `#/model` | `/api/equations`, `/api/flows` | The curated equation catalog, 6 groups and 111 items, rendered with MathJax, plus the flow walkthroughs: 15 animated step-by-step derivations from dataset synthesis and parameter extraction through training, inference, benchmarking and tuning. |
-| Pipelines | `#/pipelines` | `/api/pipelines` | The 15 pipelines as staged flows; each maps to the entry point that runs it. The animated ones open a process walkthrough whose stage chips light up the stage being played, mark the earlier ones done and seek the animation to a stage when clicked. |
-| Repo Map | `#/repomap` | `/api/repomap` | Curated module-level schematics, 13 folders and 29 diagrams, each with nodes, edges and the artifacts a stage reads and writes. |
-| Architectures | `#/architectures` | `/api/backbones`, `/api/profile-autoencoders`, `/api/image-autoencoders`, `/api/jepa-variants` | The 20 backbones across 5 families plus their 4 output heads and the autoencoder and JEPA variants, with selection guidance and per-model defaults. |
-| Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes 37 of them and folds the per-family variants into 4 groups (train, infer, analyze, compare). |
+| Model | `#/model` | `/api/equations`, `/api/flows` | The curated equation catalog, 6 groups and 111 items, rendered with MathJax, plus the flow walkthroughs: 9 animated step-by-step derivations from dataset synthesis and parameter extraction through training, inference, benchmarking and tuning. |
+| Pipelines | `#/pipelines` | `/api/pipelines` | The 9 pipelines as staged flows; each maps to the entry point that runs it. The animated ones open a process walkthrough whose stage chips light up the stage being played, mark the earlier ones done and seek the animation to a stage when clicked. |
+| Repo Map | `#/repomap` | `/api/repomap` | Curated module-level schematics, 9 folders and 19 diagrams, each with nodes, edges and the artifacts a stage reads and writes. |
+| Architectures | `#/architectures` | `/api/backbones` | The 20 backbones across 5 families plus their 4 output heads, with selection guidance and per-model defaults. |
+| Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes 30 of them and folds the variants into 2 groups (analyze, compare). |
 | Launch | `#/launch/<key>` | `/api/scripts/<key>/config` | Full-screen launch control per script: config sections grouped by dataclass, typed controls, the override manifest, the command preview and the interpreter. Launch now, queue after the current job, or save for later. Entries that write a sweep (the training entries with their trial modes, cross-validation and the benchmark) also carry a Finalize section: the seed comparison, the trial comparison and the report mail are chained onto the finished run one at a time, each starting only once the previous one exited cleanly. The chain is derived before the run starts, so a run tag left to the timestamp default or a missing SMTP password is refused at the button instead of failing hours later. |
-| Ablation | `#/ablation` | `/api/backbones`, `/api/run` | Reached from a script card. Picks the entry, the features to ablate and their order, then launches a cumulative loop that trains the full model and degrades one feature at a time down to the baseline. |
+| Ablation | `#/ablation` | `/api/backbones`, `/api/run` | Reached from a script card. Picks the features to ablate and their order, then launches a cumulative loop that trains the full model and degrades one feature at a time down to the baseline. |
 | Saved | `#/saved` | `/api/saved-runs` | Configurations stored from launch pages, one JSON file each under `logs/saved_runs/`, finalize switches included. Each card can be launched, queued or deleted. |
 | Templates | `#/templates` | `/api/config-templates` | Named sets of config overrides captured from a launch page or a sequence block, one JSON file each under `logs/config_templates/`. A template carries only the fields the form overrode, so it can be imported on any entry point: matching dotted paths apply and the rest are reported as skipped. Each card opens its entry point with the template already applied, renames or deletes it; the `Config templates` rail block on every launch page imports, saves and deletes them without leaving the form. Names are unique per entry point, and saving over one replaces it. |
 | Sequences | `#/sequences` | `/api/sequences/*` | Experiment sequences as a drag-and-drop DAG board: launch blocks chained by predecessors with checkpoints, skip toggles, per-block decision axes, an isolated per-execution workspace, resume scans over the persisted workspace state, and per-block finalize chains carrying the same switches as the launch page, chained onto the block's own end without holding back its successors: inside the workspace in an isolated sequence, on the entry's own sweep directory otherwise. A tuning block that declares `model_overrides` (and, when its study samples the batch size, `training.batch_size`) records the best configuration its run wrote as that verdict once its job ends, so the blocks after it run on the tuned values; while it runs, the board prints the study snapshot its workers write (trials done, best value, stall count, rate and time to the target) from `/api/sequences/<id>/study?block=`. The notifier announces a block held at its checkpoint and a recorded verdict. |
@@ -116,10 +116,7 @@ contract and never writes to a config file.
   training form is a picker fed by `/api/fs/secondaries`, which reads the selected
   dataset's channel labels from its `data/dataset.json`; the standard channels of the
   training paths default are flagged and a Standard button restores them.
-  An `arch_overrides` panel reads its model field either from one path (`modelFrom`) or
-  from a switch (`modelBy`: a field plus a value-to-field mapping), which is how the
-  cross-validation form shows the architecture fields of the backbone, JEPA trunk or
-  autoencoder its training type selects; a type without a mapping edits the raw dict.
+  An `arch_overrides` panel reads its model field from one path (`modelFrom`).
   Fields measured in seconds (`gif_duration`, the extraction's resource poll interval)
   use a seconds widget with presets, and the tune form groups its study switches under
   Search groups and its plateau and time-budget rules under Stop rules.
@@ -183,10 +180,8 @@ and `web_logger.py` handles console logging.
 **Curated content.** Hand-written project documentation served as JSON and kept honest by
 tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 `pipeline_library.py`, `repomap_data.json` with `repomap_library.py` and its drift checker
-`repomap_derive.py`, `config_descriptions.json`, and the model libraries
-`backbone_model_library.py`, `profile_autoencoder_model_library.py`,
-`image_autoencoder_model_library.py` and `jepa_model_library.py` on the shared
-`model_library_base.py`, which reads the per-model notes from `notes/models/`.
+`repomap_derive.py`, `config_descriptions.json`, and the model library
+`backbone_model_library.py`, which reads the per-model notes from `notes/models/`.
 
 **Analysis surfaces.** `results_browser.py`, `dataset_browser.py`, `run_leaderboard.py`,
 `training_curves.py`, `cube_explorer.py` which also carries the slice collector,
@@ -249,8 +244,7 @@ The stock `drawer`, `terminal` (turned to face right), `plug`, `riffle`, `loupe`
 `folds`, `ablation`, `slices`, `slots`, `gpus`, `guard`, `backbone` (the backbone zoo as a
 bench of swappable cartridges), `repo` (folder sizes as a static snapshot), `landscape`,
 `surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
-`balance`, `profileae`, `imageae`, `embed`, `podium`, `tiles`, `transect`, `film`, `tray`,
-`jepa`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,
+`balance`, `podium`, `tiles`, `transect`, `film`, `tray`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,
 `watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `guillotine`, `chips`, `calendar` and
 `hourglass`. Fourteen of them take `state`: `gpus` (`{devices: [{holder, util}]}`),
 `balance` and `chips` (`{mine, others, alarm}`), `guard` (`{gpus, invaded, critical}`), `scheduler`
@@ -267,7 +261,7 @@ others}]}]}`, six 4-hour slots a day, shares averaged over the GPUs) and `hourgl
 is given.
 
 Every page shows at least one figure, and the element remounts when its `name` changes,
-so a page can swap it with what is on screen: Architectures by zoo tab and Model by its
+so a page can swap it with what is on screen: Model by its
 reference/walkthrough toggle (`data-figure` on each button), the leaderboard through
 `LeaderboardView.FIGURES` (runs `podium`, trials `folds`, curves `landscape`, diff
 `balance`), Results through `ResultsView.FIGURES` (folder `tray`, all plots `film`,

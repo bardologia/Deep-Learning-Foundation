@@ -8,7 +8,3 @@ from configuration.dataset.general import (
     Representation,
     SplitRegions,
 )
-from configuration.dataset.profile_autoencoder import (
-    ProfileAugmentationConfig,
-    ProfileDatasetConfig,
-)

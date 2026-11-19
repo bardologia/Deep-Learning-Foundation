@@ -21,11 +21,8 @@ from gpu_watchdog                      import GpuWatchdog
 from job_describer                     import JobDescriber
 from launch_layout                     import LaunchLayout
 from backbone_model_library            import BackboneModelLibrary
-from image_autoencoder_model_library   import ImageAutoencoderModelLibrary
 from pipeline_library                  import PipelineLibrary
 from repomap_library                   import RepoMapLibrary
-from profile_autoencoder_model_library import ProfileAutoencoderModelLibrary
-from jepa_model_library                import JepaModelLibrary
 from notifier                          import ExperimentProgressWatcher, JobNotifier
 from process_manager                   import ProcessManager, ProcessNuke, ServerDetacher
 from project_paths                     import ProjectPaths
@@ -54,7 +51,7 @@ from routers.analysis_routers   import AutopsyRouter, FitLabRouter, ProbeRouter,
 from routers.cube_routers       import CubeRouter, SliceRouter
 from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
 from routers.sequence_router    import SequenceRouter
-from routers.library_routers    import BackboneRouter, ContentLibraryRouter, ModelLibraryRouter
+from routers.library_routers    import BackboneRouter, ContentLibraryRouter
 from routers.results_routers    import CurvesRouter, DatasetRouter, LeaderboardRouter, ResultsRouter
 from routers.static_router      import StaticRouter
 from routers.system_router      import SystemRouter
@@ -103,9 +100,6 @@ class WebUIServer:
         self.equations         = EquationLibrary()
         self.flows             = FlowLibrary()
         self.models            = BackboneModelLibrary()
-        self.profile_ae_models = ProfileAutoencoderModelLibrary()
-        self.image_ae_models   = ImageAutoencoderModelLibrary()
-        self.jepa_models       = JepaModelLibrary()
         self.pipelines         = PipelineLibrary()
         self.repomap           = RepoMapLibrary()
         self.notifier          = JobNotifier(self.paths, self.logger)
@@ -163,9 +157,6 @@ class WebUIServer:
             ContentLibraryRouter("/api/repomap",      self.repomap,      "folders"),
             ContentLibraryRouter("/api/configs",      self.configs,      "groups"),
             BackboneRouter("/api/backbones", self.models),
-            ModelLibraryRouter("/api/profile-autoencoders", self.profile_ae_models),
-            ModelLibraryRouter("/api/image-autoencoders",   self.image_ae_models),
-            ModelLibraryRouter("/api/jepa-variants",        self.jepa_models),
             CatalogRouter(self.paths, self.catalog, self.resolver, self.layout, self.models, self.launcher),
             JobRouter(self.paths, self.processes, self.launcher, self.stream_hub),
             SavedRunRouter(self.paths, self.saved_runs, self.launcher),

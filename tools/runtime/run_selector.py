@@ -4,8 +4,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from pipelines.shared.inference.run_classifier import InferenceLayout
-
 
 class RunSelector:
 
@@ -119,9 +117,6 @@ class ReportRunSelector(RunSelector):
 
     def _reports_of(self, inference_dir: Path) -> list[Path]:
         reports = list(inference_dir.glob(f"*/{self.report_filename}"))
-
-        for family in InferenceLayout.SUBDIRS.values():
-            reports += list(inference_dir.glob(f"{family}/*/{self.report_filename}"))
 
         return sorted((path for path in reports if path.is_file()), key=lambda path: path.parent.name)
 

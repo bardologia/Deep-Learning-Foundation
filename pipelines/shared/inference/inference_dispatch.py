@@ -30,10 +30,9 @@ class SpatialRunConfig:
 
 class SplitRegionLoop:
 
-    def __init__(self, config, pipeline_cls, components) -> None:
+    def __init__(self, config, pipeline_cls) -> None:
         self.config       = config
         self.pipeline_cls = pipeline_cls
-        self.components   = components
 
     def _stored_regions(self) -> list[CropRegion]:
         payload = FileIO.load_json(self.config.run_directory / "meta" / "dataset_creation_config.json")
@@ -54,21 +53,7 @@ class SplitRegionLoop:
 
     def run(self) -> None:
         for config, region_pass in self._passes():
-            self.pipeline_cls(config, components=self.components, region_pass=region_pass).run()
-
-
-class SpatialScoring:
-
-    @staticmethod
-    def run(inference_config, run_directory: Path, pipeline_cls, components) -> None:
-        if inference_config.target.enabled:
-            config = replace(inference_config, run_directory=Path(run_directory), output_subdir=None)
-            pipeline_cls(config, components=components).run()
-            return
-
-        config = SpatialRunConfig.build(inference_config, run_directory)
-
-        SplitRegionLoop(config, pipeline_cls, components).run()
+            self.pipeline_cls(config, region_pass=region_pass).run()
 
 
 class BackboneInferenceRunner:
@@ -78,34 +63,11 @@ class BackboneInferenceRunner:
 
     def run(self, run_directory: Path) -> None:
         from pipelines.backbone.inference.pipeline import InferencePipeline
-        from pipelines.shared.inference.inference_components import InferenceComponentsResolver
 
-        components = InferenceComponentsResolver.for_run(Path(run_directory))
+        inference_config = self.entry.inference
 
-        SpatialScoring.run(self.entry.inference, run_directory, InferencePipeline, components)
+        if inference_config.target.enabled:
+            InferencePipeline(replace(inference_config, run_directory=Path(run_directory), output_subdir=None)).run()
+            return
 
-
-class ProfileAeInferenceRunner:
-
-    def __init__(self, entry_config) -> None:
-        self.entry = entry_config
-
-    def run(self, run_directory: Path) -> None:
-        from pipelines.profile_autoencoder.inference.pipeline import ProfileAeInferencePipeline
-
-        config = replace(self.entry.profile_inference, run_directory=Path(run_directory), output_subdir=None)
-
-        ProfileAeInferencePipeline(config).run()
-
-
-class ImageAeInferenceRunner:
-
-    def __init__(self, entry_config) -> None:
-        self.entry = entry_config
-
-    def run(self, run_directory: Path) -> None:
-        from pipelines.image_autoencoder.inference.pipeline import ImageAeInferencePipeline
-
-        config = replace(self.entry.image_inference, run_directory=Path(run_directory), output_subdir=None)
-
-        ImageAeInferencePipeline(config).run()
+        SplitRegionLoop(SpatialRunConfig.build(inference_config, run_directory), InferencePipeline).run()

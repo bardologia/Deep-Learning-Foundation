@@ -1,27 +1,9 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-
-
-class EmbeddingNorm:
-
-    EMBEDDING_NORMS = ("none", "l2", "layernorm")
-
-    def normalize_embedding(self, z: torch.Tensor) -> torch.Tensor:
-        kind = self.config.embedding_norm
-        if kind == "none":
-            return z
-        if kind == "l2":
-            return functional.normalize(z, dim=1, eps=1e-6)
-
-        mean = z.mean(dim=1, keepdim=True)
-        var  = z.var(dim=1, keepdim=True, unbiased=False)
-        return (z - mean) / torch.sqrt(var + 1e-6)
 
 
 class DropPath(nn.Module):
@@ -61,17 +43,6 @@ class DropPathSchedule:
 class LayerFactory:
 
     @staticmethod
-    def downsample_stages(downsample_factor: int) -> int:
-        if downsample_factor < 1:
-            raise ValueError(f"downsample_factor must be >= 1, got {downsample_factor}")
-
-        stages = math.log2(downsample_factor)
-        if stages != int(stages):
-            raise ValueError(f"downsample_factor must be a power of two (1, 2, 4, 8, ...), got {downsample_factor}")
-
-        return int(stages)
-
-    @staticmethod
     def build_activation(name: str) -> nn.Module:
         factories = {
             "relu"        : lambda: nn.ReLU(inplace=True),
@@ -98,17 +69,6 @@ class LayerFactory:
         if name == "none":
             return nn.Identity()
         raise ValueError(f"Unknown normalization '{name}'. Available: batch, instance, group, none")
-
-    @staticmethod
-    def sinusoidal_position_table(num_positions: int, dim: int) -> torch.Tensor:
-        position = torch.arange(num_positions, dtype=torch.float32).unsqueeze(1)
-        rate     = torch.exp(torch.arange(0, dim, 2, dtype=torch.float32) * (-math.log(10000.0) / dim))
-
-        table = torch.zeros(num_positions, dim)
-        table[:, 0::2] = torch.sin(position * rate)
-        table[:, 1::2] = torch.cos(position * rate)[:, : dim // 2]
-
-        return table.unsqueeze(0)
 
     @staticmethod
     def build_upsample(mode: str, in_channels: int, out_channels: int, scale_factor: int = 2) -> nn.Module:
@@ -343,38 +303,8 @@ class ChannelLayerNorm(nn.Module):
         return x.permute(0, 3, 1, 2)
 
 
-class AttentionPool1d(nn.Module):
-
-    def __init__(self, channels: int):
-        super().__init__()
-        self.score = nn.Conv1d(channels, 1, kernel_size=1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        weights = torch.softmax(self.score(x), dim=-1)
-        return (x * weights).sum(dim=-1, keepdim=True)
 
 
-class TokenMeanPool(nn.Module):
-
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        return tokens.mean(dim=1)
-
-
-class TokenMaxPool(nn.Module):
-
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        return tokens.max(dim=1).values
-
-
-class TokenAttentionPool(nn.Module):
-
-    def __init__(self, dim: int):
-        super().__init__()
-        self.score = nn.Linear(dim, 1)
-
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        weights = torch.softmax(self.score(tokens), dim=1)
-        return (tokens * weights).sum(dim=1)
 
 
 class ConvNeXtBlock(nn.Module):

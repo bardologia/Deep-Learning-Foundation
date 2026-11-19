@@ -8,7 +8,7 @@ import pytest
 
 from pipelines.shared.inference.inference_scheduler import InferenceScheduler, RunSelection
 from pipelines.shared.inference.metadata            import CompletedInference, RegionPass
-from pipelines.shared.inference.run_classifier      import InferenceLayout, RunArtifacts, RunType
+from pipelines.shared.inference.run_classifier      import InferenceLayout, RunArtifacts
 from tools.runtime.completion                       import CompletionMarker
 
 from tests.conftest import RecordingLogger, SilentLogger
@@ -20,33 +20,30 @@ def _make_run(directory: Path, config_name: str) -> Path:
     return directory
 
 
-def _stamp(run_dir: Path, run_type: str, split: str, name: str = "20260101_000000", checkpoint: str | None = None) -> Path:
-    stamp   = InferenceLayout.base(run_dir, run_type) / name
-    payload = {"split": split}
-
-    if checkpoint is not None:
-        payload[CompletedInference.CHECKPOINT_KEY] = {"name": checkpoint, "epoch": 10, "best_epoch": 10, "best_val_loss": 0.1}
+def _stamp(run_dir: Path, split: str, name: str = "20260101_000000", checkpoint: str = "best_model.pt") -> Path:
+    stamp   = InferenceLayout.base(run_dir) / name
+    payload = {"split": split, CompletedInference.CHECKPOINT_KEY: {"name": checkpoint, "epoch": 10, "best_epoch": 10, "best_val_loss": 0.1}}
 
     stamp.mkdir(parents=True)
     CompletionMarker.stamp(stamp, payload)
     return stamp
 
 
-def _scheduler(runs: Path, run_filter, run_type: str, gpus_file: str = "", skip_completed: bool = True, split: str = "test", checkpoint_name: str = "best_model.pt") -> InferenceScheduler:
-    config = SimpleNamespace(runs_dir=str(runs), run_filter=run_filter, gpus=[0], gpus_file=gpus_file, poll_interval_s=1, skip_completed=skip_completed)
-    block  = SimpleNamespace(split=split, checkpoint_name=checkpoint_name, run_directory=Path("."), output_subdir=None)
-    return InferenceScheduler(config, Path("main/x.py"), run_type, block=block)
+def _scheduler(runs: Path, run_filter, gpus_file: str = "", skip_completed: bool = True, split: str = "test", checkpoint_name: str = "best_model.pt") -> InferenceScheduler:
+    block  = SimpleNamespace(split=split, checkpoint_name=checkpoint_name, run_directory=Path("."), output_subdir=None, target=SimpleNamespace(enabled=False))
+    config = SimpleNamespace(runs_dir=str(runs), run_filter=run_filter, gpus=[0], gpus_file=gpus_file, poll_interval_s=1, skip_completed=skip_completed, inference=block)
+    return InferenceScheduler(config, Path("main/x.py"))
 
 
-def test_no_filter_discovers_runs_at_any_depth_and_respects_type(tmp_path):
+def test_no_filter_discovers_runs_at_any_depth(tmp_path):
     runs = tmp_path / "runs"
     _make_run(runs / "run_top", RunArtifacts.BACKBONE_CONFIG)
     _make_run(runs / "group_a" / "run_a1", RunArtifacts.BACKBONE_CONFIG)
     _make_run(runs / "group_a" / "deep" / "run_a2", RunArtifacts.BACKBONE_CONFIG)
-    _make_run(runs / "group_b" / "ae_run", RunArtifacts.PROFILE_AE_CONFIG)
+    (runs / "group_b" / "interrupted" / "meta").mkdir(parents=True)
     (runs / "empty").mkdir(parents=True)
 
-    scheduler = _scheduler(runs, [], RunType.BACKBONE)
+    scheduler = _scheduler(runs, [])
     matched   = sorted(str(directory.relative_to(runs)) for directory in scheduler._run_dirs(SilentLogger()))
 
     assert matched == ["group_a/deep/run_a2", "group_a/run_a1", "run_top"]
@@ -55,7 +52,7 @@ def test_no_filter_discovers_runs_at_any_depth_and_respects_type(tmp_path):
 def test_a_root_that_is_a_run_is_scored_itself(tmp_path):
     run = _make_run(tmp_path / "runs" / "single_run", RunArtifacts.BACKBONE_CONFIG)
 
-    scheduler = _scheduler(run, [], RunType.BACKBONE)
+    scheduler = _scheduler(run, [])
     matched   = scheduler._run_dirs(SilentLogger())
     jobs      = scheduler._jobs(matched, tmp_path / "resolved_config.json")
 
@@ -67,7 +64,7 @@ def test_filter_resolves_nested_relative_names(tmp_path):
     runs = tmp_path / "runs"
     _make_run(runs / "group_a" / "run_a1", RunArtifacts.BACKBONE_CONFIG)
 
-    scheduler = _scheduler(runs, ["group_a/run_a1"], RunType.BACKBONE)
+    scheduler = _scheduler(runs, ["group_a/run_a1"])
     selected  = [str(directory.relative_to(runs)) for directory in scheduler._candidate_dirs()]
 
     assert selected == ["group_a/run_a1"]
@@ -80,8 +77,8 @@ def test_filter_takes_every_run_under_a_named_directory_and_matches_bare_run_nam
     _make_run(runs / "exp" / "trial_b" / "seed0", RunArtifacts.BACKBONE_CONFIG)
     _make_run(runs / "other" / "lonely", RunArtifacts.BACKBONE_CONFIG)
 
-    by_parent = [str(directory.relative_to(runs)) for directory in _scheduler(runs, ["exp/trial_a"], RunType.BACKBONE)._candidate_dirs()]
-    by_name   = [str(directory.relative_to(runs)) for directory in _scheduler(runs, ["lonely", "seed1"], RunType.BACKBONE)._candidate_dirs()]
+    by_parent = [str(directory.relative_to(runs)) for directory in _scheduler(runs, ["exp/trial_a"])._candidate_dirs()]
+    by_name   = [str(directory.relative_to(runs)) for directory in _scheduler(runs, ["lonely", "seed1"])._candidate_dirs()]
 
     assert by_parent == ["exp/trial_a/seed0", "exp/trial_a/seed1"]
     assert by_name   == ["other/lonely", "exp/trial_a/seed1"]
@@ -92,7 +89,7 @@ def test_an_unmatched_filter_entry_lists_the_runs_found(tmp_path):
     _make_run(runs / "group_a" / "run_a1", RunArtifacts.BACKBONE_CONFIG)
 
     with pytest.raises(FileNotFoundError, match="names no run under .*runs found there: group_a/run_a1"):
-        _scheduler(runs, ["missing"], RunType.BACKBONE)._candidate_dirs()
+        _scheduler(runs, ["missing"])._candidate_dirs()
 
 
 def test_runs_already_scored_on_the_split_are_skipped(tmp_path):
@@ -100,10 +97,10 @@ def test_runs_already_scored_on_the_split_are_skipped(tmp_path):
     done    = _make_run(runs / "done", RunArtifacts.BACKBONE_CONFIG)
     pending = _make_run(runs / "pending", RunArtifacts.BACKBONE_CONFIG)
     other   = _make_run(runs / "other_split", RunArtifacts.BACKBONE_CONFIG)
-    _stamp(done, RunType.BACKBONE, "test")
-    _stamp(other, RunType.BACKBONE, "val")
+    _stamp(done, "test")
+    _stamp(other, "val")
 
-    scheduler = _scheduler(runs, [], RunType.BACKBONE, split="test")
+    scheduler = _scheduler(runs, [], split="test")
     matched   = scheduler._run_dirs(SilentLogger())
 
     assert matched           == [other, pending]
@@ -113,25 +110,12 @@ def test_runs_already_scored_on_the_split_are_skipped(tmp_path):
 def test_skipping_can_be_switched_off(tmp_path):
     runs = tmp_path / "runs"
     done = _make_run(runs / "done", RunArtifacts.BACKBONE_CONFIG)
-    _stamp(done, RunType.BACKBONE, "test")
+    _stamp(done, "test")
 
-    scheduler = _scheduler(runs, [], RunType.BACKBONE, skip_completed=False)
+    scheduler = _scheduler(runs, [], skip_completed=False)
 
     assert scheduler._run_dirs(SilentLogger()) == [done]
     assert scheduler.skipped                   == []
-
-
-def test_nested_families_look_for_their_stamps_under_their_own_subdirectory(tmp_path):
-    runs      = tmp_path / "runs"
-    done      = _make_run(runs / "ae_done", RunArtifacts.PROFILE_AE_CONFIG)
-    misplaced = _make_run(runs / "ae_misplaced", RunArtifacts.PROFILE_AE_CONFIG)
-    _stamp(done, RunType.PROFILE_AE, "test")
-    _stamp(misplaced, RunType.BACKBONE, "test")
-
-    scheduler = _scheduler(runs, [], RunType.PROFILE_AE)
-
-    assert scheduler._run_dirs(SilentLogger()) == [misplaced]
-    assert scheduler.skipped                   == [done]
 
 
 def test_the_run_table_names_every_matched_run_with_its_action(tmp_path):
@@ -139,7 +123,7 @@ def test_the_run_table_names_every_matched_run_with_its_action(tmp_path):
     _make_run(runs / "a", RunArtifacts.BACKBONE_CONFIG)
 
     logger = RecordingLogger()
-    _scheduler(runs, [], RunType.BACKBONE)._run_dirs(logger)
+    _scheduler(runs, [])._run_dirs(logger)
 
     assert ("metrics_table", f"1 backbone run(s) under {runs}") in logger.messages
 
@@ -149,7 +133,7 @@ def test_job_names_and_logs_stay_unique_for_equally_named_leaves(tmp_path):
     _make_run(runs / "cv_a" / "folds" / "fold_0", RunArtifacts.BACKBONE_CONFIG)
     _make_run(runs / "cv_b" / "folds" / "fold_0", RunArtifacts.BACKBONE_CONFIG)
 
-    scheduler = _scheduler(runs, [], RunType.BACKBONE)
+    scheduler = _scheduler(runs, [])
     jobs      = scheduler._jobs(scheduler._run_dirs(SilentLogger()), tmp_path / "resolved_config.json")
 
     assert [job.name for job in jobs]          == ["cv_a/folds/fold_0", "cv_b/folds/fold_0"]
@@ -157,32 +141,32 @@ def test_job_names_and_logs_stay_unique_for_equally_named_leaves(tmp_path):
 
 
 def test_missing_runs_directory_raises(tmp_path):
-    scheduler = _scheduler(tmp_path / "absent", [], RunType.BACKBONE)
+    scheduler = _scheduler(tmp_path / "absent", [])
 
     with pytest.raises(NotADirectoryError, match="runs_dir does not exist"):
         scheduler._run_dirs(SilentLogger())
 
 
 def test_pool_file_defaults_into_the_work_directory(tmp_path):
-    scheduler = _scheduler(tmp_path / "runs", [], RunType.BACKBONE)
+    scheduler = _scheduler(tmp_path / "runs", [])
 
     assert scheduler.pool_file == scheduler.work_dir / "gpu_pool.json"
 
 
 def test_pool_file_honors_configured_gpus_file(tmp_path):
     configured = tmp_path / "pools" / "job42.json"
-    scheduler  = _scheduler(tmp_path / "runs", [], RunType.BACKBONE, gpus_file=str(configured))
+    scheduler  = _scheduler(tmp_path / "runs", [], gpus_file=str(configured))
 
     assert scheduler.pool_file == configured
 
 
 def test_zero_matching_runs_raises(tmp_path):
     runs = tmp_path / "runs"
-    _make_run(runs / "ae_run", RunArtifacts.PROFILE_AE_CONFIG)
+    (runs / "interrupted" / "meta").mkdir(parents=True)
 
-    scheduler = _scheduler(runs, [], RunType.BACKBONE)
+    scheduler = _scheduler(runs, [])
 
-    with pytest.raises(FileNotFoundError, match="No run of type 'backbone'"):
+    with pytest.raises(FileNotFoundError, match="No trained run found"):
         scheduler._run_dirs(SilentLogger())
 
 
@@ -196,13 +180,13 @@ def test_run_selection_relative_name_of_the_root_is_its_own_name(tmp_path):
 def test_a_partly_stamped_region_group_is_shown_as_partial_and_scored_again(tmp_path):
     runs    = tmp_path / "runs"
     partial = _make_run(runs / "partial", RunArtifacts.BACKBONE_CONFIG)
-    stamp   = InferenceLayout.base(partial, RunType.BACKBONE) / "20260101_000000_region0"
+    stamp   = InferenceLayout.base(partial) / "20260101_000000_region0"
 
     stamp.mkdir(parents=True)
     CompletionMarker.stamp(stamp, {"split": "test", RegionPass.KEY: RegionPass(index=0, count=2, group="20260101_000000").payload()})
 
     logger    = RecordingLogger()
-    scheduler = _scheduler(runs, [], RunType.BACKBONE)
+    scheduler = _scheduler(runs, [])
 
     assert scheduler._run_dirs(logger) == [partial]
     assert scheduler.skipped           == []
@@ -214,12 +198,12 @@ def test_a_run_scored_only_with_another_checkpoint_is_scored_again(tmp_path):
     runs  = tmp_path / "runs"
     other = _make_run(runs / "other", RunArtifacts.BACKBONE_CONFIG)
     same  = _make_run(runs / "same", RunArtifacts.BACKBONE_CONFIG)
-    _stamp(other, RunType.BACKBONE, "test", checkpoint="best_model.pt")
-    _stamp(same,  RunType.BACKBONE, "test", checkpoint="best_model.pt")
-    _stamp(same,  RunType.BACKBONE, "test", name="20260102_000000", checkpoint="last_model.pt")
+    _stamp(other, "test", checkpoint="best_model.pt")
+    _stamp(same, "test", checkpoint="best_model.pt")
+    _stamp(same, "test", name="20260102_000000", checkpoint="last_model.pt")
 
     logger    = RecordingLogger()
-    scheduler = _scheduler(runs, [], RunType.BACKBONE, checkpoint_name="last_model.pt")
+    scheduler = _scheduler(runs, [], checkpoint_name="last_model.pt")
 
     assert scheduler._run_dirs(logger) == [other]
     assert scheduler.skipped           == [same]
@@ -227,32 +211,16 @@ def test_a_run_scored_only_with_another_checkpoint_is_scored_again(tmp_path):
     assert scheduler._inference_state(other, SilentLogger()) == ("done (other checkpoint: best_model.pt)", False)
 
 
-def test_a_stamp_without_a_recorded_checkpoint_still_counts_as_scored(tmp_path):
-    runs = tmp_path / "runs"
-    done = _make_run(runs / "done", RunArtifacts.BACKBONE_CONFIG)
-    _stamp(done, RunType.BACKBONE, "test")
-
-    scheduler = _scheduler(runs, [], RunType.BACKBONE, checkpoint_name="last_model.pt")
-
-    assert scheduler._inference_state(done, SilentLogger()) == ("done (checkpoint not recorded)", True)
-
-
-def test_rejected_runs_are_listed_with_their_family_and_unclassifiable_ones_warned_about(tmp_path):
+def test_directories_without_a_trained_model_are_listed_as_skipped(tmp_path):
     runs = tmp_path / "runs"
     _make_run(runs / "backbone_run", RunArtifacts.BACKBONE_CONFIG)
-    _make_run(runs / "ae_run", RunArtifacts.PROFILE_AE_CONFIG)
     (runs / "interrupted" / "meta").mkdir(parents=True)
 
     logger    = RecordingLogger()
-    scheduler = _scheduler(runs, [], RunType.BACKBONE)
+    scheduler = _scheduler(runs, [])
 
     assert scheduler._run_dirs(logger) == [runs / "backbone_run"]
-    assert ("metrics_table", "Skipping 2 run(s) not of type 'backbone'") in logger.messages
-
-    warnings = [msg for level, msg in logger.messages if level == "warning"]
-
-    assert len(warnings) == 1
-    assert warnings[0].startswith("interrupted is left out: Run ") and "has no recognized model config under meta/" in warnings[0]
+    assert ("metrics_table", "Skipping 1 directory(ies) that hold no trained model") in logger.messages
 
 
 @pytest.mark.parametrize("field, value, message", [
@@ -260,7 +228,7 @@ def test_rejected_runs_are_listed_with_their_family_and_unclassifiable_ones_warn
     ("run_directory", Path("runs/one"), "run_directory='runs/one'"),
 ])
 def test_a_block_setting_a_field_the_fan_out_overwrites_is_refused(tmp_path, field, value, message):
-    scheduler = _scheduler(tmp_path / "absent", [], RunType.BACKBONE)
+    scheduler = _scheduler(tmp_path / "absent", [])
     setattr(scheduler.block, field, value)
 
     with pytest.raises(ValueError, match=message):

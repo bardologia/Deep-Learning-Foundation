@@ -42,7 +42,7 @@ a single convolution with kernel size `conv_head_kernel_size` (a class attribute
 
 ## Interface
 
-- Selection: `head = "conv"` (default) on every backbone config; `backbone_head` in `BackboneEntryConfig`, `JepaEntryConfig`, `CrossValidationConfig`.
+- Selection: `head = "conv"` (default) on every backbone config; `backbone_head` in `BackboneEntryConfig` and `CrossValidationConfig`.
 - Module: `output_head` (`nn.Conv2d`), parameters returned by `OutputHeadsMixin.head_parameters` and optimized as the `output_head` param group with `output_head_lr` / `output_head_wd`.
 - State dict: `output_head.weight`, `output_head.bias` — identical keys and shapes to the pre-head-axis single-head models, so their checkpoints load unchanged.
 

@@ -146,104 +146,6 @@ def test_lr_multiplier_raises_when_model_missing(config):
         worker._lr_multiplier("unet")
 
 
-def test_max_batch_worker_builds_the_entry_probe_for_jepa(config, monkeypatch):
-    import pipelines.jepa.training.pipeline as jepa_pipeline_module
-    from pipelines.benchmark.batch_probe import EntryMaxBatchProbe
-
-    config.training_type = "jepa"
-
-    class _FakePipeline:
-        def __init__(self, entry) -> None:
-            self.entry = entry
-
-        def build_pretrain_trainer(self, work_dir, logger):
-            raise AssertionError("the dispatch test must not build the probe trainer")
-
-    monkeypatch.setattr(jepa_pipeline_module, "TrainingPipeline", _FakePipeline)
-
-    worker = MaxBatchWorker(config, "tag")
-    probe  = worker._build_probe("resunet", worker.run_dir / "max_batch" / "resunet" / "probe")
-
-    assert isinstance(probe, EntryMaxBatchProbe)
-    assert probe.model_name == "resunet"
-
-
-def test_max_batch_worker_builds_the_entry_probe_for_profile_autoencoder(config, monkeypatch):
-    import pipelines.profile_autoencoder.training.pipeline as pae_pipeline_module
-    from pipelines.benchmark.batch_probe import EntryMaxBatchProbe
-
-    config.training_type = "profile_autoencoder"
-
-    class _FakePipeline:
-        def __init__(self, entry) -> None:
-            self.entry = entry
-
-        def build_pretrain_trainer(self, work_dir, logger):
-            raise AssertionError("the dispatch test must not build the probe trainer")
-
-    monkeypatch.setattr(pae_pipeline_module, "TrainingPipeline", _FakePipeline)
-
-    worker = MaxBatchWorker(config, "tag")
-    probe  = worker._build_probe("pae_mlp", worker.run_dir / "max_batch" / "pae_mlp" / "probe")
-
-    assert isinstance(probe, EntryMaxBatchProbe)
-    assert probe.model_name == "pae_mlp"
-
-
-def test_jepa_training_applies_the_probed_batch_and_lr_multiplier(config, monkeypatch):
-    from pipelines.benchmark.workers import TrainingWorker
-    import pipelines.jepa.training.pipeline as jepa_pipeline_module
-
-    config.training_type   = "jepa"
-    config.find_lr.enabled = True
-
-    worker = TrainingWorker(config, "tag")
-    FileIO.save_json({"resunet": {"status": "PASS", "batch_size": 128, "lr_multiplier": 0.5}}, worker.run_dir / "pipeline" / "max_batch.json")
-
-    captured = {}
-
-    class _FakePipeline:
-        def __init__(self, entry) -> None:
-            captured["entry"] = entry
-
-        def run(self):
-            return None
-
-    monkeypatch.setattr(jepa_pipeline_module, "TrainingPipeline", _FakePipeline)
-
-    worker._run_jepa("resunet", "run", None)
-
-    assert captured["entry"].training.batch_size    == 128
-    assert captured["entry"].training.lr_multiplier == pytest.approx(0.5)
-
-
-def test_profile_ae_training_applies_the_probed_batch_and_lr_multiplier(config, monkeypatch):
-    from pipelines.benchmark.workers import TrainingWorker
-    import pipelines.profile_autoencoder.training.pipeline as pae_pipeline_module
-
-    config.training_type   = "profile_autoencoder"
-    config.find_lr.enabled = True
-
-    worker = TrainingWorker(config, "tag")
-    FileIO.save_json({"pae_mlp": {"status": "PASS", "batch_size": 4096, "lr_multiplier": 2.0}}, worker.run_dir / "pipeline" / "max_batch.json")
-
-    captured = {}
-
-    class _FakePipeline:
-        def __init__(self, entry) -> None:
-            captured["entry"] = entry
-
-        def run(self):
-            return None
-
-    monkeypatch.setattr(pae_pipeline_module, "TrainingPipeline", _FakePipeline)
-
-    worker._run_profile_autoencoder("pae_mlp", "run", None)
-
-    assert captured["entry"].training.batch_size    == 4096
-    assert captured["entry"].training.lr_multiplier == pytest.approx(2.0)
-
-
 def test_probe_config_is_disabled(config):
     probe = BenchmarkWorker(config, "tag").config.probe
 
@@ -387,58 +289,6 @@ def test_training_worker_ignores_the_multiplier_when_the_test_is_disabled(config
     assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / config.training.lr_reference_batch_size)
 
 
-def test_training_entry_configs_carry_the_overfit_check(config):
-    from pipelines.benchmark.workers import TrainingWorker
-
-    config.overfit_check.enabled = True
-    worker = TrainingWorker(config, "tag")
-
-    ae_entry   = worker._ae_entry_config("mlp_ae", worker.run_dir / "training")
-    jepa_entry = worker._jepa_entry_config("resunet", worker.run_dir / "training")
-
-    assert ae_entry.overfit_check         is config.overfit_check
-    assert jepa_entry.overfit_check       is config.overfit_check
-    assert ae_entry.overfit_check.enabled is True
-
-
-def test_jepa_entry_config_carries_the_autoencoder_finetune_rates(config):
-    from pipelines.benchmark.workers import TrainingWorker
-
-    config.jepa.profile_autoencoder_mode = "finetune"
-    config.jepa.ae_finetune_lr           = 7e-5
-    config.jepa.ae_finetune_wd           = 2e-3
-    config.jepa.image_ae_finetune_lr     = 5e-5
-    config.jepa.image_ae_finetune_wd     = 4e-3
-
-    entry = TrainingWorker(config, "tag")._jepa_entry_config("resunet", config.paths.log_base_dir)
-
-    assert entry.profile_autoencoder_mode == "finetune"
-    assert entry.ae_finetune_lr           == 7e-5
-    assert entry.ae_finetune_wd           == 2e-3
-    assert entry.image_ae_finetune_lr     == 5e-5
-    assert entry.image_ae_finetune_wd     == 4e-3
-
-
-def test_jepa_entry_config_forwards_the_loss_scale_probe(config):
-    from pipelines.benchmark.workers import TrainingWorker
-
-    config.probe.enabled = True
-
-    entry = TrainingWorker(config, "tag")._jepa_entry_config("resunet", config.paths.log_base_dir)
-
-    assert entry.probe is config.probe
-
-
-def test_training_worker_rejects_unsupported_training_type(config):
-    from pipelines.benchmark.workers import TrainingWorker
-
-    config.training_type = "nonexistent_type"
-    worker = TrainingWorker(config, "tag")
-
-    with pytest.raises(ValueError, match="nonexistent_type"):
-        worker.run("gamma_net")
-
-
 @pytest.mark.dataset
 def test_training_worker_leaves_a_finished_unit_alone(config, test_data_dir, params_dir, monkeypatch):
     from pipelines.benchmark.workers import TrainingWorker
@@ -517,21 +367,19 @@ def test_training_worker_trains_an_unfinished_unit_when_resume_is_off(config, mo
 
 
 def _stub_inference(monkeypatch) -> list:
-    import pipelines.backbone.inference.pipeline           as pipeline_module
-    import pipelines.shared.inference.inference_components as components_module
+    import pipelines.backbone.inference.pipeline as pipeline_module
 
     ran = []
 
     class FakePipeline:
 
-        def __init__(self, inference_config, components=None):
+        def __init__(self, inference_config):
             self.run_directory = inference_config.run_directory
 
         def run(self):
             ran.append(self.run_directory)
 
     monkeypatch.setattr(pipeline_module, "InferencePipeline", FakePipeline, raising=True)
-    monkeypatch.setattr(components_module.InferenceComponentsResolver, "for_run", staticmethod(lambda run_directory: None), raising=True)
 
     return ran
 

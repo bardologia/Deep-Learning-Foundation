@@ -12,7 +12,7 @@ from configuration.inference                         import InferenceConfig, Tar
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.shared.inference.inference_scheduler  import InferenceScheduler
 from pipelines.shared.inference.metadata             import CompletedInference, TargetDataset
-from pipelines.shared.inference.run_classifier       import InferenceLayout, RunArtifacts, RunType
+from pipelines.shared.inference.run_classifier       import InferenceLayout, RunArtifacts
 from tools.data.io                                   import FileIO
 from tools.data.regions                              import CropRegion
 from tools.runtime.completion                        import CompletionMarker
@@ -174,11 +174,6 @@ def test_target_stamps_are_written_under_the_runs_cross_dataset_tree(tmp_path):
     assert InferenceMetadata(config).output_dir == run_dir / InferenceLayout.DIRNAME / "stamp"
 
 
-def test_a_nested_family_keeps_its_subdirectory_under_the_target_tree(tmp_path):
-    assert InferenceLayout.target_base(tmp_path, RunType.PROFILE_AE, "scene_a") == tmp_path / "cross_dataset" / "scene_a" / "profile_ae"
-    assert InferenceLayout.target_base(tmp_path, RunType.BACKBONE, "scene_a")   == tmp_path / "cross_dataset" / "scene_a"
-
-
 def test_a_marker_without_a_target_is_refused_under_the_target_tree(tmp_path):
     stamp = tmp_path / "stamp"
     stamp.mkdir()
@@ -195,14 +190,14 @@ def _run(directory: Path) -> Path:
 
 
 def _target_stamp(run_dir: Path, target: TargetDataset, name: str, payload: dict | None = None) -> None:
-    stamp = InferenceLayout.target_base(run_dir, RunType.BACKBONE, target.name) / name
+    stamp = InferenceLayout.target_base(run_dir, target.name) / name
     stamp.mkdir(parents=True)
     CompletionMarker.stamp(stamp, {"split": "test", CompletedInference.CHECKPOINT_KEY: {"name": "best_model.pt"}, TargetDataset.KEY: payload if payload is not None else target.payload()})
 
 
 def _scheduler(runs: Path, block: InferenceConfig) -> InferenceScheduler:
-    config = SimpleNamespace(runs_dir=str(runs), run_filter=[], gpus=[0], gpus_file="", poll_interval_s=1, skip_completed=True)
-    return InferenceScheduler(config, Path("main/x.py"), RunType.BACKBONE, block=block)
+    config = SimpleNamespace(runs_dir=str(runs), run_filter=[], gpus=[0], gpus_file="", poll_interval_s=1, skip_completed=True, inference=block)
+    return InferenceScheduler(config, Path("main/x.py"))
 
 
 def test_the_scheduler_skips_only_runs_scored_on_the_same_target(tmp_path):
@@ -215,7 +210,7 @@ def test_the_scheduler_skips_only_runs_scored_on_the_same_target(tmp_path):
     other_crop = _run(runs / "other_crop")
     scored     = _run(runs / "scored")
 
-    own_stamp = InferenceLayout.base(own_only, RunType.BACKBONE) / "20260101_000000"
+    own_stamp = InferenceLayout.base(own_only) / "20260101_000000"
     own_stamp.mkdir(parents=True)
     CompletionMarker.stamp(own_stamp, {"split": "test", CompletedInference.CHECKPOINT_KEY: {"name": "best_model.pt"}})
 

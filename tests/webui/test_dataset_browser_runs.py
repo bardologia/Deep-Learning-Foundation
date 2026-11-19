@@ -74,20 +74,6 @@ def test_inference_is_reported_per_split_when_a_split_is_named(tmp_path):
     assert any_run["scored_on_test"] is True
 
 
-def test_a_nested_family_stamp_counts_for_its_split(tmp_path):
-    from tools.runtime.completion import CompletionMarker
-
-    runs = tmp_path / "runs"
-    _make_run(runs / "profile_ae_run")
-    stamp = runs / "profile_ae_run" / "inference" / "profile_ae" / "20260101_000000"
-    stamp.mkdir(parents=True)
-    CompletionMarker.stamp(stamp, {"stage": "inference", "split": "test"})
-
-    result = DatasetBrowser(WebLogger()).runs([str(runs)], split="test")
-
-    assert result["runs"][0]["has_inference"] is True
-
-
 def test_walk_prunes_at_run_boundary_and_skips_hidden(tmp_path):
     runs = tmp_path / "runs"
     _make_run(runs / "run_top", inference=True)

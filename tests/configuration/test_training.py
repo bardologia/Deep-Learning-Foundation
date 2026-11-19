@@ -23,7 +23,6 @@ from configuration.training.general.loss import (
     LossConfig,
     LossCurriculumConfig,
 )
-from configuration.training.general.trainer import SharedSubConfigInheritance
 
 from configuration.training.backbone import (
     default_curriculum,
@@ -31,22 +30,6 @@ from configuration.training.backbone import (
     SecondaryTrialsConfig,
     BackboneTrainerConfig,
     BackboneEntryConfig,
-)
-from configuration.training.jepa import (
-    EmbeddingLossConfig,
-    JepaTrainerConfig,
-    JepaDefaults,
-    JepaEntryConfig,
-)
-from configuration.training.image_autoencoder import (
-    ImageAeLossConfig,
-    ImageAeTrainerConfig,
-    ImageAeEntryConfig,
-)
-from configuration.training.profile_autoencoder import (
-    ProfileAeLossConfig,
-    ProfileAeTrainerConfig,
-    ProfileAeEntryConfig,
 )
 from configuration.inference.general import InferenceConfig
 
@@ -65,26 +48,12 @@ SIMPLE_DEFAULT_CONFIGS = [
     ResourceConfig,
     LossConfig,
     LossCurriculumConfig,
-    EmbeddingLossConfig,
-    ImageAeLossConfig,
-    ProfileAeLossConfig,
     PatchTrialsConfig,
     SecondaryTrialsConfig,
     BackboneEntryConfig,
-    JepaEntryConfig,
-    ImageAeEntryConfig,
-    ProfileAeEntryConfig,
 ]
 
 SIMPLE_IDS = [c.__name__ for c in SIMPLE_DEFAULT_CONFIGS]
-
-TRAINER_CONFIGS = [
-    BackboneTrainerConfig,
-    JepaTrainerConfig,
-    ImageAeTrainerConfig,
-    ProfileAeTrainerConfig,
-]
-
 
 @pytest.mark.parametrize("config_cls", SIMPLE_DEFAULT_CONFIGS, ids=SIMPLE_IDS)
 def test_default_config_instantiates(config_cls):
@@ -92,12 +61,11 @@ def test_default_config_instantiates(config_cls):
     assert dataclasses.is_dataclass(instance)
 
 
-@pytest.mark.parametrize("config_cls", TRAINER_CONFIGS, ids=[c.__name__ for c in TRAINER_CONFIGS])
-def test_trainer_config_requires_gaussian(config_cls):
+def test_trainer_config_requires_gaussian():
     with pytest.raises(TypeError):
-        config_cls()
+        BackboneTrainerConfig()
 
-    instance = config_cls(gaussian=make_gaussian())
+    instance = BackboneTrainerConfig(gaussian=make_gaussian())
     assert dataclasses.is_dataclass(instance)
 
 
@@ -236,64 +204,6 @@ def test_backbone_trainer_subconfig_factories():
     assert isinstance(cfg.gradient_clipper, GradientClipperConfig)
 
 
-def test_jepa_defaults_inference_is_inference_config():
-    inf = JepaDefaults.inference()
-    assert isinstance(inf, InferenceConfig)
-    assert inf.save_cubes is True
-
-
-def test_jepa_trainer_param_loss_default():
-    cfg = JepaTrainerConfig(gaussian=make_gaussian())
-    assert cfg.param_loss.use_param_l1 is True
-    assert isinstance(cfg.embedding_loss, EmbeddingLossConfig)
-
-
-def test_shared_subconfig_inheritance_copies_fields():
-    class Base:
-        pass
-
-    base = Base()
-    for name in ("geometry", "early_stopping", "warmup", "scheduler", "io",
-                 "optimizer", "training", "resources", "gradient_clipper", "memory"):
-        setattr(base, name, object())
-
-    target = JepaTrainerConfig(gaussian=make_gaussian())
-    target.inherit_shared_from(base)
-    assert target.optimizer is base.optimizer
-    assert target.scheduler is base.scheduler
-    assert target.memory    is base.memory
-
-
-def test_shared_subconfig_class_is_mixin():
-    assert issubclass(JepaTrainerConfig, SharedSubConfigInheritance)
-    assert issubclass(ImageAeTrainerConfig, SharedSubConfigInheritance)
-    assert issubclass(ProfileAeTrainerConfig, SharedSubConfigInheritance)
-
-
-def test_image_ae_entry_training_overrides():
-    cfg = ImageAeEntryConfig()
-    assert cfg.training.batch_size == 512
-    assert cfg.ae_model_name       == "conv2d_ae"
-
-
-def test_profile_ae_entry_training_overrides():
-    cfg = ProfileAeEntryConfig()
-    assert cfg.training.batch_size      == 8192
-    assert cfg.training.num_workers     == 14
-    assert cfg.training.prefetch_factor == 4
-    assert cfg.ae_model_name            == "mlp_ae"
-
-
-def test_profile_ae_entry_lr_defaults_mirror_the_architecture_config():
-    from configuration.architectures.profile_autoencoder import ProfileAutoencoderBaseConfig
-
-    cfg = ProfileAeEntryConfig()
-    assert cfg.encoder_lr == ProfileAutoencoderBaseConfig.encoder_lr
-    assert cfg.decoder_lr == ProfileAutoencoderBaseConfig.decoder_lr
-    assert cfg.encoder_wd == ProfileAutoencoderBaseConfig.encoder_wd
-    assert cfg.decoder_wd == ProfileAutoencoderBaseConfig.decoder_wd
-
-
 def test_every_seeded_entry_defaults_to_the_standard_seeds():
     from configuration.benchmark.general        import BenchmarkConfig
     from configuration.cross_validation.general import CrossValidationConfig
@@ -303,9 +213,6 @@ def test_every_seeded_entry_defaults_to_the_standard_seeds():
 
     seeded = [
         BackboneEntryConfig,
-        JepaEntryConfig,
-        ProfileAeEntryConfig,
-        ImageAeEntryConfig,
         CrossValidationConfig,
         BenchmarkConfig,
     ]

@@ -10,14 +10,10 @@ from configuration.training.general.run import RunPathsConfig
 @dataclass
 class DataLoaderTuningEntryConfig:
 
-    mode        : str  = "profile_autoencoder"
-    model_name  : str  = ""
-    gpu         : int  = 0
-    seed        : int  = 0
-    use_amp     : bool = False
-
-    pixel_subsample : float = 0.2
-    keep_empty_frac : float = 0.05
+    model_name : str  = ""
+    gpu        : int  = 0
+    seed       : int  = 0
+    use_amp    : bool = False
 
     batch_sizes      : list = field(default_factory=lambda: [256, 512, 1024, 2048, 4096])
     worker_counts    : list = field(default_factory=lambda: [0, 2, 4, 6, 8])
@@ -33,9 +29,6 @@ class DataLoaderTuningEntryConfig:
     refine       : bool = True
     save_figures : bool = True
 
-    synthetic_samples : int = 200_000
-    synthetic_length  : int = 96
-
     paths      : RunPathsConfig = field(default_factory=RunPathsConfig)
     output_dir : Path           = Path("runs/dataloader_tuning")
 
@@ -43,7 +36,6 @@ class DataLoaderTuningEntryConfig:
 @dataclass
 class TrainingProfileEntryConfig:
 
-    mode       : str  = "backbone"
     model_name : str  = ""
     gpu        : int  = 0
     seed       : int  = 0
@@ -58,12 +50,6 @@ class TrainingProfileEntryConfig:
     record_shapes  : bool = True
     profile_memory : bool = True
     with_stack     : bool = False
-
-    pixel_subsample : float = 0.2
-    keep_empty_frac : float = 0.05
-
-    synthetic_samples : int = 200_000
-    synthetic_length  : int = 96
 
     paths      : RunPathsConfig = field(default_factory=RunPathsConfig)
     output_dir : Path           = Path("runs/profiles")

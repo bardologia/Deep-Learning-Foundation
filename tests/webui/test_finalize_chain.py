@@ -13,7 +13,7 @@ from web_logger                import WebLogger
 
 LEAVES = {
     "train_backbone" : {"trials_mode": "curriculum", "trials_enabled": "True", "logdir": "/runs/backbone"},
-    "train_jepa"     : {"logdir": "/runs/jepa"},
+    "infer_backbone" : {"runs_dir": "/runs/backbone"},
     "cross_validate" : {"run_tag": "None", "paths.log_base_dir": "/runs/cross_validation"},
     "benchmark"      : {"run_tag": "None", "paths.log_base_dir": "/runs/benchmark"},
     "compare_seeds"  : {},
@@ -125,7 +125,7 @@ def test_a_run_tagged_entry_without_a_fixed_tag_is_refused():
 
 def test_an_entry_without_a_sweep_is_refused():
     with pytest.raises(ValueError, match="trials_mode"):
-        FinalizeChain().experiment_dir("train_jepa", {}, LEAVES["train_jepa"])
+        FinalizeChain().experiment_dir("infer_backbone", {}, LEAVES["infer_backbone"])
 
 
 def test_a_run_launched_on_its_own_stages_its_mail_where_the_entry_points(tmp_path):
@@ -163,7 +163,7 @@ def test_planning_a_launch_without_any_step_asks_for_no_chain(rig):
 def test_planning_refuses_an_entry_that_writes_no_sweep(rig):
     processes, launcher, notifier, finalizer = rig
 
-    plan, error = finalizer.plan("train_jepa", "/usr/bin/python3", {}, _flags("compare_trials"))
+    plan, error = finalizer.plan("infer_backbone", "/usr/bin/python3", {}, _flags("compare_trials"))
 
     assert plan is None
     assert "trials_mode" in error

@@ -87,8 +87,6 @@ def test_overrides_win_over_defaults():
     assert "inference after" in text
 
 
-
-
 def test_generate_dataset_shows_scene_shape_and_seed():
     text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {})
 
@@ -146,26 +144,6 @@ def test_description_is_capped():
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
 
     assert len(text) <= JobDescriber.MAX_LENGTH
-
-
-def test_jepa_mode_follows_selected_autoencoders():
-    leaves = [
-        {"path": "backbone_name",            "value": "resunet"},
-        {"path": "backbone_head",            "value": "conv"},
-        {"path": "profile_autoencoder_run",  "value": "None"},
-        {"path": "profile_autoencoder_mode", "value": "frozen"},
-        {"path": "image_autoencoder_run",    "value": "None"},
-        {"path": "image_autoencoder_mode",   "value": "frozen"},
-    ]
-    describer = _describer({"train_jepa": leaves})
-
-    plain = describer.describe("train_jepa", "python", {})
-    both  = describer.describe("train_jepa", "python", {"profile_autoencoder_run": "runs/mlp_ae_001", "image_autoencoder_run": "runs/conv2d_ae_007"})
-
-    assert plain.startswith("backbone ·")
-    assert both.startswith("image-AE + backbone + profile-AE")
-    assert "profile-AE mlp_ae_001 (frozen)" in both
-    assert "image-AE conv2d_ae_007 (frozen)" in both
 
 
 MAIL_LEAVES = [

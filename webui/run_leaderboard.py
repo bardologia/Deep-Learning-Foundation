@@ -26,8 +26,6 @@ class RunAxes:
 
     TIMESTAMP      = re.compile(r"_(\d{8}_\d{6})")
     K_TAG          = re.compile(r"^K_(\d+)$")
-    PROFILE_AE_TAG = re.compile(r"^pae_([a-z0-9_]+\.[a-z]+)-")
-    IMAGE_AE_TAG   = re.compile(r"^iae_([a-z0-9_]+\.[a-z]+)-")
     LOSS_TAG       = re.compile(r"([a-z0-9_]+?)_(\d+(?:\.\d+)?(?:e-?\d+)?)(?:-|$)")
 
     @classmethod
@@ -46,14 +44,6 @@ class RunAxes:
             return None
 
         loss_tag = parts[6]
-
-        profile_match = cls.PROFILE_AE_TAG.match(loss_tag)
-        profile_ae    = profile_match.group(1) if profile_match else ""
-        loss_tag      = loss_tag[profile_match.end():] if profile_match else loss_tag
-
-        image_match = cls.IMAGE_AE_TAG.match(loss_tag)
-        image_ae    = image_match.group(1) if image_match else ""
-        loss_tag    = loss_tag[image_match.end():] if image_match else loss_tag
 
         losses   = []
         position = 0
@@ -74,8 +64,6 @@ class RunAxes:
             "k"          : int(k_match.group(1)),
             "aug"        : parts[4],
             "presence"   : parts[5],
-            "profile_ae" : profile_ae,
-            "image_ae"   : image_ae,
             "loss"       : loss_tag,
             "losses"     : losses,
             "timestamp"  : timestamp,
@@ -113,11 +101,7 @@ class RunLeaderboard:
         ("trainer", Path("docs") / "trainer_config.json"),
     )
 
-    MODEL_CONFIGS = (
-        ("model",      RunArtifacts.BACKBONE_CONFIG),
-        ("profile_ae", RunArtifacts.PROFILE_AE_CONFIG),
-        ("image_ae",   RunArtifacts.IMAGE_AE_CONFIG),
-    )
+    MODEL_CONFIG = Path("meta") / RunArtifacts.BACKBONE_CONFIG
 
     SEED_DIR = re.compile(r"^seed(\d+)$")
 
@@ -448,16 +432,15 @@ class RunLeaderboard:
                 return {"error": f"could not read {path}: {exc}"}
             self._flatten(label, payload, config)
 
-        model_paths = [(prefix, run_dir / "meta" / name) for prefix, name in self.MODEL_CONFIGS if (run_dir / "meta" / name).is_file()]
-        if not model_paths:
-            notes.append(f"no model config under meta/ (looked for {', '.join(name for _, name in self.MODEL_CONFIGS)})")
-
-        for prefix, path in model_paths:
+        path = run_dir / self.MODEL_CONFIG
+        if not path.is_file():
+            notes.append(f"{self.MODEL_CONFIG} is missing")
+        else:
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as exc:
                 return {"error": f"could not read {path}: {exc}"}
-            self._flatten(prefix, payload, config)
+            self._flatten("model", payload, config)
 
         return {"config": config, "notes": notes}
 

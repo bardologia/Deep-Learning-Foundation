@@ -1,25 +1,22 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 import torch
 
-from configuration.benchmark.general             import BenchmarkConfig
-from configuration.cross_validation.general      import CrossValidationConfig
-from configuration.training                      import BackboneEntryConfig, ImageAeEntryConfig, JepaEntryConfig, ProfileAeEntryConfig
-from configuration.training.general.trainer      import _SHARED_SUBCONFIGS, SharedSubConfigInheritance
-from configuration.tuning.general                import TuningEntryConfig
-from tools.runtime.config_cli                    import ConfigCli
-from tools.training.vram_reservation             import VramReservation
+from configuration.benchmark.general        import BenchmarkConfig
+from configuration.cross_validation.general import CrossValidationConfig
+from configuration.training                 import BackboneEntryConfig
+from configuration.tuning.general           import TuningEntryConfig
+from tools.runtime.config_cli               import ConfigCli
+from tools.training.vram_reservation        import VramReservation
 
 GB = 1024 ** 3
 MB = 1024 ** 2
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 
-_FLOW_CONFIGS = [BackboneEntryConfig, JepaEntryConfig, ProfileAeEntryConfig, ImageAeEntryConfig, BenchmarkConfig, CrossValidationConfig, TuningEntryConfig]
+_FLOW_CONFIGS = [BackboneEntryConfig, BenchmarkConfig, CrossValidationConfig, TuningEntryConfig]
 
 
 def _free_bytes() -> int:
@@ -39,18 +36,6 @@ def test_reservation_exposed_and_disabled_on_every_training_flow(flow_config):
     assert "training.reserve_vram"      in paths
     assert "training.vram_keep_free_gb" in paths
     assert config.training.reserve_vram is False
-
-
-def test_memory_is_shared_into_type_trainer_configs():
-    class Carrier(SharedSubConfigInheritance):
-        pass
-
-    base    = SimpleNamespace(**{name: object() for name in _SHARED_SUBCONFIGS})
-    carrier = Carrier()
-
-    carrier.inherit_shared_from(base)
-
-    assert carrier.memory is base.memory
 
 
 def test_disabled_flag_is_inert(logger):

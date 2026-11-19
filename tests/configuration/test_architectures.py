@@ -5,33 +5,12 @@ import dataclasses
 
 import pytest
 
-from configuration   import architectures as arch
 from models.backbone import BACKBONE_CONFIG_REGISTRY
 
 
 BACKBONE_CONFIGS = [BACKBONE_CONFIG_REGISTRY[name] for name in sorted(BACKBONE_CONFIG_REGISTRY)]
 
-IMAGE_AE_CONFIGS = [
-    arch.ImageAutoencoderBaseConfig,
-    arch.Conv2dImageAutoencoderConfig,
-    arch.ResNet2dImageAutoencoderConfig,
-    arch.ConvNeXt2dImageAutoencoderConfig,
-    arch.DilatedConv2dImageAutoencoderConfig,
-    arch.ViTImageAutoencoderConfig,
-]
-
-PROFILE_AE_CONFIGS = [
-    arch.ProfileAutoencoderBaseConfig,
-    arch.MlpAutoencoderConfig,
-    arch.Conv1dAutoencoderConfig,
-    arch.Transformer1dAutoencoderConfig,
-    arch.ResMlpAutoencoderConfig,
-    arch.TcnAutoencoderConfig,
-    arch.GruAutoencoderConfig,
-    arch.CnnAttnAutoencoderConfig,
-]
-
-ALL_ARCH_CONFIGS = BACKBONE_CONFIGS + IMAGE_AE_CONFIGS + PROFILE_AE_CONFIGS
+ALL_ARCH_CONFIGS = BACKBONE_CONFIGS
 
 ARCH_IDS = [c.__name__ for c in ALL_ARCH_CONFIGS]
 
@@ -79,20 +58,6 @@ def test_backbone_features_or_dims_present(config_cls):
     assert has_features
 
 
-@pytest.mark.parametrize("config_cls", PROFILE_AE_CONFIGS, ids=[c.__name__ for c in PROFILE_AE_CONFIGS])
-def test_profile_ae_embedding_and_length_positive(config_cls):
-    instance = config_cls()
-    assert instance.embedding_dim  > 0
-    assert instance.profile_length > 0
-
-
-@pytest.mark.parametrize("config_cls", IMAGE_AE_CONFIGS, ids=[c.__name__ for c in IMAGE_AE_CONFIGS])
-def test_image_ae_embedding_and_channels_positive(config_cls):
-    instance = config_cls()
-    assert instance.embedding_dim > 0
-    assert instance.in_channels   > 0
-
-
 @pytest.mark.parametrize("config_cls", ALL_ARCH_CONFIGS, ids=ARCH_IDS)
 def test_arch_config_asdict_round_trips(config_cls):
     instance = config_cls()
@@ -111,13 +76,3 @@ def test_backbone_shape_logger_types_is_tuple(config_cls):
     instance = config_cls()
     assert isinstance(instance.shape_logger_types, tuple)
     assert len(instance.shape_logger_types) > 0
-
-
-def test_ae_subclasses_inherit_base_lr_fields():
-    base_fields = {f.name for f in dataclasses.fields(arch.ProfileAutoencoderBaseConfig)}
-    for cls in PROFILE_AE_CONFIGS:
-        assert base_fields.issubset({f.name for f in dataclasses.fields(cls)})
-
-    base_image_fields = {f.name for f in dataclasses.fields(arch.ImageAutoencoderBaseConfig)}
-    for cls in IMAGE_AE_CONFIGS:
-        assert base_image_fields.issubset({f.name for f in dataclasses.fields(cls)})

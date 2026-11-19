@@ -36,7 +36,7 @@ class CrossValidationClusterScheduler(FoldUnitStage):
 
     @property
     def sweep_name(self) -> str:
-        return f"sweep_cross_validation_{self.config.training_type}"
+        return "sweep_cross_validation"
 
     @property
     def entry_flags(self) -> tuple:

@@ -5,11 +5,10 @@ import re
 from pathlib import Path
 from typing  import List
 
-from configuration.diagnostics                 import ReportCollectionConfig, ReportCollectionEntryConfig
-from pipelines.shared.inference.run_classifier import InferenceLayout
-from tools.data.io                             import FileIO
-from tools.reporting.reporting                 import ReportAssets
-from tools.runtime.run_selector                import ReportRunSelector
+from configuration.diagnostics  import ReportCollectionConfig, ReportCollectionEntryConfig
+from tools.data.io              import FileIO
+from tools.reporting.reporting  import ReportAssets
+from tools.runtime.run_selector import ReportRunSelector
 
 
 class RunReportLocator:
@@ -19,9 +18,6 @@ class RunReportLocator:
 
     def _report_paths(self, inference_dir: Path) -> List[Path]:
         reports = list(inference_dir.glob(f"*/{self.config.report_filename}"))
-
-        for family in InferenceLayout.SUBDIRS.values():
-            reports += list(inference_dir.glob(f"{family}/*/{self.config.report_filename}"))
 
         return sorted((path for path in reports if path.is_file()), key=lambda path: path.parent.name)
 

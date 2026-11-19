@@ -429,7 +429,7 @@ def test_a_dataset_rooted_runs_dir_is_not_redirected(rig):
 
 def test_a_training_logdir_is_redirected_into_the_workspace(rig):
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", script="train_jepa")], isolate=True)
+    sequence_id = _saved(store, [_block("a1", script="train_backbone")], isolate=True)
 
     runner.start_sequence(sequence_id)
 
@@ -438,7 +438,7 @@ def test_a_training_logdir_is_redirected_into_the_workspace(rig):
 
 def test_a_logdir_override_outside_the_runs_tree_is_kept(rig):
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", script="train_jepa", overrides={"logdir": "/data/scratch_runs"})], isolate=True)
+    sequence_id = _saved(store, [_block("a1", script="train_backbone", overrides={"logdir": "/data/scratch_runs"})], isolate=True)
 
     runner.start_sequence(sequence_id)
 
@@ -1119,7 +1119,7 @@ def test_a_missing_experiment_directory_fails_the_chain(rig):
 
 def test_finalize_refuses_an_entry_without_trials_mode(rig):
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", script="train_jepa", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
+    sequence_id = _saved(store, [_block("a1", script="infer_backbone", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
     runner.start_sequence(sequence_id)
 

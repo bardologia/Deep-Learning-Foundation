@@ -13,7 +13,6 @@ from configuration.training.general import (
     LossConfig,
     LossCurriculumConfig,
     ParamMatching,
-    SharedSubConfigInheritance,
     PretrainConfig,
 )
 from configuration.training.backbone import (
@@ -25,21 +24,4 @@ from configuration.training.backbone import (
     LossScaleProbeConfig,
     BackboneTrainerConfig,
     BackboneEntryConfig,
-)
-from configuration.training.jepa import (
-    EmbeddingLossConfig,
-    JepaCurriculumConfig,
-    JepaTrainerConfig,
-    JepaDefaults,
-    JepaEntryConfig,
-)
-from configuration.training.image_autoencoder import (
-    ImageAeLossConfig,
-    ImageAeTrainerConfig,
-    ImageAeEntryConfig,
-)
-from configuration.training.profile_autoencoder import (
-    ProfileAeLossConfig,
-    ProfileAeTrainerConfig,
-    ProfileAeEntryConfig,
 )

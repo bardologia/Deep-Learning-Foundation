@@ -9,17 +9,6 @@ from configuration.normalization.general        import NormalizationConfig
 from configuration.training.backbone            import default_curriculum
 from configuration.training.general.loss        import LossCurriculumConfig
 from configuration.training.general.run         import RunPathsConfig, TrainingQueueConfig
-from configuration.training.image_autoencoder   import ImageAeLossConfig
-from configuration.training.jepa                import JepaCouplingConfig
-from configuration.training.profile_autoencoder import ProfileAeLossConfig
-
-
-def _default_ae_loss():
-    return ProfileAeLossConfig()
-
-
-def _default_image_ae_loss():
-    return ImageAeLossConfig()
 
 
 @dataclass
@@ -53,8 +42,7 @@ class TuningConfig:
 @dataclass
 class TuningEntryConfig:
 
-    training_type : str = "backbone"
-    stage         : str = "full"
+    stage : str = "full"
 
     paths  : RunPathsConfig = field(default_factory=lambda: RunPathsConfig(log_base_dir=Path("runs/tuning")))
     tuning : TuningConfig   = field(default_factory=TuningConfig)
@@ -67,12 +55,7 @@ class TuningEntryConfig:
     run_tag     : str | None = None
     resume_from : str        = ""
 
-    training        : TrainingQueueConfig  = field(default_factory=TrainingQueueConfig)
-    curriculum      : LossCurriculumConfig = field(default_factory=default_curriculum)
-    normalization   : NormalizationConfig  = field(default_factory=NormalizationConfig)
-    augmentation    : AugmentationConfig   = field(default_factory=AugmentationConfig)
-    ae_loss         : object               = field(default_factory=_default_ae_loss)
-    image_ae_loss   : object               = field(default_factory=_default_image_ae_loss)
-    jepa            : JepaCouplingConfig   = field(default_factory=JepaCouplingConfig)
-    pixel_subsample : float                = 1.0
-    keep_empty_frac : float                = 0.05
+    training      : TrainingQueueConfig  = field(default_factory=TrainingQueueConfig)
+    curriculum    : LossCurriculumConfig = field(default_factory=default_curriculum)
+    normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
+    augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)

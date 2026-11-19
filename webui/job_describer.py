@@ -15,8 +15,6 @@ class JobDescriber:
 
     LEADS = {
         "train_backbone"            : "_lead_train_backbone",
-        "train_jepa"                : "_lead_train_jepa",
-        "train_profile_autoencoder" : "_lead_train_profile_autoencoder",
         "benchmark"                 : "_lead_benchmark",
         "cross_validate"            : "_lead_cross_validate",
         "tune"                      : "_lead_tune",
@@ -49,46 +47,12 @@ class JobDescriber:
             ("inference after",  "infer_after",           "flag"),
             ("inference at end", "infer_at_end",          "flag"),
         ],
-        "train_profile_autoencoder": [
-            ("model",    "ae_model_name",         "text"),
-            ("params",   "paths.parameters_path", "opt_tail"),
-            ("epochs",   "training.epochs",       "text"),
-            ("run",      "run_name",              "opt"),
-            ("resuming", "resume_from",           "opt_tail"),
-        ],
-        "train_image_autoencoder": [
-            ("model",    "ae_model_name",      "text"),
-            ("dataset",  "paths.dataset_path", "opt_tail"),
-            ("epochs",   "training.epochs",    "text"),
-            ("run",      "run_name",           "opt"),
-            ("resuming", "resume_from",        "opt_tail"),
-        ],
-        "train_jepa": [
-            ("dataset",          "paths.dataset_path", "opt_tail"),
-            ("epochs",           "training.epochs",    "text"),
-            ("run",              "run_name",           "opt"),
-            ("resuming",         "resume_from",        "opt_tail"),
-            ("inference after",  "infer_after",        "flag"),
-            ("inference at end", "infer_at_end",       "flag"),
-        ],
         "infer_backbone": [
             ("root",                  "runs_dir",        "opt_tail"),
             ("filter",                "run_filter",      "list", "all runs"),
             ("split",                 "inference.split", "text"),
             ("gpus",                  "gpus",            "list"),
             ("rescoring scored runs", "skip_completed",  "unflag"),
-        ],
-        "infer_profile_autoencoder": [
-            ("root",                  "runs_dir",       "opt_tail"),
-            ("filter",                "run_filter",     "list", "all runs"),
-            ("gpus",                  "gpus",           "list"),
-            ("rescoring scored runs", "skip_completed", "unflag"),
-        ],
-        "infer_image_autoencoder": [
-            ("root",                  "runs_dir",       "opt_tail"),
-            ("filter",                "run_filter",     "list", "all runs"),
-            ("gpus",                  "gpus",           "list"),
-            ("rescoring scored runs", "skip_completed", "unflag"),
         ],
         "benchmark": [
             ("heads",    "heads",                 "list"),
@@ -249,62 +213,22 @@ class JobDescriber:
         model = self._join(values, "backbone_name", "backbone_head")
         return [part for part in (mode, model) if part]
 
-    def _lead_train_jepa(self, values: dict, used: set) -> list[str]:
-        used.update(("trials_enabled", "trials_mode", "backbone_name", "backbone_head", "profile_autoencoder_run", "profile_autoencoder_mode", "image_autoencoder_run", "image_autoencoder_mode"))
-
-        profile = values.get("profile_autoencoder_run", "")
-        image   = values.get("image_autoencoder_run", "")
-        stages  = ["image-AE"] if self._is_set(image) else []
-        stages += ["backbone"]
-        stages += ["profile-AE"] if self._is_set(profile) else []
-
-        mode  = f"{values.get('trials_mode', '')} trials experiment".strip() if self._truthy(values.get("trials_enabled", "")) else ""
-        parts = [mode, " + ".join(stages), self._join(values, "backbone_name", "backbone_head")]
-        if self._is_set(profile):
-            parts.append(f"profile-AE {self._tail(profile)} ({values.get('profile_autoencoder_mode', '')})")
-        if self._is_set(image):
-            parts.append(f"image-AE {self._tail(image)} ({values.get('image_autoencoder_mode', '')})")
-        return [part for part in parts if part]
-
-    def _lead_train_profile_autoencoder(self, values: dict, used: set) -> list[str]:
-        used.update(("trials_enabled", "trials_mode", "ae_model_name"))
-
-        mode  = f"{values.get('trials_mode', '')} trials experiment".strip() if self._truthy(values.get("trials_enabled", "")) else "single training"
-        model = values.get("ae_model_name", "")
-        return [part for part in (mode, model) if part]
-
     def _lead_benchmark(self, values: dict, used: set) -> list[str]:
-        used.add("training_type")
-        return [f"{values.get('training_type', '')} benchmark".strip()]
-
-    CV_MODEL_FIELDS = {
-        "profile_autoencoder" : ("autoencoder.ae_model_name",),
-        "image_autoencoder"   : ("image_autoencoder.ae_model_name",),
-    }
+        return ["benchmark"]
 
     def _lead_cross_validate(self, values: dict, used: set) -> list[str]:
-        used.update(("training_type", "folds.n_folds", "backbone_name", "backbone_head"))
-        used.update(field for fields in self.CV_MODEL_FIELDS.values() for field in fields)
+        used.update(("folds.n_folds", "backbone_name", "backbone_head"))
 
-        training_type = values.get("training_type", "")
-        folds         = values.get("folds.n_folds", "")
-        lead          = f"{folds}-fold cross-validation, {training_type}".strip(", ") if folds else f"cross-validation, {training_type}".strip(", ")
+        folds = values.get("folds.n_folds", "")
+        lead  = f"{folds}-fold cross-validation" if folds else "cross-validation"
 
-        return [part for part in (lead, self._cross_validate_model(training_type, values)) if part]
-
-    def _cross_validate_model(self, training_type: str, values: dict) -> str:
-        if training_type in ("profile_autoencoder", "image_autoencoder"):
-            return values.get(self.CV_MODEL_FIELDS[training_type][0], "")
-
-        return self._join(values, "backbone_name", "backbone_head")
+        return [part for part in (lead, self._join(values, "backbone_name", "backbone_head")) if part]
 
     def _lead_tune(self, values: dict, used: set) -> list[str]:
-        used.add("training_type")
-        return [f"Optuna search, {values.get('training_type', '')}".strip(", ")]
+        return ["Optuna search"]
 
     def _lead_tune_dataloader(self, values: dict, used: set) -> list[str]:
-        used.add("mode")
-        return [f"feed tuner, {values.get('mode', '')}".strip(", ")]
+        return ["feed tuner"]
 
     def _lead_mail_experiment_reports(self, values: dict, used: set) -> list[str]:
         used.add("target")

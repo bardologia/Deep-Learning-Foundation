@@ -9,9 +9,8 @@ from pathlib  import Path
 import optuna
 from optuna.trial import TrialState
 
-from pipelines.shared.config.config_factory import ConfigFactory
 from pipelines.shared.model.model_builder   import ModelBuilder
-from pipelines.shared.training.run_naming   import JepaNamingSpec, RunNaming
+from pipelines.shared.training.run_naming   import RunNaming
 from tools.data.io                          import FileIO
 
 
@@ -85,10 +84,6 @@ class SearchSpace:
             raise ValueError("every search group is off; switch on search_lr, search_arch or search_batch")
 
         return space
-
-    @classmethod
-    def arch_only(cls, config_cls) -> dict:
-        return cls._group(config_cls, "tunable_arch_params", "architecture")
 
     @classmethod
     def describe(cls, tune_cfg) -> str:
@@ -531,164 +526,6 @@ class Tuner:
             "Log dir"              : self.log_dir,
             **rules.describe(),
         }, title="Tuner config")
-
-        progress = StudyProgress(self.log_dir, self.space, rules, self.logger)
-        rules.optimize(study, self._objective, n_trials, progress, [self.best_writer])
-
-        return progress.summary()
-
-
-class AeTuner:
-
-    def __init__(
-        self,
-        model_name        : str,
-        config_cls,
-        entry_template,
-        trial_pipeline_cls,
-        tune_cfg,
-        log_dir           : str,
-        logger,
-        worker_index      : int = 0,
-    ) -> None:
-        self.model_name         = model_name
-        self.config_cls         = config_cls
-        self.entry_template     = entry_template
-        self.trial_pipeline_cls = trial_pipeline_cls
-        self.tune_cfg           = tune_cfg
-        self.log_dir            = log_dir
-        self.logger             = logger
-        self.worker_index       = worker_index
-
-        self.sampler     = ParamSampler()
-        self.space       = SearchSpace.of(config_cls, tune_cfg)
-        self.best_writer = BestConfigWriter(model_name, self.space, Path(log_dir) / "best_config.json")
-        self.checkpoints = TrialCheckpoints(tune_cfg.keep_trial_checkpoints, logger)
-
-    def _objective(self, trial: optuna.Trial) -> float:
-        trial.set_user_attr("worker", self.worker_index)
-
-        sampled   = self.sampler.sample(trial, self.space)
-        trial_dir = self.checkpoints.trial_dir(self.log_dir, trial.number)
-
-        entry                 = copy.deepcopy(self.entry_template)
-        entry.ae_model_name   = self.model_name
-        entry.model_overrides = SearchSpace.model_params(sampled)
-        entry.run_name        = f"trial_{trial.number:04d}"
-        entry.seed            = self.tune_cfg.base_seed + trial.number
-        entry.logdir          = trial_dir
-
-        entry.training.epochs              = self.tune_cfg.n_epochs
-        entry.training.scheduler_epochs    = self.tune_cfg.n_epochs
-        entry.training.early_stop_patience = self.tune_cfg.early_stop_patience
-        if SearchSpace.BATCH in sampled:
-            entry.training.batch_size = sampled[SearchSpace.BATCH]
-
-        pipeline = self.trial_pipeline_cls(entry, trial=trial)
-        try:
-            (_, _, best_val_loss), _ = pipeline.run()
-        except StudyStopRules.TRIAL_FAILURES as error:
-            StudyStopRules.fail(trial, error, self.logger)
-            raise
-        finally:
-            self.checkpoints.discard(trial_dir, trial.number)
-
-        return best_val_loss
-
-    def run(self, study: optuna.Study, n_trials: int) -> dict:
-        self.logger.section(f"[AeTuner — {self.model_name}]")
-
-        rules = StudyStopRules(self.tune_cfg, self.logger)
-        self.logger.kv_table({
-            "Trials (this worker)" : n_trials,
-            "Epochs / trial"       : self.tune_cfg.n_epochs,
-            "Early-stop patience"  : self.tune_cfg.early_stop_patience,
-            "Search groups"        : SearchSpace.describe(self.tune_cfg),
-            "Search dimensions"    : len(self.space),
-            "Log dir"              : self.log_dir,
-            **rules.describe(),
-        }, title="AeTuner config")
-
-        progress = StudyProgress(self.log_dir, self.space, rules, self.logger)
-        rules.optimize(study, self._objective, n_trials, progress, [self.best_writer])
-
-        return progress.summary()
-
-
-class JepaTuner:
-
-    def __init__(
-        self,
-        model_name     : str,
-        model_config_cls,
-        entry_template,
-        tune_cfg,
-        log_dir        : str,
-        logger,
-        worker_index   : int = 0,
-    ) -> None:
-        self.model_name       = model_name
-        self.model_config_cls = model_config_cls
-        self.entry_template   = entry_template
-        self.tune_cfg         = tune_cfg
-        self.log_dir          = log_dir
-        self.logger           = logger
-        self.worker_index     = worker_index
-
-        self.backbone_name, self.head = ModelBuilder.split_key(model_name)
-
-        self.sampler     = ParamSampler()
-        self.space       = SearchSpace.arch_only(model_config_cls)
-        self.best_writer = BestConfigWriter(model_name, self.space, Path(log_dir) / "best_config.json")
-        self.checkpoints = TrialCheckpoints(tune_cfg.keep_trial_checkpoints, logger)
-
-        n_gaussians  = ConfigFactory(entry_template).gaussian_config().n_default_gaussians
-        self.run_tag = RunNaming.jepa_tag(self.backbone_name, self.head, JepaNamingSpec.resolve(entry_template), n_gaussians, entry_template.augmentation)
-
-    def _objective(self, trial: optuna.Trial) -> float:
-        from pipelines.tuning.trial import TrialJepaPipeline
-
-        trial.set_user_attr("worker", self.worker_index)
-
-        sampled   = self.sampler.sample(trial, self.space)
-        trial_dir = self.checkpoints.trial_dir(self.log_dir, trial.number)
-
-        entry                 = copy.deepcopy(self.entry_template)
-        entry.backbone_name   = self.backbone_name
-        entry.backbone_head   = self.head
-        entry.model_overrides = sampled
-        entry.run_name        = RunNaming.compose(self.run_tag, f"trial_{trial.number:04d}")
-        entry.seed            = self.tune_cfg.base_seed + trial.number
-        entry.logdir          = trial_dir
-
-        entry.training.epochs              = self.tune_cfg.n_epochs
-        entry.training.scheduler_epochs    = self.tune_cfg.n_epochs
-        entry.training.early_stop_patience = self.tune_cfg.early_stop_patience
-
-        pipeline = TrialJepaPipeline(entry, trial=trial)
-        try:
-            (_, _, best_val_loss), _ = pipeline.run()
-        except StudyStopRules.TRIAL_FAILURES as error:
-            StudyStopRules.fail(trial, error, self.logger)
-            raise
-        finally:
-            self.checkpoints.discard(trial_dir, trial.number)
-
-        return best_val_loss
-
-    def run(self, study: optuna.Study, n_trials: int) -> dict:
-        self.logger.section(f"[JepaTuner — {self.model_name}]")
-
-        rules = StudyStopRules(self.tune_cfg, self.logger)
-        self.logger.kv_table({
-            "Trials (this worker)" : n_trials,
-            "Epochs / trial"       : self.tune_cfg.n_epochs,
-            "Early-stop patience"  : self.tune_cfg.early_stop_patience,
-            "Search groups"        : "arch",
-            "Search dimensions"    : len(self.space),
-            "Log dir"              : self.log_dir,
-            **rules.describe(),
-        }, title="JepaTuner config")
 
         progress = StudyProgress(self.log_dir, self.space, rules, self.logger)
         rules.optimize(study, self._objective, n_trials, progress, [self.best_writer])

@@ -10,8 +10,6 @@ class LeaderboardView {
     { key: "k",          label: "K" },
     { key: "aug",        label: "aug" },
     { key: "presence",   label: "presence" },
-    { key: "profile_ae", label: "profile AE" },
-    { key: "image_ae",   label: "image AE" },
     { key: "loss",       label: "loss" },
   ];
 

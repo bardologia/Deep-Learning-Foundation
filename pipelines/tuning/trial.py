@@ -3,14 +3,8 @@ from __future__ import annotations
 
 import optuna
 
-from pipelines.profile_autoencoder.training.trainer  import Trainer as AeTrainer
-from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline as AeTrainingPipeline
-from pipelines.image_autoencoder.training.trainer    import Trainer as ImageAeTrainer
-from pipelines.image_autoencoder.training.pipeline   import TrainingPipeline as ImageAeTrainingPipeline
-from pipelines.jepa.training.trainer                 import Trainer as JepaTrainer
-from pipelines.jepa.training.pipeline                import TrainingPipeline as JepaTrainingPipeline
-from pipelines.backbone.training.pipeline            import TrainingPipeline
-from pipelines.backbone.training.trainer             import Trainer
+from pipelines.backbone.training.pipeline import TrainingPipeline
+from pipelines.backbone.training.trainer  import Trainer
 
 
 class TrialPruning:
@@ -55,66 +49,3 @@ class TrialPipeline(TrainingPipeline):
             emit_docs  = emit_docs and self._emit_docs,
             writer     = writer,
         )
-
-
-class TrialProfileAeTrainer(AeTrainer):
-
-    def __init__(self, *args, trial: optuna.Trial, **kwargs) -> None:
-        self._trial = trial
-        super().__init__(*args, **kwargs)
-
-    def _after_eval(self, val_loss: float, epoch: int) -> None:
-        super()._after_eval(val_loss, epoch)
-        TrialPruning.report(self._trial, val_loss, epoch, self.logger)
-
-
-class TrialProfileAePipeline(AeTrainingPipeline):
-
-    def __init__(self, *args, trial: optuna.Trial, **kwargs) -> None:
-        self._trial = trial
-        super().__init__(*args, **kwargs)
-
-    def _make_trainer(self, run_directory, logger, model, z_axis, writer=None):
-        return TrialProfileAeTrainer(model, self.autoencoder_cfg, z_axis, self.trainer_config, run_directory, logger, writer, trial=self._trial)
-
-
-class TrialImageAeTrainer(ImageAeTrainer):
-
-    def __init__(self, *args, trial: optuna.Trial, **kwargs) -> None:
-        self._trial = trial
-        super().__init__(*args, **kwargs)
-
-    def _after_eval(self, val_loss: float, epoch: int) -> None:
-        super()._after_eval(val_loss, epoch)
-        TrialPruning.report(self._trial, val_loss, epoch, self.logger)
-
-
-class TrialImageAePipeline(ImageAeTrainingPipeline):
-
-    def __init__(self, *args, trial: optuna.Trial, **kwargs) -> None:
-        self._trial = trial
-        super().__init__(*args, **kwargs)
-
-    def _make_trainer(self, run_directory, logger, model, z_axis, writer=None):
-        return TrialImageAeTrainer(model, self.autoencoder_cfg, z_axis, self.trainer_config, run_directory, logger, writer, trial=self._trial)
-
-
-class TrialJepaTrainer(JepaTrainer):
-
-    def __init__(self, *args, trial: optuna.Trial, **kwargs) -> None:
-        self._trial = trial
-        super().__init__(*args, **kwargs)
-
-    def _after_eval(self, val_loss: float, epoch: int) -> None:
-        super()._after_eval(val_loss, epoch)
-        TrialPruning.report(self._trial, val_loss, epoch, self.logger)
-
-
-class TrialJepaPipeline(JepaTrainingPipeline):
-
-    def __init__(self, *args, trial: optuna.Trial, **kwargs) -> None:
-        self._trial = trial
-        super().__init__(*args, **kwargs)
-
-    def _make_trainer(self, model, backbone_cfg, z_axis, run_dir, logger, norm_stats, profile_normalizer, writer=None):
-        return TrialJepaTrainer(model, backbone_cfg, z_axis, self.trainer_config, run_dir, logger, norm_stats, profile_normalizer, writer, trial=self._trial)

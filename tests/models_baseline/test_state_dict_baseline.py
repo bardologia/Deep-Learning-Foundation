@@ -8,15 +8,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from models import (
-    BACKBONE_HEADS,
-    BACKBONE_MODEL_REGISTRY,
-    IMAGE_AE_MODEL_REGISTRY,
-    PROFILE_AE_MODEL_REGISTRY,
-    get_backbone,
-    get_image_autoencoder,
-    get_profile_autoencoder,
-)
+from models import BACKBONE_HEADS, BACKBONE_MODEL_REGISTRY, get_backbone
 
 BASELINE_PATH = Path(__file__).resolve().parents[1] / "state_dict_baseline.json"
 
@@ -31,19 +23,13 @@ def _backbone_cases() -> dict:
     return cases
 
 
-def _plain_cases(registry: dict) -> dict:
-    return {name: (name, {}) for name in registry}
-
-
 def _build_case(factory, case: tuple):
     name, overrides = case
     return factory(name, **overrides)
 
 
 MODEL_FAMILIES = {
-    "backbone"            : (_backbone_cases(),                       get_backbone),
-    "profile_autoencoder" : (_plain_cases(PROFILE_AE_MODEL_REGISTRY), get_profile_autoencoder),
-    "image_autoencoder"   : (_plain_cases(IMAGE_AE_MODEL_REGISTRY),   get_image_autoencoder),
+    "backbone" : (_backbone_cases(), get_backbone),
 }
 
 FAMILY_MODEL_CASES = [(family, key) for family, (cases, _factory) in MODEL_FAMILIES.items() for key in sorted(cases)]

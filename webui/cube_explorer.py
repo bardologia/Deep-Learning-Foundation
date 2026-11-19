@@ -598,11 +598,6 @@ class CubeExplorer:
         "flip_consistency"         : "flip disagreement",
         "failure_mode"             : "failure mode",
         "label_suspect"            : "label suspect",
-        "extract_r2"               : "extract R2",
-        "embedding_error"          : "embedding err",
-        "embedding_cosine"         : "embedding cosine",
-        "decode_mse"               : "decode MSE",
-        "chain_mse"                : "chain MSE",
     }
 
     METRIC_CLASSES = {

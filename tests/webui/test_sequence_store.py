@@ -12,14 +12,12 @@ from web_logger         import WebLogger
 
 
 LEAVES = {
-    "train_backbone"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "training.seed": "0", "training.use_ema": "False", "trials_mode": "curriculum", "paths.log_base_dir": "runs/benchmark", "logdir": "runs/backbone"},
-    "infer_backbone"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "runs_dir": "runs"},
-    "benchmark"                 : {"dataset_base_path": "/data", "dataset_filter": "", "training.seed": "0"},
-    "generate_dataset"               : {"runs_dir": "datasets"},
-    "train_jepa"                : {"paths.dataset_path": "/data/default", "logdir": "runs/jepa", "model_overrides": "{}", "training.batch_size": "256", "curriculum.enabled": "False", "embedding_loss.use_embedding_mse": "True"},
-    "train_profile_autoencoder" : {"paths.dataset_path": "/data/default", "logdir": "runs/profile_autoencoder", "model_overrides": "{}", "training.batch_size": "8192", "ae_model_name": "mlp_ae", "ae_loss.use_mse_curve": "True"},
-    "cross_validate"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "run_tag": "None", "paths.log_base_dir": "runs/cross_validation", "training_type": "backbone", "training.batch_size": "256", "curriculum.enabled": "True", "jepa.curriculum.enabled": "False", "jepa.embedding_loss.use_embedding_mse": "True", "autoencoder.ae_model_name": "mlp_ae", "autoencoder.ae_loss.use_mse_curve": "True"},
-    "tune"                      : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "run_tag": "None", "paths.log_base_dir": "runs/tuning", "training_type": "backbone", "training.batch_size": "256", "curriculum.enabled": "True"},
+    "train_backbone"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "training.seed": "0", "training.use_ema": "False", "trials_mode": "curriculum", "paths.log_base_dir": "runs/benchmark", "logdir": "runs/backbone"},
+    "infer_backbone"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "runs_dir": "runs"},
+    "benchmark"        : {"dataset_base_path": "/data", "dataset_filter": "", "training.seed": "0"},
+    "generate_dataset" : {"runs_dir": "datasets"},
+    "cross_validate"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "run_tag": "None", "paths.log_base_dir": "runs/cross_validation", "training.batch_size": "256", "curriculum.enabled": "True"},
+    "tune"             : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "run_tag": "None", "paths.log_base_dir": "runs/tuning", "training.batch_size": "256", "curriculum.enabled": "True"},
 }
 
 
@@ -47,7 +45,7 @@ def decision_engine(leaves: dict | None = None) -> SequenceDecisions:
 
 class SequencePaths:
 
-    def __init__(self, root: Path, scripts: tuple = ("train_backbone", "infer_backbone", "benchmark", "generate_dataset", "train_jepa", "train_profile_autoencoder", "cross_validate", "tune")) -> None:
+    def __init__(self, root: Path, scripts: tuple = ("train_backbone", "infer_backbone", "benchmark", "generate_dataset", "cross_validate", "tune")) -> None:
         self.repo_root     = root
         self.runs_dir      = root / "runs"
         self.sequences_dir = root / "logs" / "sequences"
@@ -196,95 +194,20 @@ def test_the_later_decision_on_the_same_axis_wins_downstream(store):
     assert saved["c3"]["overrides"] == {"training.seed": "9"}
 
 
-def test_a_bare_autoencoder_axis_lands_on_the_namespaced_cross_validation_field(store):
+def test_a_model_overrides_verdict_reaches_only_the_entries_exposing_it(store):
     sequence_id = store.create("seq")["entry"]["sequence_id"]
-    decisions   = [{"path": "ae_model_name", "options": ["mlp_ae", "conv1d_ae"], "waiting": "mlp_ae", "choice": "conv1d_ae"}]
-    blocks      = [_block("a1", script="train_profile_autoencoder", decisions=decisions), _block("b2", script="cross_validate", predecessors=["a1"], overrides={"training_type": "profile_autoencoder"})]
-
-    result = store.save(sequence_id, _definition(blocks))
-
-    saved = {block["block_id"]: block for block in result["entry"]["blocks"]}
-    assert saved["b2"]["overrides"] == {"training_type": "profile_autoencoder", "autoencoder.ae_model_name": "conv1d_ae"}
-    assert saved["b2"]["field_notes"] == {"autoencoder.ae_model_name": "frozen"}
-
-
-def test_a_bare_jepa_axis_lands_on_the_namespaced_cross_validation_field(store):
-    sequence_id = store.create("seq")["entry"]["sequence_id"]
-    decisions   = [{"path": "embedding_loss.use_embedding_mse", "options": ["True", "False"], "waiting": "True", "choice": "False"}]
-    blocks      = [_block("a1", script="train_jepa", decisions=decisions), _block("b2", script="cross_validate", predecessors=["a1"], overrides={"training_type": "jepa"})]
-
-    result = store.save(sequence_id, _definition(blocks))
-
-    saved = {block["block_id"]: block for block in result["entry"]["blocks"]}
-    assert saved["b2"]["overrides"] == {"training_type": "jepa", "jepa.embedding_loss.use_embedding_mse": "False"}
-    assert saved["b2"]["field_notes"] == {"jepa.embedding_loss.use_embedding_mse": "frozen"}
-
-
-def test_a_shared_axis_keeps_resolving_bare_on_a_namespaced_block(store):
-    sequence_id = store.create("seq")["entry"]["sequence_id"]
-    decisions   = [{"path": "training.batch_size", "options": ["256", "512"], "waiting": "256", "choice": "512"}]
-    blocks      = [_block("a1", script="train_jepa", decisions=decisions), _block("b2", script="cross_validate", predecessors=["a1"], overrides={"training_type": "jepa"})]
-
-    result = store.save(sequence_id, _definition(blocks))
-
-    saved = {block["block_id"]: block for block in result["entry"]["blocks"]}
-    assert saved["b2"]["overrides"] == {"training_type": "jepa", "training.batch_size": "512"}
-    assert saved["b2"]["field_notes"] == {"training.batch_size": "frozen"}
-
-
-def test_a_jepa_curriculum_verdict_stays_out_of_the_backbone_curriculum(store):
-    sequence_id = store.create("seq")["entry"]["sequence_id"]
-    decisions   = [{"path": "curriculum.enabled", "options": ["False", "True"], "waiting": "False", "choice": "True"}]
-    blocks      = [_block("a1", script="train_jepa", decisions=decisions), _block("b2", script="cross_validate", predecessors=["a1"], overrides={"training_type": "jepa"}), _block("c3", script="cross_validate", predecessors=["a1"])]
-
-    result = store.save(sequence_id, _definition(blocks))
-
-    saved = {block["block_id"]: block for block in result["entry"]["blocks"]}
-    assert saved["b2"]["overrides"] == {"training_type": "jepa", "jepa.curriculum.enabled": "True"}
-    assert saved["b2"]["field_notes"] == {"jepa.curriculum.enabled": "frozen"}
-    assert saved["c3"]["overrides"] == {}
-    assert saved["c3"]["field_notes"] == {"curriculum.enabled": "frozen"}
-
-
-def test_a_family_axis_skips_a_block_running_another_family(store):
-    sequence_id = store.create("seq")["entry"]["sequence_id"]
-    decisions   = [{"path": "ae_loss.use_mse_curve", "options": ["True", "False"], "waiting": "True", "choice": "False"}]
-    blocks      = [_block("a1", script="train_profile_autoencoder", decisions=decisions), _block("b2", script="cross_validate", predecessors=["a1"], overrides={"training_type": "jepa"})]
-
-    result = store.save(sequence_id, _definition(blocks))
-
-    saved = {block["block_id"]: block for block in result["entry"]["blocks"]}
-    assert saved["b2"]["overrides"] == {"training_type": "jepa"}
-    assert saved["b2"]["field_notes"] == {}
-
-
-def test_a_model_overrides_verdict_governs_only_the_family_that_decided_it(store):
-    sequence_id = store.create("seq")["entry"]["sequence_id"]
-    overrides   = "{'hidden_dim': 256, 'depth': 3}"
+    overrides   = "{'base_channels': 32, 'depth': 3}"
     decisions   = [{"path": "model_overrides", "options": [overrides], "waiting": "", "choice": overrides}]
-    blocks      = [_block("a1", script="train_profile_autoencoder", decisions=decisions), _block("b2", script="train_profile_autoencoder", predecessors=["a1"]), _block("c3", script="train_backbone", predecessors=["a1"]), _block("d4", script="cross_validate", predecessors=["a1"], overrides={"training_type": "profile_autoencoder"}), _block("e5", script="cross_validate", predecessors=["a1"])]
+    blocks      = [_block("a1", decisions=decisions), _block("b2", predecessors=["a1"]), _block("c3", script="cross_validate", predecessors=["a1"]), _block("d4", script="infer_backbone", predecessors=["a1"])]
 
     result = store.save(sequence_id, _definition(blocks))
 
     saved = {block["block_id"]: block for block in result["entry"]["blocks"]}
-    assert saved["b2"]["overrides"] == {"model_overrides": overrides}
-    assert saved["d4"]["overrides"] == {"training_type": "profile_autoencoder", "model_overrides": overrides}
-    assert saved["c3"]["overrides"] == {}
-    assert saved["c3"]["field_notes"] == {}
-    assert saved["e5"]["overrides"] == {}
-    assert saved["e5"]["field_notes"] == {}
-
-
-def test_save_refuses_a_block_running_an_unknown_training_family(store):
-    sequence_id = store.create("seq")["entry"]["sequence_id"]
-    decisions   = [{"path": "ae_model_name", "options": ["mlp_ae", "conv1d_ae"], "waiting": "mlp_ae", "choice": "conv1d_ae"}]
-    blocks      = [_block("a1", script="train_profile_autoencoder", decisions=decisions), _block("b2", script="cross_validate", predecessors=["a1"], overrides={"training_type": "unrolled"})]
-
-    result = store.save(sequence_id, _definition(blocks))
-
-    assert not result["ok"]
-    assert "'unrolled'" in result["error"]
-    assert "profile_autoencoder" in result["error"]
+    assert saved["b2"]["overrides"]   == {"model_overrides": overrides}
+    assert saved["c3"]["overrides"]   == {"model_overrides": overrides}
+    assert saved["c3"]["field_notes"] == {"model_overrides": "frozen"}
+    assert saved["d4"]["overrides"]   == {}
+    assert saved["d4"]["field_notes"] == {}
 
 
 def test_save_refuses_a_decision_it_cannot_resolve_the_entries_for(store):

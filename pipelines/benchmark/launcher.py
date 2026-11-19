@@ -35,7 +35,7 @@ class BenchmarkClusterScheduler(SeedExpandedStage):
 
     @property
     def sweep_name(self) -> str:
-        return f"sweep_benchmark_{self.config.training_type}"
+        return "sweep_benchmark"
 
     @property
     def entry_flags(self) -> tuple:

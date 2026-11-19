@@ -1236,10 +1236,8 @@ class SequencesView extends ConfigForm {
       return;
     }
 
-    const endpoint = this._modelEndpoint(block, cfg);
-    if (this.modelEndpoint !== endpoint) {
-      const models       = await this._blockModels(endpoint);
-      this.modelEndpoint = endpoint;
+    if (!this.modelFamilies) {
+      const models       = await this._blockModels("/api/backbones");
       this.modelFamilies = (models && models.families) || [];
       this.modelHeads    = (models && models.heads) || [];
     }
@@ -1541,17 +1539,6 @@ class SequencesView extends ConfigForm {
 
     return pending;
   }
-
-  _modelEndpoint(block, cfg) {
-    const typeTab = cfg.layout.type_tab || null;
-    const tabType = typeTab ? (block.overrides[typeTab.field] !== undefined ? block.overrides[typeTab.field] : (cfg.leaves.find((leaf) => leaf.path === typeTab.field) || {}).value) : null;
-    const type    = LaunchView.MODEL_KEY_TYPE[block.script] || tabType || "backbone";
-
-    if (type === "image_autoencoder")   return "/api/image-autoencoders";
-    if (type === "profile_autoencoder") return "/api/profile-autoencoders";
-    return "/api/backbones";
-  }
-
 
   _refresh() {
     if (this.countEl) {

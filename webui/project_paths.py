@@ -22,29 +22,9 @@ class ProjectPaths:
             "config_module" : "configuration.training.backbone",
             "config_class"  : "BackboneEntryConfig",
         },
-        "train_profile_autoencoder": {
-            "config_module" : "configuration.training.profile_autoencoder",
-            "config_class"  : "ProfileAeEntryConfig",
-        },
-        "train_image_autoencoder": {
-            "config_module" : "configuration.training.image_autoencoder",
-            "config_class"  : "ImageAeEntryConfig",
-        },
-        "train_jepa": {
-            "config_module" : "configuration.training.jepa",
-            "config_class"  : "JepaEntryConfig",
-        },
         "infer_backbone": {
             "config_module" : "configuration.inference",
             "config_class"  : "BackboneInferenceEntryConfig",
-        },
-        "infer_profile_autoencoder": {
-            "config_module" : "configuration.inference",
-            "config_class"  : "ProfileAeInferenceEntryConfig",
-        },
-        "infer_image_autoencoder": {
-            "config_module" : "configuration.inference",
-            "config_class"  : "ImageAeInferenceEntryConfig",
         },
         "cross_validate": {
             "config_module" : "configuration.cross_validation.general",
@@ -103,12 +83,7 @@ class ProjectPaths:
         "generate_dataset"                : "processing",
         "extract_params"                  : "processing",
         "train_backbone"                  : "training",
-        "train_profile_autoencoder"       : "training",
-        "train_image_autoencoder"         : "training",
-        "train_jepa"                      : "training",
         "infer_backbone"                  : "inference",
-        "infer_profile_autoencoder"       : "inference",
-        "infer_image_autoencoder"         : "inference",
         "benchmark"                       : "experiments",
         "cross_validate"                  : "experiments",
         "tune"                            : "experiments",

@@ -135,8 +135,6 @@ class ConfigFactory:
             compute_cube_ssim        = inference.compute_cube_ssim,
             compute_flip_consistency = inference.compute_flip_consistency,
             compute_stratified       = inference.compute_stratified,
-            extract_curve_params     = inference.extract_curve_params,
-            extract_prominence_frac  = inference.extract_prominence_frac,
             n_best_profiles          = inference.n_best_profiles,
             n_worst_profiles         = inference.n_worst_profiles,
             n_random_profiles        = inference.n_random_profiles,

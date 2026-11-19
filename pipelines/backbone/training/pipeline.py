@@ -13,7 +13,6 @@ from pipelines.backbone.dataset.datasets           import MultiRegionDataset
 from pipelines.backbone.dataset.pipeline           import DatasetPipeline
 from pipelines.backbone.training.loss_terms        import LossComponentCatalog
 from pipelines.backbone.training.trainer           import Trainer
-from pipelines.shared.config.config_persistence    import BackboneModelConfigIO
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
 from pipelines.shared.config.run_metadata          import TrainingRunMetadata
 from pipelines.shared.model.model_builder          import ModelBuilder
@@ -131,8 +130,6 @@ class HeadPriorBias:
 
 class TrainingPipeline:
 
-    MODEL_CONFIG_IO = BackboneModelConfigIO
-
     def __init__(
         self,
         trainer_config  : BackboneTrainerConfig,
@@ -156,7 +153,7 @@ class TrainingPipeline:
 
         patch                    = self.dataset_config.patch
         self.configured_patch    = (tuple(patch.size), tuple(patch.stride))
-        patch.size, patch.stride = ModelBuilder.square_patch(self._square_patch_backbones(), patch.size, patch.stride)
+        patch.size, patch.stride = ModelBuilder.square_patch(self.backbone_name, patch.size, patch.stride)
         self.patch_size          = patch.size
 
         Reproducibility.seed_everything(self.seed)
@@ -170,9 +167,6 @@ class TrainingPipeline:
     @property
     def patch_squared(self) -> bool:
         return self.effective_patch != self.configured_patch
-
-    def _square_patch_backbones(self) -> list[str]:
-        return [self.backbone_name]
 
     def _patch_geometry_label(self) -> str:
         size, stride = self.effective_patch
@@ -233,7 +227,7 @@ class TrainingPipeline:
         base_config       = self.model_config if self.model_config is not None else ModelBuilder.config_from_registry(self.backbone_name, {})
         gate_model_config = check.sanitized_model_config(base_config)
 
-        gate_model, gate_model_cfg = self._model_factory()(self.backbone_name, config=gate_model_config, **self._model_overrides(in_channels, out_channels))
+        gate_model, gate_model_cfg = get_backbone(self.backbone_name, config=gate_model_config, **self._model_overrides(in_channels, out_channels))
 
         gate_trainer = Trainer(
             model      = gate_model,
@@ -249,7 +243,7 @@ class TrainingPipeline:
         check.run(gate_trainer, train_dataset)
 
     def _build_model(self, in_channels: int, out_channels: int):
-        model, model_cfg = self._model_factory()(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
+        model, model_cfg = get_backbone(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
 
         n_total     = sum(p.numel() for p in model.parameters())
         n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -257,7 +251,7 @@ class TrainingPipeline:
 
         self.logger.section("[Model Built]")
         self.logger.kv_table({
-            "Architecture" : self._architecture_label(),
+            "Architecture" : self.backbone_name,
             "Head"         : model_cfg.head,
             "In Channels"  : in_channels,
             "Out Channels" : out_channels,
@@ -265,17 +259,11 @@ class TrainingPipeline:
         })
         return model, model_cfg
 
-    def _architecture_label(self) -> str:
-        return self.backbone_name
-
     def _model_overrides(self, in_channels: int, out_channels: int) -> dict:
         overrides = {"in_channels": in_channels, "out_channels": out_channels}
         overrides.update(ModelBuilder.image_size_override(self.backbone_name, self.patch_size))
 
         return overrides
-
-    def _model_factory(self):
-        return get_backbone
 
     def _apply_prior_bias(self, model, train_dataset) -> None:
         gaussian_cfg = self.trainer_config.gaussian
@@ -311,7 +299,7 @@ class TrainingPipeline:
         out_channels = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, gaussian_cfg.n_default_gaussians)
         z_axis       = np.asarray(self.dataset_config.z_axis, dtype=np.float32)
 
-        model, model_cfg = self._model_factory()(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
+        model, model_cfg = get_backbone(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
 
         trainer = self._make_trainer(model, model_cfg, z_axis, dataset.normalizer, work_dir, logger, emit_docs=False)
         trainer.criterion.set_curriculum(LossComponentCatalog.probe_union(self.trainer_config.curriculum), context="probe union of all curriculum stages")
@@ -363,7 +351,7 @@ class TrainingPipeline:
                 self._apply_prior_bias(model, train_dataset)
 
             self.run_metadata.save_trainer_config()
-            self.run_metadata.save_model_config(model_cfg, self.backbone_name, config_io=self.MODEL_CONFIG_IO)
+            self.run_metadata.save_model_config(model_cfg, self.backbone_name)
 
             self.run_metadata.save_run_summary(
                 model_name       = self.backbone_name,

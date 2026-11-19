@@ -2,28 +2,15 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 
 import pytest
 
-from configuration.dataset.profile_autoencoder  import ProfileDatasetConfig
-from pipelines.shared.config.config_persistence import (
-    BackboneModelConfigIO,
-    ProfileAutoencoderConfigIO,
-    ProfileDatasetConfigIO,
-    ImageAutoencoderConfigIO,
-)
+from pipelines.shared.config.config_persistence import BackboneModelConfigIO
 from models.backbone                            import BACKBONE_CONFIG_REGISTRY
-from models.profile_autoencoder                 import PROFILE_AE_CONFIG_REGISTRY
-from models.image_autoencoder                   import IMAGE_AE_CONFIG_REGISTRY
 from tools.data.io                              import FileIO
-
-from tests.configuration._helpers import make_split_regions
 
 
 BACKBONE_CASES = [pytest.param(name, id=name) for name in BACKBONE_CONFIG_REGISTRY]
-PROFILE_CASES  = [pytest.param(name, id=name) for name in PROFILE_AE_CONFIG_REGISTRY]
-IMAGE_CASES    = [pytest.param(name, id=name) for name in IMAGE_AE_CONFIG_REGISTRY]
 
 
 @pytest.mark.parametrize("name", BACKBONE_CASES)
@@ -55,50 +42,6 @@ def test_backbone_config_io_round_trips_the_head_into_a_loadable_model(tmp_path,
 
     rebuilt, _ = get_backbone(raw_name, config=loaded)
     rebuilt.load_state_dict(trained.state_dict())
-
-
-@pytest.mark.parametrize("name", PROFILE_CASES)
-def test_profile_ae_config_io_round_trips(tmp_path, name):
-    config = PROFILE_AE_CONFIG_REGISTRY[name]()
-    ProfileAutoencoderConfigIO.save(config, name, tmp_path)
-
-    loaded, raw_name = ProfileAutoencoderConfigIO.load(tmp_path)
-    assert raw_name == name
-    assert type(loaded) is type(config)
-    assert dataclasses.asdict(loaded) == dataclasses.asdict(config)
-
-
-@pytest.mark.parametrize("name", IMAGE_CASES)
-def test_image_ae_config_io_round_trips(tmp_path, name):
-    config = IMAGE_AE_CONFIG_REGISTRY[name]()
-    ImageAutoencoderConfigIO.save(config, name, tmp_path)
-
-    loaded, raw_name = ImageAutoencoderConfigIO.load(tmp_path)
-    assert raw_name == name
-    assert type(loaded) is type(config)
-    assert dataclasses.asdict(loaded) == dataclasses.asdict(config)
-
-
-def test_profile_dataset_config_io_round_trips_the_activity_threshold(tmp_path):
-    config = ProfileDatasetConfig(preprocessing_run_directory=tmp_path, split_regions=make_split_regions(), activity_threshold=2.5e-3)
-    ProfileDatasetConfigIO.save(config, tmp_path)
-
-    loaded = ProfileDatasetConfigIO.load(tmp_path)
-
-    assert loaded.activity_threshold == 2.5e-3
-    assert loaded.split_regions      == config.split_regions
-
-
-def test_profile_dataset_config_io_refuses_a_config_without_the_activity_threshold(tmp_path):
-    config = ProfileDatasetConfig(preprocessing_run_directory=tmp_path, split_regions=make_split_regions(), activity_threshold=1e-3)
-    path   = ProfileDatasetConfigIO.save(config, tmp_path)
-
-    payload = json.loads(path.read_text())
-    del payload["activity_threshold"]
-    path.write_text(json.dumps(payload))
-
-    with pytest.raises(KeyError, match="Retrain the run"):
-        ProfileDatasetConfigIO.load(tmp_path)
 
 
 def test_config_io_exists_false_when_missing(tmp_path):

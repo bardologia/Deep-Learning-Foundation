@@ -67,92 +67,17 @@ class RailRunModeBlock {
 class LaunchView extends ConfigForm {
 
   static FOLLOW_INFER = {
-    train_backbone:             "infer_backbone",
-    train_profile_autoencoder:  "infer_profile_autoencoder",
-    train_image_autoencoder:    "infer_image_autoencoder",
+    train_backbone: "infer_backbone",
   };
 
-  static MODEL_KEY_TYPE = {
-    train_backbone:             "backbone",
-    train_profile_autoencoder:  "profile_autoencoder",
-    train_image_autoencoder:    "image_autoencoder",
-    train_jepa:                 "jepa",
-  };
-
-  static JEPA_MEANINGS = {
-    profile_only: {
-      title  : "JEPA · backbone + profile autoencoder",
-      label  : "Backbone + profile autoencoder",
-      summary: "Predicts the profile embedding from the raw image stack, then decodes it back to normalized profiles through the profile autoencoder decoder. Select a profile autoencoder run; leave the image autoencoder unset.",
-      flow   : [
-        { kind: "input",  glyph: "stack",   label: "Image stack",          sub: "primary · secondaries · derived" },
-        { kind: "model",  glyph: "net",     label: "Backbone",             sub: "predictor" },
-        { kind: "latent", glyph: "vector",  label: "Normalized embeddings" },
-        { kind: "model",  glyph: "decoder", label: "Profile AE decoder",   sub: "frozen / fine-tuned" },
-        { kind: "output", glyph: "curve",   label: "Normalized profiles" },
-      ],
-    },
-    image_only: {
-      title  : "JEPA · image autoencoder + backbone",
-      label  : "Image autoencoder + backbone",
-      summary: "Encodes the image stack with the image autoencoder front-end, then the backbone maps that latent straight to the Gaussian-mixture profile parameters. Select an image autoencoder run; leave the profile autoencoder unset.",
-      flow   : [
-        { kind: "input",  glyph: "stack",   label: "Image stack",        sub: "primary · secondaries · derived" },
-        { kind: "model",  glyph: "encoder", label: "Image AE encoder",   sub: "frozen / fine-tuned" },
-        { kind: "latent", glyph: "vector",  label: "Image embedding",    sub: "2D latent" },
-        { kind: "model",  glyph: "net",     label: "Backbone",           sub: "predictor" },
-        { kind: "output", glyph: "params",  label: "Params array",       sub: "amp, μ, σ, amp, μ, σ, …" },
-      ],
-    },
-    image_profile: {
-      title  : "JEPA · image autoencoder + backbone + profile autoencoder",
-      label  : "Image autoencoder + backbone + profile autoencoder",
-      summary: "Encodes the image stack with the image autoencoder front-end, the backbone predicts the profile embedding from that latent, and the profile autoencoder decoder reconstructs the normalized profiles. Select both an image and a profile autoencoder run.",
-      flow   : [
-        { kind: "input",  glyph: "stack",   label: "Image stack",          sub: "primary · secondaries · derived" },
-        { kind: "model",  glyph: "encoder", label: "Image AE encoder",     sub: "frozen / fine-tuned" },
-        { kind: "latent", glyph: "vector",  label: "Image embedding",      sub: "2D latent" },
-        { kind: "model",  glyph: "net",     label: "Backbone",             sub: "predictor" },
-        { kind: "latent", glyph: "vector",  label: "Normalized embeddings" },
-        { kind: "model",  glyph: "decoder", label: "Profile AE decoder",   sub: "frozen / fine-tuned" },
-        { kind: "output", glyph: "curve",   label: "Normalized profiles" },
-      ],
-    },
-  };
-
-  static MODEL_MEANINGS = {
-    backbone: {
-      title  : "Backbone",
-      summary: "Supervised regression that maps the input channel stack straight to the Gaussian-mixture profile parameters.",
-      flow   : [
-        { kind: "input",  glyph: "stack",  label: "Image stack",  sub: "primary · secondaries · derived" },
-        { kind: "model",  glyph: "net",    label: "Backbone",     sub: "supervised network" },
-        { kind: "output", glyph: "params", label: "Params array", sub: "amp, μ, σ, amp, μ, σ, …" },
-      ],
-    },
-    profile_autoencoder: {
-      title  : "Profile autoencoder",
-      summary: "Learns the latent profile (output) space: encodes the fitted normalized profiles into embeddings and reconstructs them.",
-      flow   : [
-        { kind: "input",  glyph: "curve",   label: "Normalized profiles", sub: "fitted targets" },
-        { kind: "model",  glyph: "encoder", label: "Encoder" },
-        { kind: "latent", glyph: "vector",  label: "Normalized embeddings" },
-        { kind: "model",  glyph: "decoder", label: "Decoder" },
-        { kind: "output", glyph: "curve",   label: "Reconstructed profiles" },
-      ],
-    },
-    image_autoencoder: {
-      title  : "Image autoencoder",
-      summary: "Learns the latent input space: encodes the input channel stack into a 2D embedding and reconstructs it. The encoder later serves as a JEPA front-end.",
-      flow   : [
-        { kind: "input",  glyph: "stack",   label: "Image stack",            sub: "primary · secondaries · derived" },
-        { kind: "model",  glyph: "encoder", label: "Encoder" },
-        { kind: "latent", glyph: "vector",  label: "Image embedding",        sub: "2D latent" },
-        { kind: "model",  glyph: "decoder", label: "Decoder" },
-        { kind: "output", glyph: "stack",   label: "Reconstructed stack" },
-      ],
-    },
-    jepa: LaunchView.JEPA_MEANINGS.profile_only,
+  static BACKBONE_MEANING = {
+    title  : "Backbone",
+    summary: "Supervised regression that maps the input channel stack straight to the Gaussian-mixture profile parameters.",
+    flow   : [
+      { kind: "input",  glyph: "stack",  label: "Image stack",  sub: "primary · secondaries · derived" },
+      { kind: "model",  glyph: "net",    label: "Backbone",     sub: "supervised network" },
+      { kind: "output", glyph: "params", label: "Params array", sub: "amp, μ, σ, amp, μ, σ, …" },
+    ],
   };
 
   static MODEL_COLORS = { input: "#6f9bff", model: "#eef2f5", latent: "#fbbf24", output: "#2dd4bf", calc: "#a78bfa" };
@@ -160,6 +85,10 @@ class LaunchView extends ConfigForm {
   static MODEL_TAGS = { input: "input", model: "network", latent: "latent", output: "output", calc: "result" };
 
   static PROCESS_MEANINGS = {
+    train_backbone : LaunchView.BACKBONE_MEANING,
+    benchmark      : LaunchView.BACKBONE_MEANING,
+    cross_validate : LaunchView.BACKBONE_MEANING,
+    tune           : LaunchView.BACKBONE_MEANING,
     extract_params: {
       title  : "Extract Parameters",
       summary: "Fits a per-pixel Gaussian mixture to the reference cube to build the supervised profile-parameter targets.",
@@ -184,9 +113,6 @@ class LaunchView extends ConfigForm {
   static TAGGED_SWEEP_ENTRIES = ["benchmark", "cross_validate"];
 
   static FIGURES = [
-    [/^train_jepa$/, "jepa"],
-    [/^train_profile_autoencoder$/, "profileae"],
-    [/^train_image_autoencoder$/, "imageae"],
     [/^train(_|$)/, "surface"],
     [/^(infer(_|$)|export_onnx$)/, "shelf"],
     [/^generate_dataset$/, "slots"],
@@ -217,7 +143,6 @@ class LaunchView extends ConfigForm {
     this.key = null;
     this.detail = null;
     this.config = null;
-    this.modelEndpoint = null;
     this.builder = null;
     this.detach = true;
     this.cmdEl = null;
@@ -296,10 +221,8 @@ class LaunchView extends ConfigForm {
     this.config = cfg;
 
     if (this._usesModelPanels(cfg)) {
-      const endpoint = this._modelFamiliesEndpoint();
-      const models   = await Api.get(endpoint);
+      const models = await Api.get("/api/backbones");
       if (seq !== this.loadSeq) return;
-      this.modelEndpoint = endpoint;
       this.modelFamilies = (models && models.families) || [];
       this.modelHeads    = (models && models.heads) || [];
     }
@@ -343,53 +266,6 @@ class LaunchView extends ConfigForm {
 
   _usesModelPanels(cfg) {
     return cfg.layout.sections.some((section) => section.panels.some((panel) => panel.kind === "special" && panel.panel !== "experiment_builder"));
-  }
-
-  _activeTrainingType() {
-    if (LaunchView.MODEL_KEY_TYPE[this.key]) return LaunchView.MODEL_KEY_TYPE[this.key];
-
-    const typeTab = this.config ? this.config.layout.type_tab : null;
-    if (typeTab) {
-      const leaf = this.byPath.get(typeTab.field);
-      if (leaf) return this._effective(leaf);
-    }
-
-    return "backbone";
-  }
-
-  _modelFamiliesEndpoint() {
-    const type = this._activeTrainingType();
-    if (type === "image_autoencoder")   return "/api/image-autoencoders";
-    if (type === "profile_autoencoder") return "/api/profile-autoencoders";
-    return "/api/backbones";
-  }
-
-  async _reloadModelsForType() {
-    if (!this.config || !this._usesModelPanels(this.config)) return;
-
-    const endpoint = this._modelFamiliesEndpoint();
-    if (endpoint === this.modelEndpoint) return;
-
-    const seq    = this.loadSeq;
-    const models = await Api.get(endpoint);
-    if (seq !== this.loadSeq) return;
-
-    const dirty         = this.dirty;
-    const activeSection = this.activeSection;
-    const detach        = this.detach;
-    const finalize      = this.finalize;
-    const config        = this.config;
-    this._resetState();
-    this.config        = config;
-    this.modelEndpoint = endpoint;
-    this.modelFamilies = (models && models.families) || [];
-    this.modelHeads    = (models && models.heads) || [];
-    this.dirty         = dirty;
-    this.activeSection = activeSection;
-    this.detach        = detach;
-    this.finalize      = finalize;
-    this._renderConfig(this.config);
-    this._refresh();
   }
 
   leave() {
@@ -469,19 +345,13 @@ class LaunchView extends ConfigForm {
         this._setValue(leaf, value);
         this._fireDependents(leaf.path, value);
         paint();
-        this._paintTypeCard(value);
-        this._reloadModelsForType();
       });
       host.appendChild(tab);
     });
 
     paint();
 
-    return () => {
-      paint();
-      this._paintTypeCard(this._effective(leaf));
-      this._reloadModelsForType();
-    };
+    return paint;
   }
 
   _buildModelCard(meaning) {
@@ -491,44 +361,6 @@ class LaunchView extends ConfigForm {
     this.modelCardEl = card;
     this._paintModelCard(meaning);
     return card;
-  }
-
-  _buildJepaModesCard() {
-    const card = document.createElement("section");
-    card.className = "modelcard";
-    card.id = "launch-model-card";
-    this.modelCardEl = card;
-    this._paintJepaModesCard();
-    return card;
-  }
-
-  _paintTypeCard(value) {
-    if (value === "jepa") this._paintJepaModesCard();
-    else                  this._paintModelCard(LaunchView.MODEL_MEANINGS[value]);
-  }
-
-  _paintJepaModesCard() {
-    const card = this.modelCardEl;
-    if (!card) return;
-    card.hidden = false;
-
-    const modes = [
-      LaunchView.JEPA_MEANINGS.profile_only,
-      LaunchView.JEPA_MEANINGS.image_only,
-      LaunchView.JEPA_MEANINGS.image_profile,
-    ];
-
-    const rows = modes.map((mode) =>
-      `<div class="modelmode">` +
-      `<div class="modelmode__head"><span class="modelmode__label">${mode.label}</span>` +
-      `<span class="modelmode__sub">${mode.summary}</span></div>` +
-      `<div class="modelflow">${this._modelDiagram(mode.flow)}</div></div>`
-    ).join("");
-
-    card.innerHTML =
-      `<div class="modelcard__head"><span class="modelcard__kicker">What JEPA can do</span>` +
-      `<p class="modelcard__summary">JEPA trains in three modes, selected by which autoencoder runs you provide. All three possibilities are shown below.</p></div>` +
-      `<div class="modelmodes">${rows}</div>`;
   }
 
   _paintModelCard(meaning) {
@@ -905,11 +737,9 @@ class LaunchView extends ConfigForm {
     const typeTab  = cfg.layout.type_tab || null;
     const typeLeaf = typeTab ? this.byPath.get(typeTab.field) : null;
 
-    const modelType = LaunchView.MODEL_KEY_TYPE[this.key] || (typeLeaf ? this._effective(typeLeaf) : null);
-    const meaning   = (modelType && LaunchView.MODEL_MEANINGS[modelType]) || LaunchView.PROCESS_MEANINGS[this.key] || null;
+    const meaning = LaunchView.PROCESS_MEANINGS[this.key] || null;
 
-    if (modelType === "jepa") host.appendChild(this._buildJepaModesCard());
-    else if (meaning)         host.appendChild(this._buildModelCard(meaning));
+    if (meaning) host.appendChild(this._buildModelCard(meaning));
 
     host.appendChild(this._buildToolbar(cfg));
 

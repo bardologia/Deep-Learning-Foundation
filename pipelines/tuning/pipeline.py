@@ -8,7 +8,7 @@ import optuna
 from optuna.trial import TrialState
 
 from configuration.tuning                       import TuningConfig
-from models                                     import BACKBONE_HEADS, config_registry
+from models                                     import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
 from pipelines.shared.model.model_builder       import ModelBuilder
 from pipelines.shared.orchestration.resumed_run import TuningResumedRun
 from pipelines.tuning.plots                     import StudyPlotter
@@ -23,8 +23,7 @@ from tools.runtime.run_tag                      import RunTag
 
 class TuningScheduler:
 
-    SUPPORTED_TYPES = ("backbone", "image_autoencoder", "jepa", "profile_autoencoder")
-    STUDY_KEYS      = ("training_type", "heads", "skip_models", "tuning", "curriculum", "paths.dataset_path", "paths.parameters_path", "paths.secondary_labels")
+    STUDY_KEYS      = ("heads", "skip_models", "tuning", "curriculum", "paths.dataset_path", "paths.parameters_path", "paths.secondary_labels")
     MUTABLE_KEYS    = ("tuning.n_trials", "tuning.plateau_patience", "tuning.plateau_min_delta", "tuning.time_budget_h")
     LAUNCH_KEYS     = (*TuningResumedRun.LAUNCH_FIELDS, *TuningResumedRun.LOCATION_FIELDS, "n_workers")
     HISTORY_DIR     = "config_history"
@@ -88,39 +87,27 @@ class TuningScheduler:
     def _study_name(self, model_name: str) -> str:
         return f"{model_name}_{self.tag}"
 
-    def _registry(self) -> dict:
-        return config_registry(self.config.training_type)
-
     def _model_keys(self) -> list[str]:
-        if self.config.training_type not in ("backbone", "jepa"):
-            return list(self._registry().keys())
-
         unknown = [head for head in self.config.heads if head not in BACKBONE_HEADS]
         if unknown:
             sys.exit(f"ERROR: unknown head(s) {unknown}; valid: {', '.join(BACKBONE_HEADS)}")
 
-        structured = [head for head in self.config.heads if head != "conv"]
-        if self.config.training_type == "jepa" and self.config.jepa.profile_autoencoder_run and structured:
-            sys.exit(f"ERROR: head(s) {structured} are invalid for JEPA tuning with a coupled profile autoencoder; the backbone predicts the embedding and only the conv head projects to it. Set heads=['conv'] or drop jepa.profile_autoencoder_run.")
-
-        return [ModelBuilder.model_key(name, head) for name in self._registry() for head in self.config.heads]
+        return [ModelBuilder.model_key(name, head) for name in BACKBONE_CONFIG_REGISTRY for head in self.config.heads]
 
     def _search_space(self, model_name: str) -> dict:
-        config_cls = self._registry()[ModelBuilder.split_key(model_name)[0]]
-        if self.config.training_type == "jepa":
-            return SearchSpace.arch_only(config_cls)
+        config_cls = BACKBONE_CONFIG_REGISTRY[ModelBuilder.split_key(model_name)[0]]
 
         return SearchSpace.of(config_cls, self.config.tuning)
 
     def selected_models(self, target_model: str | None = None) -> list[str]:
-        registry = self._registry()
+        registry = BACKBONE_CONFIG_REGISTRY
 
         if target_model is None:
             keys    = self._model_keys()
             skip    = set(self.config.skip_models)
             unknown = sorted(skip - set(keys) - set(registry))
             if unknown:
-                sys.exit(f"ERROR: skip_models entries match no model of training_type '{self.config.training_type}': {unknown}; registry keys: {', '.join(registry)}; model keys: {', '.join(keys)}")
+                sys.exit(f"ERROR: skip_models entries match no model: {unknown}; registry keys: {', '.join(registry)}; model keys: {', '.join(keys)}")
 
             return [key for key in keys if key not in skip and ModelBuilder.split_key(key)[0] not in skip]
 
@@ -318,7 +305,7 @@ class TuningScheduler:
             self._store(self._record(model_name, status, study, None, None, stop_reason))
             return
 
-        self.logger.subsection(f"Best, trial {payload['trial']}, best validation loss under the {self.config.training_type} objective = {payload['val_loss']:.6f}")
+        self.logger.subsection(f"Best, trial {payload['trial']}, best validation loss = {payload['val_loss']:.6f}")
         self.logger.kv_table(payload["params"], title="Best Params")
 
         if tune_cfg.emit_study_plots:
@@ -409,9 +396,6 @@ class TuningScheduler:
         self.logger.kv_table(done, title="Done")
 
     def schedule(self, target_model: str | None = None, resume: bool = False) -> None:
-        if self.config.training_type not in self.SUPPORTED_TYPES:
-            sys.exit(f"ERROR: tuning does not support training_type '{self.config.training_type}'; supported: {', '.join(self.SUPPORTED_TYPES)}")
-
         if self.config.stage not in self.STAGES:
             sys.exit(f"ERROR: unknown tuning stage '{self.config.stage}'; valid: {', '.join(self.STAGES)}")
 

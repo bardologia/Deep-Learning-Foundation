@@ -167,7 +167,6 @@ class MultiValueField {
     this.chips = null;
     this.input = null;
     this.count = null;
-    this.hint  = null;
     this.reset = () => this._paint();
   }
 
@@ -179,16 +178,6 @@ class MultiValueField {
     chips.className = "multivalue__chips";
     this.chips      = chips;
     this.el.appendChild(chips);
-
-    if (this.spec.choices && this.spec.choiceGate) {
-      const hint       = document.createElement("p");
-      hint.className   = "multivalue__hint";
-      hint.textContent = this.spec.choiceGate.hint;
-      hint.hidden      = true;
-      this.hint        = hint;
-      this.el.appendChild(hint);
-      this.view.repainters.push(this.reset);
-    }
 
     if (!this.spec.choices) {
       const entry     = document.createElement("input");
@@ -272,28 +261,18 @@ class MultiValueField {
     this.chips.innerHTML = "";
 
     if (this.spec.choices) {
-      const gate    = this.spec.choiceGate || null;
-      const locked  = gate ? this.view._whenHolds(gate.when) : false;
-      let   invalid = false;
-
       this.spec.choices.forEach((choice) => {
-        const on      = values.includes(choice.value);
-        const allowed = !locked || gate.only.includes(choice.value);
-        invalid       = invalid || (on && !allowed);
+        const on = values.includes(choice.value);
 
-        const chip      = document.createElement("button");
-        chip.type       = "button";
-        chip.className  = "multivalue__choice" + (on ? " is-on" : "") + (allowed ? "" : " is-locked");
-        chip.disabled   = !allowed && !on;
+        const chip       = document.createElement("button");
+        chip.type        = "button";
+        chip.className   = "multivalue__choice" + (on ? " is-on" : "");
         chip.textContent = choice.label;
-        chip.title      = allowed ? `--${this.leaf.path} · ${choice.value}` : gate.hint;
+        chip.title       = `--${this.leaf.path} · ${choice.value}`;
         chip.setAttribute("aria-pressed", String(on));
         chip.addEventListener("click", () => this._toggleChoice(choice.value));
         this.chips.appendChild(chip);
       });
-
-      if (this.hint) this.hint.hidden = !locked;
-      if (this.count) this.count.classList.toggle("is-warn", invalid);
     } else {
       values.forEach((value) => {
         const chip      = document.createElement("span");

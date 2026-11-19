@@ -2,14 +2,14 @@
   "sections": {
     "param_extraction": "The stage that fits parametric z profiles to focused cubes, producing the per-pixel Gaussian-mixture ground truth the backbone learns to predict. It runs constrained optimization over each preprocessed cube and recomputes fit metrics and diagnostic plots for existing trials. The configs here control optimizer iteration caps and fit hyperparameters, the single-run extraction driver, the batch entry point that sweeps datasets and hyperparameter grids, and the inference config that regenerates metrics and summaries.",
     "normalization": "The stage that standardizes network inputs and outputs, mapping heavy-tailed input channels and Gaussian parameters onto stable numeric ranges for training and inference. It fits per-channel location/scale transforms from pixel statistics, persists them, and bounds predicted outputs to a physically valid range. The configs here control per-channel normalization recipes, per-slot strategy selection for input and output channels, runtime output clamping, and the persisted fitted statistics applied at train and inference time.",
-    "dataset": "The stage that assembles trainable examples from a preprocessed dataset run, feeding both the backbone and the profile autoencoder. It selects input and target channels, tiles cropped scenes into overlapping patches, applies augmentation, and builds the train/val/test dataloaders. The configs here control which stack channels and Aux form the input, which per-Gaussian parameters are predicted, patch tiling and augmentation, and the parallel assembly of image-patch and per-pixel profile datasets.",
-    "architectures": "The stage that defines the neural network families used across the codebase, from image-space backbones to autoencoders. Each config specifies one model variant's layer geometry, output-head structure, and per-group optimizer settings. The configs here cover U-Net and transformer backbones predicting per-pixel Gaussian-mixture parameters, the 2D image autoencoders reconstructing the input stack, and the per-pixel profile autoencoders reconstructing vertical reflectivity curves.",
-    "training": "The stage that optimizes the models, spanning the backbone, image autoencoder, JEPA, and profile-autoencoder training loops. It binds architecture, loss, optimization, scheduling, and runtime sub-configs into one resolved run and manages queuing, sweeps, and pre-training safeguards. The configs here control loss term weighting and curricula, optimizer, scheduler, warmup, early-stopping and gradient-clipping policy, batch-size and dataloader preflight probes, filesystem layout, VRAM reservation and resource monitoring, and the per-model-family trainer and entry configs.",
+    "dataset": "The stage that assembles trainable examples from a preprocessed dataset run. It selects input and target channels, tiles cropped scenes into overlapping patches, applies augmentation, and builds the train/val/test dataloaders. The configs here control which stack channels and Aux form the input, which per-Gaussian parameters are predicted, patch tiling and augmentation, and the parallel assembly of the image-patch datasets.",
+    "architectures": "The stage that defines the backbone architectures. Each config specifies one model variant's layer geometry, output-head structure, and per-group optimizer settings. The configs here cover U-Net and transformer backbones predicting per-pixel Gaussian-mixture parameters.",
+    "training": "The stage that optimizes the backbone. It binds architecture, loss, optimization, scheduling, and runtime sub-configs into one resolved run and manages queuing, sweeps, and pre-training safeguards. The configs here control loss term weighting and curricula, optimizer, scheduler, warmup, early-stopping and gradient-clipping policy, batch-size and dataloader preflight probes, filesystem layout, VRAM reservation and resource monitoring, and the trainer and entry configs.",
     "resources": "Host and device sampling settings shared by every training family: whether the resource monitor runs, how often it samples CPU, RAM, shared memory and GPU memory, whether samples go to TensorBoard, and the utilisation levels that raise a warning in the run log. They live outside the training package so that a long-running processing entry can carry them without importing torch.",
-    "inference": "The stage that runs trained checkpoints over data splits to produce reconstructions, physics evaluations, and reports. It drives sliding-window prediction for backbone and JEPA models and reconstruction scoring for the two autoencoder families, scheduling one worker per run across a GPU pool. The configs here control the per-run inference drivers, their output subdirectory and filename layouts, and the batch entry points that queue inference across all discovered runs.",
-    "benchmark": "The stage that compares multiple model architectures under matched conditions on the same data. It size-matches each backbone to a reference parameter count, then trains, runs inference, and assembles a cross-model comparison report. The configs here control the max-batch and dataloader-tuning probes, width-matching bisection search, batched inference and its diagnostic artifacts, the comparison report assembly, JEPA-specific coupling settings, and the top-level sweep orchestration.",
-    "cross_validation": "The stage that estimates generalization by partitioning the stack along row into k folds and training and evaluating on each. It orchestrates per-fold training, inference, and comparison for the backbone and its autoencoder variants. The configs here control the row-range fold partitioning, the top-level k-fold orchestration, and the JEPA and profile-autoencoder cross-validation setups selecting pretrained models, targets, losses, and pixel sampling.",
-    "tuning": "The stage that searches hyperparameter spaces with Optuna to improve a chosen model family. It wires the search budget, pruning, and resources to a nested training configuration and swaps in per-trial hyperparameter samples. The configs here control the Optuna search controls and artifact emission, the entry point binding model type, resources, and data to the search, and the JEPA-specific search space over autoencoder pairing, target strategy, and loss weights.",
+    "inference": "The stage that runs trained checkpoints over data splits to produce predictions, evaluations, and reports. It drives sliding-window prediction for backbone runs, scheduling one worker per run across a GPU pool. The configs here control the per-run inference driver, its output subdirectory and filename layout, and the batch entry point that queues inference across all discovered runs.",
+    "benchmark": "The stage that compares multiple model architectures under matched conditions on the same data. It size-matches each backbone to a reference parameter count, then trains, runs inference, and assembles a cross-model comparison report. The configs here control the max-batch and dataloader-tuning probes, width-matching bisection search, batched inference and its diagnostic artifacts, the comparison report assembly, and the top-level sweep orchestration.",
+    "cross_validation": "The stage that estimates generalization by partitioning the stack along row into k folds and training and evaluating on each. It orchestrates per-fold training, inference, and comparison for the backbone. The configs here control the row-range fold partitioning and the top-level k-fold orchestration.",
+    "tuning": "The stage that searches hyperparameter spaces with Optuna to improve a chosen backbone. It wires the search budget, pruning, and resources to a nested training configuration and swaps in per-trial hyperparameter samples. The configs here control the Optuna search controls and artifact emission, and the entry point binding resources and data to the search.",
     "comparison": "The stage that rebuilds side-by-side comparisons across completed runs and trials without re-running training or inference. It aggregates existing inference or preprocessing outputs into a single report grouped by the varied factor. The configs here control comparison of backbone inference runs, of preprocessing trials differing by multilook window, of Gaussian-fit extraction trials grouped by component count, and the standalone rebuild of an existing benchmark comparison report.",
     "diagnostics": "The stage that inspects completed training runs independently of any data run. The weight-xray diagnostic classifies each checkpoint tensor against numeric thresholds and emits a per-run report and plots; the tensorboard export renders every logged scalar series as a publication-quality figure inside the run directory, pairing train and validation series of the same metric in one shared figure. The configs here control the pathology classification thresholds, the single-run diagnostics and their report and plot outputs, and the batch webui entries that select runs and build a per-run configuration.",
     "synthesis": "The stage that generates the bundled example dataset, so the template runs end to end without external data. It draws smooth per-pixel Gaussian-mixture parameter fields, renders them into z profiles, derives a multi-channel input stack with a matching Aux, and writes the dataset, its parameter run and the metadata the downstream stages expect. The configs here control the scene extent and z axis, the mixture statistics, the channel synthesis and noise levels, the fit metadata written alongside the parameters, and the entry point that runs the generator."
@@ -206,39 +206,6 @@
         "pin_memory": "pin host memory in the dataloader for faster host-to-GPU transfer",
         "z_axis": "z sampling grid for the Gaussian mixture, populated at launch via GaussianAxis.build from the gaussian config's x_min/x_max and profile length",
         "n_gaussians": "number of Gaussian components in the mixture output, set at launch from the gaussian config's n_default_gaussians and driving out_channels and selected_indices"
-      }
-    },
-    "dataset/profile_autoencoder::ProfileAugmentationConfig": {
-      "summary": "Stochastic augmentations applied to vertical reflectivity profiles during profile-autoencoder training",
-      "fields": {
-        "p_amp_scale": "probability of multiplying the profile by a random amplitude factor drawn from amp_scale_range, 0.0 disables it",
-        "amp_scale_range": "min/max multiplicative amplitude-scaling factor sampled uniformly when p_amp_scale triggers, default (0.9, 1.1)",
-        "p_shift": "probability of shifting the profile along the z axis by a random offset, 0.0 disables it; the vacated bins are filled with zeros, so nothing wraps from one end of the axis to the other",
-        "max_shift": "maximum absolute shift in z-axis bins, sampled uniformly in -max_shift..max_shift when p_shift triggers; components pushed past either end of the axis are dropped",
-        "p_flip": "probability of reversing the profile along the z axis, default 0.5",
-        "p_noise": "probability of adding zero-mean Gaussian noise to the normalized curve fed to the encoder, 0.0 disables it; the reconstruction target stays the clean curve, so a positive value trains a denoising autoencoder",
-        "noise_std": "standard deviation of the additive Gaussian noise, applied after normalization to the encoder input only"
-      }
-    },
-    "dataset/profile_autoencoder::ProfileDatasetConfig": {
-      "summary": "Assembles per-pixel Gaussian-mixture z profiles into train/val/test loaders for the profile autoencoder",
-      "fields": {
-        "preprocessing_run_directory": "directory holding the preprocessed dataset (Layout) from which extracted Gaussian parameters are read",
-        "split_regions": "SplitRegions sub-config defining the spatial train/val/test partition used by the ParameterCropper",
-        "parameters_path": "optional explicit path to the extracted Gaussian-parameter arrays, None resolves it from preprocessing_run_directory via Layout",
-        "n_gaussians": "declared number of Gaussian components per pixel profile, carried through for logging and inference metadata but not used here to reslice the stacked amp/mu/sigma arrays, which are built from the full parameter-array channel count",
-        "x_min": "lower bound of the reconstruction z axis, taken from the preprocessing run's cube_config.z_range",
-        "x_max": "upper bound of the reconstruction z axis, taken from the preprocessing run's cube_config.z_range",
-        "pixel_subsample": "fraction of active (non-empty) profile pixels sampled per split, 1.0 keeps all active pixels",
-        "keep_empty_frac": "fraction of empty (below the activity threshold) profile pixels retained alongside the active pixels to balance the dataset",
-        "activity_threshold": "amplitude above which a Gaussian counts as present, read from the label run's param_extraction_meta.json through the Gaussian config at training, persisted with the run and re-read at inference where it defines the active-curve mask behind every shape and power metric",
-        "batch_size": "number of profile samples per optimization step in the train/val/test dataloaders",
-        "num_workers": "number of dataloader worker processes used for parallel profile assembly",
-        "prefetch_factor": "number of batches each dataloader worker prefetches ahead of consumption",
-        "pin_memory": "pin host memory in the dataloaders to allow faster asynchronous host-to-GPU transfer",
-        "shuffle_train": "shuffle the training split's pixel order each epoch, val/test are never shuffled",
-        "stats_max_samples": "maximum number of training samples used by ProfileStatsComputer to fit normalization statistics",
-        "augmentation": "ProfileAugmentationConfig sub-config setting amplitude-scale, shift, flip, and noise probabilities applied to training curves"
       }
     },
     "architectures/backbone::UNetConfig": {
@@ -756,156 +723,6 @@
         "shape_logger_types": "Module types the shape logger hooks into when tracing tensor shapes through the network; excluded from config persistence"
       }
     },
-    "architectures/image_autoencoder::ImageAutoencoderBaseConfig": {
-      "summary": "Shared architecture and optimizer settings for the 2D image-space autoencoder family reconstructing the multi-channel input stack",
-      "fields": {
-        "in_channels": "number of input feature-map channels fed to the network, overridden at build time by the dataset's assembled channel count (primary + secondaries + derived + optional Aux); the decoder head outputs this many channels to reconstruct the full input stack",
-        "embedding_dim": "channel width of the compressed latent embedding produced by the 1x1 to_embedding convolution at the bottleneck, tuned over {16,24,32,48}",
-        "embedding_norm": "normalization applied to the latent embedding before use: none, l2 (unit-norm per pixel across channels), or layernorm (per-pixel mean/var standardization across channels)",
-        "downsample_factor": "spatial downsampling ratio applied before the bottleneck, converted to a stage count via log2 (must be a power of two: 1, 2, 4, 8, ...); base default is 1 (no downsampling), and the tunable range differs per architecture variant (see subclasses); the dilated and ViT variants never read it and reject any value other than 1 at construction, so the field is hidden from their launch panels",
-        "base_channels": "channel width of the encoder stem; Conv2d/ResNet2d/ConvNeXt2d double it at each downsampling stage, the dilated variant holds it constant with no downsampling, and the ViT variant never reads it (sizes itself via hidden_dim instead) and rejects any value other than the base default at construction, so the field is hidden from its launch panel",
-        "depth": "number of stacked blocks per stage for the Conv2d/ResNet2d/ConvNeXt2d variants, or independent TransformerBlock counts per encoder/decoder for ViT; the dilated variant sizes itself via dilation_depth instead, never reads it, and rejects any value other than the base default at construction, so the field is hidden from its launch panel",
-        "activation": "nonlinearity used throughout the network via LayerFactory.build_activation: relu, leaky_relu, gelu, elu, or silu",
-        "normalization": "normalization layer used inside conv blocks (ConvBlock/ResidualConvBlock/Dilated2dResidualBlock) via LayerFactory.build_norm2d: batch, instance, group, or none; unused by the ConvNeXt2d and ViT variants, which hardcode LayerNorm regardless of this value",
-        "dropout": "dropout probability applied inside conv/attention/FFN blocks (0.0 disables it); tuned over 0.0-0.3 in every subclass whose tunable_arch_params exposes it",
-        "init_mode": "one-shot post-construction weight-init scheme: default (framework defaults, no-op), kaiming (kaiming_normal_ on conv/linear weights, relu gain), or xavier (xavier_uniform_); norm-layer weight/bias are reset to 1/0 whenever mode is not default",
-        "encoder_lr": "learning rate for the encoder parameter group, tuned log-uniform over 1e-5..1e-2",
-        "decoder_lr": "learning rate for the decoder parameter group, tuned log-uniform over 1e-5..1e-2",
-        "encoder_wd": "weight decay for the encoder parameter group, tuned log-uniform over 1e-6..1e-1",
-        "decoder_wd": "weight decay for the decoder parameter group, tuned log-uniform over 1e-6..1e-1"
-      }
-    },
-    "architectures/image_autoencoder::Conv2dImageAutoencoderConfig": {
-      "summary": "Plain stacked-ConvBlock 2D image autoencoder variant with strided-conv downsampling",
-      "fields": {
-        "upsample_mode": "decoder upsampling operator: convtranspose (learned) or bilinear (fixed interpolation)"
-      }
-    },
-    "architectures/image_autoencoder::ResNet2dImageAutoencoderConfig": {
-      "summary": "Residual-block 2D image autoencoder variant with strided ResidualConvBlock downsampling, defaulting to deeper spatial reduction",
-      "fields": {
-        "downsample_factor": "spatial downsampling ratio before the bottleneck (power of two, stage count = log2); defaults to 2 here (one strided ResidualConvBlock stage) and is tuned over {2,4,8} when architecture search is enabled",
-        "upsample_mode": "decoder upsampling operator: convtranspose (learned) or bilinear (fixed interpolation)"
-      }
-    },
-    "architectures/image_autoencoder::ConvNeXt2dImageAutoencoderConfig": {
-      "summary": "ConvNeXt-block 2D image autoencoder variant using channel-wise layernorm and inverted-bottleneck FFN blocks",
-      "fields": {
-        "normalization": "fixed at layernorm for this variant: ChannelLayerNorm before each downsampling stage and the LayerNorm inside every ConvNeXtBlock are hardcoded, and the model rejects any other value loudly at construction",
-        "downsample_factor": "spatial downsampling ratio before the bottleneck (power of two, stage count = log2); defaults to 2 here (one strided downsampling stage) and is tuned over {2,4,8} when architecture search is enabled",
-        "upsample_mode": "decoder upsampling operator: convtranspose (learned) or bilinear (fixed interpolation)",
-        "stochastic_depth_rate": "drop-path probability applied to every ConvNeXt block's residual branch, tuned over 0.0-0.3; this variant has no dropout layers, so it rejects a non-zero dropout loudly at construction"
-      }
-    },
-    "architectures/image_autoencoder::DilatedConv2dImageAutoencoderConfig": {
-      "summary": "Dilated-convolution 2D image autoencoder variant preserving spatial resolution while widening the receptive field",
-      "fields": {
-        "downsample_factor": "inherited field defaulted to 1 here but never read by the dilated model; resolution is preserved by the dilated-conv architecture itself, not by this value, it is not part of this variant's architecture search space, and any other value is rejected at construction",
-        "dilation_depth": "number of stacked Dilated2dResidualBlock layers, built independently in both the encoder and decoder bodies; block i uses dilation 2^i so the receptive field doubles per layer, tuned over {2,3,4}"
-      }
-    },
-    "architectures/image_autoencoder::ViTImageAutoencoderConfig": {
-      "summary": "Vision-transformer 2D image autoencoder variant tokenizing the input into patches for encoder/decoder transformer blocks",
-      "fields": {
-        "activation": "activation used inside the feed-forward sublayer of each TransformerBlock (not the attention itself): relu, leaky_relu, gelu, elu, or silu; fixed at gelu by default and not part of this variant's tunable_arch_params search space",
-        "normalization": "fixed at layernorm for this variant: LayerNorm is hardcoded after the patch-embedding projection and after each transformer block stack in both encoder and decoder, and the model rejects any other value loudly at construction",
-        "patch_size": "square patch edge in pixels for the ViT patch-embedding Conv2d (kernel=stride=patch_size) and the matching decoder ConvTranspose2d unpatch kernel/stride, tuned over {4,8,16}",
-        "hidden_dim": "transformer token embedding dimensionality shared by the encoder and decoder blocks and by the to_embedding/from_embedding 1x1 convs, tuned over {96,192,384}",
-        "depth": "number of stacked TransformerBlock layers built independently for the encoder and for the decoder (so total blocks across encode+decode is double this value), tuned over {2,4,6}",
-        "num_heads": "number of self-attention heads per TransformerBlock, shared by encoder and decoder; hidden_dim must be evenly divisible by this value, tuned over {3,6,12}",
-        "mlp_ratio": "feed-forward hidden width as a multiple of hidden_dim inside each TransformerBlock; fixed at 4.0 by default and not part of this variant's tunable_arch_params search space"
-      }
-    },
-    "architectures/profile_autoencoder::ProfileAutoencoderBaseConfig": {
-      "summary": "Shared base for per-pixel profile autoencoders: profile length, latent embedding, init, and encoder/decoder optimizer groups",
-      "fields": {
-        "profile_length": "number of samples along the normalized z axis each encoder/decoder reconstructs",
-        "embedding_dim": "width of the per-pixel latent code between encoder and decoder, tuned categorical over 16/24/32/48; also sets the JEPA backbone's target channel count",
-        "embedding_norm": "normalization applied to the latent embedding: none, l2, or layernorm (via ChannelLayerNorm)",
-        "activation": "nonlinearity used by the encoder/decoder layers: relu, leaky_relu, gelu, silu, or elu; ignored by GRU (fixed gate nonlinearities), and restricted to relu/gelu by Transformer1d, which rejects other values loudly",
-        "init_mode": "weight initialization scheme for conv/linear/norm layers: default (no-op, keeps PyTorch's built-in init), kaiming, or xavier",
-        "encoder_lr": "learning rate for the encoder parameter group, tuned log-uniform over 1e-5..1e-2",
-        "decoder_lr": "learning rate for the decoder parameter group, tuned log-uniform over 1e-5..1e-2",
-        "encoder_wd": "weight decay for the encoder parameter group, tuned log-uniform over 1e-6..1e-1",
-        "decoder_wd": "weight decay for the decoder parameter group, tuned log-uniform over 1e-6..1e-1"
-      }
-    },
-    "architectures/profile_autoencoder::MlpAutoencoderConfig": {
-      "summary": "Per-pixel MLP autoencoder implemented as 1x1-convolution stacks over the profile-length channel axis",
-      "fields": {
-        "hidden_dim": "width of each 1x1-convolution hidden layer in the encoder/decoder MLP stack, categorical 256/512/768/1024",
-        "depth": "number of hidden 1x1-conv layers per encoder/decoder stack (minimum 1), categorical 3/4/6/8",
-        "dropout": "Dropout2d probability applied after each hidden layer, 0.0 disables, tuned over 0.0-0.3",
-        "normalization": "per-pixel normalization inserted after each hidden layer: none, batchnorm, or layernorm",
-        "hidden_dims": "explicit per-layer hidden widths of the encoder, mirrored in reverse by the decoder; None uses depth copies of hidden_dim"
-      }
-    },
-    "architectures/profile_autoencoder::Conv1dAutoencoderConfig": {
-      "summary": "1D convolutional autoencoder with a fixed two-layer conv stem/head over the profile sequence",
-      "fields": {
-        "seq_channels": "channel width of the two same-padded 1D-convolution layers in encoder and decoder, categorical 128/192/256",
-        "seq_kernel_size": "kernel width in samples of the 1D convolutions, same-padded, categorical 3/5/7",
-        "depth": "number of convolution layers per encoder and decoder body",
-        "dropout": "dropout probability between convolution layers",
-        "normalization": "sequence normalization after each convolution: none or batchnorm",
-        "pooling": "length-axis pooling to the latent code: avg, max, or learned attention",
-        "seq_channels_list": "explicit per-layer channel widths of the encoder body, mirrored in reverse by the decoder; None uses depth copies of seq_channels"
-      }
-    },
-    "architectures/profile_autoencoder::Transformer1dAutoencoderConfig": {
-      "summary": "Transformer autoencoder embedding each full profile as a single token refined by stacked self-attention/feedforward layers",
-      "fields": {
-        "hidden_dim": "d_model width of the TransformerEncoderLayer (feedforward width fixed at 2x), categorical 128/192/256",
-        "depth": "number of stacked TransformerEncoderLayer instances in encoder and decoder, categorical 2/3/4",
-        "num_heads": "number of self-attention heads per layer; the sequence is a single token per profile, so every head split produces the identical model, and the field is therefore neither tunable nor shown in the launch panel",
-        "dropout": "dropout inside each TransformerEncoderLayer's attention and feedforward sublayers, tuned over 0.0-0.3",
-        "ffn_ratio": "feed-forward width of each transformer layer as a multiple of hidden_dim"
-      }
-    },
-    "architectures/profile_autoencoder::ResMlpAutoencoderConfig": {
-      "summary": "Residual-MLP autoencoder with LayerNorm pre-activation residual blocks over the flattened profile",
-      "fields": {
-        "hidden_dim": "width of the residual MLP block's hidden linear layers, categorical 256/384/512",
-        "depth": "number of stacked ResidualMlpBlock instances per encoder/decoder, categorical 2/3/4/6",
-        "dropout": "dropout inside each residual block's hidden activation path, tuned over 0.0-0.3",
-        "normalization": "pre-norm layer of each residual block: layernorm or none"
-      }
-    },
-    "architectures/profile_autoencoder::TcnAutoencoderConfig": {
-      "summary": "Temporal convolutional autoencoder with exponentially dilated residual 1D-conv blocks over the profile",
-      "fields": {
-        "seq_channels": "channel width held constant through the conv stem and all dilated residual blocks, categorical 64/96/128",
-        "seq_kernel_size": "kernel width in samples of each dilated convolution, same-padded per dilation, categorical 3/5/7",
-        "depth": "number of stacked DilatedResidualBlocks; dilation doubles as 2^i across block index, categorical 3/4/5",
-        "dropout": "dropout inside each dilated residual block's conv path, tuned over 0.0-0.3",
-        "normalization": "sequence normalization after each dilated convolution: none or batchnorm",
-        "pooling": "length-axis pooling to the latent code: avg, max, or learned attention"
-      }
-    },
-    "architectures/profile_autoencoder::GruAutoencoderConfig": {
-      "summary": "Recurrent GRU autoencoder scanning the profile as a length-L sequence of scalar samples",
-      "fields": {
-        "hidden_dim": "GRU hidden-state size per direction, projected to embedding_dim by a linear head, categorical 128/224/320",
-        "depth": "number of stacked GRU layers in the encoder and the always-unidirectional decoder, categorical 1/2/3",
-        "bidirectional": "whether the encoder GRU scans both directions and concatenates final states; decoder stays unidirectional regardless",
-        "dropout": "dropout between stacked GRU layers, applied only when depth exceeds 1, tuned over 0.0-0.3"
-      }
-    },
-    "architectures/profile_autoencoder::CnnAttnAutoencoderConfig": {
-      "summary": "Hybrid autoencoder: 1D-conv stem tokenizes the profile into patches attended by transformer blocks",
-      "fields": {
-        "seq_channels": "channel width of the 1D-convolution stem before patch tokenization, categorical 16/32/64",
-        "seq_kernel_size": "kernel width in samples of the conv stem, same-padded, categorical 3/5/7",
-        "patch_size": "samples per token; profile_length divided by patch_size sets the attended token count, categorical 4/8/16",
-        "hidden_dim": "token embedding width used by the tokenizing conv and transformer blocks, categorical 128/192/256",
-        "depth": "number of stacked TransformerBlock layers in encoder and decoder, categorical 2/3/4",
-        "num_heads": "number of self-attention heads per transformer block, categorical 2/4/8",
-        "dropout": "dropout inside each transformer block's attention and feedforward paths, tuned over 0.0-0.3",
-        "ffn_ratio": "feed-forward width of each attention block as a multiple of hidden_dim",
-        "pooling": "token pooling to the latent code: avg, max, or learned attention",
-        "pos_embedding": "positional embedding added to the patch tokens: learned, sinusoidal, or none"
-      }
-    },
     "training/backbone::HeadMatchingTrialsConfig": {
       "summary": "Grid crossing output heads with parameter-matching strategies on one fixed backbone for the head-and-matching trial planner",
       "fields": {
@@ -1337,364 +1154,10 @@
         "warn_cooldown_sec": "Minimum seconds between repeated warnings of the same kind, per metric"
       }
     },
-    "training/image_autoencoder::ImageAeLossConfig": {
-      "summary": "Reconstruction loss settings for the image-autoencoder training objective",
-      "fields": {
-        "recon_kind": "reconstruction loss type: mse, l1, huber, or charbonnier",
-        "huber_delta": "transition threshold between the quadratic and linear regimes of the Huber image-reconstruction loss",
-        "charbonnier_eps": "epsilon smoothing constant of the Charbonnier reconstruction loss controlling its behavior near zero residual"
-      }
-    },
-    "training/image_autoencoder::ImageAeTrainerConfig": {
-      "summary": "Full training configuration for the image autoencoder bundling architecture, loss, geometry, optimization, and runtime sub-configs",
-      "fields": {
-        "gaussian": "GaussianConfig sub-config supplying n_default_gaussians and z-axis bounds x_min/x_max, used only to size the profile-autoencoder pretrain-context dataset",
-        "image_autoencoder": "ImageAutoencoderBaseConfig sub-config selecting the autoencoder network architecture and its hyperparameters, defaulting to the Conv2d variant",
-        "ae_loss": "ImageAeLossConfig sub-config selecting the image reconstruction loss kind (mse/l1/huber/charbonnier) plus huber_delta and charbonnier_eps",
-        "early_stopping": "EarlyStoppingConfig sub-config setting patience, min-delta, and best-checkpoint restore for training",
-        "warmup": "WarmupConfig sub-config for the initial learning-rate warmup: enable flag, steps, start factor, mode, poly power",
-        "scheduler": "SchedulerConfig sub-config selecting the LR schedule type and its parameters (epochs, eta_min, step size, gamma, power)",
-        "io": "IOConfig sub-config holding the run logdir; the TensorBoard writer is runtime state owned by the run metadata and passed to the trainer directly",
-        "optimizer": "OptimizerConfig sub-config for the AdamW optimizer (lr, betas, eps, weight decay, lr scale)",
-        "training": "TrainingLoopConfig sub-config bundling epoch count, AMP, gradient accumulation, EMA, resume, and nonfinite-loss abort settings",
-        "resources": "ResourceConfig sub-config controlling the system-resource monitor (poll interval, TensorBoard logging, RAM/VRAM/swap/shm warn thresholds)",
-        "memory": "MemoryConfig sub-config governing CUDA cache clearing cadence and VRAM reservation to protect other GPU users",
-        "gradient_clipper": "GradientClipperConfig sub-config selecting the gradient-clip mode (disabled/fixed/adaptive_percentile/adaptive_mean_std) and its thresholds"
-      }
-    },
-    "training/image_autoencoder::ImageAeEntryConfig": {
-      "summary": "Top-level entry point launching a single or multi-seed image-autoencoder training run",
-      "fields": {
-        "run_name": "optional human-readable label for the run directory; None auto-generates a name",
-        "resume": "Reuse this run directory when it already holds a completed run (complete.json marker stamped only at successful completion); an unfinished run directory is deleted and restarted from scratch. Lets interrupted seed sweeps continue without retraining finished units (distinct from training.resume, which continues one run mid-training from its last.pt and suppresses the delete)",
-        "resume_from": "Path of a run directory, a seed sweep root or a trial sweep root to resume, or any run inside them. The configuration the run or sweep recorded (docs/resolved_entry_config.json of a run, batch_train_logs/resolved_config.json of a sweep) is loaded as the base, the overrides typed on this launch are applied on top and the hardware fields follow this launch; complete units are reused, unfinished units continue from their trainer state or restart in their own directory, and missing units are created, each job handed its exact directory so the naming scheme never has to be reproduced. A sweep launched before recordings existed resumes from the settings typed here, with a warning. Empty starts a fresh run",
-        "gpu": "CUDA device index used for a single training run",
-        "gpus": "GPU pool across which the seeds of a multi-seed run are fanned out, one training job per seed launched in parallel",
-        "ddp": "Train the single resolved seed data-parallel across the gpus devices: one synchronised rank process per GPU sharing the configured global batch (batch_size must divide by the rank count, so the LR batch rule is preserved). Rank 0 starts alone and owns the canonical run directory, and the other ranks join once its resume gate has settled that directory, mirroring their artifacts into the ddp/rank<N> subtree. Gradients are averaged every optimizer window and evaluation losses reduced across ranks, so checkpointing and early stopping decide identically everywhere. Greyed out while a multi-seed sweep is configured, since it trains exactly the one seed pinned in the seed field; also rejects the pre-training probes. Local-only for now: the ranks are subprocesses on this machine's own GPUs, so a cluster launch refuses it, as does a trial sweep, whose units already take one GPU each",
-        "gpus_file": "Path of the live GPU pool control file for the seed fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it executes (added devices pick up queued seeds, removed devices retire once the seed in flight ends). Empty places gpu_pool.json inside the base run directory",
-        "poll_interval_s": "Seconds between successive polls of the seed queue while waiting for GPUs or completed seed runs",
-        "seed": "random seed for a single training run, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
-        "logdir": "base directory under which this run's output subdirectory and TensorBoard logs are written",
-        "ae_model_name": "registry key selecting the image-autoencoder architecture: conv2d_ae, resnet2d_ae, convnext2d_ae, dilated2d_ae, or vit_ae",
-        "model_overrides": "dict of architecture-config field overrides applied to the selected autoencoder before instantiation",
-        "ae_loss": "ImageAeLossConfig sub-config selecting the image reconstruction loss kind (mse/l1/huber/charbonnier) plus huber_delta and charbonnier_eps",
-        "paths": "TrainingPathsConfig sub-config holding the dataset directory, extracted-parameters file path, and the secondary channel labels used to build the run's dataset",
-        "training": "TrainingQueueConfig sub-config driving epochs, dataloader batch_size/num_workers/prefetch_factor, scheduler/warmup/gradient-clip/early-stopping/EMA settings, and train/val/test row patch splits; defaulted here to batch_size 512, num_workers 16, prefetch_factor 2",
-        "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
-        "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
-        "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
-        "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before full training and aborts if the model cannot overfit them"
-      }
-    },
-    "training/jepa::EmbeddingLossConfig": {
-      "summary": "Loss terms weighting JEPA latent-embedding prediction and optional profile reconstruction",
-      "fields": {
-        "use_embedding_mse": "Enable the mean-squared-error term between predicted and target embeddings",
-        "weight_embedding_mse": "Scalar weight applied to the embedding MSE term",
-        "use_embedding_cosine": "Enable the cosine-distance term between predicted and target embeddings",
-        "weight_embedding_cosine": "Scalar weight applied to the embedding cosine term",
-        "use_embedding_smoothl1": "Enable the smooth-L1 (Huber) term on embedding differences",
-        "weight_embedding_smoothl1": "Scalar weight applied to the embedding smooth-L1 term",
-        "smoothl1_beta": "Transition threshold between quadratic and linear regimes of the smooth-L1 embedding term",
-        "use_curve_recon": "Enable the reconstruction loss on the decoded profile curve, required (with a positive weight_curve_recon) to anchor the embedding when target_provider is live or a LayerNorm-normalized embedding is finetuned",
-        "weight_curve_recon": "Scalar weight applied to the curve reconstruction term; must be positive whenever use_curve_recon is relied on to anchor the embedding (target_provider live or finetuned LayerNorm embedding)",
-        "curve_kind": "Curve reconstruction loss metric: mse, l1, huber, or charbonnier",
-        "huber_delta": "Transition threshold of the Huber curve loss between quadratic and linear regimes, used when curve_kind is huber",
-        "charbonnier_eps": "Epsilon smoothing constant of the Charbonnier curve loss near zero residual, used when curve_kind is charbonnier",
-        "use_curve_sobolev": "Enable the Sobolev smoothness term: MSE of the second height-axis difference of the decoded-curve residual, penalizing bin-to-bin jitter that the pointwise curve loss treats the same as smooth error",
-        "weight_curve_sobolev": "Scalar weight applied to the curve Sobolev term",
-        "use_embedding_huber": "Enable the Huber term on embedding differences",
-        "weight_embedding_huber": "Scalar weight applied to the embedding Huber term",
-        "embedding_huber_delta": "Transition threshold between quadratic and linear regimes of the Huber embedding term",
-        "use_embedding_charbonnier": "Enable the Charbonnier term on embedding differences",
-        "weight_embedding_charbonnier": "Scalar weight applied to the embedding Charbonnier term",
-        "embedding_charbonnier_eps": "Epsilon smoothing constant of the Charbonnier embedding term near zero residual",
-        "use_embedding_variance": "Enable the variance hinge holding each predicted embedding dimension above a spread floor, preventing dimensional collapse",
-        "weight_embedding_variance": "Scalar weight applied to the variance hinge",
-        "variance_gamma": "Standard-deviation floor of the variance hinge, in normalized embedding units",
-        "use_embedding_covariance": "Enable the penalty on the off-diagonal covariance of the predicted embedding, decorrelating its dimensions",
-        "weight_embedding_covariance": "Scalar weight applied to the covariance penalty"
-      }
-    },
-    "training/jepa::JepaTrainerConfig": {
-      "summary": "Resolved JEPA training setup binding the coupled autoencoders, losses, and optimization sub-configs",
-      "fields": {
-        "gaussian": "GaussianConfig describing the default Gaussian count and z-axis bounds, propagated from the dataset at pipeline build time",
-        "autoencoder": "ProfileAutoencoderBaseConfig of the pretrained profile autoencoder supplying the JEPA target embedding space, None if unused",
-        "embedding_loss": "EmbeddingLossConfig weighting the JEPA latent-prediction terms (embedding MSE/cosine/smooth-L1) and optional curve reconstruction",
-        "profile_autoencoder_mode": "How the pretrained profile autoencoder is coupled into JEPA training: frozen or finetune",
-        "target_provider": "Source of JEPA prediction targets: stopgrad (default, no-grad pass through the profile encoder) or live (differentiable encoder target; requires profile_autoencoder_mode finetune and embedding_loss.use_curve_recon with a positive weight_curve_recon to keep the target from collapsing)",
-        "profile_autoencoder_checkpoint": "Resolved filesystem path to the pretrained profile-autoencoder checkpoint loaded at model build time",
-        "ae_finetune_lr": "Learning rate for the profile-autoencoder parameter group, applied only when profile_autoencoder_mode is finetune",
-        "ae_finetune_wd": "Weight decay for the profile-autoencoder parameter group, applied only when profile_autoencoder_mode is finetune",
-        "image_autoencoder": "ImageAutoencoderBaseConfig of the pretrained image autoencoder supplying the input-image latent space, None if unused",
-        "image_autoencoder_mode": "How the pretrained image autoencoder is coupled into JEPA training: frozen or finetune",
-        "image_autoencoder_checkpoint": "Resolved filesystem path to the pretrained image-autoencoder checkpoint loaded at model build time",
-        "image_ae_finetune_lr": "Learning rate for the image-autoencoder parameter group, applied only when image_autoencoder_mode is finetune",
-        "image_ae_finetune_wd": "Weight decay for the image-autoencoder parameter group, applied only when image_autoencoder_mode is finetune",
-        "param_loss": "LossConfig on predicted Gaussian parameters, defaulting to param_l1 weight 1.0 with sorted-GT matching and active normalization",
-        "early_stopping": "EarlyStoppingConfig sub-config setting patience, min-delta, and best-checkpoint restore for training",
-        "warmup": "WarmupConfig sub-config for the initial learning-rate warmup (steps, start factor, mode, poly power)",
-        "scheduler": "SchedulerConfig sub-config selecting the LR schedule type and its parameters (epochs, eta_min, step size, gamma, power)",
-        "io": "IOConfig sub-config holding the run logdir; the TensorBoard writer is runtime state owned by the run metadata and passed to the trainer directly",
-        "optimizer": "OptimizerConfig sub-config for the AdamW-style optimizer (lr, betas, eps, weight decay, lr scale)",
-        "training": "TrainingLoopConfig sub-config bundling training-loop settings (epochs, validation frequency, AMP, gradient accumulation, EMA, resume)",
-        "resources": "ResourceConfig sub-config controlling the system-resource monitor (poll interval, TensorBoard logging, RAM/VRAM/swap/shm warn thresholds)",
-        "memory": "MemoryConfig sub-config governing CUDA cache clearing cadence and VRAM reservation to protect other GPU users",
-        "gradient_clipper": "GradientClipperConfig sub-config selecting the gradient-clip mode (fixed/adaptive) and its thresholds",
-        "curriculum": "JepaCurriculumConfig warmup schedule swapping to the main loss at a fixed epoch",
-        "masking": "JepaMaskingConfig hiding part of each input patch in the embedding regime"
-      }
-    },
-    "training/jepa::JepaCouplingConfig": {
-      "summary": "Autoencoder coupling block shared by the benchmark, tuning and cross-validation entry points, mirroring the JEPA entry point's own coupling fields",
-      "fields": {
-        "profile_autoencoder_logdir": "base directory searched for the profile_autoencoder_run subdirectory holding the pretrained profile-autoencoder checkpoint and config",
-        "profile_autoencoder_run": "subdirectory name under profile_autoencoder_logdir to load; None (or empty) disables the profile-autoencoder branch, and the run aborts if image_autoencoder_run is also unset",
-        "profile_autoencoder_mode": "coupling of the loaded profile-autoencoder encoder, frozen (eval, no grad) or finetune (trainable, own optimizer param group); joint from-scratch training is not supported",
-        "target_provider": "Source of JEPA prediction targets: stopgrad (default, no-grad pass through the profile encoder) or live (differentiable encoder target; requires profile_autoencoder_mode finetune and embedding_loss.use_curve_recon with a positive weight_curve_recon to keep the target from collapsing)",
-        "ae_finetune_lr": "Learning rate of the profile-autoencoder optimiser group, applied only when profile_autoencoder_mode is finetune",
-        "ae_finetune_wd": "Weight decay of the profile-autoencoder optimiser group, applied only when profile_autoencoder_mode is finetune",
-        "image_autoencoder_logdir": "base directory searched for the image_autoencoder_run subdirectory holding the pretrained image-autoencoder checkpoint",
-        "image_autoencoder_run": "subdirectory name to load; None (or empty) means no image-feature preprocessing branch is used before the backbone",
-        "image_autoencoder_mode": "coupling of the loaded image-autoencoder encoder, frozen or finetune; joint from-scratch training is not supported",
-        "image_ae_finetune_lr": "Learning rate of the image-autoencoder optimiser group, applied only when image_autoencoder_mode is finetune",
-        "image_ae_finetune_wd": "Weight decay of the image-autoencoder optimiser group, applied only when image_autoencoder_mode is finetune",
-        "embedding_loss": "EmbeddingLossConfig weighting the JEPA latent-prediction terms (embedding MSE/cosine/smooth-L1) and optional curve reconstruction",
-        "param_loss": "LossConfig for direct Gaussian-parameter regression on the backbone output, used only when profile_autoencoder_run is unset (no embedding-matching branch); defaults to param_l1 with sorted-GT matching, active normalization on, presence_balance off",
-        "curriculum": "JepaCurriculumConfig warmup schedule swapping to the main loss at a fixed epoch; the warmup stage is the embedding one when a profile autoencoder is coupled and the parameter one otherwise",
-        "masking": "JepaMaskingConfig hiding part of each input patch in the embedding regime"
-      }
-    },
-    "training/jepa::JepaEntryConfig": {
-      "summary": "Top-level entry point wiring one JEPA backbone-training run, its coupled autoencoders, and optional inference",
-      "fields": {
-        "run_name": "Optional suffix appended to the canonical run name; every run directory is named model_head_matching_loss with this label (or a timestamp) appended",
-        "resume": "Reuse this run directory when it already holds a completed run (complete.json marker stamped only at successful completion), rerunning inference only if it is missing; an unfinished run directory is deleted and restarted from scratch. Lets interrupted trials sweeps and seed sweeps continue without retraining finished units (distinct from training.resume, which continues one run mid-training from its last.pt and suppresses the delete)",
-        "resume_from": "Path of a run directory, a seed sweep root or a trial sweep root to resume, or any run inside them. The configuration the run or sweep recorded (docs/resolved_entry_config.json of a run, batch_train_logs/resolved_config.json of a sweep) is loaded as the base, the overrides typed on this launch are applied on top and the hardware fields follow this launch; complete units are reused, unfinished units continue from their trainer state or restart in their own directory, and missing units are created, each job handed its exact directory so the naming scheme never has to be reproduced. A sweep launched before recordings existed resumes from the settings typed here, with a warning. Empty starts a fresh run",
-        "backbone_name": "Registry key of the backbone architecture that predicts Gaussian parameters or profile embeddings from the input patch, default resunet",
-        "backbone_head": "Output head built on the selected backbone (conv, multihead, per_gaussian, or set_pred); stored in the model config and restored at inference",
-        "gpu": "Single GPU device index on which the run executes",
-        "gpus": "GPU pool across which the seeds of a multi-seed run are fanned out, one training job per seed launched in parallel",
-        "ddp": "Train the single resolved seed data-parallel across the gpus devices: one synchronised rank process per GPU sharing the configured global batch (batch_size must divide by the rank count, so the LR batch rule is preserved). Rank 0 starts alone and owns the canonical run directory, and the other ranks join once its resume gate has settled that directory, mirroring their artifacts into the ddp/rank<N> subtree. Gradients are averaged every optimizer window and evaluation losses reduced across ranks, so checkpointing and early stopping decide identically everywhere. Greyed out while a multi-seed sweep is configured, since it trains exactly the one seed pinned in the seed field; also rejects the pre-training probes. Local-only for now: the ranks are subprocesses on this machine's own GPUs, so a cluster launch refuses it, as does a trial sweep, whose units already take one GPU each",
-        "gpus_file": "Path of the live GPU pool control file for the seed fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it executes (added devices pick up queued seeds, removed devices retire once the seed in flight ends). Empty places gpu_pool.json inside the base run directory",
-        "poll_interval_s": "Seconds between successive polls of the seed queue while waiting for GPUs or completed seed runs",
-        "seed": "Random seed for a single training run, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
-        "logdir": "Base directory under which this JEPA run's output subdirectory and TensorBoard logs are written",
-        "model_overrides": "Dict of backbone architecture-config field overrides applied to the selected backbone before instantiation",
-        "profile_autoencoder_logdir": "Directory containing pretrained profile-autoencoder runs from which the JEPA target encoder checkpoint is loaded",
-        "profile_autoencoder_run": "Name of the specific pretrained profile-autoencoder run to load; None selects the latest",
-        "profile_autoencoder_mode": "How the pretrained profile autoencoder is coupled into JEPA training: frozen or finetune",
-        "target_provider": "Source of JEPA prediction targets: stopgrad (default, no-grad pass through the profile encoder) or live (differentiable encoder target; requires profile_autoencoder_mode finetune and embedding_loss.use_curve_recon with a positive weight_curve_recon to keep the target from collapsing)",
-        "ae_finetune_lr": "Learning rate of the profile-autoencoder optimiser group, applied only when profile_autoencoder_mode is finetune",
-        "ae_finetune_wd": "Weight decay of the profile-autoencoder optimiser group, applied only when profile_autoencoder_mode is finetune",
-        "image_autoencoder_logdir": "Directory containing pretrained image-autoencoder runs from which the JEPA image encoder checkpoint is loaded",
-        "image_autoencoder_run": "Name of the specific pretrained image-autoencoder run to load; None selects the latest",
-        "image_autoencoder_mode": "How the pretrained image autoencoder is coupled into JEPA training: frozen or finetune",
-        "image_ae_finetune_lr": "Learning rate of the image-autoencoder optimiser group, applied only when image_autoencoder_mode is finetune",
-        "image_ae_finetune_wd": "Weight decay of the image-autoencoder optimiser group, applied only when image_autoencoder_mode is finetune",
-        "embedding_loss": "EmbeddingLossConfig weighting the JEPA latent-prediction terms (embedding MSE/cosine/smooth-L1) and optional curve reconstruction",
-        "param_loss": "LossConfig on predicted Gaussian parameters, defaulting to param_l1 weight 1.0 with sorted-GT matching and active normalization",
-        "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-image labels",
-        "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
-        "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
-        "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
-        "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
-        "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before full training and aborts if the model cannot overfit them",
-        "infer_after": "Whether to run inference automatically after training completes",
-        "infer_at_end": "Hold all inference until every training job of the seed fan-out has finished, then run one inference job per completed run through the same GPU queue; keeps the GPUs saturated with training first, mutually exclusive with infer_after",
-        "inference": "InferenceConfig sub-config used to run inference automatically after training when infer_after or infer_at_end is set, defaulting to save_cubes on and compute_reduced off for JEPA",
-        "curriculum": "JepaCurriculumConfig warmup schedule swapping to the main loss at a fixed epoch",
-        "probe": "LossScaleProbeConfig pre-training probe measuring the raw magnitude of each loss term of the active regime at unit weight",
-        "input": "InputConfig selecting which channel stack channels feed the backbone or image autoencoder",
-        "masking": "JepaMaskingConfig hiding part of each input patch in the embedding regime",
-        "trials_enabled": "Enable the multi-trial GPU sweep (JepaTrialScheduler) instead of a single training run",
-        "trials_mode": "Sweep dimension the trial scheduler varies: embedding, curve, masking, curriculum, coupling, ae_run, context, input, augmentation, ema, amp, or stability",
-        "embedding_trials": "Latent-loss arms of the embedding sweep, mapping a run label to the embedding_loss fields that arm enables; every other latent term is disabled per arm, and the decoded-curve settings stay at the base configuration",
-        "curve_trials": "Decoded-curve arms of the curve sweep over the penalty kind, its weight and the Sobolev smoothness term",
-        "masking_trials": "Context-masking grid of the masking sweep over the strategy and the hidden-pixel ratio",
-        "curriculum_trials": "Grid of the curriculum sweep over the swap epoch and the state resets applied at the swap",
-        "coupling_trials": "Arms of the coupling sweep over the profile-encoder freeze mode, the fine-tune learning rate and the target provider",
-        "ae_run_trials": "Pretrained profile-autoencoder runs the ae_run sweep couples into one JEPA training each, comparing autoencoders by downstream performance",
-        "context_trials": "Constant-depth backbone rungs of the context sweep, each a dict with a label, a backbone and its model overrides",
-        "input_trials": "Input-channel arms of the input sweep, mapping a run label to the channel selection that arm trains on",
-        "augmentation_trials": "Cumulative ladder of the patch-augmentation sweep: none, horizontal flips, both flips, then one final rung per noise level",
-        "ema_trials": "Weight-EMA ladder of the ema mode; the amp mode compares mixed-precision off against on and needs no settings of its own",
-        "stability_trials": "Warmup and gradient-clip arms of the stability mode"
-      }
-    },
-    "training/jepa::CurveTrialsConfig": {
-      "summary": "Decoded-curve loss arms of the JEPA curve trial mode",
-      "fields": {
-        "kinds": "Penalty families of the decoded-profile term (mse, l1, huber, charbonnier), one arm per kind and weight",
-        "weights": "Weights of the decoded-profile term",
-        "sobolev_weights": "Weights of the decoded-profile curvature penalty, one arm each on top of an mse curve term at weight 1",
-        "include_baseline": "Add a run with the decoded-curve terms off, training on the latent terms alone"
-      }
-    },
-    "training/jepa::MaskingTrialsConfig": {
-      "summary": "Context-masking grid of the JEPA masking trial mode",
-      "fields": {
-        "strategies": "Masking strategies swept: block hides rectangles, random hides independent pixels",
-        "ratios": "Hidden-pixel fractions swept per strategy",
-        "fill": "Value written into hidden pixels on every arm: zeros or noise",
-        "loss_on": "Pixels the embedding loss is evaluated on for every arm: masked or all",
-        "include_baseline": "Add a run without masking"
-      }
-    },
-    "training/jepa::JepaCurriculumTrialsConfig": {
-      "summary": "Curriculum-schedule grid of the JEPA curriculum trial mode",
-      "fields": {
-        "swap_epochs": "Epochs at which training swaps from the warmup stage to the main loss, one grid axis",
-        "resets": "State resets applied at the swap (none, lr, warmup, optimizer, or all), the other grid axis",
-        "include_baseline": "Add a curriculum-free run"
-      }
-    },
-    "training/jepa::CouplingTrialsConfig": {
-      "summary": "Autoencoder-coupling arms of the JEPA coupling trial mode",
-      "fields": {
-        "modes": "Profile-encoder modes swept: frozen keeps the pretrained weights, finetune trains them at the swept rate",
-        "finetune_lrs": "Learning rates of the fine-tuned encoder, one arm each when finetune is swept",
-        "target_providers": "Target providers swept: stopgrad detaches the embedding target, live keeps it differentiable"
-      }
-    },
-    "training/jepa::AeRunTrialsConfig": {
-      "summary": "Pretrained profile-autoencoder runs compared by the JEPA ae_run trial mode",
-      "fields": {
-        "runs": "Run folder names under the profile-autoencoder log root, coupled into one JEPA training each"
-      }
-    },
-    "training/profile_autoencoder::ProfileAeLossConfig": {
-      "summary": "Summable reconstruction, shape, smoothness and latent-noise loss terms for profile-autoencoder curve fitting",
-      "fields": {
-        "use_mse_curve": "Enable the mean-squared-error reconstruction term between predicted and target profile curve",
-        "weight_mse_curve": "Scalar weight applied to the curve MSE term",
-        "use_l1_curve": "Enable the mean-absolute-error reconstruction term between predicted and target profile curve",
-        "weight_l1_curve": "Scalar weight applied to the curve L1 term",
-        "use_huber_curve": "Enable the Huber reconstruction term between predicted and target profile curve",
-        "weight_huber_curve": "Scalar weight applied to the curve Huber term",
-        "huber_delta": "Huber-loss transition threshold between quadratic and linear regimes, used only by the Huber term",
-        "use_charbonnier_curve": "Enable the Charbonnier reconstruction term between predicted and target profile curve",
-        "weight_charbonnier_curve": "Scalar weight applied to the curve Charbonnier term",
-        "charbonnier_eps": "Epsilon smoothing constant of the Charbonnier loss near zero residual, used only by the Charbonnier term",
-        "use_cosine_curve": "Enable the cosine shape term over the z axis, measuring shape agreement independent of curve energy on curves whose target carries energy",
-        "weight_cosine_curve": "Scalar weight applied to the curve cosine term",
-        "use_log_energy_curve": "Enable the log energy-ratio term: mean absolute log of predicted-to-target curve norm ratio, supervising total energy where the scale-blind cosine term cannot",
-        "weight_log_energy_curve": "Scalar weight applied to the curve log-energy term",
-        "use_tv_curve": "Enable the total-variation smoothness term: mean absolute first height-axis difference of the reconstruction residual, penalizing bin-to-bin jitter linearly",
-        "weight_tv_curve": "Scalar weight applied to the residual total-variation term",
-        "use_sobolev": "Enable the Sobolev smoothness term: MSE of the second height-axis difference of the reconstruction residual, penalizing bin-to-bin jitter that the pointwise curve loss treats the same as smooth error",
-        "weight_sobolev": "Scalar weight applied to the Sobolev second-difference term",
-        "use_latent_noise": "Enable the latent-noise reconstruction term: the decoder additionally reconstructs the clean curve from the embedding perturbed with Gaussian noise, training it to map a neighborhood of each embedding onto the same smooth curve so small embedding errors at JEPA inference stop producing jagged output",
-        "latent_noise_std": "Standard deviation of the Gaussian perturbation added to the normalized embedding before the extra decode; calibrate it to the embedding-error spread of the coupled JEPA runs",
-        "weight_latent_noise": "Scalar weight applied to the latent-noise reconstruction term"
-      }
-    },
-    "training/profile_autoencoder::ProfileAeTrainerConfig": {
-      "summary": "Aggregates architecture and training sub-configs consumed by one profile-autoencoder training run",
-      "fields": {
-        "gaussian": "GaussianConfig instance giving the fixed Gaussian count and z-axis bounds (x_min, x_max) derived from the dataset, required with no default",
-        "autoencoder": "ProfileAutoencoderBaseConfig architecture sub-config (encoder/decoder hyperparameters), defaults to the MLP autoencoder",
-        "ae_loss": "ProfileAeLossConfig sub-config setting the curve reconstruction loss kind and its huber/charbonnier robustness parameters",
-        "early_stopping": "EarlyStoppingConfig sub-config setting patience, min-delta, and best-checkpoint restore for training",
-        "warmup": "WarmupConfig sub-config for the initial learning-rate warmup (steps, start factor, mode, poly power)",
-        "scheduler": "SchedulerConfig sub-config selecting the LR schedule type and its parameters (epochs, eta_min, step size, gamma, power)",
-        "io": "IOConfig sub-config holding the run logdir; the TensorBoard writer is runtime state owned by the run metadata and passed to the trainer directly",
-        "optimizer": "OptimizerConfig sub-config for the AdamW-style optimizer (lr, betas, eps, weight decay, lr scale)",
-        "training": "TrainingLoopConfig sub-config setting epoch count, validation frequency, AMP, gradient accumulation, EMA, and resume for the training loop",
-        "resources": "ResourceConfig sub-config controlling the system-resource monitor (poll interval, TensorBoard logging, RAM/VRAM/swap/shm warn thresholds)",
-        "memory": "MemoryConfig sub-config governing CUDA cache clearing cadence and VRAM reservation to protect other GPU users",
-        "gradient_clipper": "GradientClipperConfig sub-config selecting the gradient-clip mode (fixed/adaptive) and its thresholds"
-      }
-    },
-    "training/profile_autoencoder::ProfileAeEntryConfig": {
-      "summary": "Top-level entry point launching one or more profile-autoencoder training runs",
-      "fields": {
-        "run_name": "Optional human-readable label for the run directory; None auto-generates a name",
-        "resume": "Reuse this run directory when it already holds a completed run (complete.json marker stamped only at successful completion); an unfinished run directory is deleted and restarted from scratch. Lets interrupted seed sweeps continue without retraining finished units (distinct from training.resume, which continues one run mid-training from its last.pt and suppresses the delete)",
-        "resume_from": "Path of a run directory, a seed sweep root or a trial sweep root to resume, or any run inside them. The configuration the run or sweep recorded (docs/resolved_entry_config.json of a run, batch_train_logs/resolved_config.json of a sweep) is loaded as the base, the overrides typed on this launch are applied on top and the hardware fields follow this launch; complete units are reused, unfinished units continue from their trainer state or restart in their own directory, and missing units are created, each job handed its exact directory so the naming scheme never has to be reproduced. A sweep launched before recordings existed resumes from the settings typed here, with a warning. Empty starts a fresh run",
-        "gpu": "GPU device index the run is launched on, passed through as the script's --gpu argument to pin CUDA_VISIBLE_DEVICES",
-        "gpus": "GPU pool across which the seeds of a multi-seed run are fanned out, one training job per seed launched in parallel",
-        "ddp": "Train the single resolved seed data-parallel across the gpus devices: one synchronised rank process per GPU sharing the configured global batch (batch_size must divide by the rank count, so the LR batch rule is preserved). Rank 0 starts alone and owns the canonical run directory, and the other ranks join once its resume gate has settled that directory, mirroring their artifacts into the ddp/rank<N> subtree. Gradients are averaged every optimizer window and evaluation losses reduced across ranks, so checkpointing and early stopping decide identically everywhere. Greyed out while a multi-seed sweep is configured, since it trains exactly the one seed pinned in the seed field; also rejects the pre-training probes. Local-only for now: the ranks are subprocesses on this machine's own GPUs, so a cluster launch refuses it, as does a trial sweep, whose units already take one GPU each",
-        "gpus_file": "Path of the live GPU pool control file for the seed fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it executes (added devices pick up queued seeds, removed devices retire once the seed in flight ends). Empty places gpu_pool.json inside the base run directory",
-        "poll_interval_s": "Seconds between successive polls of the seed queue while waiting for GPUs or completed seed runs",
-        "seed": "Random seed for a single training run, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
-        "logdir": "Base directory under which this run's timestamped output subdirectory and TensorBoard logs are written",
-        "pixel_subsample": "Fraction of populated (Gaussian-active) profile pixels kept when building each split's dataset, 1.0 keeps all of them",
-        "keep_empty_frac": "Fraction of empty (all-amplitude-below-threshold) profile pixels retained alongside the populated ones, applied once when each split's dataset is built",
-        "stats_max_samples": "Maximum number of training curves ProfileStatsComputer draws when fitting the normalization statistics of the run",
-        "profile_augmentation": "ProfileAugmentationConfig sub-config setting amplitude-scale, shift, flip, and additive-noise probabilities applied to training profile curves",
-        "ae_model_name": "Registry key selecting the profile-autoencoder architecture: mlp_ae, conv1d_ae, transformer1d_ae, resmlp_ae, tcn_ae, gru_ae, or cnn_attn_ae",
-        "model_overrides": "Dict of architecture-config field overrides applied to the selected autoencoder before instantiation, taking precedence over the dedicated encoder/decoder lr and wd fields when it repeats one of them",
-        "encoder_lr": "AdamW learning rate of the encoder parameter group, applied to whichever autoencoder architecture is selected",
-        "decoder_lr": "AdamW learning rate of the decoder parameter group, applied to whichever autoencoder architecture is selected",
-        "encoder_wd": "AdamW weight decay of the encoder parameter group",
-        "decoder_wd": "AdamW weight decay of the decoder parameter group",
-        "ae_loss": "ProfileAeLossConfig sub-config setting the curve reconstruction loss kind and its huber/charbonnier robustness parameters",
-        "paths": "TrainingPathsConfig sub-config holding the preprocessed dataset directory, extracted Gaussian-parameters file, and secondary channel labels",
-        "training": "TrainingQueueConfig sub-config bundling epoch count, dataloader batch size/workers/prefetch, AMP/EMA/resume, and scheduler/warmup/clip settings, defaulting to batch_size=8192, num_workers=14, and prefetch_factor=4 for per-pixel training",
-        "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
-        "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before full training and aborts if the model cannot overfit them",
-        "trials_enabled": "Enable the multi-trial GPU sweep (ProfileAeTrialScheduler) instead of a single training run",
-        "trials_mode": "Sweep dimension the trial scheduler varies: arch, embedding, capacity, loss, smoothness, augmentation, sampling, ema, amp, or stability",
-        "arch_trials": "Rungs of the architecture sweep as a list of dicts, each with a label, an ae_model_name from the profile-autoencoder registry, and optional extra keys applied as model overrides",
-        "embedding_trials": "Latent-width ladder of the embedding sweep",
-        "capacity_trials": "Width-by-depth grid of the capacity sweep within the configured family",
-        "loss_trials": "Reconstruction-loss arms of the loss sweep, mapping a run label to the ae_loss fields that arm enables; every other loss term is disabled per arm",
-        "smoothness_trials": "Sobolev and latent-noise arms of the smoothness sweep, the decoder-robustness levers that matter for JEPA coupling",
-        "augmentation_trials": "Cumulative ladder of the profile-augmentation sweep: none, flips, shifts, amplitude scaling, then one final rung per noise level",
-        "sampling_trials": "Data-mix grid of the sampling sweep over the pixel subsample and the kept empty-profile fraction",
-        "ema_trials": "Weight-EMA ladder of the ema mode; the amp mode compares mixed-precision off against on and needs no settings of its own",
-        "stability_trials": "Warmup and gradient-clip arms of the stability mode"
-      }
-    },
-    "training/profile_autoencoder::EmbeddingDimTrialsConfig": {
-      "summary": "Latent-width ladder swept by the profile-autoencoder embedding trial mode",
-      "fields": {
-        "dims": "Embedding dimensions trained, one run each"
-      }
-    },
-    "training/profile_autoencoder::CapacityTrialsConfig": {
-      "summary": "Width-by-depth capacity grid swept within the configured profile-autoencoder family",
-      "fields": {
-        "widths": "Width values of the family's width field (hidden_dim or seq_channels); empty walks the family's tunable choices",
-        "depths": "Depth values; empty walks the family's tunable choices"
-      }
-    },
-    "training/profile_autoencoder::SmoothnessTrialsConfig": {
-      "summary": "Sobolev and latent-noise smoothness arms swept on top of the configured reconstruction loss",
-      "fields": {
-        "sobolev_weights": "Weights of the residual-curvature penalty, one arm each",
-        "latent_noise_stds": "Standard deviations of the injected latent noise, one arm each; calibrate against the jepa_embedding_rmse diagnostic of a coupled JEPA run",
-        "combine": "Add the full Sobolev-by-noise grid on top of the one-at-a-time arms",
-        "include_baseline": "Add a run with both levers off"
-      }
-    },
-    "training/profile_autoencoder::ProfileAugmentationTrialsConfig": {
-      "summary": "Cumulative profile-augmentation ladder from no augmentation to flips, shifts, amplitude scaling and noise",
-      "fields": {
-        "flip_probability": "Flip probability applied from the first augmented rung on",
-        "shift_probability": "Shift probability applied from the shift rung on",
-        "max_shift": "Largest absolute bin shift of the shift augmentation",
-        "amp_scale_probability": "Amplitude-scaling probability applied from the scale rung on",
-        "noise_probability": "Noise probability applied on the noise rungs",
-        "noise_stds": "Noise standard deviations, one final rung each"
-      }
-    },
-    "training/profile_autoencoder::SamplingTrialsConfig": {
-      "summary": "Training-data mix grid over the pixel subsample and the kept empty-profile fraction",
-      "fields": {
-        "subsamples": "Fractions of scene pixels kept as training profiles, one grid axis",
-        "empty_fracs": "Fractions of empty profiles kept in the sample, the other grid axis"
-      }
-    },
     "inference/backbone::BackboneInferenceEntryConfig": {
-      "summary": "Entry config for the scheduler that runs sliding-window backbone/JEPA inference over multiple runs, queuing one worker process per run across a fixed pool of GPUs",
+      "summary": "Entry config for the scheduler that runs sliding-window backbone inference over multiple runs, queuing one worker process per run across a fixed pool of GPUs",
       "fields": {
-        "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every backbone/JEPA run at any depth below it (a directory holding a meta/ subdir) is discovered and runs of other families are skipped by type. A missing directory is an error",
+        "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every run at any depth below it (a directory holding meta/model_config.json) is discovered. A missing directory is an error",
         "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run raises FileNotFoundError listing the runs found",
         "gpus": "GPU device indices the GpuQueue cycles jobs across, default [0]; one run is launched per free GPU concurrently until the queue drains",
         "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
@@ -1771,107 +1234,13 @@
         "compute_cube_ssim": "Whether to run the standard SSIM sweep (every z, col and row slice, window up to 7, dynamic range from the reference slice, as in the headline SSIM against the labels) of the prediction against the raw cube, in raw intensity and unit area, adding the ssim_cube_* and ssim_cube_norm_* keys to metrics and a report subsection",
         "compute_flip_consistency": "Also run the model on row- and column-flipped inputs, unflip the predictions, and stitch the per-pixel curve disagreement into a flip-equivariance map: a label-free confidence signal saved as a cube, figure, and flip_* metrics (roughly triples the forward-pass cost)",
         "compute_stratified": "Also stratify the per-pixel curve MSE by scene covariates (GT active count, primary amplitude, aux gradient, label fit R²): binned median curves with IQR bands as figures plus strat_* rank-correlation metrics",
-        "extract_curve_params": "For runs that predict z profiles instead of Gaussian parameters (JEPA with a coupled profile autoencoder), refit K Gaussians to each predicted curve so the whole parameter-space analysis (slot occupancy, matched Gaussian errors, failure modes, presence calibration, parameter figures) becomes available; the same extractor is also run on the GT curves and scored against the exact GT parameters, giving the extract_floor_* measurement floor that any extracted error must be read against. Inert for runs whose model already outputs parameters",
-        "extract_prominence_frac": "Peak-detection prominence threshold of the curve extractor, as a fraction of each profile's maximum; lower values accept fainter peaks as separate Gaussians",
         "target": "Foreign dataset the run is scored on instead of its own split (off by default); the stamps land under <run>/cross_dataset/<dataset name>/, apart from the run's own inference"
       }
     },
-    "inference/image_autoencoder::ImageAeInferencePaths": {
-      "summary": "Output subdirectory and filename layout for image-autoencoder inference artifacts",
-      "fields": {
-        "figures_subdir": "Subdirectory name under the run where diagnostic and comparison figures are written",
-        "logs_subdir": "Subdirectory name under the run where inference log files are written",
-        "metrics_filename": "Filename of the JSON file holding computed reconstruction metrics",
-        "report_filename": "Filename of the generated Markdown inference report"
-      }
-    },
-    "inference/image_autoencoder::ImageAeInferenceConfig": {
-      "summary": "Runs a trained image-autoencoder checkpoint over a dataset split and scores reconstruction quality",
-      "fields": {
-        "run_directory": "Path to the training run directory holding the checkpoint and receiving inference outputs",
-        "output_subdir": "Optional fixed subdirectory name under run_directory/inference/image_ae for this call's outputs, None auto-generates a timestamped subdirectory",
-        "device": "Torch device string for inference, e.g. cuda or cpu",
-        "log_level": "Logging verbosity threshold, e.g. INFO or DEBUG",
-        "split": "Dataset split to run inference on: train, val, or test",
-        "checkpoint_name": "Filename of the checkpoint to load for inference, defaulting to best_model.pt",
-        "batch_size": "Inference batch size, None falls back to the batch size recorded in the run's dataset_creation_config.json",
-        "num_workers": "Number of dataloader worker processes used for parallel batch assembly",
-        "save_plots": "Whether to write diagnostic and comparison figures to disk during inference",
-        "n_best_patches": "Number of lowest-reconstruction-error patches selected for the ground-truth/reconstruction/error figure triplets",
-        "n_worst_patches": "Number of highest-reconstruction-error patches selected for the ground-truth/reconstruction/error figure triplets",
-        "n_random_patches": "Number of randomly sampled patches selected for the ground-truth/reconstruction/error figure triplets",
-        "n_scatter_points": "Number of patches sampled for the per-patch mean-intensity scatter plot of ground truth versus reconstruction",
-        "patch_seed": "Random seed controlling both the random-patch selection and the scatter-point subsampling for the diagnostic plots",
-        "fig_dpi": "Resolution in DPI applied to on-screen figure rendering (matplotlib figure.dpi)",
-        "save_dpi": "Resolution in DPI applied when figures are saved to disk (matplotlib savefig.dpi)",
-        "figure_style": "Figure style preset: report for on-screen PNG reports, paper for print-ready NeurIPS figures (9pt fonts, Okabe-Ito colors, 300 DPI, vector PDF for non-image plots)",
-        "paths": "ImageAeInferencePaths sub-config naming the output subdirectories and result filenames for this inference run"
-      }
-    },
-    "inference/image_autoencoder::ImageAeInferenceEntryConfig": {
-      "summary": "Entry point queuing image-autoencoder inference across every run discovered recursively under the runs directory",
-      "fields": {
-        "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every image-autoencoder run at any depth below it (a directory holding a meta/ subdir) is discovered and runs of other families are skipped by type. A missing directory is an error",
-        "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run raises FileNotFoundError listing the runs found",
-        "gpus": "List of GPU device indices across which queued inference jobs are distributed and launched in parallel",
-        "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
-        "poll_interval_s": "Seconds between successive polls of the GPU job queue while waiting for a free GPU or a running job to finish",
-        "image_inference": "ImageAeInferenceConfig template applied to each discovered run, with run_directory overridden per run",
-        "skip_completed": "Whether runs already holding a completed inference stamp for image_inference.split are left alone, so relaunching over an experiment scores only the runs still missing it; off re-scores every selected run into a fresh timestamped stamp"
-      }
-    },
-    "inference/profile_autoencoder::ProfileAeInferencePaths": {
-      "summary": "Output subdirectory and filename layout for a profile-autoencoder inference run",
-      "fields": {
-        "figures_subdir": "subdirectory name under the run's output directory where reconstruction and diagnostic figures are saved",
-        "logs_subdir": "subdirectory name under the run's output directory where inference run logs are written",
-        "metrics_filename": "JSON filename storing the computed reconstruction-error and embedding metrics",
-        "report_filename": "markdown filename for the generated inference summary report"
-      }
-    },
-    "inference/profile_autoencoder::ProfileAeInferenceConfig": {
-      "summary": "Runs reconstruction-scoring inference for a standalone profile-autoencoder run, producing metrics and diagnostic plots",
-      "fields": {
-        "run_directory": "path to the trained profile-autoencoder run directory containing checkpoint, meta, and config state",
-        "output_subdir": "output folder name under run_directory/inference/profile_ae, None auto-generates a timestamp tag instead",
-        "device": "torch device string for model and tensor placement during inference, e.g. cuda or cpu",
-        "seed": "random seed for the profile dataset's pixel selection driven by pixel_subsample and keep_empty_frac",
-        "log_level": "logging verbosity for the inference run, e.g. INFO or DEBUG",
-        "split": "dataset split to run inference on: train, val, or test",
-        "checkpoint_name": "filename of the checkpoint to load for inference, defaulting to best_model.pt",
-        "batch_size": "pixels per inference forward pass through the autoencoder, None loads the full split in one pass",
-        "num_workers": "number of DataLoader worker processes used to assemble pixel batches",
-        "pixel_subsample": "fraction of active (non-empty) profile pixels randomly kept for evaluation, 1.0 keeps all active pixels",
-        "keep_empty_frac": "fraction of empty (no-Gaussian) pixels randomly kept alongside the active ones, balancing empty-vs-populated counts",
-        "save_plots": "whether to render and save reconstruction and diagnostic figures to figures_subdir",
-        "n_best_curves": "number of lowest-per-curve-MSE active profiles plotted as best-fit reconstruction examples",
-        "n_worst_curves": "number of highest-per-curve-MSE active profiles plotted as worst-fit reconstruction examples",
-        "n_random_curves": "number of randomly sampled active profiles plotted as representative reconstruction examples",
-        "n_scatter_points": "maximum number of active-profile points subsampled for the integrated-power scatter diagnostic plot",
-        "curve_seed": "seed for the random generator selecting random example curves and scatter-point subsampling",
-        "fig_dpi": "matplotlib figure-creation DPI (rcParams figure.dpi), superseded by save_dpi for the actual saved image",
-        "save_dpi": "DPI used when saving figures to figures_subdir (rcParams savefig.dpi)",
-        "figure_style": "Figure style preset: report for on-screen PNG reports, paper for print-ready NeurIPS figures (9pt fonts, Okabe-Ito colors, 300 DPI, vector PDF for non-image plots)",
-        "paths": "ProfileAeInferencePaths sub-config setting the figures/logs subdirectory and metrics/report filenames"
-      }
-    },
-    "inference/profile_autoencoder::ProfileAeInferenceEntryConfig": {
-      "summary": "Batch entry point queuing profile-autoencoder inference across every run discovered recursively under the runs directory",
-      "fields": {
-        "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every profile-autoencoder run at any depth below it (a directory holding a meta/ subdir) is discovered and runs of other families are skipped by type. A missing directory is an error",
-        "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run raises FileNotFoundError listing the runs found",
-        "gpus": "list of GPU device indices across which queued inference jobs are distributed and launched in parallel",
-        "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
-        "poll_interval_s": "seconds between successive polls of the GPU queue while waiting for a free GPU or job completion",
-        "profile_inference": "ProfileAeInferenceConfig template applied to each discovered run, with run_directory overridden per run",
-        "skip_completed": "Whether runs already holding a completed inference stamp for profile_inference.split are left alone, so relaunching over an experiment scores only the runs still missing it; off re-scores every selected run into a fresh timestamped stamp"
-      }
-    },
     "benchmark/dataloader_tuning::TrainingProfileEntryConfig": {
-      "summary": "Entry config that records full training steps of one model family under torch.profiler and writes a chrome trace, an operator table and a top-operator summary",
+      "summary": "Entry config that records full training steps of one backbone under torch.profiler and writes a chrome trace, an operator table and a top-operator summary",
       "fields": {
-        "mode": "training family whose feed is profiled: backbone, profile_autoencoder, image_autoencoder, or synthetic for a dataset-free curve workload",
-        "model_name": "model registry key building the profiled workload; empty picks the family default",
+        "model_name": "backbone registry key building the profiled workload; empty picks resunet",
         "gpu": "index of the GPU the profiled steps execute on",
         "seed": "random seed for sampling and model initialisation",
         "use_amp": "whether the profiled forward runs under bfloat16 autocast, matching a mixed-precision training run",
@@ -1883,24 +1252,17 @@
         "record_shapes": "record operator input shapes, enabling shape-grouped views in the trace viewer",
         "profile_memory": "record allocator events so the trace shows per-operator memory traffic",
         "with_stack": "record Python stacks per operator; the trace grows considerably",
-        "pixel_subsample": "fraction of pixels kept when building the probe dataset for the pixel-fed families",
-        "keep_empty_frac": "fraction of empty-profile pixels retained in that subsample",
-        "synthetic_samples": "number of synthetic profiles generated for the synthetic mode",
-        "synthetic_length": "z samples per synthetic profile",
-        "paths": "dataset and run path configuration the family adapters read",
+        "paths": "dataset and run path configuration the feed adapter reads",
         "output_dir": "directory receiving one timestamped profile directory per run"
       }
     },
     "benchmark/dataloader_tuning::DataLoaderTuningEntryConfig": {
       "summary": "Entry point sweeping DataLoader batch size, worker count and prefetch to find the fastest configuration that keeps the GPU fed",
       "fields": {
-        "mode": "feed pipeline to benchmark: synthetic, profile_autoencoder, image_autoencoder, or backbone",
-        "model_name": "name of the model architecture built for the benchmark, defaults per mode (mlp_ae, conv2d_ae, resunet) when empty",
+        "model_name": "backbone registry key built for the benchmark, resunet when empty",
         "gpu": "physical CUDA device index pinned via CUDA_VISIBLE_DEVICES by the entry script before the pipeline is built; the NVML utilization/VRAM sampler finds that device by the UUID of the CUDA device torch computes on, and results.json records the requested index next to the NVML index, name and UUID",
-        "seed": "random seed for reproducible dataset construction, DataLoader shuffling and synthetic-curve sampling",
+        "seed": "random seed for reproducible dataset construction and DataLoader shuffling",
         "use_amp": "enable bfloat16 autocast around the model forward pass in every warmup and timed train step across all three measurement phases",
-        "pixel_subsample": "fraction of active (has-Gaussian) profile pixels kept when the profile dataset is built once, forwarded to ProfileAeEntryConfig in profile_autoencoder mode",
-        "keep_empty_frac": "fraction of empty (no-Gaussian) profile pixels kept when the profile dataset is built once, forwarded to ProfileAeEntryConfig in profile_autoencoder mode",
         "batch_sizes": "candidate batch sizes swept in the main phase, one DataLoader spec per batch size x worker count combination",
         "worker_counts": "candidate DataLoader worker-process counts swept in the main phase, entries above the machine's CPU core count are dropped",
         "prefetch_factors": "candidate per-worker prefetch factors swept only in the refine phase around the best main-phase configuration",
@@ -1911,8 +1273,6 @@
         "data_wait_target": "target data_wait_fraction (GPU idle time waiting on the DataLoader) a configuration must stay under, or reach feed_ratio>=1.0, to be considered feasible",
         "refine": "run a second sweep over prefetch_factors x pin_memory around the best main-phase batch_size/num_workers before finalizing",
         "save_figures": "export the four sweep plots (throughput vs batch size, data-wait vs workers, gpu utilization vs throughput, feed ratio vs workers) to the figures subdirectory of the sweep's own directory",
-        "synthetic_samples": "number of synthetic curve samples generated by SyntheticCurveDataset when mode is synthetic",
-        "synthetic_length": "z-axis length of each synthetic Gaussian-mixture profile when mode is synthetic",
         "paths": "RunPathsConfig sub-config supplying the dataset/parameters paths consumed when mode requires a real dataset",
         "output_dir": "base directory; every sweep writes into its own <mode>/<model>_<launch time> subdirectory holding logs/, figures/, resolved_config.json and results.json (with the sweep's settings, code version, device and status), while <mode>/work/ is the scratch directory the sweeps of a mode share"
       }
@@ -1974,8 +1334,6 @@
         "compute_cube_ssim": "whether each benchmarked run scores its prediction against the raw cube with the standard SSIM sweep (every slice of each axis, window up to 7, dynamic range from the reference slice), in raw intensity and unit area, adding the ssim_cube_* and ssim_cube_norm_* keys to metrics and a report subsection",
         "compute_flip_consistency": "also run each model on row- and col-flipped inputs, unflip the predictions, and stitch the per-pixel curve disagreement into a flip-equivariance map: a label-free confidence signal saved as a cube, figure, and flip_* metrics (roughly triples the forward-chan cost)",
         "compute_stratified": "also stratify the per-pixel curve MSE by scene covariates (GT active count, primary amplitude, mean coherence, Aux slope, label fit R²): binned median curves with IQR bands as figures plus strat_* rank-correlation metrics",
-        "extract_curve_params": "for runs that predict z curves instead of Gaussian parameters (JEPA with a coupled profile autoencoder), refit K Gaussians to each predicted curve so the whole parameter-space analysis becomes available, alongside the extract_floor_* measurement floor from the GT curves; inert for runs whose model already outputs parameters",
-        "extract_prominence_frac": "peak-detection prominence threshold of the curve extractor, as a fraction of each profile's maximum; lower values accept fainter peaks as separate Gaussians",
         "n_best_profiles": "count of profiles with the lowest pixel MSE selected for diagnostic plotting",
         "n_worst_profiles": "count of profiles with the highest pixel MSE selected for diagnostic plotting",
         "n_random_profiles": "count of randomly sampled profiles selected for diagnostic plotting",
@@ -2006,14 +1364,13 @@
     "benchmark/general::BenchmarkConfig": {
       "summary": "Top-level settings orchestrating a multi-model benchmark sweep through size-matching, training, inference, and comparison stages",
       "fields": {
-        "training_type": "pipeline family the sweep trains: backbone, profile_autoencoder, or jepa, gating which stages run",
         "stage": "portion of the pipeline to run: full does everything, prepare stops after size match and max batch, compare runs the comparison report only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
         "paths": "RunPathsConfig sub-config holding the dataset, extracted-parameters, and benchmark run/output directories",
         "max_batch": "MaxBatchConfig sub-config for the maximum-batch-size probe, run for every training type through the family-matched probe context",
         "find_lr": "FindLrConfig sub-config for the LR range test run inside the max-batch probe jobs of every training type",
-        "size_match": "SizeMatchConfig sub-config for matching each backbone's parameter count to the reference model, run only when training_type is backbone",
+        "size_match": "SizeMatchConfig sub-config for matching each backbone's parameter count to the reference model",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every model in the sweep",
-        "inference": "InferenceQueueConfig sub-config for batched inference and diagnostic-artifact output, run only when training_type is backbone or jepa",
+        "inference": "InferenceQueueConfig sub-config for batched inference and diagnostic-artifact output",
         "comparison": "ComparisonReportConfig sub-config controlling the cross-model comparison report",
         "input": "InputConfig sub-config selecting the input channel stack fed to each model, defaults to the full stack (primary+secondaries+derived, Aux off)",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
@@ -2021,17 +1378,13 @@
         "loss": "LossConfig base loss-term weights (the curriculum's complete stage) that each swept loss component is layered onto",
         "probe": "LossScaleProbeConfig sub-config for the pre-training loss-scale probe that averages every loss term over a few batches and reports balanced weight suggestions, disabled by default",
         "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before each benchmarked model's full training and aborts on failure",
-        "ae_loss": "ProfileAeLossConfig reconstruction-loss sub-config used only when training_type is profile_autoencoder",
-        "jepa": "JepaCouplingConfig sub-config of profile-autoencoder coupling, finetune rates and embedding-target settings, used only when training_type is jepa",
-        "pixel_subsample": "fraction of profile pixels sampled per epoch, used only when training_type is profile_autoencoder, 1.0 keeps all pixels",
-        "keep_empty_frac": "fraction of empty (no-Gaussian) profiles retained after subsampling, used only when training_type is profile_autoencoder",
         "gpus": "list of GPU device indices across which the queued sweep's jobs are distributed and launched in parallel",
         "gpus_file": "Path of the live GPU pool control file for this queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it is in flight (added devices pick up queued jobs, removed devices retire once the job in flight ends). Empty places gpu_pool.json inside the run directory",
         "heads": "Output heads crossed with every backbone in the sweep; each backbone x head pair runs as its own unit (default [conv])",
-        "skip_models": "model names excluded from the training_type's registry before the sweep is expanded",
+        "skip_models": "model names excluded from the backbone registry before the sweep is expanded",
         "run_tag": "optional identifier tagging this benchmark's run directory and output artifacts; None auto-generates one",
         "resume": "Whether to reuse stage results that finished in a prior run of the same run_tag: max-batch units with a cached PASS result, and training/inference units whose directory holds a complete.json marker stamped only at successful completion; unfinished unit directories are deleted and restarted",
-        "infer_after": "Whether to run the inference stage automatically after training; only applies when training_type is backbone or jepa, and off leaves the comparison report without inference galleries",
+        "infer_after": "Whether to run the inference stage automatically after training; off leaves the comparison report without inference galleries",
         "seed": "base random seed used for the max-batch probe and as the default per-unit seed when seeds is empty",
         "seeds": "List of seeds expanded across every (model, loss-component) pair, one run per seed nested as seed<N> inside each unit directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "poll_interval_s": "seconds between polls of queued job status while waiting for GPUs or completed jobs",
@@ -2051,11 +1404,10 @@
     "cross_validation/general::CrossValidationConfig": {
       "summary": "Top-level config orchestrating k-fold training, inference, and comparison across row folds",
       "fields": {
-        "training_type": "Model family trained per fold: backbone, jepa, profile_autoencoder, or image_autoencoder, dispatched in FoldTrainingWorker.run",
         "stage": "portion of the pipeline to run: full does everything, prepare stops after validating the fold plan and writing the resolved config, compare runs the cross-fold reports only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
         "backbone_name": "Backbone architecture identifier resolved via ModelBuilder's registry, e.g. resunet",
         "backbone_head": "Output head built on the selected backbone (conv, multihead, per_gaussian, or set_pred); stored in the model config and restored at inference",
-        "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone or autoencoder before instantiation, shared across all folds",
+        "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation, shared across all folds",
         "paths": "RunPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and the cross-validation run/output directories",
         "folds": "FoldConfig sub-config setting fold count, row-range extent, and the boundary guard band",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every fold's training job",
@@ -2068,9 +1420,6 @@
         "probe": "LossScaleProbeConfig sub-config for the pre-training loss-scale probe that averages every loss term over a few batches and reports balanced weight suggestions, disabled by default",
         "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before each fold's full training and aborts on failure",
         "prior_bias_init": "Start each backbone fold's conv output head biases at the prior of that fold's training labels instead of PyTorch's random U(-1/sqrt(fan_in), 1/sqrt(fan_in)) draw: per output channel, the mean label in the model's normalized output space over the fold's training pixels where that slot is active (slots in sorted_gt order, activity at the label run's threshold); every other weight keeps its default init and the values land in each fold run's meta/head_prior_bias.json. Backbone family only, needs backbone_head conv and raises otherwise; default off",
-        "jepa": "JepaCouplingConfig sub-config bundling the pretrained profile-autoencoder location, its frozen/fine-tuned mode and finetune rates, target-encoder provider, and embedding-loss weights, used only when training_type is jepa",
-        "autoencoder": "AeCvConfig sub-config setting the profile-autoencoder model name, reconstruction-loss weights, pixel subsample fraction, and empty-profile retention fraction, used only when training_type is profile_autoencoder",
-        "image_autoencoder": "ImageAeCvConfig sub-config setting the image-autoencoder model name and its reconstruction loss, used only when training_type is image_autoencoder",
         "inference_splits": "Dataset splits inference is run on per fold, e.g. val and test; an empty list skips the inference stage and leaves the folds compared on their training checkpoints alone",
         "gpus": "List of GPU device indices across which fold training/inference jobs are distributed and launched in parallel",
         "gpus_file": "Path of the live GPU pool control file for this queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it is in flight (added devices pick up queued jobs, removed devices retire once the job in flight ends). Empty places gpu_pool.json inside the run directory",
@@ -2082,27 +1431,6 @@
         "resume_from": "Path at or inside an existing cross-validation run to finish (the run directory, its pipeline, folds or one fold run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every fold x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference splits run. Empty starts a fresh run"
       }
     },
-    "cross_validation/image_autoencoder::ImageAeCvConfig": {
-      "summary": "Cross-validation setup for the image autoencoder: model choice and reconstruction loss",
-      "fields": {
-        "ae_model_name": "Registry key selecting the image-autoencoder architecture, default conv2d_ae",
-        "ae_loss": "ImageAeLossConfig reconstruction-loss sub-config (recon_kind: mse/l1/huber/charbonnier, plus huber_delta and charbonnier_eps)"
-      }
-    },
-    "cross_validation/profile_autoencoder::AeCvConfig": {
-      "summary": "Cross-validation setup for the profile autoencoder: model choice, reconstruction loss, and pixel sampling",
-      "fields": {
-        "ae_model_name": "Registry key selecting the profile-autoencoder architecture, default mlp_ae",
-        "ae_loss": "ProfileAeLossConfig loss sub-config: summable use_*/weight_* curve terms (mse, l1, huber, charbonnier, cosine, log_energy, tv, sobolev) plus the latent-noise term",
-        "pixel_subsample": "Fraction of active (non-empty) profile pixels randomly kept when building the dataset, default 1.0 keeps all",
-        "keep_empty_frac": "Fraction of empty (no-Gaussian) pixels randomly kept alongside the active ones, default 0.05",
-        "profile_augmentation": "ProfileAugmentationConfig sub-config setting amplitude-scale, shift, flip, and additive-noise probabilities applied to the training profile curves of every fold",
-        "encoder_lr": "Learning rate of the profile autoencoder's encoder parameter group in every fold, so the folds train at the rate the validated sweep used",
-        "decoder_lr": "Learning rate of the profile autoencoder's decoder parameter group in every fold",
-        "encoder_wd": "Weight decay of the profile autoencoder's encoder parameter group in every fold",
-        "decoder_wd": "Weight decay of the profile autoencoder's decoder parameter group in every fold"
-      }
-    },
     "tuning/general::TuningConfig": {
       "summary": "Optuna hyperparameter search controls: trial budget, seeding, pruning, and artifact emission",
       "fields": {
@@ -2112,14 +1440,14 @@
         "early_stop_patience": "epochs without validation improvement before a trial's training is halted early",
         "pruner_n_startup_trials": "startup-trial count shared by optuna.pruners.MedianPruner (trials exempt from pruning) and the TPESampler (trials of random search before it switches to TPE)",
         "pruner_n_warmup_steps": "epochs within a trial before MedianPruner is allowed to prune that trial",
-        "search_lr": "Whether the study samples the model configuration's learning rates, weight decays and dropout (its tunable_lr_params). JEPA studies always search the architecture alone, since that entry owns its own learning rates. Defines the study, so it cannot change on resume",
+        "search_lr": "Whether the study samples the model configuration's learning rates, weight decays and dropout (its tunable_lr_params). Defines the study, so it cannot change on resume",
         "search_arch": "Whether the study samples the model configuration's architecture fields (its tunable_arch_params: feature widths, bottleneck factor, activation, normalization, upsampling and the like). Defines the study, so it cannot change on resume",
         "search_batch": "Whether the study samples the training batch size from batch_sizes. The trial puts the drawn size on the loader and rescales the optimizer by batch over lr_reference_batch_size as every training entry does, so a tuned rate stays quoted at the reference batch and a downstream run with the same batch reproduces it. The best size is recorded on a training.batch_size decision axis of a sequence block. Defines the study, so it cannot change on resume",
         "batch_sizes": "Batch sizes the study may pick when search_batch is on; every size must fit the GPU with the largest architecture the study may draw. Defines the study, so it cannot change on resume",
         "plateau_patience": "Finished trials (completed or pruned) without the best value improving before the study stops; 0 runs the trial target out. The finished trials are walked in trial order, a completed trial beating the best by at least plateau_min_delta resets the count, and every worker reads the same verdict off the shared study. Changeable on resume",
         "plateau_min_delta": "Smallest improvement of the best value, relative to its value at the last counted improvement, that resets the plateau count; 0 counts any improvement, which lets seed noise keep a converged study alive. Changeable on resume",
         "time_budget_h": "Hours after which a worker starts no further trial; the trial in flight still finishes, so a launch with a hard time limit must allow the budget plus one trial. 0 sets no budget. Changeable on resume",
-        "emit_trial_docs": "whether to write per-trial training-documentation artifacts to the run directory, backbone tuning only (no effect on autoencoder/JEPA trials)",
+        "emit_trial_docs": "whether to write per-trial training-documentation artifacts to the run directory",
         "emit_study_plots": "whether to render Optuna study-level visualization plots after each model's sweep completes",
         "keep_trial_checkpoints": "Whether the checkpoint files (best_model.pt, last.pt, final_model.pt, epoch snapshots) of a finished trial stay in its run directory. Off by default: nothing loads them again, the trial's parameters live in the study, and a study of hundreds of trials would otherwise hold hundreds of gigabytes of weights that a sequence workspace pull copies back"
       }
@@ -2127,7 +1455,6 @@
     "tuning/general::TuningEntryConfig": {
       "summary": "Entry point wiring an Optuna tuning sweep: model type, resources, data, and nested search/training configs",
       "fields": {
-        "training_type": "model family being tuned: backbone, profile_autoencoder, image_autoencoder, or jepa (anything else falls back to the backbone model registry)",
         "stage": "Part of the run to execute. 'prepare' only creates the studies, so trial workers launched separately have something to attach to; 'compare' only writes the best configuration and the study plots of studies the workers filled; 'full' runs the trials between the two, which is what a local launch does",
         "paths": "RunPathsConfig sub-config holding the dataset/parameters paths, secondary labels, and log/output base directory shared by every trial",
         "tuning": "TuningConfig sub-config controlling the Optuna search (trial count, epochs, pruning, seeding)",
@@ -2141,11 +1468,6 @@
         "curriculum": "LossCurriculumConfig sub-config defining the warmup/complete loss schedule applied to every backbone trial",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategy shared by all backbone trials",
         "augmentation": "AugmentationConfig sub-config setting flip/rot90/noise probabilities applied to training patches across all backbone trials",
-        "ae_loss": "ProfileAeLossConfig reconstruction-loss settings used when tuning the profile autoencoder",
-        "image_ae_loss": "ImageAeLossConfig reconstruction-loss settings used when tuning the image autoencoder",
-        "jepa": "JepaCouplingConfig sub-config supplying pretrained autoencoder sources, their finetune rates and JEPA-specific loss settings for jepa trials",
-        "pixel_subsample": "fraction of active (non-empty) pixels kept when building the profile-autoencoder tuning dataset, 1.0 keeps all",
-        "keep_empty_frac": "fraction of empty (no-Gaussian) profiles kept alongside the subsampled active ones when building the profile-autoencoder tuning dataset",
         "resume_from": "Path at or inside an existing tuning run to continue (the run directory or any path inside it). The run recorded configuration beside its Optuna database is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and every study is topped up to the trial target; the study-defining fields stay guarded exactly as with --resume. Empty starts a fresh run"
       }
     },
@@ -2566,30 +1888,6 @@
         "figures_subdir": "Name of the figures directory inside each inference stamp the patterns are matched against",
         "patterns": "Glob patterns relative to the figures directory selecting which figures enter the pack",
         "output_dir": "Publication figures directory the stable-named copies and the manifest are written into"
-      }
-    },
-    "training/jepa::JepaCurriculumConfig": {
-      "summary": "Two-stage JEPA loss schedule that starts on a warmup stage and swaps to the main embedding or param loss at a fixed epoch",
-      "fields": {
-        "enabled": "Enable the warmup stage before the main loss; when off, training runs on embedding_loss or param_loss from the first epoch",
-        "swap_epoch": "Zero-based epoch at which training swaps from the warmup stage to the main loss of the active regime",
-        "warmup_embedding": "Embedding-loss stage active before the swap when a profile autoencoder is coupled",
-        "warmup_param": "Parameter-loss stage active before the swap when no profile autoencoder is coupled",
-        "reset_lr": "Reset the learning-rate schedule at the swap so the second phase restarts the decay",
-        "reset_warmup": "Restart the learning-rate warmup ramp at the swap",
-        "reset_optimizer": "Clear the optimizer state (Adam moments) at the swap"
-      }
-    },
-    "training/jepa::JepaMaskingConfig": {
-      "summary": "Context masking that hides part of each input patch so the backbone predicts profile embeddings from partial context",
-      "fields": {
-        "enabled": "Enable input masking during training; requires a coupled profile autoencoder since the mask acts on the embedding loss",
-        "strategy": "How hidden pixels are chosen: block hides rectangular regions, random hides independent pixels",
-        "mask_ratio": "Target fraction of patch pixels hidden per sample; block overlaps make it a lower bound",
-        "n_blocks": "Number of rectangles the block strategy hides per sample",
-        "fill": "Value written into hidden pixels: zeros or Gaussian noise",
-        "fill_noise_std": "Standard deviation of the noise fill in normalized input units, used only when fill is noise",
-        "loss_on": "Pixels the embedding loss is evaluated on: masked restricts it to the hidden region, all keeps every pixel"
       }
     },
     "synthesis::SynthesisConfig": {

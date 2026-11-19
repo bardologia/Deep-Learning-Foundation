@@ -5,7 +5,7 @@ from pathlib import Path
 
 from configuration.inference                   import InferenceConfig
 from pipelines.shared.inference.metadata       import TargetDataset
-from pipelines.shared.inference.run_classifier import InferenceLayout, RunType
+from pipelines.shared.inference.run_classifier import InferenceLayout
 from tools.data.io                             import FileIO
 from tools.runtime.environment_capture         import EnvironmentCapture
 from tools.runtime.run_tag                     import RunTag
@@ -19,7 +19,7 @@ class InferenceMetadata:
         self.config = config
         paths       = config.paths
 
-        base = InferenceLayout.base(config.run_directory, RunType.BACKBONE) if target is None else InferenceLayout.target_base(config.run_directory, RunType.BACKBONE, target.name)
+        base = InferenceLayout.base(config.run_directory) if target is None else InferenceLayout.target_base(config.run_directory, target.name)
         self.output_dir     = base / config.output_subdir if config.output_subdir else base / RunTag.now()
         self.figures_dir    = self.output_dir / paths.figures_subdir
         self.animations_dir = self.output_dir / paths.animations_subdir

@@ -4,9 +4,8 @@ from __future__ import annotations
 import pytest
 
 from configuration.dataset                import AugmentationConfig
-from configuration.training               import EmbeddingLossConfig, LossConfig, LossCurriculumConfig, ParamMatching
-from configuration.training.jepa          import JepaMaskingConfig
-from pipelines.shared.training.run_naming import JepaNamingSpec, RunNaming
+from configuration.training               import LossConfig, LossCurriculumConfig, ParamMatching
+from pipelines.shared.training.run_naming import RunNaming
 
 
 def _loss(**flags) -> LossConfig:
@@ -15,22 +14,6 @@ def _loss(**flags) -> LossConfig:
 
 def _aug(**probabilities) -> AugmentationConfig:
     return AugmentationConfig(**probabilities)
-
-
-def _jepa(**overrides) -> JepaNamingSpec:
-    spec = dict(
-        profile_ae      = "gru_ae",
-        profile_mode    = "frozen",
-        target_provider = "stopgrad",
-        image_ae        = None,
-        image_mode      = "frozen",
-        embedding_loss  = EmbeddingLossConfig(),
-        param_loss      = _loss(use_param_l1=True, weight_param_l1=1.0, param_matching=ParamMatching.SORTED_GT, use_active_normalization=True),
-        masking         = JepaMaskingConfig(),
-    )
-    spec.update(overrides)
-
-    return JepaNamingSpec(**spec)
 
 
 def test_loss_tag_lists_enabled_terms_with_weights_param_first():
@@ -42,8 +25,6 @@ def test_loss_tag_lists_enabled_terms_with_weights_param_first():
 def test_loss_tag_rejects_empty_loss():
     with pytest.raises(ValueError):
         RunNaming.loss_tag(_loss())
-
-
 
 
 def test_matching_tag_names_the_strategy():
@@ -104,61 +85,3 @@ def test_benchmark_unit_without_component_uses_the_full_tag():
 def test_compose_appends_the_suffix():
     assert RunNaming.compose("unet-conv-hungarian-K_3-hv-A-param_l1_1", "seed0") == "unet-conv-hungarian-K_3-hv-A-param_l1_1_seed0"
     assert RunNaming.compose("unet-conv-hungarian-K_3-hv-A-param_l1_1", None)    == "unet-conv-hungarian-K_3-hv-A-param_l1_1"
-
-
-def test_extras_slot_in_between_presence_and_loss():
-    loss = _loss(use_param_l1=True, weight_param_l1=1.0, use_active_normalization=True)
-
-    assert RunNaming.tag("resunet", "set_pred", loss, 2, _aug(), extras=("full.derived",)) == "resunet-set_pred-hungarian-K_2-hv-A-full.derived-param_l1_1"
-    assert RunNaming.tag("resunet", "set_pred", loss, 2, _aug())                           == "resunet-set_pred-hungarian-K_2-hv-A-param_l1_1"
-
-
-
-
-def test_embedding_loss_tag_lists_enabled_terms_with_weights():
-    assert RunNaming.embedding_loss_tag(EmbeddingLossConfig()) == "emb_mse_1-curve_mse_1"
-
-
-def test_embedding_loss_tag_names_every_term_and_the_curve_kind():
-    embedding = EmbeddingLossConfig(use_embedding_mse=False, use_embedding_cosine=True, weight_embedding_cosine=0.5, use_embedding_smoothl1=True, weight_embedding_smoothl1=2.0, use_curve_recon=True, weight_curve_recon=0.25, curve_kind="charbonnier")
-
-    assert RunNaming.embedding_loss_tag(embedding) == "emb_cos_0.5-emb_sl1_2-curve_charbonnier_0.25"
-
-
-def test_embedding_loss_tag_rejects_empty_loss():
-    with pytest.raises(ValueError):
-        RunNaming.embedding_loss_tag(EmbeddingLossConfig(use_embedding_mse=False, use_curve_recon=False))
-
-
-def test_autoencoder_tags_strip_the_ae_suffix_and_carry_the_mode():
-    assert RunNaming.profile_ae_tag("gru_ae", "frozen")      == "pae_gru.frozen"
-    assert RunNaming.profile_ae_tag("mlp_ae", "finetune")    == "pae_mlp.finetune"
-    assert RunNaming.image_ae_tag("conv2d_ae", "frozen")     == "iae_conv2d.frozen"
-    assert RunNaming.image_ae_tag("conv2d_ae", "finetune")   == "iae_conv2d.finetune"
-
-
-def test_jepa_tag_profile_coupled_carries_target_ae_and_embedding_loss():
-    assert RunNaming.jepa_tag("resunet", "conv", _jepa(), 5, _aug()) == "resunet-conv-stopgrad-K_5-hv-none-pae_gru.frozen-emb_mse_1-curve_mse_1"
-
-
-def test_jepa_tag_orders_profile_before_image_autoencoder():
-    naming = _jepa(profile_mode="finetune", target_provider="live", image_ae="conv2d_ae", image_mode="finetune")
-
-    assert RunNaming.jepa_tag("resunet", "conv", naming, 5, _aug()) == "resunet-conv-live-K_5-hv-none-pae_gru.finetune-iae_conv2d.finetune-emb_mse_1-curve_mse_1"
-
-
-def test_jepa_tag_image_only_carries_the_param_loss_it_trains_on():
-    naming = _jepa(profile_ae=None, image_ae="conv2d_ae")
-
-    assert RunNaming.jepa_tag("resunet", "set_pred", naming, 5, _aug()) == "resunet-set_pred-sorted_gt-K_5-hv-A-iae_conv2d.frozen-param_l1_1"
-
-
-def test_jepa_tag_rejects_a_spec_without_any_autoencoder():
-    with pytest.raises(ValueError):
-        RunNaming.jepa_tag("resunet", "conv", _jepa(profile_ae=None, image_ae=None), 5, _aug())
-
-
-def test_embedding_loss_tag_appends_the_sobolev_term():
-    embedding = EmbeddingLossConfig(use_curve_sobolev=True, weight_curve_sobolev=0.5)
-
-    assert RunNaming.embedding_loss_tag(embedding) == "emb_mse_1-curve_mse_1-curve_sobolev_0.5"

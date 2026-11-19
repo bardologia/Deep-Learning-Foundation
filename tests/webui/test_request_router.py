@@ -10,7 +10,7 @@ from routers.analysis_routers   import AutopsyRouter, FitLabRouter, ProbeRouter,
 from routers.cube_routers       import CubeRouter, SliceRouter
 from routers.dispatch           import HttpExchange, RouteConflict, RouteTable, SubRouter
 from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
-from routers.library_routers    import BackboneRouter, ContentLibraryRouter, ModelLibraryRouter
+from routers.library_routers    import BackboneRouter, ContentLibraryRouter
 from routers.results_routers    import CurvesRouter, DatasetRouter, LeaderboardRouter, ResultsRouter
 from routers.sequence_router    import SequenceRouter
 from routers.static_router      import StaticRouter
@@ -19,8 +19,8 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 157
-SECTION_COUNT = 42
+ROUTE_COUNT   = 151
+SECTION_COUNT = 39
 
 RESOLUTIONS = [
     ("GET",  "/",                                  StaticRouter),
@@ -55,7 +55,6 @@ RESOLUTIONS = [
     ("GET",  "/api/autopsy/runs",                  AutopsyRouter),
     ("GET",  "/api/backbones",                     BackboneRouter),
     ("GET",  "/api/backbones/unet/note",           BackboneRouter),
-    ("GET",  "/api/jepa-variants/jepa_vit/note",   ModelLibraryRouter),
     ("GET",  "/api/configs",                       ContentLibraryRouter),
     ("GET",  "/api/project",                       CatalogRouter),
     ("GET",  "/api/scripts/train_backbone",        CatalogRouter),
@@ -158,9 +157,6 @@ def build_routers() -> list:
         ContentLibraryRouter("/api/repomap",      None, "folders"),
         ContentLibraryRouter("/api/configs",      None, "groups"),
         BackboneRouter("/api/backbones", None),
-        ModelLibraryRouter("/api/profile-autoencoders", None),
-        ModelLibraryRouter("/api/image-autoencoders",   None),
-        ModelLibraryRouter("/api/jepa-variants",        None),
         CatalogRouter(None, None, None, None, None, None),
         JobRouter(None, None, None, None),
         SavedRunRouter(None, None, None),

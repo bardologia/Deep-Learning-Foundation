@@ -6,15 +6,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from configuration.dataset                              import InputConfig, OutputConfig, ProfileAugmentationConfig, Representation
-from configuration.normalization                        import ChannelStats, ChannelStrategy, NormMethod
-from pipelines.backbone.dataset.datasets                import MultiRegionDataset, PatchDataset
-from pipelines.backbone.dataset.normalizer              import Normalizer
-from pipelines.backbone.dataset.spatial                 import Cropper, Patcher
-from pipelines.backbone.dataset.stats                   import Stats
-from pipelines.profile_autoencoder.dataset.augmentation import ProfileAugmenter
-from pipelines.profile_autoencoder.dataset.datasets     import ProfileDataset
-from tools.monitoring.logger                            import Logger
+from configuration.dataset                 import InputConfig, OutputConfig, Representation
+from configuration.normalization           import ChannelStats, ChannelStrategy, NormMethod
+from pipelines.backbone.dataset.datasets   import MultiRegionDataset, PatchDataset
+from pipelines.backbone.dataset.normalizer import Normalizer
+from pipelines.backbone.dataset.spatial    import Cropper, Patcher
+from pipelines.backbone.dataset.stats      import Stats
 
 
 def _identity_channel_stats(n: int) -> ChannelStats:
@@ -116,8 +113,6 @@ def test_patchdataset_no_nan_in_any_sample(derived, parameters):
         assert np.all(np.isfinite(y))
 
 
-
-
 @pytest.mark.dataset
 def test_patchdataset_angle_channels_in_pi_range(derived, parameters):
     ds, _ = _backbone_dataset(derived, parameters)
@@ -208,109 +203,6 @@ def test_multiregion_index_out_of_range_raises(derived, parameters):
         multi[len(multi)]
 
 
-def _profile_dataset(parameters, tmp_path, **kw):
-    params = [np.ascontiguousarray(np.asarray(parameters[:, :40, :40]))]
-    z_axis = np.linspace(0.0, 1.0, 150, dtype=np.float32)
-    logger = Logger(log_dir=str(tmp_path / "logs"), name="prof_ds", level="ERROR")
-
-    defaults = dict(n_gaussians=params[0].shape[0] // 3, split_name="train", activity_threshold=1e-3, keep_empty_frac=0.05, pixel_subsample=1.0, seed=0)
-    defaults.update(kw)
-
-    return ProfileDataset(param_arrays=params, z_axis=z_axis, logger=logger, **defaults)
-
-
-@pytest.mark.dataset
-def test_profiledataset_sample_shape_and_dtype(parameters, tmp_path):
-    ds            = _profile_dataset(parameters, tmp_path)
-    curve, target = ds[0]
-
-    assert curve.shape == (150,)
-    assert curve.dtype == np.float32
-    np.testing.assert_array_equal(curve, target)
-
-
-@pytest.mark.dataset
-def test_profiledataset_no_nan_and_nonnegative(parameters, tmp_path):
-    ds = _profile_dataset(parameters, tmp_path)
-
-    for i in range(min(len(ds), 50)):
-        curve, _ = ds[i]
-        assert np.all(np.isfinite(curve))
-        assert np.all(curve >= 0.0)
-
-
-@pytest.mark.dataset
-def test_profiledataset_noise_touches_only_the_input(parameters, tmp_path):
-    config    = ProfileAugmentationConfig(p_flip=0.0, p_noise=1.0, noise_std=0.05)
-    augmenter = ProfileAugmenter(config, logger=Logger(log_dir=str(tmp_path / "aug"), name="aug", level="ERROR"), seed=0)
-    ds        = _profile_dataset(parameters, tmp_path, augmenter=augmenter)
-
-    noisy, clean = ds[0]
-
-    assert not np.array_equal(noisy, clean)
-    assert np.all(clean >= 0.0)
-    assert np.std(noisy - clean) == pytest.approx(0.05, rel=0.5)
-
-
-@pytest.mark.dataset
-def test_profiledataset_eval_split_ignores_the_augmenter(parameters, tmp_path):
-    config    = ProfileAugmentationConfig(p_flip=1.0, p_noise=1.0, noise_std=0.05)
-    augmenter = ProfileAugmenter(config, logger=Logger(log_dir=str(tmp_path / "aug"), name="aug", level="ERROR"), seed=0)
-    ds        = _profile_dataset(parameters, tmp_path, augmenter=augmenter, split_name="val")
-
-    noisy, clean = ds[0]
-
-    np.testing.assert_array_equal(noisy, clean)
-
-
-@pytest.mark.dataset
-def test_profiledataset_len_consistent_with_index(parameters, tmp_path):
-    ds = _profile_dataset(parameters, tmp_path)
-
-    assert len(ds) == ds.index.shape[0]
-    assert len(ds) <= ds.amps.shape[0]
-    assert ds.amps.shape[0] == 40 * 40
-
-
-@pytest.mark.dataset
-def test_profiledataset_full_subsample_keeps_all_active(parameters, tmp_path):
-    ds = _profile_dataset(parameters, tmp_path, keep_empty_frac=0.0, pixel_subsample=1.0)
-
-    assert len(ds) == ds.n_active
-
-
-@pytest.mark.dataset
-def test_profiledataset_subsample_reduces_active(parameters, tmp_path):
-    full = _profile_dataset(parameters, tmp_path, keep_empty_frac=0.0, pixel_subsample=1.0)
-    half = _profile_dataset(parameters, tmp_path, keep_empty_frac=0.0, pixel_subsample=0.5)
-
-    assert len(half) < len(full)
-
-
-@pytest.mark.dataset
-def test_profiledataset_index_deterministic_for_seed(parameters, tmp_path):
-    a = _profile_dataset(parameters, tmp_path, seed=11)
-    b = _profile_dataset(parameters, tmp_path, seed=11)
-
-    np.testing.assert_array_equal(a.index, b.index)
-
-
-@pytest.mark.dataset
-def test_profiledataset_index_changes_with_seed(parameters, tmp_path):
-    a = _profile_dataset(parameters, tmp_path, seed=1, pixel_subsample=0.5, keep_empty_frac=0.0)
-    b = _profile_dataset(parameters, tmp_path, seed=2, pixel_subsample=0.5, keep_empty_frac=0.0)
-
-    assert not np.array_equal(a.index, b.index)
-
-
-@pytest.mark.parametrize("pixel_subsample", [0.5, 1.0])
-def test_profiledataset_without_active_pixels_names_the_split_and_threshold(tmp_path, pixel_subsample):
-    empty = np.zeros((15, 8, 8), dtype=np.float32)
-
-    with pytest.raises(ValueError, match="activity threshold"):
-        _profile_dataset(empty, tmp_path, pixel_subsample=pixel_subsample)
-
-
 def _sparse_cube(n_active: int = 4) -> np.ndarray:
     cube = np.zeros((15, 8, 8), dtype=np.float32)
     flat = cube.reshape(15, -1)
@@ -320,35 +212,6 @@ def _sparse_cube(n_active: int = 4) -> np.ndarray:
     flat[2, :n_active] = 0.1
 
     return cube
-
-
-@pytest.mark.parametrize("pixel_subsample", [0.0, -0.5, 1.5])
-def test_profiledataset_rejects_pixel_subsample_outside_its_range(tmp_path, pixel_subsample):
-    with pytest.raises(ValueError, match="pixel_subsample must lie in"):
-        _profile_dataset(_sparse_cube(), tmp_path, pixel_subsample=pixel_subsample)
-
-
-@pytest.mark.parametrize("keep_empty_frac", [-0.1, 1.5])
-def test_profiledataset_rejects_keep_empty_frac_outside_its_range(tmp_path, keep_empty_frac):
-    with pytest.raises(ValueError, match="keep_empty_frac must lie in"):
-        _profile_dataset(_sparse_cube(), tmp_path, keep_empty_frac=keep_empty_frac)
-
-
-def test_profiledataset_counts_the_kept_active_and_empty_pixels(tmp_path):
-    ds = _profile_dataset(_sparse_cube(n_active=4), tmp_path, pixel_subsample=0.5, keep_empty_frac=0.5)
-
-    assert ds.n_active      == 4
-    assert ds.n_kept_active == 2
-    assert ds.n_kept_empty  == 30
-    assert len(ds)          == 32
-
-
-def test_profiledataset_keeps_every_active_pixel_at_full_subsample_and_no_empty_at_zero(tmp_path):
-    ds = _profile_dataset(_sparse_cube(n_active=4), tmp_path, pixel_subsample=1.0, keep_empty_frac=0.0)
-
-    assert ds.n_kept_active == 4
-    assert ds.n_kept_empty  == 0
-    assert len(ds)          == 4
 
 
 def _stack_shim(enabled: set[str], views: dict) -> SimpleNamespace:

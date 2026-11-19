@@ -28,12 +28,7 @@ def _script_path(name):
 
 DEFER_HEAVY_IMPORTS = (
     "train_backbone",
-    "train_jepa",
-    "train_profile_autoencoder",
-    "train_image_autoencoder",
     "infer_backbone",
-    "infer_profile_autoencoder",
-    "infer_image_autoencoder",
     "tune",
     "benchmark",
     "cross_validate",
@@ -47,8 +42,6 @@ DEFER_HEAVY_IMPORTS = (
 
 CLI_MODULES = (
     "infer_backbone",
-    "infer_profile_autoencoder",
-    "infer_image_autoencoder",
     "analyze_param_extraction",
     "generate_dataset",
     "extract_params",
@@ -66,8 +59,6 @@ CLI_MODULES = (
 
 ENTRY_CONFIGS = {
     "infer_backbone"                  : ("configuration.inference",          "BackboneInferenceEntryConfig"),
-    "infer_profile_autoencoder"       : ("configuration.inference",          "ProfileAeInferenceEntryConfig"),
-    "infer_image_autoencoder"         : ("configuration.inference",          "ImageAeInferenceEntryConfig"),
     "extract_params"                  : ("configuration.param_extraction", "ExtractParamsEntryConfig"),
     "generate_dataset"                : ("configuration.synthesis",       "GenerateDatasetEntryConfig"),
     "analyze_param_extraction"        : ("configuration.param_extraction",      "ParamExtractionInferenceConfig"),
@@ -149,39 +140,10 @@ def test_import_does_not_set_cuda_visible_devices(main_on_path, frozen_env, monk
     assert "CUDA_VISIBLE_DEVICES" not in os.environ
 
 
-@pytest.mark.parametrize("name", ("train_image_autoencoder",))
-def test_seed_sweep_entries_hand_their_script_to_the_fanout(name, main_on_path, frozen_env, monkeypatch):
-    import pipelines.shared.training.training_launcher as training_launcher
+def test_the_training_entry_hands_its_script_to_its_launcher(main_on_path, frozen_env, monkeypatch):
+    import pipelines.backbone.training.launcher as launcher_module
 
-    captured = {}
-
-    class _RecordingLauncher:
-        def __init__(self, *args, **kwargs):
-            captured.update(kwargs)
-
-        def run(self):
-            captured["ran"] = True
-
-    module = _import_main(name)
-
-    monkeypatch.setattr(training_launcher, "SeedSweepLauncher", _RecordingLauncher)
-    monkeypatch.setattr(module.EnvironmentPinner, "gpu", lambda *args, **kwargs: None)
-    monkeypatch.setattr(sys, "argv", [f"{name}.py"])
-
-    module.main()
-
-    assert captured["ran"]          is True
-    assert captured["entry_script"] == _script_path(name)
-
-
-@pytest.mark.parametrize(("name", "module_path", "class_name"), (
-    ("train_profile_autoencoder", "pipelines.profile_autoencoder.training.launcher", "ProfileAeTrainingLauncher"),
-    ("train_jepa",                "pipelines.jepa.training.launcher",                "JepaTrainingLauncher"),
-))
-def test_trials_entries_hand_their_script_to_their_launcher(name, module_path, class_name, main_on_path, frozen_env, monkeypatch):
-    import importlib
-
-    launcher_module = importlib.import_module(module_path)
+    name = "train_backbone"
 
     captured = {}
 
@@ -194,7 +156,7 @@ def test_trials_entries_hand_their_script_to_their_launcher(name, module_path, c
 
     module = _import_main(name)
 
-    monkeypatch.setattr(launcher_module, class_name, _RecordingLauncher)
+    monkeypatch.setattr(launcher_module, "BackboneTrainingLauncher", _RecordingLauncher)
     monkeypatch.setattr(module.EnvironmentPinner, "gpu", lambda *args, **kwargs: None)
     monkeypatch.setattr(sys, "argv", [f"{name}.py"])
 
@@ -204,8 +166,8 @@ def test_trials_entries_hand_their_script_to_their_launcher(name, module_path, c
     assert captured["entry_script"] == _script_path(name)
 
 
-@pytest.mark.parametrize("name", ("train_backbone", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder"))
-def test_train_main_defers_heavy_imports(name, tmp_path):
+def test_train_main_defers_heavy_imports(tmp_path):
+    name   = "train_backbone"
     script = _script_path(name)
     code   = f"import sys; sys.path.insert(0, {str(script.parent)!r}); import {name}; print(sorted(module for module in sys.modules if module.split('.')[0] in {{'pipelines', 'models', 'torch', 'pysr', 'juliacall'}}))"
     result = subprocess.run([sys.executable, "-u", "-c", code], cwd=str(tmp_path), capture_output=True, text=True, timeout=120)

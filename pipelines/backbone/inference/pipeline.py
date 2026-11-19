@@ -1,20 +1,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib     import Path
-from typing      import Dict, List, Type
+from pathlib import Path
+from typing  import Dict, List
 
 import numpy as np
 
 from configuration.inference                           import InferenceConfig
-from pipelines.backbone.inference.curve_params         import CurveParamExtractor
 from pipelines.backbone.inference.figures              import FigureComposer
 from pipelines.backbone.inference.flip_consistency     import FlipConsistencyEvaluator
 from pipelines.backbone.inference.normalization_audit  import NormalizationAudit
 from pipelines.backbone.inference.loader               import RunLoader
 from pipelines.backbone.inference.run_metadata_paths   import InferenceMetadata
-from pipelines.backbone.inference.metrics              import Metrics, Result
+from pipelines.backbone.inference.metrics              import Metrics
 from pipelines.backbone.inference.plots                import Plotter
 from pipelines.backbone.inference.predictor            import Predictor
 from pipelines.backbone.inference.failure_modes        import FailureModes
@@ -30,21 +28,12 @@ from tools.runtime.config_cli                          import ConfigCli
 from tools.runtime.git_state                           import GitState
 
 
-@dataclass(frozen=True)
-class InferenceComponents:
-
-    loader_cls              : Type[RunLoader] = RunLoader
-    predictor_cls           : Type[Predictor] = Predictor
-    param_space             : bool            = True
-    embedding_evaluator_cls : Type | None     = None
-
 
 class InferencePipeline:
 
-    def __init__(self, config: InferenceConfig, components: InferenceComponents | None = None, region_pass: RegionPass | None = None) -> None:
+    def __init__(self, config: InferenceConfig, region_pass: RegionPass | None = None) -> None:
 
         self.config      = config
-        self.components  = components if components is not None else InferenceComponents()
         self.region_pass = region_pass
         self.target      = TargetDataset.of(config)
 
@@ -73,8 +62,6 @@ class InferencePipeline:
 
     def _setup_rows(self, cfg: InferenceConfig, meta: InferenceMetadata) -> dict:
 
-        evaluator = self.components.embedding_evaluator_cls
-
         return {
             "Run Directory"       : cfg.run_directory,
             "Output Dir"          : meta.output_dir,
@@ -87,15 +74,11 @@ class InferencePipeline:
             "Render amp floor"    : cfg.render_amp_floor,
             "Code commit"         : GitState.commit(),
             "Resolved config"     : meta.config_path,
-            "Loader"              : self.components.loader_cls.__name__,
-            "Predictor"           : self.components.predictor_cls.__name__,
-            "Param Space"         : self.components.param_space,
-            "Embedding Evaluator" : evaluator.__name__ if evaluator is not None else "none",
         }
 
     def _load_run(self, cfg: InferenceConfig, logger: Logger):
 
-        loader = self.components.loader_cls(cfg.run_directory, logger=logger)
+        loader = RunLoader(cfg.run_directory, logger=logger)
         return loader.load(
             split           = cfg.split,
             batch_size      = cfg.batch_size,
@@ -106,18 +89,9 @@ class InferencePipeline:
             target          = self.target,
         )
 
-    def _build_embedding_evaluator(self, cfg: InferenceConfig, run, logger: Logger):
+    def _predict(self, cfg: InferenceConfig, meta: InferenceMetadata, run, logger: Logger):
 
-        if self.components.embedding_evaluator_cls is None:
-            return None
-
-        return self.components.embedding_evaluator_cls(run, logger, window_kind=cfg.stitch_window)
-
-    def _predict(self, cfg: InferenceConfig, meta: InferenceMetadata, run, evaluator, logger: Logger):
-
-        evaluator_kwargs = {} if evaluator is None else {"embedding_evaluator": evaluator}
-
-        predictor = self.components.predictor_cls(
+        predictor = Predictor(
             run              = run,
             logger           = logger,
             window_kind      = cfg.stitch_window,
@@ -126,7 +100,6 @@ class InferencePipeline:
             meta             = meta,
             cpu_workers      = cfg.cpu_workers,
             render_amp_floor = cfg.render_amp_floor,
-            **evaluator_kwargs,
         )
         return predictor.run_inference()
 
@@ -147,90 +120,19 @@ class InferencePipeline:
             "all_row_idx"   : np.arange(n_rows),
         }
 
-    def _extract_curve_params(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, logger: Logger) -> None:
-
-        if self.components.param_space:
-            return
-
-        if not cfg.extract_curve_params:
-            logger.section("[Inference: Curve Parameter Extraction skipped]")
-            logger.subsection("extract_curve_params is disabled; this run predicts curves directly, so every Gaussian-parameter analysis stays absent from metrics, figures, and report.")
-            return
-
-        if result.params_gt is None:
-            raise ValueError("Curve-parameter extraction needs the exact GT parameters to measure its own floor, but the predictor produced no params_gt cube; a curve-space predictor must stitch the GT parameters alongside the curves.")
-
-        logger.section("[Inference: Curve Parameter Extraction]")
-
-        extractor = CurveParamExtractor(
-            z_axis             = z_axis_np,
-            n_gaussians        = run.n_gaussians,
-            activity_threshold = run.activity_threshold,
-            prominence_frac    = cfg.extract_prominence_frac,
-            n_workers          = cfg.cpu_workers,
-        )
-
-        predicted = extractor.run(result.pred_curves)
-        reference = extractor.run(result.gt_curves)
-
-        result.params_pred   = predicted.params
-        result.params_source = "extracted"
-        result.extract_r2    = predicted.fit_r2
-        result.extract_floor = self._extraction_floor(result, reference.params, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold, logger)
-
-        if cfg.save_cubes:
-            np.save(meta.cube_dir / "params_pred.npy", predicted.params)
-            np.save(meta.cube_dir / "extract_r2.npy",  predicted.fit_r2)
-
-        logger.subsection(f"Extracted {run.n_gaussians} Gaussians per pixel from the predicted curves : median fit R² = {float(np.median(predicted.fit_r2)):.4f}")
-        logger.subsection(f"Extraction floor (same extractor on GT curves vs exact GT parameters) : μ MAE = {result.extract_floor['matched_mu_mae']:.4g}, σ MAE = {result.extract_floor['matched_sig_mae']:.4g}")
-
-    @staticmethod
-    def _extraction_floor(result, reference_params: np.ndarray, z_axis_np: np.ndarray, n_gaussians: int, cpu_workers: int, active_amp_thr: float, logger: Logger) -> dict:
-
-        floor = Result(
-            pred_curves        = result.gt_curves,
-            gt_curves          = result.gt_curves,
-            pixel_mse          = result.pixel_mse,
-            pixel_mae          = result.pixel_mae,
-            pixel_r2           = result.pixel_r2,
-            pixel_cosine       = result.pixel_cosine,
-            pixel_peak_err_idx = result.pixel_peak_err_idx,
-            cube_directory     = result.cube_directory,
-            row_offset         = result.row_offset,
-            col_offset         = result.col_offset,
-            params_pred        = reference_params,
-            params_gt          = result.params_gt,
-        )
-
-        return Metrics(floor, z_axis_np, n_gaussians, cpu_workers, active_amp_thr, logger).matched_gaussian_metrics()
-
     def _evaluate_metrics(self, cfg: InferenceConfig, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict, logger: Logger) -> dict:
 
         param_space = result.params_pred is not None and result.params_gt is not None
 
         global_metrics = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold, logger).compute(
-            z_indices         = indices["all_z_idx"],
-            col_indices       = indices["all_col_idx"],
-            row_indices       = indices["all_row_idx"],
-            param_space       = param_space,
-            slot_organization = result.params_source == "model",
+            z_indices   = indices["all_z_idx"],
+            col_indices = indices["all_col_idx"],
+            row_indices = indices["all_row_idx"],
+            param_space = param_space,
         )
-
-        global_metrics["params_source"] = result.params_source
 
         if global_metrics["n_pixels_gt_empty"]:
             logger.warning(f"{global_metrics['n_pixels_gt_empty']} of {global_metrics['n_pixels']} pixels ({global_metrics['gt_empty_frac'] * 100.0:.2f}%) have an empty GT profile (every label Gaussian at zero amplitude); they score cosine 0 and a peak error measured from bin 0 inside the headline pixel_cosine_gt_* and pixel_peak_* statistics, which the pixel_*_nonempty statistics leave out")
-
-        if result.extract_r2 is not None:
-            finite = result.extract_r2[np.isfinite(result.extract_r2)]
-            global_metrics["extract_fit_r2_mean"]   = float(finite.mean())
-            global_metrics["extract_fit_r2_median"] = float(np.median(finite))
-            global_metrics["extract_fit_r2_p5"]     = float(np.percentile(finite, 5.0))
-
-        if result.extract_floor is not None:
-            for key, value in result.extract_floor.items():
-                global_metrics[f"extract_floor_{key}"] = value
 
         global_metrics["split"]              = run.split_name
         global_metrics["split_region"]       = list(run.split_region.as_tuple())
@@ -251,28 +153,6 @@ class InferencePipeline:
 
         Metrics.write_json(global_metrics, meta.metrics_path)
         return global_metrics
-
-    def _evaluate_embeddings(self, cfg: InferenceConfig, meta: InferenceMetadata, evaluator, result, global_metrics: dict, logger: Logger) -> None:
-
-        if evaluator is None:
-            return
-
-        logger.section("[Inference: Embedding Evaluation]")
-
-        metrics, maps = evaluator.run(pixel_mse=result.pixel_mse)
-
-        result.embedding_maps = maps
-
-        global_metrics.update(metrics)
-        Metrics.write_json(global_metrics, meta.metrics_path)
-
-        if cfg.save_cubes:
-            np.save(meta.cube_dir / "embedding_error.npy",  maps.embedding_error)
-            np.save(meta.cube_dir / "embedding_cosine.npy", maps.embedding_cosine)
-            np.save(meta.cube_dir / "decode_mse.npy",       maps.decode_mse)
-            np.save(meta.cube_dir / "chain_mse.npy",        maps.chain_mse)
-
-        logger.subsection(f"Embeddings evaluated : {len(metrics)} metrics merged into global metrics")
 
     def _evaluate_label_quality(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, global_metrics: dict, logger: Logger) -> None:
 
@@ -325,7 +205,7 @@ class InferencePipeline:
 
         logger.section("[Inference: Flip Consistency]")
 
-        evaluator = FlipConsistencyEvaluator(run, logger, window_kind=cfg.stitch_window, render_amp_floor=cfg.render_amp_floor, render_params=self.components.param_space)
+        evaluator = FlipConsistencyEvaluator(run, logger, window_kind=cfg.stitch_window, render_amp_floor=cfg.render_amp_floor)
         flip_map  = evaluator.run()
 
         result.flip_consistency = flip_map
@@ -498,21 +378,17 @@ class InferencePipeline:
         meta, logger, plotter = self._setup(cfg)
         try:
             CompletionMarker.clear(meta.output_dir)
-            run       = self._load_run(cfg, logger)
-            evaluator = self._build_embedding_evaluator(cfg, run, logger)
-            result    = self._predict(cfg, meta, run, evaluator, logger)
+            run    = self._load_run(cfg, logger)
+            result = self._predict(cfg, meta, run, logger)
 
             z_axis_np        = np.asarray(run.z_axis, dtype=np.float64)
             _N_z, _row, _col = result.pred_curves.shape
-
-            self._extract_curve_params(cfg, meta, run, result, z_axis_np, logger)
 
             logger.section("[Inference: Metrics]")
             indices        = self._compute_slice_indices(cfg, _N_z, _row, _col)
             global_metrics = self._evaluate_metrics(cfg, result, z_axis_np, run, meta, indices, logger)
             logger.subsection(f"Global metrics written : {meta.metrics_path}")
 
-            self._evaluate_embeddings(cfg, meta, evaluator, result, global_metrics, logger)
             self._evaluate_label_quality(cfg, meta, run, result, z_axis_np, global_metrics, logger)
             self._evaluate_cube_ssim(cfg, meta, run, result, z_axis_np, global_metrics, indices, logger)
             self._evaluate_flip_consistency(cfg, meta, run, result, global_metrics, logger)

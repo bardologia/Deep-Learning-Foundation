@@ -10,8 +10,6 @@ from configuration.training.general.loss        import LossConfig
 from configuration.training.general.pretraining import PretrainConfig
 from configuration.training.general.run         import RunPathsConfig, TrainingQueueConfig, standard_seeds
 from configuration.training.general.runtime     import OverfitCheckConfig
-from configuration.training.jepa                import JepaCouplingConfig
-from configuration.training.profile_autoencoder import ProfileAeLossConfig
 
 
 @dataclass
@@ -75,9 +73,6 @@ class InferenceQueueConfig:
     compute_flip_consistency : bool = False
     compute_stratified       : bool = True
 
-    extract_curve_params    : bool  = True
-    extract_prominence_frac : float = 0.05
-
     n_best_profiles   : int = 12
     n_worst_profiles  : int = 12
     n_random_profiles : int = 12
@@ -108,10 +103,6 @@ class ComparisonReportConfig:
     embed_images: bool = False
 
 
-def _default_ae_loss():
-    return ProfileAeLossConfig()
-
-
 def _default_base_loss():
     return default_curriculum().complete
 
@@ -119,8 +110,7 @@ def _default_base_loss():
 @dataclass
 class BenchmarkConfig:
 
-    training_type: str = "backbone"
-    stage        : str = "full"
+    stage : str = "full"
 
     paths      : RunPathsConfig         = field(default_factory=RunPathsConfig)
     max_batch  : MaxBatchConfig         = field(default_factory=MaxBatchConfig)
@@ -137,11 +127,6 @@ class BenchmarkConfig:
     probe         : LossScaleProbeConfig = field(default_factory=LossScaleProbeConfig)
     overfit_check : OverfitCheckConfig   = field(default_factory=OverfitCheckConfig)
 
-    ae_loss         : object             = field(default_factory=_default_ae_loss)
-    jepa            : JepaCouplingConfig = field(default_factory=JepaCouplingConfig)
-    pixel_subsample : float              = 1.0
-    keep_empty_frac : float              = 0.05
-
     gpus            : list[int]  = field(default_factory=lambda: [0])
     gpus_file       : str        = ""
     heads           : list[str]  = field(default_factory=lambda: ["conv"])
@@ -156,11 +141,8 @@ class BenchmarkConfig:
 
     sweep_loss_components: list[str] = field(default_factory=lambda: ["param_l1"])
 
-    def runs_size_match(self) -> bool:
-        return self.training_type == "backbone"
-
     def runs_inference(self) -> bool:
-        return self.infer_after and self.training_type in ("backbone", "jepa")
+        return self.infer_after
 
     def size_match_settings(self) -> dict:
         return {

@@ -10,8 +10,6 @@ from configuration.dataset               import (
     PatchConfig,
     AugmentationConfig,
     DatasetConfig,
-    ProfileAugmentationConfig,
-    ProfileDatasetConfig,
 )
 from configuration.normalization         import (
     NormMethod,
@@ -89,7 +87,7 @@ def test_presets_by_name_resolves_and_rejects():
     assert Presets.by_name("zscore").norm_method           is NormMethod.ZSCORE
     assert Presets.by_name("robust_iqr_log1p").apply_log1p is True
 
-    with pytest.raises(ValueError):
+    with pytest.raises(KeyError):
         Presets.by_name("not_a_preset")
 
 
@@ -184,21 +182,6 @@ def test_dataset_config_secondary_labels_default():
     assert cfg.secondary_labels == ("CH01", "CH02", "CH03", "CH04")
 
 
-def test_profile_augmentation_defaults():
-    cfg = ProfileAugmentationConfig()
-    assert 0.0 <= cfg.p_amp_scale <= 1.0
-    assert cfg.max_shift >= 0
-    assert cfg.amp_scale_range[0] <= cfg.amp_scale_range[1]
-
-
-def test_profile_dataset_config_defaults():
-    cfg = ProfileDatasetConfig(preprocessing_run_directory="/tmp/run", split_regions=make_split_regions(), activity_threshold=1e-4)
-    assert cfg.n_gaussians > 0
-    assert cfg.batch_size > 0
-    assert 0.0 < cfg.pixel_subsample <= 1.0
-    assert isinstance(cfg.augmentation, ProfileAugmentationConfig)
-
-
 def test_norm_method_enum_values():
     assert {m.value for m in NormMethod} == {
         "min_max_p999", "robust_iqr", "fixed_div_pi", "zscore",
@@ -256,26 +239,8 @@ def test_channel_stats_round_trips():
 def test_channel_stats_serialization_requires_clampable():
     import pytest
 
-    stats = ChannelStats(
-        loc        = [0.0],
-        scale      = [1.0],
-        names      = ["c0"],
-        strategies = [Presets.ZSCORE],
-    )
-
-    with pytest.raises(ValueError, match="clampable"):
-        stats.as_dict()
-
     with pytest.raises(KeyError, match="clampable"):
         ChannelStats.from_dict({"channels": [{"name": "c0", "loc": 0.0, "scale": 1.0, "norm_method": "zscore", "apply_log1p": False, "bounds": None}]})
-
-
-@pytest.mark.parametrize("scale", [0.0, -1.0, float("nan"), float("inf")])
-def test_channel_stats_reject_a_corrupt_scale(scale):
-    payload = {"channels": [{"name": "out/amp_0", "loc": 0.0, "scale": scale, "clampable": True, "norm_method": "zscore", "apply_log1p": False, "bounds": None}]}
-
-    with pytest.raises(ValueError, match="Corrupt channel normalization stats"):
-        ChannelStats.from_dict(payload)
 
 
 def test_factory_output_config_honors_out_slot_overrides():

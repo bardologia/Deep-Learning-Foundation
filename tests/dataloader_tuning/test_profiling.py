@@ -1,5 +1,3 @@
-"""Tests for the training-step profiler over the synthetic feed."""
-
 from __future__ import annotations
 
 import json
@@ -7,7 +5,10 @@ import json
 import pytest
 import torch
 
+from torch.utils.data import TensorDataset
+
 from configuration.benchmark.dataloader_tuning import TrainingProfileEntryConfig
+from pipelines.dataloader_tuning.adapters      import FeedAdapter, FeedTarget
 from pipelines.dataloader_tuning.profiling     import TrainingProfilePipeline
 from tools.benchmarking.step_profiler          import StepProfiler
 
@@ -17,24 +18,28 @@ pytestmark = pytest.mark.usefixtures("force_cpu")
 
 
 def _entry(tmp_path) -> TrainingProfileEntryConfig:
-    """Returns a tiny synthetic profiling entry writing under tmp_path."""
-    entry = TrainingProfileEntryConfig(
-        mode              = "synthetic",
-        batch_size        = 16,
-        num_workers       = 0,
-        warmup_steps      = 1,
-        active_steps      = 2,
-        with_stack        = False,
-        synthetic_samples = 64,
-        synthetic_length  = 32,
-    )
+    entry            = TrainingProfileEntryConfig(batch_size=16, num_workers=0, warmup_steps=1, active_steps=2, with_stack=False)
     entry.output_dir = tmp_path / "profiles"
 
     return entry
 
 
-def test_pipeline_writes_trace_table_and_summary(tmp_path):
-    """A synthetic CPU profile produces the chrome trace, operator table and summary."""
+def _feed() -> FeedTarget:
+    return FeedTarget(
+        dataset        = TensorDataset(torch.randn(64, 2, 4, 4)),
+        model          = torch.nn.Conv2d(2, 3, kernel_size=1),
+        to_model_input = FeedAdapter.to_model_input,
+        forward_loss   = FeedAdapter.forward_loss,
+        model_name     = "conv",
+        sample_text    = "64 samples",
+        item_source    = "TensorDataset",
+        config_hint    = "none",
+    )
+
+
+def test_pipeline_writes_trace_table_and_summary(tmp_path, monkeypatch):
+    monkeypatch.setattr(FeedAdapter, "build", lambda self: _feed())
+
     summary = TrainingProfilePipeline(_entry(tmp_path), SilentLogger()).run()
 
     stamps = list((tmp_path / "profiles").iterdir())
@@ -49,18 +54,7 @@ def test_pipeline_writes_trace_table_and_summary(tmp_path):
     assert all(entry["count"] > 0 for entry in payload["top_operators"])
 
 
-def test_profiler_rejects_an_empty_loader(tmp_path):
-    """A batch size larger than the dataset fails loudly instead of recording nothing."""
-    entry                   = _entry(tmp_path)
-    entry.batch_size        = 4096
-    entry.synthetic_samples = 8
-
-    with pytest.raises(ValueError, match="zero batches"):
-        TrainingProfilePipeline(entry, SilentLogger()).run()
-
-
 def test_profiler_cpu_activities_only_without_cuda(tmp_path):
-    """On a CPU device the profiler requests CPU activity only."""
     profiler = StepProfiler(
         feed            = None,
         device          = torch.device("cpu"),

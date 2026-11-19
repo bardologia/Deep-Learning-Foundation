@@ -15,7 +15,7 @@ from pipelines.backbone.inference.pipeline          import InferencePipeline
 from pipelines.processing.synthesis.pipeline        import SyntheticDatasetPipeline
 from pipelines.shared.inference.inference_scheduler import InferenceScheduler
 from pipelines.shared.inference.metadata            import TargetDataset
-from pipelines.shared.inference.run_classifier      import InferenceLayout, RunType
+from pipelines.shared.inference.run_classifier      import InferenceLayout
 
 from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, build_run_directory
 from tests.conftest                    import SilentLogger
@@ -103,9 +103,9 @@ def test_a_run_scored_on_a_target_dataset_stamps_under_its_cross_dataset_tree(tm
     assert "training_dataset" in report
     assert ", ".join(TARGET_CHANNELS) in report
 
-    entry     = SimpleNamespace(runs_dir=str(run_dir), run_filter=[], gpus=[0], gpus_file="", poll_interval_s=1, skip_completed=True)
     block     = dataclasses.replace(config, run_directory=Path("."), output_subdir=None)
-    scheduler = InferenceScheduler(entry, Path("main/x.py"), RunType.BACKBONE, block=block)
+    entry     = SimpleNamespace(runs_dir=str(run_dir), run_filter=[], gpus=[0], gpus_file="", poll_interval_s=1, skip_completed=True, inference=block)
+    scheduler = InferenceScheduler(entry, Path("main/x.py"))
 
     assert scheduler._inference_state(run_dir, SilentLogger()) == ("done", True)
 

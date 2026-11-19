@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from configuration.benchmark                        import BenchmarkConfig
-from models                                         import BACKBONE_HEADS, config_registry
+from models                                         import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
 from pipelines.shared.model.model_builder           import ModelBuilder
 from pipelines.shared.orchestration.staged_pipeline import StagedPipeline
 
@@ -13,9 +13,8 @@ from pipelines.benchmark.stages import ComparisonStage, InferenceStage, MaxBatch
 
 class BenchmarkPipeline(StagedPipeline):
 
-    LOGGER_NAME     = "benchmark_pipeline"
-    SUPPORTED_TYPES = ("backbone", "jepa", "profile_autoencoder")
-    STAGES          = ("full", "prepare", "compare")
+    LOGGER_NAME = "benchmark_pipeline"
+    STAGES      = ("full", "prepare", "compare")
 
     def __init__(self, config: BenchmarkConfig, entry_script: Path, resumed=None) -> None:
         super().__init__(config, entry_script, resumed=resumed)
@@ -31,12 +30,7 @@ class BenchmarkPipeline(StagedPipeline):
 
     @classmethod
     def _model_keys(cls, config: BenchmarkConfig) -> list[str]:
-        registry = config_registry(config.training_type)
-
-        if config.training_type != "backbone":
-            return list(registry.keys())
-
-        return [ModelBuilder.model_key(name, head) for name in registry for head in config.heads]
+        return [ModelBuilder.model_key(name, head) for name in BACKBONE_CONFIG_REGISTRY for head in config.heads]
 
     @classmethod
     def unknown_skips(cls, config: BenchmarkConfig) -> list[str]:
@@ -47,9 +41,6 @@ class BenchmarkPipeline(StagedPipeline):
 
     @classmethod
     def validate_sweep(cls, config: BenchmarkConfig) -> None:
-        if config.training_type not in cls.SUPPORTED_TYPES:
-            raise SystemExit(f"benchmark does not support training_type '{config.training_type}'; supported: {', '.join(cls.SUPPORTED_TYPES)}")
-
         if config.stage not in cls.STAGES:
             raise SystemExit(f"unknown benchmark stage '{config.stage}'; valid: {', '.join(cls.STAGES)}")
 
@@ -58,15 +49,14 @@ class BenchmarkPipeline(StagedPipeline):
         unknown = [head for head in config.heads if head not in BACKBONE_HEADS]
         if unknown:
             raise SystemExit(f"unknown head(s) {unknown}; valid: {', '.join(BACKBONE_HEADS)}")
-        if config.training_type == "backbone" and not config.heads:
+        if not config.heads:
             raise SystemExit("heads is empty; select at least one output head to benchmark")
 
         unknown_skips = cls.unknown_skips(config)
         if unknown_skips:
-            raise SystemExit(f"skip_models lists {unknown_skips}, which match no {config.training_type} model key and no backbone name, so the model meant to be skipped would be benchmarked; valid keys: {', '.join(cls._model_keys(config))}")
+            raise SystemExit(f"skip_models lists {unknown_skips}, which match no model key and no backbone name, so the model meant to be skipped would be benchmarked; valid keys: {', '.join(cls._model_keys(config))}")
 
-        if config.runs_size_match():
-            config.size_match.reference_model = SizeMatchStage.resolve_reference(config.size_match.reference_model, cls.select_models(config), config.heads)
+        config.size_match.reference_model = SizeMatchStage.resolve_reference(config.size_match.reference_model, cls.select_models(config), config.heads)
 
     def _validate_sweep(self) -> None:
         self._begin_stage("validation")
@@ -126,11 +116,7 @@ class BenchmarkPipeline(StagedPipeline):
         self._begin_stage("inference")
 
         if not self.config.runs_inference():
-            if self.config.infer_after:
-                self.logger.warning(f"infer_after is on, but training_type '{self.config.training_type}' has no inference stage in the benchmark; it is ignored")
-
-            reason = "infer_after is off" if not self.config.infer_after else f"training_type '{self.config.training_type}' has no inference stage"
-            self.logger.subsection(f"Inference skipped: {reason}; models are compared on their training checkpoints alone")
+            self.logger.subsection("Inference skipped: infer_after is off; models are compared on their training checkpoints alone")
             self._mark_stage("inference", "skipped")
             return []
 
@@ -178,8 +164,7 @@ class BenchmarkPipeline(StagedPipeline):
             self.logger.info(f"Comparison stage done: {comparison_dir}")
             return
 
-        if self.config.runs_size_match():
-            self._run_size_match()
+        self._run_size_match()
 
         self._run_max_batch()
 

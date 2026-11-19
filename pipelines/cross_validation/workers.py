@@ -8,10 +8,12 @@ import numpy as np
 
 from configuration.cross_validation import CrossValidationConfig
 from pipelines.shared.comparison.trial_collection import TrainingResultsIndex, TrialCollector, TrialRecord
+from pipelines.shared.inference.metadata          import CompletedInference
+from pipelines.shared.inference.run_classifier    import InferenceLayout
 from pipelines.shared.orchestration.unit_manifest import UnitResultsByRun
 from pipelines.shared.training.unit_resume        import UnitResume
 from pipelines.shared.training.worker_base        import WorkerBase
-from pipelines.cross_validation.folds             import FoldConfigFactory, FoldFamily, FoldNaming, FoldPlanner, FoldRunNaming, FoldUnitManifest
+from pipelines.cross_validation.folds             import FoldConfigFactory, FoldNaming, FoldPlanner, FoldRunNaming, FoldUnitManifest
 from tools.data.io           import FileIO
 from tools.metrics.scoring   import SeedAggregation
 from tools.data.regions      import SplitRegions
@@ -22,11 +24,10 @@ class FoldCollector(TrialCollector):
 
     CHECKPOINT_KEYS = ("best_val_loss", "best_epoch", "n_train_epochs")
 
-    def __init__(self, run_dir: Path, splits: list[str], training_type: str, logger: Logger) -> None:
+    def __init__(self, run_dir: Path, splits: list[str], logger: Logger) -> None:
         super().__init__(run_dir=run_dir, logger=logger, inference_split=splits[0] if splits else None)
         self.training_dir    = run_dir / "folds"
         self.splits          = splits
-        self.training_type   = training_type
         self.seed_dispersion = {}
         self.scored_splits   = {}
 
@@ -39,7 +40,7 @@ class FoldCollector(TrialCollector):
     def _attach_inference(self, record: TrialRecord) -> None:
         scored = []
         for split in self.splits:
-            inference_dir = FoldFamily.split_inference_dir(record.run_dir, self.training_type, split)
+            inference_dir = self._split_inference_dir(record.run_dir, split)
             if inference_dir is not None and (inference_dir / "metrics.json").exists():
                 scored.append(split)
 
@@ -48,7 +49,7 @@ class FoldCollector(TrialCollector):
         if not self.splits or self.splits[0] not in scored:
             return
 
-        fields = self._inference_fields(FoldFamily.split_inference_dir(record.run_dir, self.training_type, self.splits[0]))
+        fields = self._inference_fields(self._split_inference_dir(record.run_dir, self.splits[0]))
         for name, value in fields.items():
             setattr(record, name, value)
 
@@ -72,8 +73,11 @@ class FoldCollector(TrialCollector):
             else:
                 self.logger.info(summary)
 
+    def _split_inference_dir(self, run_dir: Path, split: str) -> Path | None:
+        return CompletedInference.latest(InferenceLayout.base(run_dir), split)
+
     def _split_view(self, record: TrialRecord, split: str) -> TrialRecord:
-        inference_dir = FoldFamily.split_inference_dir(record.run_dir, self.training_type, split)
+        inference_dir = self._split_inference_dir(record.run_dir, split)
 
         if inference_dir is None or not (inference_dir / "metrics.json").exists():
             return replace(record, inference_dir=None, metrics={}, figures=[], animations=[], report_path=None)
@@ -224,7 +228,7 @@ class FoldTrainingWorker(CrossValidationWorker):
         planner = self.factory.planner()
         regions = {split: planner.inference_region(fold_index, split).as_tuple() for split in FoldPlanner.INFERENCE_SPLITS}
 
-        return FoldUnitManifest.write(self.unit_directory(run_name), run_tag=self.run_tag, unit=run_name, fold_index=fold_index, seed=seed, training_type=self.config.training_type, inference_regions=regions)
+        return FoldUnitManifest.write(self.unit_directory(run_name), run_tag=self.run_tag, unit=run_name, fold_index=fold_index, seed=seed, inference_regions=regions)
 
     def _run_backbone(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
         from pipelines.backbone.training.pipeline import TrainingPipeline
@@ -246,97 +250,7 @@ class FoldTrainingWorker(CrossValidationWorker):
 
         pipeline.run(probe_config=self.config.probe)
 
-    def _run_jepa(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
-        from pipelines.jepa.training.pipeline import TrainingPipeline
-
-        TrainingPipeline(self._jepa_entry_config(run_name, seed), split_regions=split_regions).run()
-
-    def _jepa_entry_config(self, run_name: str, seed: int | None):
-        from configuration.training import JepaEntryConfig
-
-        cv   = self.config
-        jepa = cv.jepa
-
-        return JepaEntryConfig(
-            run_name        = run_name,
-            backbone_name   = cv.backbone_name,
-            backbone_head   = cv.backbone_head,
-            seed            = cv.seed if seed is None else seed,
-            logdir          = self.run_dir / "folds",
-            model_overrides = cv.model_overrides,
-            input           = cv.input,
-            paths           = cv.paths,
-            training        = cv.training,
-            normalization   = cv.normalization,
-            augmentation    = cv.augmentation,
-            overfit_check   = cv.overfit_check,
-            **jepa.entry_kwargs(),
-        )
-
-    def _run_profile_autoencoder(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
-        from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
-
-        TrainingPipeline(self._ae_entry_config(run_name, seed), split_regions=split_regions).run()
-
-    def _ae_entry_config(self, run_name: str, seed: int | None):
-        from configuration.training import ProfileAeEntryConfig
-
-        cv = self.config
-        ae = cv.autoencoder
-
-        return ProfileAeEntryConfig(
-            run_name             = run_name,
-            seed                 = cv.seed if seed is None else seed,
-            logdir               = self.run_dir / "folds",
-            pixel_subsample      = ae.pixel_subsample,
-            keep_empty_frac      = ae.keep_empty_frac,
-            profile_augmentation = ae.profile_augmentation,
-            ae_model_name        = ae.ae_model_name,
-            model_overrides      = cv.model_overrides,
-            ae_loss              = ae.ae_loss,
-            encoder_lr           = ae.encoder_lr,
-            decoder_lr           = ae.decoder_lr,
-            encoder_wd           = ae.encoder_wd,
-            decoder_wd           = ae.decoder_wd,
-            paths                = cv.paths,
-            training             = cv.training,
-            overfit_check        = cv.overfit_check,
-        )
-
-    def _run_image_autoencoder(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
-        from pipelines.image_autoencoder.training.pipeline import TrainingPipeline
-
-        TrainingPipeline(self._image_ae_entry_config(run_name, seed), split_regions=split_regions).run()
-
-    def _image_ae_entry_config(self, run_name: str, seed: int | None):
-        from configuration.training import ImageAeEntryConfig
-
-        cv = self.config
-        ae = cv.image_autoencoder
-
-        return ImageAeEntryConfig(
-            run_name        = run_name,
-            seed            = cv.seed if seed is None else seed,
-            logdir          = self.run_dir / "folds",
-            ae_model_name   = ae.ae_model_name,
-            model_overrides = cv.model_overrides,
-            ae_loss         = ae.ae_loss,
-            paths           = cv.paths,
-            training        = cv.training,
-            normalization   = cv.normalization,
-            augmentation    = cv.augmentation,
-            overfit_check   = cv.overfit_check,
-        )
-
     def run(self, fold_index: int, seed: int | None = None, run_name: str | None = None) -> None:
-        dispatch = {
-            "backbone"            : self._run_backbone,
-            "jepa"                : self._run_jepa,
-            "profile_autoencoder" : self._run_profile_autoencoder,
-            "image_autoencoder"   : self._run_image_autoencoder,
-        }
-
-        training_type = FoldFamily.validate(self.config.training_type)
         split_regions = self.factory.planner().plan(fold_index).split_regions
         run_name      = self.unit_run_name(fold_index, seed, run_name)
 
@@ -345,7 +259,7 @@ class FoldTrainingWorker(CrossValidationWorker):
         if self.skip_complete(self.unit_directory(run_name), "fold_training", self.config.resume):
             return
 
-        dispatch[training_type](fold_index, seed, split_regions, run_name)
+        self._run_backbone(fold_index, seed, split_regions, run_name)
 
 
 class FoldInferenceWorker(CrossValidationWorker):
@@ -355,39 +269,17 @@ class FoldInferenceWorker(CrossValidationWorker):
         logger.info(message)
         logger.close()
 
-    def _run_spatial(self, run_directory: Path, split: str, fold_index: int) -> None:
-        from pipelines.backbone.inference.pipeline           import InferencePipeline
-        from pipelines.shared.inference.inference_components import InferenceComponentsResolver
+    def _run_inference(self, run_directory: Path, split: str, fold_index: int) -> None:
+        from pipelines.backbone.inference.pipeline import InferencePipeline
 
-        components = InferenceComponentsResolver.for_run(run_directory)
-
-        InferencePipeline(self.factory.fold_inference_config(run_directory, split, fold_index), components=components).run()
-
-    def _run_profile_autoencoder(self, run_directory: Path, split: str, fold_index: int) -> None:
-        from pipelines.profile_autoencoder.inference.pipeline import ProfileAeInferencePipeline
-
-        ProfileAeInferencePipeline(self.factory.fold_profile_ae_inference_config(run_directory, split)).run()
-
-    def _run_image_autoencoder(self, run_directory: Path, split: str, fold_index: int) -> None:
-        from pipelines.image_autoencoder.inference.pipeline import ImageAeInferencePipeline
-
-        ImageAeInferencePipeline(self.factory.fold_image_ae_inference_config(run_directory, split)).run()
+        InferencePipeline(self.factory.fold_inference_config(run_directory, split, fold_index)).run()
 
     def run(self, fold_index: int, seed: int | None = None, run_name: str | None = None) -> None:
-        dispatch = {
-            "backbone"            : self._run_spatial,
-            "jepa"                : self._run_spatial,
-            "profile_autoencoder" : self._run_profile_autoencoder,
-            "image_autoencoder"   : self._run_image_autoencoder,
-        }
-
-        training_type = FoldFamily.validate(self.config.training_type)
         run_directory = self.unit_directory(self.unit_run_name(fold_index, seed, run_name))
-        subdir        = FoldFamily.inference_subdir(training_type)
         resume        = UnitResume(run_directory, enabled=self.config.resume)
 
         for split in self.config.inference_splits:
-            if resume.skip_inference(split, subdir=subdir):
+            if resume.skip_inference(split):
                 continue
 
-            dispatch[training_type](run_directory, split, fold_index)
+            self._run_inference(run_directory, split, fold_index)

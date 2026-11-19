@@ -1,21 +1,13 @@
 "use strict";
 
 class ModelGallery {
-  constructor(listEl, detailEl, endpoint = "/api/backbones", kind = "backbone") {
+  constructor(listEl, detailEl) {
     this.listEl = listEl;
     this.detailEl = detailEl;
-    this.endpoint = endpoint;
-    this.kind = kind;
+    this.endpoint = "/api/backbones";
     this.families = [];
     this.flat = [];
     this.activeKey = null;
-  }
-
-  async reload(endpoint, kind) {
-    this.endpoint = endpoint;
-    this.kind = kind;
-    this.activeKey = null;
-    await this.load();
   }
 
   async load() {
@@ -92,29 +84,23 @@ class ModelGallery {
       return;
     }
 
-    const isBackbone = this.kind === "backbone";
-    const isJepa     = this.kind === "jepa";
-    const isAe       = !isBackbone && !isJepa;
-    const built   = isJepa ? window.ModelDiagram.buildJepa(m) : isAe ? window.ModelDiagram.buildAE(m, this.kind) : window.ModelDiagram.build(m);
+    const built   = window.ModelDiagram.build(m);
     this.blockMap = built.blocks;
     const diagram = built.network;
-    const legend  = isBackbone ? this._legend(m) : isJepa ? this._jepaLegend(m) : this._aeLegend(m);
-    const keyLabel = isBackbone ? "backbone key" : isJepa ? "variant key" : "model key";
-    const specA    = isBackbone ? "skip mechanism" : isJepa ? "components" : "encoder / decoder";
-    const specB    = isBackbone ? "output head" : isJepa ? "objective" : "latent";
+    const legend  = this._legend(m);
 
     this.detailEl.innerHTML =
       `<div class="mdetail__head">` +
       `<div><span class="mdetail__family">${m.family}</span>` +
-      `<h3 class="mdetail__name">${m.name}${m.recommended ? `<span class="mdetail__best">${isBackbone ? "best in benchmark" : "default"}</span>` : ""}</h3></div>` +
+      `<h3 class="mdetail__name">${m.name}${m.recommended ? `<span class="mdetail__best">best in benchmark</span>` : ""}</h3></div>` +
       `<span class="mdetail__params">${m.params} params</span>` +
       `</div>` +
       `<div class="mdetail__diagram">${diagram}</div>` +
       legend +
       `<div class="mdetail__specs">` +
-      `<div class="spec"><span class="spec__k">${keyLabel}</span><span class="spec__v mono">${m.key}</span></div>` +
-      `<div class="spec"><span class="spec__k">${specA}</span><span class="spec__v">${m.skip}</span></div>` +
-      `<div class="spec"><span class="spec__k">${specB}</span><span class="spec__v">${m.head}</span></div>` +
+      `<div class="spec"><span class="spec__k">backbone key</span><span class="spec__v mono">${m.key}</span></div>` +
+      `<div class="spec"><span class="spec__k">skip mechanism</span><span class="spec__v">${m.skip}</span></div>` +
+      `<div class="spec"><span class="spec__k">output head</span><span class="spec__v">${m.head}</span></div>` +
       `</div>` +
       `<div class="mdetail__notes" data-note-host><span class="mdetail__when-label">Architecture notes</span>` +
       `<div class="mdetail__note-body"><span class="mdetail__note-loading">${ThinkingOrb.busy("composing", "loading notes…")}</span></div></div>`;
@@ -147,25 +133,6 @@ class ModelGallery {
     void this.detailEl.offsetWidth;
     this.detailEl.classList.add("is-swap");
     this._loadNote(h);
-  }
-
-  _aeLegend(m) {
-    const what = this.kind === "image_autoencoder" ? "image stack" : "z profile";
-    return (
-      `<div class="mdetail__legend">` +
-      `<span class="legend__dot"></span>The encoder compresses the ${what} into the embedding` +
-      `<span class="legend__sep">/</span>the decoder reconstructs it, and the trained encoder seeds JEPA.` +
-      `</div>`
-    );
-  }
-
-  _jepaLegend(m) {
-    return (
-      `<div class="mdetail__legend">` +
-      `<span class="legend__dot"></span>Pretrained autoencoders are imported and frozen or fine-tuned` +
-      `<span class="legend__sep">/</span>the backbone is the trainable predictor. Click a subsystem to expand its full architecture.` +
-      `</div>`
-    );
   }
 
   async _loadNote(m) {
@@ -340,14 +307,7 @@ class ModelGallery {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = el.getAttribute("data-block");
-        let side;
-        if (this.kind === "jepa") {
-          const dR = this.detailEl.querySelector(".mdetail__diagram").getBoundingClientRect();
-          const eR = el.getBoundingClientRect();
-          side = (eR.left + eR.width / 2) < (dR.left + dR.width / 2) ? "right" : "left";
-        } else {
-          side = id === "enc" ? "left" : id === "dec" ? "right" : "bottom";
-        }
+        const side = id === "enc" ? "left" : id === "dec" ? "right" : "bottom";
         this._openBlock(id, el, 0, side, null);
       });
     });

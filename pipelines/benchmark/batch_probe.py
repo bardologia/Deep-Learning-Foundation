@@ -4,7 +4,6 @@ from __future__ import annotations
 import gc
 import traceback
 from pathlib import Path
-from typing  import Callable
 
 import torch
 
@@ -22,11 +21,12 @@ from tools.training.pretraining.batch_finder import BatchSizeFinder, TrainStepMe
 from tools.training.pretraining.lr_finder    import LrRangeTest
 
 
-class MaxBatchProbeBase:
+class MaxBatchProbe:
 
-    def __init__(self, config: BenchmarkConfig, model_name: str, work_dir: Path) -> None:
+    def __init__(self, config: BenchmarkConfig, model_name: str, overrides: dict, work_dir: Path) -> None:
         self.config     = config
         self.model_name = model_name
+        self.overrides  = overrides
 
         self.budget_gb     = config.max_batch.vram_budget_gb
         self.ceiling       = config.max_batch.max_batch
@@ -42,11 +42,69 @@ class MaxBatchProbeBase:
     def _measure_context(self) -> float:
         return TrainStepMemoryProbe.measure_context(self.device)
 
-    def _build_probe_setup(self) -> tuple:
-        raise NotImplementedError
+    def _build_context(self):
+        factory        = ConfigFactory(self.config)
+        dataset_config = factory.training_dataset_config()
+        trainer_config = factory.training_trainer_config(logdir=self.work_dir)
 
-    def _candidates(self) -> list[int]:
-        return BatchSizeFinder.candidates(self.ceiling)
+        dataset_config.input_config = self.config.input
+        trainer_config.curriculum   = LossComponentCatalog.combined_curriculum(self.config.sweep_loss_components, base=self.config.loss)
+
+        name, _head              = ModelBuilder.split_key(self.model_name)
+        patch                    = dataset_config.patch
+        patch.size, patch.stride = ModelBuilder.square_patch(name, patch.size, patch.stride)
+
+        gaussian_cfg               = trainer_config.gaussian
+        dataset_config.n_gaussians = gaussian_cfg.n_default_gaussians
+
+        dataset_pipeline = DatasetPipeline(config=dataset_config, training_run_directory=self.work_dir, activity_threshold=gaussian_cfg.activity_threshold, logger=self.logger, seed=self.seed)
+
+        profile_length        = dataset_pipeline.layout.profile_length
+        dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, profile_length)
+
+        _train_loader, _val_loader, _test_loader, datasets = dataset_pipeline.run()
+
+        return trainer_config, dataset_config, datasets["train"], gaussian_cfg
+
+    def _build_model(self, dataset_config, dataset, gaussian_cfg):
+        name, head   = ModelBuilder.split_key(self.model_name)
+        model_config = ModelBuilder.config_from_registry(name, self.overrides, head=head)
+
+        in_channels  = dataset.input_channels
+        out_channels = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, gaussian_cfg.n_default_gaussians)
+
+        overrides = {"in_channels": in_channels, "out_channels": out_channels}
+        overrides.update(ModelBuilder.image_size_override(name, dataset_config.patch.size))
+
+        return get_backbone(name, config=model_config, **overrides)
+
+    def _build_trainer(self, trainer_config, dataset_config, model, model_cfg, dataset):
+        trainer = Trainer(
+            model      = model,
+            model_cfg  = model_cfg,
+            z_axis     = dataset_config.z_axis,
+            config     = trainer_config,
+            run_dir    = self.work_dir,
+            logger     = self.logger,
+            norm_stats = dataset.normalizer,
+            emit_docs  = False,
+        )
+
+        trainer.criterion.set_curriculum(trainer_config.curriculum.complete, context="VRAM probe on the complete stage")
+        trainer.model.train()
+
+        return trainer
+
+    def _build_probe_setup(self) -> tuple:
+        trainer_config, dataset_config, dataset, gaussian_cfg = self._build_context()
+
+        if dataset.input_channels != self.config.size_match.in_channels:
+            raise RuntimeError(f"size_match.in_channels={self.config.size_match.in_channels} but the dataset provides {dataset.input_channels} input channels; capacity matching counted the wrong width — fix size_match.in_channels and re-run size matching without resume")
+
+        model, model_cfg = self._build_model(dataset_config, dataset, gaussian_cfg)
+        trainer          = self._build_trainer(trainer_config, dataset_config, model, model_cfg, dataset)
+
+        return trainer, dataset
 
     def _release(self, trainer) -> None:
         trainer.optimizer.zero_grad(set_to_none=True)
@@ -156,87 +214,3 @@ class MaxBatchProbeBase:
         self.logger.close()
 
         return result
-
-
-class MaxBatchProbe(MaxBatchProbeBase):
-
-    def __init__(self, config: BenchmarkConfig, model_name: str, overrides: dict, work_dir: Path) -> None:
-        super().__init__(config, model_name, work_dir)
-        self.overrides = overrides
-
-    def _build_context(self):
-        factory        = ConfigFactory(self.config)
-        dataset_config = factory.training_dataset_config()
-        trainer_config = factory.training_trainer_config(logdir=self.work_dir)
-
-        dataset_config.input_config = self.config.input
-        trainer_config.curriculum   = LossComponentCatalog.combined_curriculum(self.config.sweep_loss_components, base=self.config.loss)
-
-        name, _head              = ModelBuilder.split_key(self.model_name)
-        patch                    = dataset_config.patch
-        patch.size, patch.stride = ModelBuilder.square_patch([name], patch.size, patch.stride)
-
-        gaussian_cfg               = trainer_config.gaussian
-        dataset_config.n_gaussians = gaussian_cfg.n_default_gaussians
-
-        dataset_pipeline = DatasetPipeline(config=dataset_config, training_run_directory=self.work_dir, activity_threshold=gaussian_cfg.activity_threshold, logger=self.logger, seed=self.seed)
-
-        profile_length        = dataset_pipeline.layout.profile_length
-        dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, profile_length)
-
-        _train_loader, _val_loader, _test_loader, datasets = dataset_pipeline.run()
-
-        return trainer_config, dataset_config, datasets["train"], gaussian_cfg
-
-    def _build_model(self, dataset_config, dataset, gaussian_cfg):
-        name, head   = ModelBuilder.split_key(self.model_name)
-        model_config = ModelBuilder.config_from_registry(name, self.overrides, head=head)
-
-        in_channels  = dataset.input_channels
-        out_channels = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, gaussian_cfg.n_default_gaussians)
-
-        overrides = {"in_channels": in_channels, "out_channels": out_channels}
-        overrides.update(ModelBuilder.image_size_override(name, dataset_config.patch.size))
-
-        return get_backbone(name, config=model_config, **overrides)
-
-    def _build_trainer(self, trainer_config, dataset_config, model, model_cfg, dataset):
-        trainer = Trainer(
-            model      = model,
-            model_cfg  = model_cfg,
-            z_axis     = dataset_config.z_axis,
-            config     = trainer_config,
-            run_dir    = self.work_dir,
-            logger     = self.logger,
-            norm_stats = dataset.normalizer,
-            emit_docs  = False,
-        )
-
-        trainer.criterion.set_curriculum(trainer_config.curriculum.complete, context="VRAM probe on the complete stage")
-        trainer.model.train()
-
-        return trainer
-
-    def _build_probe_setup(self) -> tuple:
-        trainer_config, dataset_config, dataset, gaussian_cfg = self._build_context()
-
-        if dataset.input_channels != self.config.size_match.in_channels:
-            raise RuntimeError(f"size_match.in_channels={self.config.size_match.in_channels} but the dataset provides {dataset.input_channels} input channels; capacity matching counted the wrong width — fix size_match.in_channels and re-run size matching without resume")
-
-        model, model_cfg = self._build_model(dataset_config, dataset, gaussian_cfg)
-        trainer          = self._build_trainer(trainer_config, dataset_config, model, model_cfg, dataset)
-
-        return trainer, dataset
-
-
-class EntryMaxBatchProbe(MaxBatchProbeBase):
-
-    def __init__(self, config: BenchmarkConfig, model_name: str, work_dir: Path, build_trainer: Callable) -> None:
-        super().__init__(config, model_name, work_dir)
-        self.build_trainer = build_trainer
-
-    def _build_probe_setup(self) -> tuple:
-        trainer, dataset, _model = self.build_trainer(self.work_dir / "context", self.logger)
-        trainer.model.train()
-
-        return trainer, dataset

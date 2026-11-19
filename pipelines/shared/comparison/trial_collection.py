@@ -189,10 +189,8 @@ class TrialArtifactReader:
             return
 
         inference_dir = record.run_dir / InferenceLayout.DIRNAME
-        families      = sorted(family for family in InferenceLayout.SUBDIRS.values() if (inference_dir / family).is_dir())
-        nested        = f"; stamps under {', '.join(f'{InferenceLayout.DIRNAME}/{family}/' for family in families)} are not read by this comparison" if families else ""
 
-        self.logger.warning(f"{record.name}: no completed inference on split '{self.inference_split}' under {inference_dir}{nested}; listed but not ranked")
+        self.logger.warning(f"{record.name}: no completed inference on split '{self.inference_split}' under {inference_dir}; listed but not ranked")
 
     def _warn_unfinished(self, record: TrialRecord) -> None:
         if not (record.run_dir / self.CHECKPOINT_FILENAME).is_file():

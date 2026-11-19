@@ -48,7 +48,7 @@ Raise `--settle` on a loaded machine when a route reports `experimentsTab: false
 launch form has not finished building when the tab is looked for.
 
 ```
-node snap_experiments.js --port 8772 --out /tmp/ml-template-experiments [--settle 1200] launch/train_jepa launch/train_backbone
+node snap_experiments.js --port 8772 --out /tmp/ml-template-experiments [--settle 1200] launch/train_backbone launch/cross_validate
 ```
 
 `trial_names.js` runs the builder script under plain node with no DOM and no server. It
@@ -59,7 +59,7 @@ names byte-match the ones the Python planners plan, which is the contract that k
 preview honest about the directories a sweep will create.
 
 ```
-node trial_names.js /tmp/train_jepa.json
+node trial_names.js /tmp/train_backbone.json
 ```
 
 ## Sequence editor harnesses

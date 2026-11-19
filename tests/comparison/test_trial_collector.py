@@ -99,10 +99,9 @@ def test_missing_run_directory_raises_naming_it(tmp_path):
         TrialCollector(runs_dir=tmp_path, run_tags=["run_x", "gone"], logger=RecordingLogger(), inference_split="test").collect()
 
 
-def test_trial_without_inference_on_the_split_warns_and_names_the_family_subdir(tmp_path):
+def test_trial_without_inference_on_the_split_warns_and_names_the_inference_directory(tmp_path):
     _run_with_metrics(tmp_path / "run_x", 1.0)
     _run_with_metrics(tmp_path / "run_y", 2.0, split="val")
-    (tmp_path / "run_y" / "inference" / "profile_ae").mkdir()
 
     logger    = RecordingLogger()
     collector = TrialCollector(runs_dir=tmp_path, run_tags=["run_x", "run_y"], logger=logger, inference_split="test")
@@ -115,7 +114,7 @@ def test_trial_without_inference_on_the_split_warns_and_names_the_family_subdir(
     assert [record.name for record in records] == ["run_x", "run_y"]
     assert len(warnings) == 1
     assert "run_y: no completed inference on split 'test'" in warnings[0]
-    assert "inference/profile_ae/" in warnings[0]
+    assert str(tmp_path / "run_y" / "inference") in warnings[0]
     assert any(message.startswith("run_y") and message.endswith("no inference, epochs ?, complete no") for message in infos)
     assert "2 trial(s) collected, 1 with inference metrics on split 'test'" in oks
 

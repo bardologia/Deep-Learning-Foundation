@@ -1,10 +1,6 @@
 "use strict";
 
-const FT_DEFAULTS = {
-  profile_autoencoder: { batch: "256,512,1024,2048,4096", workers: "0,2,4,6,8", prefetch: "2,4,8,16", timed: 80, warmup: 8, paths: true },
-  image_autoencoder:   { batch: "4,8,16,32,64", workers: "0,4,8,12,16", prefetch: "2,4,8", timed: 40, warmup: 5, paths: true },
-  backbone:            { batch: "4,8,16,32,64", workers: "0,4,8,12,16", prefetch: "2,4,8", timed: 40, warmup: 5, paths: true },
-};
+const FT_DEFAULTS = { batch: "4,8,16,32,64", workers: "0,4,8,12,16", prefetch: "2,4,8", timed: 40, warmup: 5 };
 
 const FT_WORKER_COLORS = ["#6f9bff", "#2dd4bf", "#22d3ee", "#a78bfa", "#f59e0b", "#fb7185"];
 const FT_GRID = "rgba(220, 235, 245, 0.11)";
@@ -266,15 +262,13 @@ class FeedTuner {
   enter() {
     if (!this.ready) this._wire();
     this._loadGpus();
-    if (FT_DEFAULTS[this.mode].paths) this._loadDatasets();
+    this._loadDatasets();
     requestAnimationFrame(() => this._draw());
   }
 
   _wire() {
     this.ready = true;
 
-    this.modes = [...document.querySelectorAll("#ft-modes .ft-mode")];
-    this.paths = document.getElementById("ft-paths");
     this.inputs = {
       datasetSelect: document.getElementById("ft-dataset-select"),
       datasetCustom: document.getElementById("ft-dataset-custom"),
@@ -314,8 +308,6 @@ class FeedTuner {
       wait: new FtGauge(document.getElementById("ft-dial-wait"), (v) => (v <= 5 ? "#2dd4bf" : v <= 40 ? "#f59e0b" : "#f87171")),
     };
 
-    this.mode = "profile_autoencoder";
-    this.modes.forEach((btn) => btn.addEventListener("click", () => this._selectMode(btn.dataset.mode)));
     this.runBtn.addEventListener("click", () => this._run());
     this.stopBtn.addEventListener("click", () => this._stop());
 
@@ -325,7 +317,7 @@ class FeedTuner {
     this.inputs.paramsCustom.addEventListener("input", () => { this.paramsPath = this.inputs.paramsCustom.value.trim(); });
     window.addEventListener("resize", () => this._draw());
 
-    this._applyDefaults("profile_autoencoder");
+    this._applyDefaults();
   }
 
   async _loadGpus() {
@@ -340,21 +332,12 @@ class FeedTuner {
     await this.gpuCards.load();
   }
 
-  _selectMode(mode) {
-    this.mode = mode;
-    this.modes.forEach((btn) => btn.classList.toggle("is-active", btn.dataset.mode === mode));
-    this._applyDefaults(mode);
-    if (FT_DEFAULTS[mode].paths) this._loadDatasets();
-  }
-
-  _applyDefaults(mode) {
-    const preset = FT_DEFAULTS[mode];
-    this.inputs.batch.value = preset.batch;
-    this.inputs.workers.value = preset.workers;
-    this.inputs.prefetch.value = preset.prefetch;
-    this.inputs.timed.value = preset.timed;
-    this.inputs.warmup.value = preset.warmup;
-    this.paths.hidden = !preset.paths;
+  _applyDefaults() {
+    this.inputs.batch.value = FT_DEFAULTS.batch;
+    this.inputs.workers.value = FT_DEFAULTS.workers;
+    this.inputs.prefetch.value = FT_DEFAULTS.prefetch;
+    this.inputs.timed.value = FT_DEFAULTS.timed;
+    this.inputs.warmup.value = FT_DEFAULTS.warmup;
     this.hint.textContent = "Pick a dataset and parameters detected on this machine, then run the sweep.";
   }
 
@@ -453,7 +436,6 @@ class FeedTuner {
 
   _overrides() {
     const overrides = {
-      mode: this.mode,
       gpu: String((this.gpuCards ? this.gpuCards.value()[0] : 0) || 0),
       batch_sizes: this.inputs.batch.value,
       worker_counts: this.inputs.workers.value,
@@ -462,10 +444,8 @@ class FeedTuner {
       warmup_batches: String(this.inputs.warmup.value || "8"),
       use_amp: this.inputs.amp.checked ? "true" : "false",
     };
-    if (FT_DEFAULTS[this.mode].paths) {
-      if (this.datasetPath) overrides["paths.dataset_path"] = this.datasetPath;
-      if (this.paramsPath) overrides["paths.parameters_path"] = this.paramsPath;
-    }
+    if (this.datasetPath) overrides["paths.dataset_path"] = this.datasetPath;
+    if (this.paramsPath) overrides["paths.parameters_path"] = this.paramsPath;
     return overrides;
   }
 
@@ -581,7 +561,6 @@ class FeedTuner {
     this.chips.hidden = false;
     this.dials.hidden = false;
     this.chips.innerHTML = [
-      ["mode", meta.mode],
       ["device", meta.device],
       ["model", meta.model_name],
       ["params", this._compact(meta.parameters)],

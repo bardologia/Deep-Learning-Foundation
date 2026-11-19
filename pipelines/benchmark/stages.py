@@ -13,7 +13,7 @@ from pipelines.shared.comparison.comparison_report import ComparisonReport
 from pipelines.benchmark.sizing                    import SizeMatcher, SizeMatchResult
 from pipelines.shared.model.model_builder          import ModelBuilder
 from pipelines.shared.orchestration.unit_manifest  import UnidentifiedRuns, UnitLedger, UnitManifest
-from pipelines.shared.training.run_naming          import JepaNamingSpec, RunNaming
+from pipelines.shared.training.run_naming          import RunNaming
 from pipelines.shared.training.seed_sweep          import SeedSet
 from tools.orchestration                           import ExperimentStage, GpuJob, QueuedInferenceStage, QueuedTrainingStage
 from tools.data.io                                 import FileIO
@@ -49,9 +49,6 @@ class SeedExpandedStage:
 
     @classmethod
     def components(cls, config: BenchmarkConfig) -> list[str | None]:
-        if config.training_type != "backbone":
-            return [None]
-
         components = list(config.sweep_loss_components)
         if not components:
             raise SystemExit("sweep_loss_components is empty; select at least one loss component to sweep")
@@ -74,13 +71,7 @@ class SeedExpandedStage:
 
     @classmethod
     def unit_base(cls, config: BenchmarkConfig, model: str, component: str | None) -> str:
-        if config.training_type == "backbone":
-            return RunNaming.benchmark_unit(model, component, config.loss, cls.n_gaussians(config), config.augmentation)
-        if config.training_type == "jepa":
-            name, head = ModelBuilder.split_key(model)
-            return RunNaming.jepa_tag(name, head, JepaNamingSpec.resolve(config.jepa), cls.n_gaussians(config), config.augmentation)
-
-        return model if component is None else f"{model}__{component}"
+        return RunNaming.benchmark_unit(model, component, config.loss, cls.n_gaussians(config), config.augmentation)
 
     @classmethod
     def planned_units(cls, config: BenchmarkConfig, models: list[str]) -> list[tuple[str, tuple]]:

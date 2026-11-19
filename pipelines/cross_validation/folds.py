@@ -5,66 +5,16 @@ import re
 from dataclasses import dataclass
 from pathlib     import Path
 
-from configuration.cross_validation              import CrossValidationConfig
-from configuration.inference                     import InferenceConfig
-from configuration.inference.image_autoencoder   import ImageAeInferenceConfig
-from configuration.inference.profile_autoencoder import ProfileAeInferenceConfig
-from configuration.dataset.gaussian           import GaussianConfig
-from pipelines.shared.config.config_factory      import ConfigFactory
-from pipelines.shared.inference.metadata         import CompletedInference
-from pipelines.shared.inference.run_classifier   import RunClassifier, RunType
+from configuration.cross_validation               import CrossValidationConfig
+from configuration.inference                      import InferenceConfig
+from configuration.dataset.gaussian               import GaussianConfig
+from pipelines.shared.config.config_factory       import ConfigFactory
+from pipelines.shared.inference.metadata          import CompletedInference
+from pipelines.shared.inference.run_classifier    import InferenceLayout
 from pipelines.shared.orchestration.unit_manifest import UnitManifest
 from pipelines.shared.training.seed_sweep        import SeedSet
 from tools.data.io            import FileIO
 from tools.data.regions       import CropRegion, SplitRegions
-
-
-class FoldFamily:
-
-    SPATIAL      = ("backbone", "jepa")
-    AUTOENCODERS = ("profile_autoencoder", "image_autoencoder")
-    TYPES        = SPATIAL + AUTOENCODERS
-
-    INFERENCE_SUBDIR = {
-        "profile_autoencoder" : RunType.PROFILE_AE,
-        "image_autoencoder"   : RunType.IMAGE_AE,
-    }
-
-    @classmethod
-    def validate(cls, training_type: str) -> str:
-        if training_type not in cls.TYPES:
-            raise ValueError(f"Unknown training_type '{training_type}', expected one of {sorted(cls.TYPES)}")
-
-        return training_type
-
-    @classmethod
-    def inference_subdir(cls, training_type: str) -> str | None:
-        cls.validate(training_type)
-
-        return None if training_type in cls.SPATIAL else cls.INFERENCE_SUBDIR[training_type]
-
-    @classmethod
-    def inference_base(cls, run_directory: Path, training_type: str) -> Path:
-        subdir = cls.inference_subdir(training_type)
-        base   = Path(run_directory) / "inference"
-
-        return base / subdir if subdir else base
-
-    @classmethod
-    def split_inference_dir(cls, run_directory: Path, training_type: str, split: str) -> Path | None:
-        return CompletedInference.latest(cls.inference_base(run_directory, training_type), split)
-
-    @classmethod
-    def model_label(cls, config: CrossValidationConfig) -> str:
-        training_type = cls.validate(config.training_type)
-
-        if training_type == "profile_autoencoder":
-            return config.autoencoder.ae_model_name
-
-        if training_type == "image_autoencoder":
-            return config.image_autoencoder.ae_model_name
-
-        return config.backbone_name
 
 
 @dataclass
@@ -244,13 +194,12 @@ class FoldUnitManifest:
         return (int(manifest["fold_index"]), manifest["seed"])
 
     @classmethod
-    def write(cls, run_directory: Path, run_tag: str, unit: str, fold_index: int, seed: int | None, training_type: str, inference_regions: dict) -> Path:
+    def write(cls, run_directory: Path, run_tag: str, unit: str, fold_index: int, seed: int | None, inference_regions: dict) -> Path:
         payload = {
             "run_tag"           : run_tag,
             "unit"              : unit,
             "fold_index"        : int(fold_index),
             "seed"              : seed,
-            "training_type"     : training_type,
             "inference_regions" : {split: list(region) for split, region in inference_regions.items()},
         }
 
@@ -281,26 +230,17 @@ class FoldRunNaming:
     def _n_gaussians(self) -> int:
         return GaussianConfig.from_dataset(self.config.paths.dataset_path, self.config.paths.parameters_path).n_default_gaussians
 
-    def _training_tag(self) -> str | None:
-        from pipelines.shared.training.run_naming import JepaNamingSpec, RunNaming
+    def _training_tag(self) -> str:
+        from pipelines.shared.training.run_naming import RunNaming
 
         config = self.config
-        FoldFamily.validate(config.training_type)
 
-        if config.training_type == "backbone":
-            return RunNaming.training_tag(config.backbone_name, config.backbone_head, config.curriculum, self._n_gaussians(), config.augmentation)
-
-        if config.training_type == "jepa":
-            return RunNaming.jepa_tag(config.backbone_name, config.backbone_head, JepaNamingSpec.resolve(config.jepa), self._n_gaussians(), config.augmentation)
-
-        return None
+        return RunNaming.training_tag(config.backbone_name, config.backbone_head, config.curriculum, self._n_gaussians(), config.augmentation)
 
     def run_name(self, fold_index: int, seed: int | None) -> str:
         from pipelines.shared.training.run_naming import RunNaming
 
-        fold = FoldNaming.run_name(fold_index, seed)
-
-        return fold if self.training_tag is None else RunNaming.compose(self.training_tag, fold)
+        return RunNaming.compose(self.training_tag, FoldNaming.run_name(fold_index, seed))
 
     def units(self) -> list[tuple[int, int | None, str]]:
         indices = {self.run_name(index, None): index for index in range(self.config.folds.n_folds)}
@@ -333,35 +273,6 @@ class FoldConfigFactory(ConfigFactory):
 
         return inference_config
 
-    def fold_profile_ae_inference_config(self, run_directory: Path, split: str) -> ProfileAeInferenceConfig:
-        inference = self.config.inference
-
-        return ProfileAeInferenceConfig(
-            run_directory   = run_directory,
-            output_subdir   = None,
-            split           = split,
-            seed            = self.config.seed,
-            checkpoint_name = inference.checkpoint_name,
-            batch_size      = inference.batch_size,
-            num_workers     = inference.num_workers,
-            pixel_subsample = self.config.autoencoder.pixel_subsample,
-            keep_empty_frac = self.config.autoencoder.keep_empty_frac,
-            save_plots      = inference.save_plots,
-        )
-
-    def fold_image_ae_inference_config(self, run_directory: Path, split: str) -> ImageAeInferenceConfig:
-        inference = self.config.inference
-
-        return ImageAeInferenceConfig(
-            run_directory   = run_directory,
-            output_subdir   = None,
-            split           = split,
-            checkpoint_name = inference.checkpoint_name,
-            batch_size      = inference.batch_size,
-            num_workers     = inference.num_workers,
-            save_plots      = inference.save_plots,
-        )
-
 
 class FoldTreeSurvey:
 
@@ -369,12 +280,6 @@ class FoldTreeSurvey:
     META_DIRNAME     = "meta"
     SUMMARY_FILENAME = "run_summary.json"
     DATASET_FILENAME = "dataset_creation_config.json"
-
-    FAMILIES = {
-        RunType.BACKBONE   : "backbone",
-        RunType.PROFILE_AE : "profile_autoencoder",
-        RunType.IMAGE_AE   : "image_autoencoder",
-    }
 
     def __init__(self, run_dir: Path) -> None:
         self.run_dir   = Path(run_dir)
@@ -400,22 +305,14 @@ class FoldTreeSurvey:
 
         return seeds[0]
 
-    def training_type(self, run_dir: Path) -> str:
-        run_type = RunClassifier.classify(run_dir)
-
-        if run_type not in self.FAMILIES:
-            raise ValueError(f"Fold run {run_dir} is a '{run_type}' run, which cross-validation does not train; expected one of {sorted(self.FAMILIES)}")
-
-        return self.FAMILIES[run_type]
-
     def model_name(self, run_dir: Path) -> str:
         return str(FileIO.load_json(run_dir / self.META_DIRNAME / self.SUMMARY_FILENAME)["model_name"])
 
     def split_regions(self, run_dir: Path) -> SplitRegions:
         return SplitRegions.from_payload(FileIO.load_json(run_dir / self.META_DIRNAME / self.DATASET_FILENAME)["split_regions"])
 
-    def splits(self, fold_runs: dict[int, Path], training_type: str) -> list[str]:
-        return [split for split in FoldPlanner.INFERENCE_SPLITS if any(CompletedInference.stamps(FoldFamily.inference_base(run_dir, training_type), split) for run_dir in fold_runs.values())]
+    def splits(self, fold_runs: dict[int, Path]) -> list[str]:
+        return [split for split in FoldPlanner.INFERENCE_SPLITS if any(CompletedInference.stamps(InferenceLayout.base(run_dir), split) for run_dir in fold_runs.values())]
 
     def planner(self, fold_runs: dict[int, Path]) -> StoredFoldPlanner:
         return StoredFoldPlanner({index: self.split_regions(run_dir) for index, run_dir in fold_runs.items()})

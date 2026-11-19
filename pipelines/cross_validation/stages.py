@@ -7,8 +7,10 @@ from pathlib import Path
 
 from configuration.cross_validation import CrossValidationConfig
 from pipelines.cross_validation.cv_report import CrossValidationReport
-from pipelines.cross_validation.folds             import FoldFamily, FoldPlanner, FoldRunNaming, FoldTreeSurvey, FoldUnitManifest
+from pipelines.cross_validation.folds             import FoldPlanner, FoldRunNaming, FoldTreeSurvey, FoldUnitManifest
 from pipelines.cross_validation.workers           import FoldCollector
+from pipelines.shared.inference.metadata          import CompletedInference
+from pipelines.shared.inference.run_classifier    import InferenceLayout
 from pipelines.shared.orchestration.unit_manifest import UnidentifiedRuns, UnitLedger
 from pipelines.shared.training.seed_sweep         import SeedSet
 from tools.orchestration.gpu_queue import GpuJob
@@ -56,7 +58,7 @@ class FoldUnitStage:
         return list(self.config.inference_splits) if self.config.runs_inference() else []
 
     def _inference_base(self, directory: Path) -> Path:
-        return FoldFamily.inference_base(directory, self.config.training_type)
+        return InferenceLayout.base(directory)
 
 
 class FoldTrainingStage(FoldUnitStage, QueuedTrainingStage):
@@ -74,7 +76,7 @@ class FoldTrainingStage(FoldUnitStage, QueuedTrainingStage):
 
     def _config_kv(self) -> dict:
         return {
-            "Model"      : FoldFamily.model_label(self.config),
+            "Model"      : self.config.backbone_name,
             "Folds"      : self.config.folds.n_folds,
             "Seeds"      : self.config.seeds or "—",
             "Runs"       : len(self.items),
@@ -114,10 +116,10 @@ class FoldInferenceStage(FoldUnitStage, QueuedInferenceStage):
 
         run_dir = self.unit_dir(item)
 
-        return all(FoldFamily.split_inference_dir(run_dir, self.config.training_type, split) is not None for split in self.splits)
+        return all(CompletedInference.latest(InferenceLayout.base(run_dir), split) is not None for split in self.splits)
 
     def _purge_unfinished(self, item: str) -> None:
-        base = FoldFamily.inference_base(self.unit_dir(item), self.config.training_type)
+        base = InferenceLayout.base(self.unit_dir(item))
         if not self.config.resume or not base.is_dir():
             return
 
@@ -129,17 +131,16 @@ class FoldInferenceStage(FoldUnitStage, QueuedInferenceStage):
 
 class FoldReportWriter:
 
-    def __init__(self, run_dir: Path, splits: list[str], training_type: str, model_name: str, planner, embed_images: bool, logger: Logger) -> None:
-        self.run_dir       = Path(run_dir)
-        self.splits        = list(splits)
-        self.training_type = training_type
-        self.model_name    = model_name
-        self.planner       = planner
-        self.embed_images  = embed_images
-        self.logger        = logger
+    def __init__(self, run_dir: Path, splits: list[str], model_name: str, planner, embed_images: bool, logger: Logger) -> None:
+        self.run_dir      = Path(run_dir)
+        self.splits       = list(splits)
+        self.model_name   = model_name
+        self.planner      = planner
+        self.embed_images = embed_images
+        self.logger       = logger
 
     def write(self) -> Path:
-        collector = FoldCollector(run_dir=self.run_dir, splits=self.splits, training_type=self.training_type, logger=self.logger)
+        collector = FoldCollector(run_dir=self.run_dir, splits=self.splits, logger=self.logger)
         base_records, records_by_split = collector.collect_by_split()
 
         out_dir = self.run_dir / "reports" / RunTag.now()
@@ -174,7 +175,7 @@ class CrossValidationReportStage(ExperimentStage):
         self.logger.section("Cross-validation reports")
 
         splits = self.config.inference_splits if self.config.runs_inference() else []
-        writer = FoldReportWriter(run_dir=self.run_dir, splits=splits, training_type=self.config.training_type, model_name=FoldFamily.model_label(self.config), planner=self.planner, embed_images=self.config.comparison.embed_images, logger=self.logger)
+        writer = FoldReportWriter(run_dir=self.run_dir, splits=splits, model_name=self.config.backbone_name, planner=self.planner, embed_images=self.config.comparison.embed_images, logger=self.logger)
 
         return writer.write()
 
@@ -187,16 +188,15 @@ class CrossValidationReportRebuilder:
         self.survey  = FoldTreeSurvey(self.run_dir)
 
     def rebuild(self) -> Path:
-        fold_runs     = self.survey.fold_runs()
-        first         = fold_runs[min(fold_runs)]
-        training_type = self.survey.training_type(first)
-        model_name    = self.survey.model_name(first)
-        splits        = self.survey.splits(fold_runs, training_type)
-        planner       = self.survey.planner(fold_runs)
+        fold_runs  = self.survey.fold_runs()
+        first      = fold_runs[min(fold_runs)]
+        model_name = self.survey.model_name(first)
+        splits     = self.survey.splits(fold_runs)
+        planner    = self.survey.planner(fold_runs)
 
         self.logger.section("Cross-validation reports")
-        self.logger.info(f"Rebuilding the cross-fold report of {self.run_dir} from its fold tree: {len(fold_runs)} fold(s) of {training_type} '{model_name}', scored splits {', '.join(splits) or 'none'}")
+        self.logger.info(f"Rebuilding the cross-fold report of {self.run_dir} from its fold tree: {len(fold_runs)} fold(s) of '{model_name}', scored splits {', '.join(splits) or 'none'}")
 
-        writer = FoldReportWriter(run_dir=self.run_dir, splits=splits, training_type=training_type, model_name=model_name, planner=planner, embed_images=False, logger=self.logger)
+        writer = FoldReportWriter(run_dir=self.run_dir, splits=splits, model_name=model_name, planner=planner, embed_images=False, logger=self.logger)
 
         return writer.write()

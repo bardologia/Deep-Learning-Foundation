@@ -1,15 +1,13 @@
 
 from __future__ import annotations
 
-import json
-
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
-from pipelines.shared.training.training_runner     import EntryConfigTrainRunner
+from pipelines.backbone.training.launcher           import SingleTrainRunner
 from pipelines.shared.training.unit_resume         import UnitResume
 from tools.data.io                                 import FileIO
 from tools.runtime.completion                      import CompletionMarker
@@ -35,12 +33,14 @@ class _PretrainStub:
 @dataclass
 class _EntryStub:
 
-    run_name    : str           = "unit"
-    resume      : bool          = True
-    resume_from : str           = ""
-    logdir      : Path          = Path("")
-    training    : _TrainingStub = field(default_factory=_TrainingStub)
-    pretrain    : _PretrainStub = field(default_factory=_PretrainStub)
+    run_name     : str           = "unit"
+    resume       : bool          = True
+    resume_from  : str           = ""
+    logdir       : Path          = Path("")
+    infer_after  : bool          = False
+    infer_at_end : bool          = False
+    training     : _TrainingStub = field(default_factory=_TrainingStub)
+    pretrain     : _PretrainStub = field(default_factory=_PretrainStub)
 
 
 def _entry_config(tmp_path: Path, resume: bool = True, resume_from: str = "") -> _EntryStub:
@@ -293,41 +293,27 @@ def test_disabled_inference_check_is_inert(tmp_path):
     assert not resume.skip_inference("val")
 
 
-def test_subdir_scoped_inference_is_reused(tmp_path):
-    resume = unit(tmp_path)
-    mark_inference_complete(resume.run_directory / "inference" / "profile_ae" / "stamp0", "val")
-
-    assert resume.skip_inference("val", subdir="profile_ae")
-    assert not resume.skip_inference("test", subdir="profile_ae")
-
-
-def test_subdir_scoped_unfinished_inference_is_purged(tmp_path):
-    resume     = unit(tmp_path)
-    unfinished = resume.run_directory / "inference" / "profile_ae" / "partial"
-    unfinished.mkdir(parents=True)
-
-    assert not resume.skip_inference("val", subdir="profile_ae")
-    assert not unfinished.exists()
-
-
 class _StubPipeline:
-    run_label = "stub"
 
     launched = []
 
     def __init__(self, config) -> None:
         self.config = config
 
-    def run(self):
+    def run(self, probe_config=None, resolved_entry_config=None):
         _StubPipeline.launched.append(self.config.run_name)
         return "trained"
 
 
-class _StubRunner(EntryConfigTrainRunner):
-    pipeline_class = _StubPipeline
+class _StubRunner(SingleTrainRunner):
+
+    label = "stub"
 
     def _pretrain_preflight(self) -> None:
         self.config.training.batch_size = 128
+
+    def _pipeline(self, logdir) -> _StubPipeline:
+        return _StubPipeline(self.config)
 
 
 def test_runner_trains_when_unit_is_fresh(tmp_path):
@@ -336,26 +322,13 @@ def test_runner_trains_when_unit_is_fresh(tmp_path):
     result = _StubRunner(_entry_config(tmp_path)).run()
 
     assert result == "trained"
-    assert _StubPipeline.launched == ["unit"]
-    assert (tmp_path / "unit" / "docs" / "run_directory_settled.marker").is_file()
-    assert (tmp_path / "unit" / "docs" / "resolved_entry_config.json").is_file()
-
-
-def test_runner_reports_the_saved_entry_config_in_the_run_logs(tmp_path):
-    _StubPipeline.launched = []
-
-    _StubRunner(_entry_config(tmp_path)).run()
-
-    written = (tmp_path / "unit" / "logs" / "train_runner.log").read_text(encoding="utf-8")
-
-    assert "Resolved entry config saved" in written
-    assert "Provenance saved"            in written
-    assert ">>> END train_runner"        in written
+    assert _StubPipeline.launched == ["stub_unit"]
+    assert (tmp_path / "stub_unit" / "docs" / "run_directory_settled.marker").is_file()
 
 
 def test_runner_skips_completed_unit(tmp_path):
     _StubPipeline.launched = []
-    mark_complete(tmp_path / "unit")
+    mark_complete(tmp_path / "stub_unit")
 
     result = _StubRunner(_entry_config(tmp_path)).run()
 
@@ -366,24 +339,24 @@ def test_runner_skips_completed_unit(tmp_path):
 def test_runner_deletes_unfinished_unit_before_training(tmp_path):
     _StubPipeline.launched = []
 
-    unit_dir = tmp_path / "unit"
+    unit_dir = tmp_path / "stub_unit"
     unit_dir.mkdir(parents=True)
     (unit_dir / "best_model.pt").write_text("x")
 
     _StubRunner(_entry_config(tmp_path)).run()
 
-    assert _StubPipeline.launched == ["unit"]
+    assert _StubPipeline.launched == ["stub_unit"]
     assert not (unit_dir / "best_model.pt").exists()
 
 
 def test_runner_resume_off_trains_in_place(tmp_path):
     _StubPipeline.launched = []
-    mark_complete(tmp_path / "unit")
+    mark_complete(tmp_path / "stub_unit")
 
     result = _StubRunner(_entry_config(tmp_path, resume=False)).run()
 
     assert result == "trained"
-    assert CompletionMarker.is_complete(tmp_path / "unit")
+    assert CompletionMarker.is_complete(tmp_path / "stub_unit")
 
 
 def test_resume_from_pins_the_pasted_directory(tmp_path):
@@ -448,20 +421,6 @@ def test_resume_from_skips_a_completed_target(tmp_path):
     assert _StubPipeline.launched == []
 
 
-def test_resume_from_rejects_a_path_without_a_parent_directory(tmp_path):
-    with pytest.raises(FileNotFoundError, match="no parent directory"):
-        _StubRunner(_entry_config(tmp_path, resume_from=str(tmp_path / "nope" / "unit"))).run()
-
-
-def test_resolved_config_records_the_post_preflight_values(tmp_path):
-    _StubPipeline.launched = []
-
-    _StubRunner(_entry_config(tmp_path)).run()
-
-    saved = json.loads((tmp_path / "unit" / "docs" / "resolved_entry_config.json").read_text(encoding="utf-8"))
-    assert saved["training.batch_size"] == 128
-
-
 def test_settling_marker_is_written_before_the_preflight_runs(tmp_path):
     _StubPipeline.launched = []
 
@@ -471,9 +430,8 @@ def test_settling_marker_is_written_before_the_preflight_runs(tmp_path):
 
         def _pretrain_preflight(self) -> None:
             seen["marker"] = (self.run_directory / "docs" / "run_directory_settled.marker").is_file()
-            seen["config"] = (self.run_directory / "docs" / "resolved_entry_config.json").is_file()
             super()._pretrain_preflight()
 
     _OrderRunner(_entry_config(tmp_path)).run()
 
-    assert seen == {"marker": True, "config": False}
+    assert seen == {"marker": True}

@@ -1284,7 +1284,7 @@ class EquationLibrary:
                 {
                     "title" : "Joint search with chunked resume",
                     "tex"   : r"\theta^* = \operatorname*{arg\,min}_{\theta \in \Theta_{\mathrm{lr}} \times \Theta_{\mathrm{arch}} \times \Theta_{\mathrm{batch}}} f(\theta), \qquad n_{\mathrm{run}} = \max\!\left(0,\ N - \left|\mathcal{T}_{\mathrm{done}}\right|\right)",
-                    "note"  : "The parameter groups the tuning settings switch on (search_lr, search_arch, search_batch) are sampled jointly in a single study, and a sampled batch size rescales the optimizer by the training batch rule; JEPA studies search the architecture alone. The SQLite-backed study is topped up across runs until the trial target is reached, which a plateau of the best value (plateau_patience) or the time budget (time_budget_h) may cut short, and the best configuration so far is rewritten after every completed trial.",
+                    "note"  : "The parameter groups the tuning settings switch on (search_lr, search_arch, search_batch) are sampled jointly in a single study, and a sampled batch size rescales the optimizer by the training batch rule. The SQLite-backed study is topped up across runs until the trial target is reached, which a plateau of the best value (plateau_patience) or the time budget (time_budget_h) may cut short, and the best configuration so far is rewritten after every completed trial.",
                     "vars"  : [
                         {"sym": r"\theta^*",                    "desc": "best joint hyperparameter vector found so far"},
                         {"sym": r"\Theta_{\mathrm{lr}}",        "desc": "per-group rates and decays (log-uniform), dropout, when search_lr is on"},

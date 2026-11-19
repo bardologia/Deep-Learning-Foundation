@@ -121,8 +121,6 @@ def _result_and_metrics():
     return res, gm, indices, z_axis
 
 
-
-
 def _run_stub():
     region = CropRegion(row_start=0, row_end=H, col_start=0, col_end=W)
     return types.SimpleNamespace(
@@ -359,55 +357,8 @@ def test_figure_composer_explains_the_param_figures_a_collapsed_slot_loses(tmp_p
     assert logger.of("ok")[0].endswith("; empty or incomplete: param_error_hists, param_error_maps, param_scatter")
 
 
-
-
-class _EmbeddingMaps:
-    def __init__(self):
-        rng = np.random.default_rng(3)
-
-        self.embedding_error  = rng.random((H, W)).astype(np.float32)
-        self.embedding_cosine = rng.uniform(0.5, 1.0, (H, W)).astype(np.float32)
-        self.decode_mse       = rng.random((H, W)).astype(np.float32)
-        self.chain_mse        = rng.random((H, W)).astype(np.float32)
-
-
 @pytest.mark.slow
-def test_figure_composer_writes_embedding_maps(tmp_path):
-    res, gm, indices, z_axis = _result_and_metrics()
-    res.embedding_maps       = _EmbeddingMaps()
-
-    composer, _meta = _composer(tmp_path)
-
-    figure_paths = composer.compose(
-        result=res, run=_run_stub(), global_metrics=gm, z_axis_np=z_axis, indices=indices, param_space=True,
-    )
-
-    for key in ("embedding_error_map", "embedding_cosine_map", "embedding_decode_map", "embedding_chain_map", "embedding_histograms"):
-        assert key in figure_paths
-        for path in figure_paths[key]:
-            assert path.is_file() and path.stat().st_size > 0
-
-
-@pytest.mark.slow
-def test_figure_composer_skips_slot_organization_for_extracted_parameters(tmp_path):
-    res, gm, indices, z_axis = _result_and_metrics()
-    res.params_source        = "extracted"
-    res.extract_r2           = np.random.default_rng(4).uniform(0.8, 1.0, (H, W)).astype(np.float32)
-
-    composer, _meta = _composer(tmp_path)
-
-    figure_paths = composer.compose(
-        result=res, run=_run_stub(), global_metrics=gm, z_axis_np=z_axis, indices=indices, param_space=True,
-    )
-
-    assert "param_distributions" in figure_paths
-    assert "extract_r2_map"      in figure_paths
-    assert "slot_usage"      not in figure_paths
-    assert "slot_mu_rank"    not in figure_paths
-
-
-@pytest.mark.slow
-def test_figure_composer_keeps_slot_organization_for_model_parameters(tmp_path):
+def test_figure_composer_writes_the_slot_organization(tmp_path):
     res, gm, indices, z_axis = _result_and_metrics()
 
     composer, _meta = _composer(tmp_path)

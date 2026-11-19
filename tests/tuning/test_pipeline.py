@@ -59,13 +59,12 @@ def _make_config(tmp_path: Path, n_trials: int = 10):
 
     return SimpleNamespace(
         paths         = paths,
-        tuning        = tuning,
-        training_type = "backbone",
-        stage         = "full",
-        gpus          = [0, 1, 2],
-        n_workers     = 0,
-        gpus_file     = "",
-        skip_models   = [],
+        tuning      = tuning,
+        stage       = "full",
+        gpus        = [0, 1, 2],
+        n_workers   = 0,
+        gpus_file   = "",
+        skip_models = [],
     )
 
 
@@ -113,35 +112,6 @@ def test_search_space_follows_the_switched_on_groups(tmp_path):
     orch.config.tuning.search_batch = False
     with pytest.raises(ValueError, match="every search group is off"):
         orch._search_space("unet")
-
-
-def test_a_jepa_study_decodes_against_the_architecture_alone(tmp_path):
-    orch = _orchestrator(tmp_path)
-    orch.config.training_type = "jepa"
-
-    assert orch._search_space("unet") == UNetConfig.tunable_arch_params()
-
-
-def test_model_keys_reject_structured_heads_for_profile_coupled_jepa(tmp_path):
-    orch = _orchestrator(tmp_path)
-    orch.config.training_type = "jepa"
-    orch.config.heads         = ["conv", "set_pred"]
-    orch.config.jepa          = SimpleNamespace(profile_autoencoder_run="mlp_ae_run")
-
-    with pytest.raises(SystemExit, match="only the conv head"):
-        orch._model_keys()
-
-
-def test_model_keys_allow_structured_heads_without_a_profile_ae(tmp_path):
-    orch = _orchestrator(tmp_path)
-    orch.config.training_type = "jepa"
-    orch.config.heads         = ["conv", "set_pred"]
-    orch.config.jepa          = SimpleNamespace(profile_autoencoder_run=None)
-
-    keys = orch._model_keys()
-
-    assert "unet" in keys
-    assert "unet-set_pred" in keys
 
 
 def test_storage_and_paths_derived_from_tag(tmp_path):
@@ -508,15 +478,6 @@ def test_tune_model_skips_dispatch_when_target_reached(tmp_path, monkeypatch):
     assert (orch.run_dir / "unet" / "best_config.json").exists()
 
 
-def test_schedule_rejects_unsupported_training_type(tmp_path):
-    cfg               = _make_config(tmp_path)
-    cfg.training_type = "nonexistent_type"
-    orch              = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
-
-    with pytest.raises(SystemExit, match="nonexistent_type"):
-        orch.schedule()
-
-
 def test_schedule_rejects_an_empty_gpu_pool(tmp_path):
     cfg      = _make_config(tmp_path)
     cfg.gpus = []
@@ -524,17 +485,6 @@ def test_schedule_rejects_an_empty_gpu_pool(tmp_path):
 
     with pytest.raises(SystemExit, match="gpus is empty"):
         orch.schedule()
-
-
-def test_worker_rejects_unsupported_training_type(tmp_path):
-    from pipelines.tuning.workers import TuningWorker
-
-    cfg               = _make_config(tmp_path)
-    cfg.training_type = "nonexistent_type"
-    worker            = TuningWorker("testtag", cfg)
-
-    with pytest.raises(ValueError, match="nonexistent_type"):
-        worker._build_tuner("unet", cfg.tuning, StubLogger(), 0)
 
 
 def _worker_tally(trials_run: int, complete: int, failed: int) -> dict:
@@ -645,26 +595,6 @@ def test_worker_log_keeps_optunas_failed_trial_warning_with_its_traceback(tmp_pa
     assert not any(isinstance(handler, logging.FileHandler) for handler in logging.getLogger("optuna").handlers)
 
 
-def test_image_ae_entry_template_forwards_normalization_and_augmentation(tmp_path):
-    from configuration.dataset              import AugmentationConfig
-    from configuration.normalization.general import NormalizationConfig
-    from configuration.training             import ImageAeLossConfig
-    from pipelines.tuning.workers           import TuningWorker
-
-    cfg               = _make_config(tmp_path)
-    cfg.image_ae_loss = ImageAeLossConfig()
-    cfg.training      = SimpleNamespace()
-    cfg.normalization = NormalizationConfig()
-    cfg.augmentation  = AugmentationConfig()
-
-    worker = TuningWorker("testtag", cfg)
-    entry  = worker._image_ae_entry_template()
-
-    assert entry.normalization is cfg.normalization
-    assert entry.augmentation  is cfg.augmentation
-    assert entry.ae_loss       is cfg.image_ae_loss
-
-
 def _resumed_scheduler(tmp_path: Path):
     from configuration.tuning     import TuningEntryConfig
     from tools.runtime.config_cli import ConfigCli
@@ -700,11 +630,11 @@ def test_resume_allows_more_trials_and_a_new_gpu_pool(tmp_path):
 def test_resume_returns_the_changed_leaves_outside_the_study_keys(tmp_path):
     orch = _resumed_scheduler(tmp_path)
 
-    orch.config.pixel_subsample = 0.5
-    orch.config.n_workers       = 4
-    orch.config.tuning.n_trials = orch.config.tuning.n_trials + 1
+    orch.config.augmentation.p_flip_h = 0.25
+    orch.config.n_workers             = 4
+    orch.config.tuning.n_trials       = orch.config.tuning.n_trials + 1
 
-    assert orch._guard_resumed_config(orch.run_dir / "resolved_config.json") == {"pixel_subsample": (1.0, 0.5)}
+    assert orch._guard_resumed_config(orch.run_dir / "resolved_config.json") == {"augmentation.p_flip_h": (0.5, 0.25)}
 
 
 def test_a_changed_config_is_archived_before_the_new_one_is_recorded(tmp_path):
@@ -715,7 +645,7 @@ def test_a_changed_config_is_archived_before_the_new_one_is_recorded(tmp_path):
     assert orch._archive_previous_config(resolved) is None
     assert resolved.read_text() == recorded
 
-    orch.config.pixel_subsample = 0.5
+    orch.config.augmentation.p_flip_h = 0.25
     archived = orch._archive_previous_config(resolved)
 
     assert archived.parent      == orch.run_dir / "config_history"
@@ -727,10 +657,10 @@ def test_resume_changes_are_warned_with_a_table(tmp_path):
     orch        = _orchestrator(tmp_path)
     orch.logger = StubLogger()
 
-    orch._log_resume_changes({"pixel_subsample": (1.0, 0.5)}, tmp_path / "config_history" / "x.json")
+    orch._log_resume_changes({"augmentation.p_flip_h": (0.5, 0.25)}, tmp_path / "config_history" / "x.json")
 
     assert orch.logger.of_kind("warning") == ["1 recorded leaves changed on resume; trials from this launch train under the new values, so the study mixes trials scored under both"]
-    assert orch.logger.metrics == [("Changed on resume", [{"Leaf": "pixel_subsample", "Recorded": "1.0", "Now": "0.5"}])]
+    assert orch.logger.metrics == [("Changed on resume", [{"Leaf": "augmentation.p_flip_h", "Recorded": "0.5", "Now": "0.25"}])]
     assert orch.logger.of_kind("info") == [f"The resolved config of the earlier launch was kept at {tmp_path / 'config_history' / 'x.json'}"]
 
 
@@ -773,7 +703,7 @@ def test_a_skip_entry_that_matches_no_model_is_refused(tmp_path):
     orch.config.heads       = ["conv"]
     orch.config.skip_models = ["resnet", "unet"]
 
-    with pytest.raises(SystemExit, match=r"skip_models entries match no model of training_type 'backbone': \['resnet'\]"):
+    with pytest.raises(SystemExit, match=r"skip_models entries match no model: \['resnet'\]"):
         orch.selected_models()
 
     orch.config.skip_models = ["unet"]

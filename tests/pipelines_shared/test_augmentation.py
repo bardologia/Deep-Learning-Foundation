@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from configuration.dataset                              import AugmentationConfig, ProfileAugmentationConfig
-from pipelines.backbone.dataset.augmentation            import SpatialAugmenter
-from pipelines.profile_autoencoder.dataset.augmentation import ProfileAugmenter
-from tools.monitoring.logger                            import Logger
+from configuration.dataset                   import AugmentationConfig
+from pipelines.backbone.dataset.augmentation import SpatialAugmenter
+from tools.monitoring.logger                 import Logger
 
 
 def _logger(tmp_path) -> Logger:
@@ -15,10 +14,6 @@ def _logger(tmp_path) -> Logger:
 
 def _spatial(tmp_path, **kw) -> SpatialAugmenter:
     return SpatialAugmenter(AugmentationConfig(**kw), logger=_logger(tmp_path), seed=0)
-
-
-def _profile(tmp_path, **kw) -> ProfileAugmenter:
-    return ProfileAugmenter(ProfileAugmentationConfig(**kw), logger=_logger(tmp_path), seed=0)
 
 
 def test_spatial_identity_when_all_probabilities_zero(tmp_path):
@@ -77,12 +72,6 @@ def test_spatial_deterministic_for_fixed_seed(tmp_path):
     np.testing.assert_array_equal(out1[1], out2[1])
 
 
-
-
-
-
-
-
 def test_spatial_noise_zero_probability_is_identity(tmp_path):
     aug = _spatial(tmp_path, p_noise=0.0)
     x   = np.random.default_rng(0).standard_normal((4, 8, 8)).astype(np.float32)
@@ -110,72 +99,3 @@ def test_spatial_reseed_resets_stream(tmp_path):
     again = aug(x.copy(), y.copy())
 
     np.testing.assert_array_equal(first[0], again[0])
-
-
-def test_profile_identity_when_all_probabilities_zero(tmp_path):
-    aug   = _profile(tmp_path, p_amp_scale=0.0, p_shift=0.0, p_flip=0.0, p_noise=0.0)
-    curve = np.random.default_rng(0).standard_normal(150).astype(np.float32)
-
-    np.testing.assert_array_equal(aug(curve), curve)
-
-
-def test_profile_shift_fills_with_zeros_instead_of_wrapping(tmp_path):
-    aug   = _profile(tmp_path, p_amp_scale=0.0, p_shift=1.0, max_shift=4, p_flip=0.0, p_noise=0.0)
-    curve = np.arange(1.0, 151.0, dtype=np.float32)
-
-    for _ in range(20):
-        out = aug(curve)
-
-        assert out.shape == curve.shape
-
-        leading  = int(np.argmax(out != 0.0))      if out[0]  == 0.0 else 0
-        trailing = int(np.argmax(out[::-1] != 0.0)) if out[-1] == 0.0 else 0
-
-        assert leading == 0 or trailing == 0
-
-        if leading > 0:
-            np.testing.assert_array_equal(out[leading:], curve[:-leading])
-            assert np.all(out[:leading] == 0.0)
-        elif trailing > 0:
-            np.testing.assert_array_equal(out[:-trailing], curve[trailing:])
-            assert np.all(out[-trailing:] == 0.0)
-        else:
-            np.testing.assert_array_equal(out, curve)
-
-
-def test_profile_amplitude_scale_within_range(tmp_path):
-    aug   = _profile(tmp_path, p_amp_scale=1.0, amp_scale_range=(0.5, 2.0), p_shift=0.0, p_flip=0.0, p_noise=0.0)
-    curve = np.ones(150, dtype=np.float32)
-
-    out = aug(curve)
-
-    assert np.all(out >= 0.5 - 1e-5)
-    assert np.all(out <= 2.0 + 1e-5)
-
-
-def test_profile_flip_reverses_curve(tmp_path):
-    aug   = _profile(tmp_path, p_amp_scale=0.0, p_shift=0.0, p_flip=1.0, p_noise=0.0)
-    curve = np.arange(150, dtype=np.float32)
-
-    out = aug(curve)
-
-    np.testing.assert_array_equal(out, curve[::-1])
-
-
-def test_profile_deterministic_for_fixed_seed(tmp_path):
-    curve = np.random.default_rng(7).standard_normal(150).astype(np.float32)
-
-    a1 = _profile(tmp_path, p_amp_scale=0.5, p_shift=0.5, p_flip=0.5)
-    a2 = _profile(tmp_path, p_amp_scale=0.5, p_shift=0.5, p_flip=0.5)
-
-    np.testing.assert_array_equal(a1(curve.copy()), a2(curve.copy()))
-
-
-def test_profile_output_is_contiguous_float32(tmp_path):
-    aug   = _profile(tmp_path, p_flip=1.0)
-    curve = np.arange(150, dtype=np.float32)
-
-    out = aug(curve)
-
-    assert out.dtype == np.float32
-    assert out.flags["C_CONTIGUOUS"]

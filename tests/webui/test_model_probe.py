@@ -443,7 +443,7 @@ def test_runs_lists_loadable_backbone_runs(tmp_path):
     bare.mkdir(parents=True)
     (bare / "best_model.pt").write_bytes(b"x")
 
-    _loadable_run(tmp_path, group="profile_ae", name="run_ae", config_name="profile_autoencoder_config.json")
+    _loadable_run(tmp_path, group="other", name="run_other", config_name="trainer_config.json")
 
     out = ModelProbe(SilentLogger()).runs(str(tmp_path))
 

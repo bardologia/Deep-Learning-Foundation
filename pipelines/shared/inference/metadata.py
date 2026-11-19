@@ -11,8 +11,6 @@ from pipelines.shared.dataset.dataset_spatial import Layout
 from tools.data.io                            import FileIO
 from tools.data.regions                       import CropRegion
 from tools.runtime.completion                 import CompletionMarker
-from tools.runtime.environment_capture        import EnvironmentCapture
-from tools.runtime.run_tag                    import RunTag
 
 
 @dataclass(frozen=True)
@@ -184,13 +182,8 @@ class CompletedInference:
         return selected
 
     @staticmethod
-    def checkpoint_name(stamp: Path) -> str | None:
-        payload = CompletionMarker.payload(stamp)
-
-        if CompletedInference.CHECKPOINT_KEY not in payload:
-            return None
-
-        return str(payload[CompletedInference.CHECKPOINT_KEY]["name"])
+    def checkpoint_name(stamp: Path) -> str:
+        return str(CompletionMarker.payload(stamp)[CompletedInference.CHECKPOINT_KEY]["name"])
 
     @staticmethod
     def target(stamp: Path) -> dict:
@@ -206,23 +199,3 @@ class CompletedInference:
         stamps = CompletedInference.stamps(base, split)
 
         return stamps[-1] if stamps else None
-
-
-class InferenceMetadata:
-
-    SUBDIR: str
-
-    def __init__(self, config) -> None:
-        paths = config.paths
-
-        base = config.run_directory / "inference" / self.SUBDIR
-
-        self.output_dir   = base / config.output_subdir if config.output_subdir else base / RunTag.now()
-        self.figures_dir  = self.output_dir / paths.figures_subdir
-        self.logs_dir     = self.output_dir / paths.logs_subdir
-        self.metrics_path = self.output_dir / paths.metrics_filename
-        self.report_path  = self.output_dir / paths.report_filename
-
-    def create_dirs(self) -> None:
-        FileIO.ensure_dirs(self.output_dir, self.figures_dir, self.logs_dir)
-        FileIO.save_json(EnvironmentCapture.snapshot(), self.output_dir / "environment.json")

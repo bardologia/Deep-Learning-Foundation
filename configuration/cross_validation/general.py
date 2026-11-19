@@ -8,15 +8,12 @@ from configuration.benchmark.general import (
     ComparisonReportConfig,
     InferenceQueueConfig,
 )
-from configuration.cross_validation.image_autoencoder   import ImageAeCvConfig
-from configuration.cross_validation.profile_autoencoder import AeCvConfig
-from configuration.dataset                              import AugmentationConfig, InputConfig
-from configuration.normalization.general                import NormalizationConfig
-from configuration.training.backbone                    import LossScaleProbeConfig, default_curriculum
-from configuration.training.general.loss                import LossCurriculumConfig
-from configuration.training.general.run                 import RunPathsConfig, TrainingQueueConfig, standard_seeds
-from configuration.training.general.runtime             import OverfitCheckConfig
-from configuration.training.jepa                        import JepaCouplingConfig
+from configuration.dataset                  import AugmentationConfig, InputConfig
+from configuration.normalization.general    import NormalizationConfig
+from configuration.training.backbone        import LossScaleProbeConfig, default_curriculum
+from configuration.training.general.loss    import LossCurriculumConfig
+from configuration.training.general.run     import RunPathsConfig, TrainingQueueConfig, standard_seeds
+from configuration.training.general.runtime import OverfitCheckConfig
 
 
 @dataclass
@@ -31,7 +28,6 @@ class FoldConfig:
 @dataclass
 class CrossValidationConfig:
 
-    training_type   : str  = "backbone"
     stage           : str  = "full"
 
     backbone_name   : str  = "resunet"
@@ -52,10 +48,6 @@ class CrossValidationConfig:
     overfit_check : OverfitCheckConfig   = field(default_factory=OverfitCheckConfig)
 
     prior_bias_init : bool = False
-
-    jepa              : JepaCouplingConfig = field(default_factory=JepaCouplingConfig)
-    autoencoder       : AeCvConfig         = field(default_factory=AeCvConfig)
-    image_autoencoder : ImageAeCvConfig    = field(default_factory=ImageAeCvConfig)
 
     inference_splits : list[str] = field(default_factory=lambda: ["val", "test"])
 

@@ -6,15 +6,11 @@ from pathlib import Path
 
 import optuna
 
-from configuration.training                 import ImageAeEntryConfig, JepaEntryConfig, ProfileAeEntryConfig
 from models                                 import BACKBONE_CONFIG_REGISTRY
-from models.image_autoencoder               import IMAGE_AE_CONFIG_REGISTRY
-from models.profile_autoencoder             import PROFILE_AE_CONFIG_REGISTRY
 from pipelines.shared.config.config_factory import ConfigFactory
 from pipelines.shared.model.model_builder   import ModelBuilder
 from pipelines.tuning.storage               import TuningStorage
-from pipelines.tuning.trial                 import TrialImageAePipeline, TrialProfileAePipeline
-from pipelines.tuning.tuners                import AeTuner, JepaTuner, StudyProgress, Tuner
+from pipelines.tuning.tuners                import StudyProgress, Tuner
 from tools.monitoring.logger                import Logger
 
 
@@ -27,38 +23,6 @@ class TuningWorker:
 
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-    def _ae_entry_template(self):
-        return ProfileAeEntryConfig(
-            seed            = self.config.tuning.base_seed,
-            pixel_subsample = self.config.pixel_subsample,
-            keep_empty_frac = self.config.keep_empty_frac,
-            ae_loss         = self.config.ae_loss,
-            paths           = self.config.paths,
-            training        = self.config.training,
-        )
-
-    def _image_ae_entry_template(self):
-        return ImageAeEntryConfig(
-            seed          = self.config.tuning.base_seed,
-            ae_loss       = self.config.image_ae_loss,
-            paths         = self.config.paths,
-            training      = self.config.training,
-            normalization = self.config.normalization,
-            augmentation  = self.config.augmentation,
-        )
-
-    def _jepa_entry_template(self):
-        jepa = self.config.jepa
-
-        return JepaEntryConfig(
-            seed          = self.config.tuning.base_seed,
-            paths         = self.config.paths,
-            training      = self.config.training,
-            normalization = self.config.normalization,
-            augmentation  = self.config.augmentation,
-            **jepa.entry_kwargs(),
-        )
-
     def _build_base_configs(self):
         factory = ConfigFactory(self.config)
 
@@ -68,42 +32,7 @@ class TuningWorker:
 
         return trainer_config, dataset_config
 
-    def _profile_ae_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
-        return AeTuner(
-            model_name         = model_name,
-            config_cls         = PROFILE_AE_CONFIG_REGISTRY[model_name],
-            entry_template     = self._ae_entry_template(),
-            trial_pipeline_cls = TrialProfileAePipeline,
-            tune_cfg           = tune_cfg,
-            log_dir            = str(self.run_dir / model_name),
-            logger             = logger,
-            worker_index       = worker_index,
-        )
-
-    def _image_ae_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
-        return AeTuner(
-            model_name         = model_name,
-            config_cls         = IMAGE_AE_CONFIG_REGISTRY[model_name],
-            entry_template     = self._image_ae_entry_template(),
-            trial_pipeline_cls = TrialImageAePipeline,
-            tune_cfg           = tune_cfg,
-            log_dir            = str(self.run_dir / model_name),
-            logger             = logger,
-            worker_index       = worker_index,
-        )
-
-    def _jepa_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
-        return JepaTuner(
-            model_name       = model_name,
-            model_config_cls = BACKBONE_CONFIG_REGISTRY[ModelBuilder.split_key(model_name)[0]],
-            entry_template   = self._jepa_entry_template(),
-            tune_cfg         = tune_cfg,
-            log_dir          = str(self.run_dir / model_name),
-            logger           = logger,
-            worker_index     = worker_index,
-        )
-
-    def _backbone_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
+    def _build_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
         trainer_cfg, dataset_cfg = self._build_base_configs()
 
         return Tuner(
@@ -118,20 +47,6 @@ class TuningWorker:
             emit_trial_docs     = tune_cfg.emit_trial_docs,
             worker_index        = worker_index,
         )
-
-    def _build_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
-        dispatch = {
-            "backbone"            : self._backbone_tuner,
-            "image_autoencoder"   : self._image_ae_tuner,
-            "jepa"                : self._jepa_tuner,
-            "profile_autoencoder" : self._profile_ae_tuner,
-        }
-
-        training_type = self.config.training_type
-        if training_type not in dispatch:
-            raise ValueError(f"Unknown training_type '{training_type}', expected one of {sorted(dispatch)}")
-
-        return dispatch[training_type](model_name, tune_cfg, logger, worker_index)
 
     def _report_worker(self, logger: Logger, summary: dict, model_name: str, worker_index: int) -> None:
         best = "none" if summary["best_trial"] is None else f"trial {summary['best_trial']}, value {summary['best_value']:.6f}"

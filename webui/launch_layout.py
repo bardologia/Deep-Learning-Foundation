@@ -66,13 +66,7 @@ class LaunchLayout:
     NUM_MAIL_MB  = {"kind": "number", "min": 1, "max": 100, "step": 0.5, "presets": [10, 15, 18, 24]}
     NUM_FILE_MB  = {"kind": "number", "min": 0, "max": 100, "step": 0.5, "presets": [0, 2, 5, 10, 15]}
 
-    CH_AE_MODE      = {"kind": "choice", "options": ["frozen", "finetune"]}
     CH_STAGE        = {"kind": "choice", "options": ["full", "prepare", "compare"]}
-    CH_PROVIDER     = {"kind": "choice", "options": ["stopgrad", "live"]}
-    CH_MASK_STRAT   = {"kind": "choice", "options": ["block", "random"]}
-    CH_MASK_FILL    = {"kind": "choice", "options": ["zeros", "noise"]}
-    CH_MASK_LOSS    = {"kind": "choice", "options": ["masked", "all"]}
-    CH_RECON_KIND   = {"kind": "choice", "options": ["mse", "l1", "huber", "charbonnier"]}
     CH_FIGSTYLE     = {"kind": "choice", "options": ["report", "paper"]}
     CH_PARALLELISM  = {"kind": "choice", "options": ["multithreading", "multiprocessing", "serial"]}
     CH_NORM_GLOBAL_IN  = {"kind": "choice", "options": ["per_slot"] + NORM_PRESETS_INPUT}
@@ -104,12 +98,6 @@ class LaunchLayout:
 
 
 
-    CV_MODEL_BY_TYPE = {"field": "training_type", "models": {
-        "backbone"            : "backbone_name",
-        "jepa"                : "backbone_name",
-        "profile_autoencoder" : "autoencoder.ae_model_name",
-        "image_autoencoder"   : "image_autoencoder.ae_model_name",
-    }}
 
     MULTI_FIT_MODES = {"kind": "multi", "empty": "select at least one fit mode", "choices": [
         {"value": "sigma",        "label": "sigma only"},
@@ -149,9 +137,6 @@ class LaunchLayout:
         {"title": "Cube SSIM", "fields": ["compute_cube_ssim"]},
         {"title": "Flip consistency", "fields": ["compute_flip_consistency"]},
         {"title": "Stratified errors", "fields": ["compute_stratified"]},
-        {"title": "Curve parameter extraction", "fields": [
-            {"gate": "extract_curve_params", "fields": ["extract_prominence_frac"]},
-        ]},
         {"title": "Profile picks", "fields": ["n_best_profiles", "n_worst_profiles", "n_random_profiles", {"path": "profile_seed", "widget": NUM_SEED}]},
         {"title": "Slices", "fields": ["n_col_slices", "n_row_slices", "n_z_slices"]},
         {"title": "GIFs", "fields": ["gif_axes", "gif_fps", {"path": "gif_duration", "widget": NUM_SECONDS}, "gif_max_frames", {"path": "gif_dpi", "widget": NUM_DPI}, "gif_separate_panels"]},
@@ -310,11 +295,6 @@ class LaunchLayout:
                 {"path": "p_rot90", "widget": NUM_PROB},
             ]},
         ],
-        "profile_augmentation": [
-            {"title": "Amplitude", "fields": [{"path": "p_amp_scale", "widget": NUM_PROB}, "amp_scale_range"]},
-            {"title": "Shift and flip", "fields": [{"path": "p_shift", "widget": NUM_PROB}, "max_shift", {"path": "p_flip", "widget": NUM_PROB}]},
-            {"title": "Noise", "fields": [{"path": "p_noise", "widget": NUM_PROB}, "noise_std"]},
-        ],
         "pretrain": [
             {"title": "Auto-tuning", "fields": ["find_batch_size", "tune_loader", "find_lr", {"path": "seed", "widget": NUM_SEED}]},
             {"title": "Batch probe", "fields": ["vram_budget_gb", {"path": "max_batch", "widget": NUM_BATCH}, {"path": "measure_steps", "widget": NUM_PROBE}]},
@@ -366,78 +346,9 @@ class LaunchLayout:
                 ]},
             ]},
         ],
-        "profile_inference": [
-            {"title": "Run", "fields": ["run_directory", "output_subdir", "device", "log_level", {"path": "seed", "widget": NUM_SEED}]},
-            {"title": "Execution", "fields": ["split", "checkpoint_name", {"path": "batch_size", "widget": NUM_BATCH}, {"path": "num_workers", "widget": NUM_WORKERS}]},
-            {"title": "Sampling", "fields": [{"path": "pixel_subsample", "widget": NUM_FRACTION}, {"path": "keep_empty_frac", "widget": NUM_FRACTION}]},
-            {"title": "Report", "fields": ["save_plots", "n_best_curves", "n_worst_curves", "n_random_curves", "n_scatter_points", {"path": "curve_seed", "widget": NUM_SEED}]},
-            {"title": "Figures", "fields": [{"path": "fig_dpi", "widget": NUM_DPI}, {"path": "save_dpi", "widget": NUM_DPI}, {"path": "figure_style", "widget": CH_FIGSTYLE}]},
-            {"title": "Output layout", "fields": ["paths.figures_subdir", "paths.logs_subdir", "paths.metrics_filename", "paths.report_filename"]},
-        ],
-        "image_inference": [
-            {"title": "Run", "fields": ["run_directory", "output_subdir", "device", "log_level"]},
-            {"title": "Execution", "fields": ["split", "checkpoint_name", {"path": "batch_size", "widget": NUM_BATCH}, {"path": "num_workers", "widget": NUM_WORKERS}]},
-            {"title": "Report", "fields": ["save_plots", "n_best_patches", "n_worst_patches", "n_random_patches", "n_scatter_points", {"path": "patch_seed", "widget": NUM_SEED}]},
-            {"title": "Figures", "fields": [{"path": "fig_dpi", "widget": NUM_DPI}, {"path": "save_dpi", "widget": NUM_DPI}, {"path": "figure_style", "widget": CH_FIGSTYLE}]},
-            {"title": "Output layout", "fields": ["paths.figures_subdir", "paths.logs_subdir", "paths.metrics_filename", "paths.report_filename"]},
-        ],
-        "embedding_loss": [
-            {"title": "Embedding losses", "fields": [
-                {"gate": "use_embedding_mse",         "fields": [{"path": "weight_embedding_mse", "widget": NUM_WEIGHT}]},
-                {"gate": "use_embedding_cosine",      "fields": [{"path": "weight_embedding_cosine", "widget": NUM_WEIGHT}]},
-                {"gate": "use_embedding_smoothl1",    "fields": [{"path": "weight_embedding_smoothl1", "widget": NUM_WEIGHT}, "smoothl1_beta"]},
-                {"gate": "use_embedding_huber",       "fields": [{"path": "weight_embedding_huber", "widget": NUM_WEIGHT}, "embedding_huber_delta"]},
-                {"gate": "use_embedding_charbonnier", "fields": [{"path": "weight_embedding_charbonnier", "widget": NUM_WEIGHT}, "embedding_charbonnier_eps"]},
-            ]},
-            {"title": "Collapse regularizers", "fields": [
-                {"gate": "use_embedding_variance",   "fields": [{"path": "weight_embedding_variance", "widget": NUM_WEIGHT}, "variance_gamma"]},
-                {"gate": "use_embedding_covariance", "fields": [{"path": "weight_embedding_covariance", "widget": NUM_WEIGHT}]},
-            ]},
-            {"title": "Curve reconstruction", "fields": [
-                {"gate": "use_curve_recon", "fields": [{"path": "weight_curve_recon", "widget": NUM_WEIGHT}, "curve_kind", "huber_delta", "charbonnier_eps"]},
-                {"gate": "use_curve_sobolev", "fields": [{"path": "weight_curve_sobolev", "widget": NUM_WEIGHT}]},
-            ]},
-        ],
-        "ae_loss_profile": [
-            {"title": "Reconstruction terms", "fields": [
-                {"gate": "use_mse_curve",         "fields": [{"path": "weight_mse_curve", "widget": NUM_WEIGHT}]},
-                {"gate": "use_l1_curve",          "fields": [{"path": "weight_l1_curve", "widget": NUM_WEIGHT}]},
-                {"gate": "use_huber_curve",       "fields": [{"path": "weight_huber_curve", "widget": NUM_WEIGHT}, "huber_delta"]},
-                {"gate": "use_charbonnier_curve", "fields": [{"path": "weight_charbonnier_curve", "widget": NUM_WEIGHT}, "charbonnier_eps"]},
-                {"gate": "use_cosine_curve",      "fields": [{"path": "weight_cosine_curve", "widget": NUM_WEIGHT}]},
-                {"gate": "use_log_energy_curve",  "fields": [{"path": "weight_log_energy_curve", "widget": NUM_WEIGHT}]},
-            ]},
-            {"title": "Smoothness", "fields": [
-                {"gate": "use_tv_curve", "fields": [{"path": "weight_tv_curve", "widget": NUM_WEIGHT}]},
-                {"gate": "use_sobolev",  "fields": [{"path": "weight_sobolev", "widget": NUM_WEIGHT}]},
-            ]},
-            {"title": "Latent noise", "fields": [
-                {"gate": "use_latent_noise", "fields": ["latent_noise_std", {"path": "weight_latent_noise", "widget": NUM_WEIGHT}]},
-            ]},
-        ],
-        "ae_loss_image": [
-            {"title": "Reconstruction loss", "fields": [{"path": "recon_kind", "widget": CH_RECON_KIND}, "huber_delta", "charbonnier_eps"]},
-        ],
         "curriculum_head": [
             {"title": "Curriculum", "fields": [
                 "inherit",
-                {"gate": "enabled", "fields": ["swap_epoch", "reset_lr", "reset_warmup", "reset_optimizer"]},
-            ]},
-        ],
-        "jepa_masking": [
-            {"title": "Input masking", "fields": [
-                {"gate": "enabled", "fields": [
-                    {"path": "strategy", "widget": CH_MASK_STRAT},
-                    {"path": "mask_ratio", "widget": NUM_FRACTION},
-                    "n_blocks",
-                    {"path": "fill", "widget": CH_MASK_FILL},
-                    "fill_noise_std",
-                    {"path": "loss_on", "widget": CH_MASK_LOSS},
-                ]},
-            ]},
-        ],
-        "jepa_curriculum_head": [
-            {"title": "Curriculum", "fields": [
                 {"gate": "enabled", "fields": ["swap_epoch", "reset_lr", "reset_warmup", "reset_optimizer"]},
             ]},
         ],
@@ -483,76 +394,11 @@ class LaunchLayout:
     ]
 
 
-    PROFILE_AE_EXPERIMENT_TRIALS = [
-        "trials_enabled", "trials_mode", "arch_trials", "loss_trials",
-        "embedding_trials.dims",
-        "capacity_trials.widths", "capacity_trials.depths",
-        "smoothness_trials.sobolev_weights", "smoothness_trials.latent_noise_stds", "smoothness_trials.combine", "smoothness_trials.include_baseline",
-        "augmentation_trials.flip_probability", "augmentation_trials.shift_probability", "augmentation_trials.max_shift", "augmentation_trials.amp_scale_probability", "augmentation_trials.noise_probability", "augmentation_trials.noise_stds",
-        "sampling_trials.subsamples", "sampling_trials.empty_fracs",
-        "ema_trials.decays",
-        "stability_trials.warmup_fractions", "stability_trials.warmup_mode", "stability_trials.clip_mode", "stability_trials.max_grad_norms",
-    ]
-
-    JEPA_EXPERIMENT_TRIALS = [
-        "trials_enabled", "trials_mode", "embedding_trials", "context_trials", "input_trials",
-        "curve_trials.kinds", "curve_trials.weights", "curve_trials.sobolev_weights", "curve_trials.include_baseline",
-        "masking_trials.strategies", "masking_trials.ratios", "masking_trials.fill", "masking_trials.loss_on", "masking_trials.include_baseline",
-        "curriculum_trials.swap_epochs", "curriculum_trials.resets", "curriculum_trials.include_baseline",
-        "coupling_trials.modes", "coupling_trials.finetune_lrs", "coupling_trials.target_providers",
-        "ae_run_trials.runs",
-        "augmentation_trials.flip_probability", "augmentation_trials.noise_probability", "augmentation_trials.noise_stds",
-        "ema_trials.decays",
-        "stability_trials.warmup_fractions", "stability_trials.warmup_mode", "stability_trials.clip_mode", "stability_trials.max_grad_norms",
-    ]
 
 
-    IMAGE_AE_AUGMENTATION_NOTE = "Only the flips are offered here. Input noise is injected into the very tensor this autoencoder reconstructs, so it would train the model to reproduce the noise realization instead of removing it; the profile autoencoder is the family that denoises, because its dataset returns a clean target."
 
-    JEPA_COUPLING_NOTE  = "JEPA needs at least one autoencoder run. A profile autoencoder makes the backbone predict its embedding (embedding loss regime); without one the backbone predicts Gaussian parameters directly (param loss regime). An image autoencoder replaces the raw input stack with its encoded features in either regime. Embedding sizes and architecture come from the selected runs' saved configs."
-    JEPA_HEAD_HINT      = "a coupled profile autoencoder makes the backbone predict its embedding; only the conv head projects to it"
-    JEPA_EMBEDDING_NOTE = "Shown because a profile autoencoder run is coupled: the backbone is trained to match the autoencoder's embedding of each ground-truth profile. The param loss is inactive in this regime."
-    JEPA_PARAM_NOTE     = "Shown because no profile autoencoder run is selected: the backbone predicts Gaussian parameters directly, exactly like backbone training. The embedding loss is inactive in this regime."
 
-    JEPA_SECTIONS = [
-        {"key": "jepa", "title": "JEPA", "when": {"field": "training_type", "in": ["jepa"]}, "panels": [
-            {"kind": "fields", "title": "Autoencoder runs", "note": JEPA_COUPLING_NOTE, "groups": [
-                {"title": "Profile autoencoder", "fields": [
-                    "jepa.profile_autoencoder_logdir",
-                    {"path": "jepa.profile_autoencoder_run", "widget": {"kind": "dataset", "mode": "runs", "baseFrom": "jepa.profile_autoencoder_logdir", "checkpointOnly": True}},
-                    {"gateOn": {"field": "jepa.profile_autoencoder_run", "set": True}, "fields": [
-                        {"path": "jepa.profile_autoencoder_mode", "widget": CH_AE_MODE},
-                        {"path": "jepa.target_provider", "widget": CH_PROVIDER},
-                        {"gateOn": {"field": "jepa.profile_autoencoder_mode", "in": ["finetune"]}, "fields": [
-                            {"path": "jepa.ae_finetune_lr", "widget": NUM_LR},
-                            {"path": "jepa.ae_finetune_wd", "widget": NUM_WD},
-                        ]},
-                    ]},
-                ]},
-                {"title": "Image autoencoder", "fields": [
-                    "jepa.image_autoencoder_logdir",
-                    {"path": "jepa.image_autoencoder_run", "widget": {"kind": "dataset", "mode": "runs", "baseFrom": "jepa.image_autoencoder_logdir", "checkpointOnly": True}},
-                    {"gateOn": {"field": "jepa.image_autoencoder_run", "set": True}, "fields": [
-                        {"path": "jepa.image_autoencoder_mode", "widget": CH_AE_MODE},
-                        {"gateOn": {"field": "jepa.image_autoencoder_mode", "in": ["finetune"]}, "fields": [
-                            {"path": "jepa.image_ae_finetune_lr", "widget": NUM_LR},
-                            {"path": "jepa.image_ae_finetune_wd", "widget": NUM_WD},
-                        ]},
-                    ]},
-                ]},
-            ]},
-            {"kind": "fields", "title": "Curriculum", "template": "jepa_curriculum_head", "at": "jepa.curriculum"},
-        ]},
-        {"key": "jepa-embedding-loss", "title": "Embedding loss", "when": [{"field": "training_type", "in": ["jepa"]}, {"field": "jepa.profile_autoencoder_run", "set": True}], "panels": [
-            {"kind": "fields", "title": "Embedding loss", "note": JEPA_EMBEDDING_NOTE, "template": "embedding_loss", "at": "jepa.embedding_loss"},
-            {"kind": "fields", "title": "Input masking", "template": "jepa_masking", "at": "jepa.masking"},
-            {"kind": "fields", "title": "Curriculum warmup stage", "template": "embedding_loss", "at": "jepa.curriculum.warmup_embedding"},
-        ]},
-        {"key": "jepa-param-loss", "title": "Param loss", "when": [{"field": "training_type", "in": ["jepa"]}, {"field": "jepa.profile_autoencoder_run", "set": False}], "panels": [
-            {"kind": "fields", "title": "Param loss", "note": JEPA_PARAM_NOTE, "template": "loss", "at": "jepa.param_loss"},
-            {"kind": "fields", "title": "Curriculum warmup stage", "template": "loss", "at": "jepa.curriculum.warmup_param"},
-        ]},
-    ]
+
 
     INFERENCE_TARGET_NOTE = "Scores every selected run on a dataset it was never trained on. The run keeps its checkpoint and training normalization; the target must share its z axis and K, and feed as many secondary channels. Leaving an axis at 0 to 0 scores the whole target scene along it. Stamps land under <run>/cross_dataset/<dataset>/, apart from the run's own inference, and split must stay test."
 
@@ -568,27 +414,7 @@ class LaunchLayout:
         ],
     }
 
-    INFER_PROFILE_AE_LAYOUT = {
-        "essentials": InferenceEssentials.for_block("profile_inference.split"),
-        "sections": [
-            {"key": "profile-ae", "title": "Profile AE", "panels": [
-                {"kind": "fields", "title": "Profile autoencoder inference", "template": "profile_inference", "at": "profile_inference"},
 
-                {"kind": "hidden", "fields": ["gpus_file"]},
-            ]},
-        ],
-    }
-
-    INFER_IMAGE_AE_LAYOUT = {
-        "essentials": InferenceEssentials.for_block("image_inference.split"),
-        "sections": [
-            {"key": "image-ae", "title": "Image AE", "panels": [
-                {"kind": "fields", "title": "Image autoencoder inference", "template": "image_inference", "at": "image_inference"},
-
-                {"kind": "hidden", "fields": ["gpus_file"]},
-            ]},
-        ],
-    }
 
 
     LAYOUTS = {
@@ -723,144 +549,8 @@ class LaunchLayout:
                 ]},
             ],
         },
-        "train_profile_autoencoder": {
-            "essentials": TRAIN_ESSENTIALS,
-            "sections": [
-                {"key": "model", "title": "Model", "panels": [
-                    {"kind": "special", "panel": "model_card", "fields": ["ae_model_name"]},
-                    {"kind": "special", "panel": "arch_overrides", "modelFrom": "ae_model_name", "fields": ["model_overrides"]},
-                    {"kind": "fields", "groups": [
-                        {"title": "Learning rates", "fields": [
-                            {"path": "encoder_lr", "widget": NUM_LR},
-                            {"path": "decoder_lr", "widget": NUM_LR},
-                            {"path": "encoder_wd", "widget": NUM_WD},
-                            {"path": "decoder_wd", "widget": NUM_WD},
-                        ]},
-                    ]},
-                ]},
-                {"key": "data", "title": "Data", "panels": [
-                    {"kind": "fields", "title": "Paths", "template": "paths_train", "at": "paths"},
-                    {"kind": "fields", "title": "Sampling", "groups": [
-                        {"title": None, "fields": [{"path": "pixel_subsample", "widget": NUM_FRACTION}, {"path": "keep_empty_frac", "widget": NUM_FRACTION}, {"path": "stats_max_samples", "widget": NUM_CELLS}]},
-                    ]},
-                    {"kind": "fields", "title": "Profile augmentation", "template": "profile_augmentation", "at": "profile_augmentation"},
-                ]},
-                {"key": "training", "title": "Training", "panels": [
-                    {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
-                    {"kind": "fields", "title": "Pre-run tuning", "template": "pretrain", "at": "pretrain"},
-                    {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
-                ]},
-                {"key": "loss", "title": "Loss", "panels": [
-                    {"kind": "fields", "title": "Autoencoder loss", "template": "ae_loss_profile", "at": "ae_loss"},
-                ]},
-                {"key": "experiments", "title": "Experiments", "panels": [
-                    {"kind": "special", "panel": "experiment_builder", "fields": PROFILE_AE_EXPERIMENT_TRIALS},
-                    {"kind": "fields", "groups": [
-                        {"title": "Fan-out execution", "fields": ["poll_interval_s"]},
-                    ]},
-                    {"kind": "hidden", "fields": ["gpus_file"]},
-                ]},
-            ],
-        },
-        "train_image_autoencoder": {
-            "essentials": TRAIN_ESSENTIALS,
-            "sections": [
-                {"key": "model", "title": "Model", "panels": [
-                    {"kind": "special", "panel": "model_card", "fields": ["ae_model_name"]},
-                    {"kind": "special", "panel": "arch_overrides", "modelFrom": "ae_model_name", "fields": ["model_overrides"]},
-                ]},
-                {"key": "data", "title": "Data", "panels": [
-                    {"kind": "fields", "title": "Paths", "template": "paths_train", "at": "paths"},
-                    {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
-                    {"kind": "fields", "title": "Augmentation", "note": IMAGE_AE_AUGMENTATION_NOTE, "template": "augmentation_flips", "at": "augmentation"},
-                    {"kind": "hidden", "fields": ["augmentation.p_noise", "augmentation.noise_std"]},
-                ]},
-                {"key": "training", "title": "Training", "panels": [
-                    {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
-                    {"kind": "fields", "title": "Pre-run tuning", "template": "pretrain", "at": "pretrain"},
-                    {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
-                    {"kind": "fields", "groups": [{"title": "Fan-out execution", "fields": ["poll_interval_s"]}]},
-                    {"kind": "hidden", "fields": ["gpus_file"]},
-                ]},
-                {"key": "loss", "title": "Loss", "panels": [
-                    {"kind": "fields", "title": "Autoencoder loss", "template": "ae_loss_image", "at": "ae_loss"},
-                ]},
-            ],
-        },
-        "train_jepa": {
-            "essentials": TRAIN_ESSENTIALS,
-            "sections": [
-                {"key": "model", "title": "Model", "panels": [
-                    {"kind": "special", "panel": "model_card", "fields": ["backbone_name", "backbone_head"], "headGate": {"when": {"field": "profile_autoencoder_run", "set": True}, "only": ["conv"], "hint": JEPA_HEAD_HINT}},
-                    {"kind": "special", "panel": "arch_overrides", "modelFrom": "backbone_name", "fields": ["model_overrides"]},
-                    {"kind": "fields", "title": "Autoencoders", "note": JEPA_COUPLING_NOTE, "groups": [
-                        {"title": "Profile autoencoder", "fields": [
-                            "profile_autoencoder_logdir",
-                            {"path": "profile_autoencoder_run", "widget": {"kind": "dataset", "mode": "runs", "baseFrom": "profile_autoencoder_logdir", "checkpointOnly": True}},
-                            {"gateOn": {"field": "profile_autoencoder_run", "set": True}, "fields": [
-                                {"path": "profile_autoencoder_mode", "widget": CH_AE_MODE},
-                                {"path": "target_provider", "widget": CH_PROVIDER},
-                                {"gateOn": {"field": "profile_autoencoder_mode", "in": ["finetune"]}, "fields": [
-                                    {"path": "ae_finetune_lr", "widget": NUM_LR},
-                                    {"path": "ae_finetune_wd", "widget": NUM_WD},
-                                ]},
-                            ]},
-                        ]},
-                        {"title": "Image autoencoder", "fields": [
-                            "image_autoencoder_logdir",
-                            {"path": "image_autoencoder_run", "widget": {"kind": "dataset", "mode": "runs", "baseFrom": "image_autoencoder_logdir", "checkpointOnly": True}},
-                            {"gateOn": {"field": "image_autoencoder_run", "set": True}, "fields": [
-                                {"path": "image_autoencoder_mode", "widget": CH_AE_MODE},
-                                {"gateOn": {"field": "image_autoencoder_mode", "in": ["finetune"]}, "fields": [
-                                    {"path": "image_ae_finetune_lr", "widget": NUM_LR},
-                                    {"path": "image_ae_finetune_wd", "widget": NUM_WD},
-                                ]},
-                            ]},
-                        ]},
-                    ]},
-                ]},
-                {"key": "data", "title": "Data", "panels": [
-                    {"kind": "fields", "title": "Paths", "template": "paths_train", "at": "paths"},
-                    {"kind": "fields", "title": "Input channels", "template": "input", "at": "input"},
-                    {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
-                    {"kind": "fields", "title": "Augmentation", "template": "augmentation", "at": "augmentation"},
-                ]},
-                {"key": "training", "title": "Training", "panels": [
-                    {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
-                    {"kind": "fields", "title": "Loss-scale probe", "template": "loss_probe", "at": "probe"},
-                    {"kind": "fields", "title": "Curriculum", "note": "When enabled, training starts on the warmup stage of the active loss regime and swaps to the main embedding or param loss at the swap epoch; the run name still encodes the main loss.", "template": "jepa_curriculum_head", "at": "curriculum"},
-                    {"kind": "fields", "title": "Pre-run tuning", "template": "pretrain", "at": "pretrain"},
-                    {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
-                ]},
-                {"key": "loss-embedding", "title": "Embedding loss", "when": {"field": "profile_autoencoder_run", "set": True}, "panels": [
-                    {"kind": "fields", "title": "Embedding loss", "note": JEPA_EMBEDDING_NOTE, "template": "embedding_loss", "at": "embedding_loss"},
-                    {"kind": "fields", "title": "Input masking", "note": "Hides part of each input patch before the forward pass, turning the run into context-to-target prediction; the embedding loss can be restricted to the hidden pixels.", "template": "jepa_masking", "at": "masking"},
-                    {"kind": "fields", "title": "Curriculum warmup stage", "note": "Embedding-loss stage active before the curriculum swap; ignored while the curriculum is disabled.", "template": "embedding_loss", "at": "curriculum.warmup_embedding"},
-                ]},
-                {"key": "loss-param", "title": "Param loss", "when": {"field": "profile_autoencoder_run", "set": False}, "panels": [
-                    {"kind": "fields", "title": "Param loss", "note": JEPA_PARAM_NOTE, "template": "loss", "at": "param_loss"},
-                    {"kind": "fields", "title": "Curriculum warmup stage", "note": "Param-loss stage active before the curriculum swap; ignored while the curriculum is disabled.", "template": "loss", "at": "curriculum.warmup_param"},
-                ]},
-                {"key": "experiments", "title": "Experiments", "panels": [
-                    {"kind": "special", "panel": "experiment_builder", "fields": JEPA_EXPERIMENT_TRIALS},
-                    {"kind": "fields", "groups": [
-                        {"title": "Fan-out execution", "fields": ["poll_interval_s"]},
-                    ]},
-                    {"kind": "hidden", "fields": ["gpus_file"]},
-                ]},
-                {"key": "inference", "title": "Inference", "panels": [
-                    {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after", "infer_at_end"]}]},
-                    {"kind": "fields", "title": "Inference run", "template": "inference_full", "at": "inference"},
-
-                    {"kind": "hidden", "fields": ["inference.region_override", *INFERENCE_TARGET_FIELDS]},
-                ]},
-            ],
-        },
         "infer_backbone":            INFER_BACKBONE_LAYOUT,
-        "infer_profile_autoencoder": INFER_PROFILE_AE_LAYOUT,
-        "infer_image_autoencoder":   INFER_IMAGE_AE_LAYOUT,
         "benchmark": {
-            "type_tab": {"field": "training_type", "options": [["backbone", "Backbone"], ["profile_autoencoder", "Profile AE"], ["jepa", "JEPA"]]},
             "essentials": [
                 "run_tag",
                 {"path": "gpus", "widget": GPU_MANY},
@@ -877,12 +567,12 @@ class LaunchLayout:
                 {"key": "sweep", "title": "Sweep", "panels": [
                     {"kind": "hidden", "fields": ["gpus_file"]},
                     {"kind": "special", "panel": "model_toggle", "fields": ["skip_models"]},
-                    {"kind": "fields", "note": "Output heads and loss components shape backbone sweeps only; JEPA and profile AE arms ignore both, and every JEPA arm trains the conv head.", "groups": [
-                        {"title": "Output heads",    "fields": [{"gateOn": {"field": "training_type", "in": ["backbone"]}, "fields": [{"path": "heads", "widget": MULTI_HEADS}]}]},
-                        {"title": "Loss components", "fields": [{"gateOn": {"field": "training_type", "in": ["backbone"]}, "fields": [{"path": "sweep_loss_components", "widget": MULTI_SWEEP_LOSSES}]}]},
+                    {"kind": "fields", "groups": [
+                        {"title": "Output heads",    "fields": [{"path": "heads", "widget": MULTI_HEADS}]},
+                        {"title": "Loss components", "fields": [{"path": "sweep_loss_components", "widget": MULTI_SWEEP_LOSSES}]},
                     ]},
                 ]},
-                {"key": "size-match", "title": "Size match", "when": {"field": "training_type", "in": ["backbone"]}, "panels": [
+                {"key": "size-match", "title": "Size match", "panels": [
                     {"kind": "fields", "groups": [
                         {"title": "Capacity matching", "fields": ["size_match.reference_model", "size_match.tolerance", "size_match.max_iterations", "size_match.scale_low", "size_match.scale_high", "size_match.scale_ceiling", "size_match.in_channels", "size_match.locked_params"]},
                     ]},
@@ -890,10 +580,10 @@ class LaunchLayout:
                 {"key": "data", "title": "Data", "panels": [
                     {"kind": "fields", "title": "Paths", "template": "paths_rest", "at": "paths"},
                 ]},
-                {"key": "input", "title": "Input channels", "when": {"field": "training_type", "in": ["backbone"]}, "panels": [
+                {"key": "input", "title": "Input channels", "panels": [
                     {"kind": "fields", "title": "Input channels", "template": "input", "at": "input"},
                 ]},
-                {"key": "transforms", "title": "Normalization and augmentation", "when": {"field": "training_type", "in": ["backbone", "jepa"]}, "panels": [
+                {"key": "transforms", "title": "Normalization and augmentation", "panels": [
                     {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
                     {"kind": "fields", "title": "Augmentation", "template": "augmentation", "at": "augmentation"},
                 ]},
@@ -910,17 +600,10 @@ class LaunchLayout:
                         ]},
                     ]},
                 ]},
-                {"key": "loss", "title": "Loss", "when": {"field": "training_type", "in": ["backbone"]}, "panels": [
+                {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Base loss for swept components", "template": "loss", "at": "loss"},
                 ]},
-                {"key": "ae-loss", "title": "Autoencoder loss", "when": {"field": "training_type", "in": ["profile_autoencoder"]}, "panels": [
-                    {"kind": "fields", "title": "Autoencoder loss", "template": "ae_loss_profile", "at": "ae_loss"},
-                    {"kind": "fields", "title": "Sampling", "groups": [
-                        {"title": None, "fields": [{"path": "pixel_subsample", "widget": NUM_FRACTION}, {"path": "keep_empty_frac", "widget": NUM_FRACTION}]},
-                    ]},
-                ]},
-                *JEPA_SECTIONS,
-                {"key": "inference", "title": "Inference", "when": {"field": "training_type", "in": ["backbone", "jepa"]}, "panels": [
+                {"key": "inference", "title": "Inference", "panels": [
                     {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after"]}]},
                     {"kind": "fields", "title": "Inference run", "template": "inference_queue", "at": "inference"},
                     {"kind": "fields", "groups": [{"title": "Comparison report", "fields": ["comparison.embed_images"]}]},
@@ -928,7 +611,6 @@ class LaunchLayout:
             ],
         },
         "cross_validate": {
-            "type_tab": {"field": "training_type", "options": [["backbone", "Backbone"], ["profile_autoencoder", "Profile AE"], ["image_autoencoder", "Image AE"], ["jepa", "JEPA"]]},
             "essentials": [
                 "run_tag",
                 {"path": "gpus", "widget": GPU_MANY},
@@ -942,11 +624,9 @@ class LaunchLayout:
                 "poll_interval_s",
             ],
             "sections": [
-                {"key": "model", "title": "Model", "when": {"field": "training_type", "in": ["backbone", "jepa"]}, "panels": [
-                    {"kind": "special", "panel": "model_card", "fields": ["backbone_name", "backbone_head"], "headGate": {"when": [{"field": "training_type", "in": ["jepa"]}, {"field": "jepa.profile_autoencoder_run", "set": True}], "only": ["conv"], "hint": JEPA_HEAD_HINT}},
-                ]},
-                {"key": "overrides", "title": "Architecture overrides", "panels": [
-                    {"kind": "special", "panel": "arch_overrides", "title": "Architecture overrides", "modelBy": CV_MODEL_BY_TYPE, "fields": ["model_overrides"]},
+                {"key": "model", "title": "Model", "panels": [
+                    {"kind": "special", "panel": "model_card", "fields": ["backbone_name", "backbone_head"]},
+                    {"kind": "special", "panel": "arch_overrides", "modelFrom": "backbone_name", "fields": ["model_overrides"]},
                 ]},
                 {"key": "folds", "title": "Folds", "panels": [
                     {"kind": "hidden", "fields": ["gpus_file"]},
@@ -957,44 +637,23 @@ class LaunchLayout:
                 {"key": "data", "title": "Data", "panels": [
                     {"kind": "fields", "title": "Paths", "template": "paths_rest", "at": "paths"},
                 ]},
-                {"key": "input", "title": "Input channels", "when": {"field": "training_type", "in": ["backbone"]}, "panels": [
+                {"key": "input", "title": "Input channels", "panels": [
                     {"kind": "fields", "title": "Input channels", "template": "input", "at": "input"},
                 ]},
-                {"key": "transforms", "title": "Normalization and augmentation", "when": {"field": "training_type", "in": ["backbone", "image_autoencoder", "jepa"]}, "panels": [
+                {"key": "transforms", "title": "Normalization and augmentation", "panels": [
                     {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
                     {"kind": "fields", "title": "Augmentation", "template": "augmentation", "at": "augmentation"},
                 ]},
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
-                    {"kind": "fields", "groups": [{"title": "Initialization", "fields": [{"gateOn": {"field": "training_type", "in": ["backbone"]}, "fields": ["prior_bias_init"]}]}]},
+                    {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
                     {"kind": "fields", "title": "Loss-scale probe", "template": "loss_probe", "at": "probe"},
                     {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
                 ]},
-                {"key": "loss", "title": "Loss", "when": {"field": "training_type", "in": ["backbone"]}, "panels": [
+                {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
                     {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
                 ]},
-                {"key": "autoencoder", "title": "Autoencoder", "when": {"field": "training_type", "in": ["profile_autoencoder"]}, "panels": [
-                    {"kind": "special", "panel": "model_card", "fields": ["autoencoder.ae_model_name"]},
-                    {"kind": "fields", "groups": [
-                        {"title": "Learning rates", "fields": [
-                            {"path": "autoencoder.encoder_lr", "widget": NUM_LR},
-                            {"path": "autoencoder.decoder_lr", "widget": NUM_LR},
-                            {"path": "autoencoder.encoder_wd", "widget": NUM_WD},
-                            {"path": "autoencoder.decoder_wd", "widget": NUM_WD},
-                        ]},
-                    ]},
-                    {"kind": "fields", "title": "Autoencoder loss", "template": "ae_loss_profile", "at": "autoencoder.ae_loss"},
-                    {"kind": "fields", "title": "Profile augmentation", "template": "profile_augmentation", "at": "autoencoder.profile_augmentation"},
-                    {"kind": "fields", "title": "Sampling", "groups": [
-                        {"title": None, "fields": [{"path": "autoencoder.pixel_subsample", "widget": NUM_FRACTION}, {"path": "autoencoder.keep_empty_frac", "widget": NUM_FRACTION}]},
-                    ]},
-                ]},
-                {"key": "image-autoencoder", "title": "Image autoencoder", "when": {"field": "training_type", "in": ["image_autoencoder"]}, "panels": [
-                    {"kind": "special", "panel": "model_card", "fields": ["image_autoencoder.ae_model_name"]},
-                    {"kind": "fields", "title": "Image AE loss", "template": "ae_loss_image", "at": "image_autoencoder.ae_loss"},
-                ]},
-                *JEPA_SECTIONS,
                 {"key": "inference", "title": "Inference", "panels": [
                     {"kind": "fields", "groups": [{"title": "Splits", "fields": ["inference_splits"]}]},
                     {"kind": "fields", "title": "Inference run", "template": "inference_queue", "at": "inference"},
@@ -1003,7 +662,6 @@ class LaunchLayout:
             ],
         },
         "tune": {
-            "type_tab": {"field": "training_type", "options": [["backbone", "Backbone"], ["profile_autoencoder", "Profile AE"], ["image_autoencoder", "Image AE"], ["jepa", "JEPA"]]},
             "essentials": [
                 "run_tag",
                 {"path": "resume_from", "widget": {"kind": "dataset", "mode": "resume_runs", "baseFrom": "paths.log_base_dir"}},
@@ -1018,11 +676,7 @@ class LaunchLayout:
                     {"kind": "hidden", "fields": ["gpus_file"]},
                     {"kind": "special", "panel": "model_toggle", "fields": ["skip_models"]},
                     {"kind": "fields", "title": "Optuna search", "groups": [
-                        {"title": "Output heads", "fields": [
-                            {"gateOn": {"field": "training_type", "in": ["backbone", "jepa"]}, "fields": [
-                                {"path": "heads", "widget": {**MULTI_HEADS, "choiceGate": {"when": [{"field": "training_type", "in": ["jepa"]}, {"field": "jepa.profile_autoencoder_run", "set": True}], "only": ["conv"], "hint": JEPA_HEAD_HINT}}},
-                            ]},
-                        ]},
+                        {"title": "Output heads", "fields": [{"path": "heads", "widget": MULTI_HEADS}]},
                         {"title": "Trials", "fields": ["tuning.n_trials", {"path": "tuning.n_epochs", "widget": NUM_EPOCHS}, {"path": "tuning.base_seed", "widget": NUM_SEED}, {"path": "tuning.early_stop_patience", "widget": NUM_PATIENCE}]},
                         {"title": "Search groups", "fields": ["tuning.search_lr", "tuning.search_arch", "tuning.search_batch", {"path": "tuning.batch_sizes", "widget": MULTI_INT}]},
                         {"title": "Stop rules", "fields": [{"path": "tuning.plateau_patience", "widget": NUM_PLATEAU}, {"path": "tuning.plateau_min_delta", "widget": NUM_DELTA}, {"path": "tuning.time_budget_h", "widget": NUM_HOURS}]},
@@ -1033,35 +687,24 @@ class LaunchLayout:
                 {"key": "data", "title": "Data", "panels": [
                     {"kind": "fields", "title": "Paths", "template": "paths_rest", "at": "paths"},
                 ]},
-                {"key": "transforms", "title": "Normalization and augmentation", "when": {"field": "training_type", "in": ["backbone", "image_autoencoder", "jepa"]}, "panels": [
+                {"key": "transforms", "title": "Normalization and augmentation", "panels": [
                     {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
                     {"kind": "fields", "title": "Augmentation", "template": "augmentation", "at": "augmentation"},
                 ]},
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
                 ]},
-                {"key": "loss", "title": "Loss", "when": {"field": "training_type", "in": ["backbone"]}, "panels": [
+                {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
                     {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
                 ]},
-                {"key": "ae-loss", "title": "Autoencoder loss", "when": {"field": "training_type", "in": ["profile_autoencoder"]}, "panels": [
-                    {"kind": "fields", "title": "Autoencoder loss", "template": "ae_loss_profile", "at": "ae_loss"},
-                    {"kind": "fields", "title": "Sampling", "groups": [
-                        {"title": None, "fields": [{"path": "pixel_subsample", "widget": NUM_FRACTION}, {"path": "keep_empty_frac", "widget": NUM_FRACTION}]},
-                    ]},
-                ]},
-                {"key": "image-ae-loss", "title": "Image AE loss", "when": {"field": "training_type", "in": ["image_autoencoder"]}, "panels": [
-                    {"kind": "fields", "title": "Image AE loss", "template": "ae_loss_image", "at": "image_ae_loss"},
-                ]},
-                *JEPA_SECTIONS,
             ],
         },
         "tune_dataloader": {
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [
                     {"kind": "fields", "groups": [
-                        {"title": "Run", "fields": ["mode", "model_name", {"path": "gpu", "widget": GPU_ONE}, {"path": "seed", "widget": NUM_SEED}, "use_amp"]},
-                        {"title": "Sampling", "fields": [{"path": "pixel_subsample", "widget": NUM_FRACTION}, {"path": "keep_empty_frac", "widget": NUM_FRACTION}]},
+                        {"title": "Run", "fields": ["model_name", {"path": "gpu", "widget": GPU_ONE}, {"path": "seed", "widget": NUM_SEED}, "use_amp"]},
                         {"title": "Sweep grid", "fields": [
                             {"path": "batch_sizes", "widget": MULTI_INT},
                             {"path": "worker_counts", "widget": MULTI_INT},
@@ -1069,7 +712,6 @@ class LaunchLayout:
                         ]},
                         {"title": "Measurement", "fields": ["reference_prefetch", "warmup_batches", "timed_batches", "cpu_threads", "data_wait_target"]},
                         {"title": "Outputs", "fields": ["refine", "save_figures", "output_dir"]},
-                        {"title": "Synthetic dataset", "fields": ["synthetic_samples", "synthetic_length"]},
                         {"title": "Paths", "fields": [
                             {"path": "paths.dataset_path", "widget": PICK_DATASET},
                             {"path": "paths.parameters_path", "widget": PICK_PARAMS},
@@ -1444,7 +1086,7 @@ class LaunchLayout:
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [
                     {"kind": "fields", "groups": [
-                        {"title": "Workload", "fields": ["mode", "model_name", {"path": "gpu", "widget": GPU_ONE}, {"path": "seed", "widget": NUM_SEED}, "use_amp"]},
+                        {"title": "Workload", "fields": ["model_name", {"path": "gpu", "widget": GPU_ONE}, {"path": "seed", "widget": NUM_SEED}, "use_amp"]},
                         {"title": "Steps", "fields": [
                             {"path": "batch_size", "widget": NUM_BATCH},
                             {"path": "num_workers", "widget": NUM_WORKERS},
@@ -1453,7 +1095,6 @@ class LaunchLayout:
                             {"path": "active_steps", "widget": {"kind": "number", "int": True, "min": 1, "max": 500, "presets": [12, 24, 48]}},
                         ]},
                         {"title": "Trace", "fields": ["record_shapes", "profile_memory", "with_stack"]},
-                        {"title": "Dataset", "fields": ["pixel_subsample", "keep_empty_frac", "synthetic_samples", "synthetic_length"]},
                         {"title": "Paths", "fields": [
                             {"path": "paths.dataset_path", "widget": PICK_DATASET},
                             {"path": "paths.parameters_path", "widget": PICK_PARAMS},
@@ -1576,11 +1217,6 @@ class LaunchLayout:
             entry = {"gate": self._join(prefix, item["gate"]), "fields": [self._field_entry(sub, prefix, widgets) for sub in item["fields"]]}
             return entry
 
-        if "gateOn" in item:
-            condition          = copy.deepcopy(item["gateOn"])
-            condition["field"] = self._join(prefix, condition["field"])
-            return {"gateOn": condition, "fields": [self._field_entry(sub, prefix, widgets) for sub in item["fields"]]}
-
         path = self._join(prefix, item["path"])
         if "widget" in item:
             widgets[path] = item["widget"]
@@ -1606,12 +1242,8 @@ class LaunchLayout:
             expanded = {"kind": "special", "panel": panel["panel"], "fields": list(panel["fields"])}
             if "modelFrom" in panel:
                 expanded["modelFrom"] = panel["modelFrom"]
-            if "modelBy" in panel:
-                expanded["modelBy"] = copy.deepcopy(panel["modelBy"])
             if "title" in panel:
                 expanded["title"] = panel["title"]
-            if "headGate" in panel:
-                expanded["headGate"] = copy.deepcopy(panel["headGate"])
             return expanded
 
         if panel["kind"] == "hidden":
@@ -1653,31 +1285,7 @@ class LaunchLayout:
             for sub in entry["fields"]:
                 self._entry_claims(sub, out)
             return
-        if "gateOn" in entry:
-            for sub in entry["fields"]:
-                self._entry_claims(sub, out)
-            return
         out.append(entry["path"])
-
-    def _entry_gate_conditions(self, entry, out):
-        if "gateOn" in entry:
-            out.append(entry["gateOn"])
-        for sub in entry.get("fields", []):
-            self._entry_gate_conditions(sub, out)
-
-    def _gate_conditions(self, layout):
-        conditions = []
-        for entry in layout["essentials"]:
-            self._entry_gate_conditions(entry, conditions)
-
-        for section in layout["sections"]:
-            for panel in section["panels"]:
-                if panel["kind"] in ("special", "hidden"):
-                    continue
-                for group in panel["groups"]:
-                    for entry in group["fields"]:
-                        self._entry_gate_conditions(entry, conditions)
-        return conditions
 
     def _when_conditions(self, when):
         if when is None:
@@ -1737,55 +1345,16 @@ class LaunchLayout:
                 if ("in" in condition) == ("set" in condition):
                     problems.append(f"section {section['key']} has a when condition that needs exactly one of 'in' or 'set'")
 
-        for condition in self._gate_conditions(layout):
-            if condition["field"] not in known:
-                problems.append(f"layout for {key} value-gates on unknown field {condition['field']}")
-            if ("in" in condition) == ("set" in condition):
-                problems.append(f"layout for {key} has a value gate that needs exactly one of 'in' or 'set'")
-
         for section in layout["sections"]:
             for panel in section["panels"]:
                 if panel["kind"] != "special":
                     continue
                 if panel.get("modelFrom") and panel["modelFrom"] not in known:
                     problems.append(f"special panel {panel['panel']} reads unknown model field {panel['modelFrom']}")
-                if panel.get("modelBy"):
-                    if panel.get("modelFrom"):
-                        problems.append(f"special panel {panel['panel']} declares both modelFrom and modelBy; a model source is either one field or one switch")
-                    if panel["panel"] != "arch_overrides":
-                        problems.append(f"special panel {panel['panel']} carries a modelBy switch, which only arch_overrides panels support")
-                    switch = panel["modelBy"]
-                    if switch.get("field") not in known:
-                        problems.append(f"special panel {panel['panel']} switches its model on unknown field {switch.get('field')}")
-                    if not switch.get("models") or not all(isinstance(path, str) for path in switch["models"].values()):
-                        problems.append(f"special panel {panel['panel']} needs a non-empty value-to-field mapping in modelBy.models")
-                    for value, path in (switch.get("models") or {}).items():
-                        if path not in known:
-                            problems.append(f"special panel {panel['panel']} reads unknown model field {path} for {switch['field']}={value}")
-                gate = panel.get("headGate")
-                if gate:
-                    if not gate.get("only"):
-                        problems.append(f"head gate on panel {panel['panel']} names no allowed heads")
-                    for condition in self._when_conditions(gate["when"]):
-                        if condition["field"] not in known:
-                            problems.append(f"head gate on panel {panel['panel']} reads unknown field {condition['field']}")
-                        if ("in" in condition) == ("set" in condition):
-                            problems.append(f"head gate on panel {panel['panel']} has a condition that needs exactly one of 'in' or 'set'")
 
         for path, widget in layout["widgets"].items():
             if widget.get("kind") == "number" and not ("min" in widget and "max" in widget):
                 problems.append(f"number widget for {path} lacks min/max bounds")
-
-            gate = widget.get("choiceGate")
-            if not gate:
-                continue
-            if not gate.get("only"):
-                problems.append(f"choice gate on widget {path} names no allowed values")
-            for condition in self._when_conditions(gate["when"]):
-                if condition["field"] not in known:
-                    problems.append(f"choice gate on widget {path} reads unknown field {condition['field']}")
-                if ("in" in condition) == ("set" in condition):
-                    problems.append(f"choice gate on widget {path} has a condition that needs exactly one of 'in' or 'set'")
 
         legacy = layout.get("legacy")
         if legacy:

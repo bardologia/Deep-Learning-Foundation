@@ -81,8 +81,7 @@ dataset can hold several parameter runs side by side under `params/`;
 `activity_threshold` is the amplitude above which a slot counts as active, and an
 importer has to write it. Every later stage reads it from this file and from nowhere
 else: the loss masks and the slot matcher, the slot diagnostics, the output
-normalization statistics, inference scoring, the profile autoencoder, the seed comparison
-and the console. A slot is active only when its amplitude is strictly above the
+normalization statistics, inference scoring, the seed comparison and the console. A slot is active only when its amplitude is strictly above the
 threshold (`GaussianActivity.is_active` in `tools/data/gaussians.py`), so 0.0 means any
 positive amplitude and a slot stored at exactly zero is never active.
 
@@ -344,16 +343,15 @@ Backbones are registered in `models/backbone/__init__.py`. A new one needs, in o
    `BACKBONE_IMAGE_SIZE_MODELS`.
 4. A card in `BackboneModelLibrary._families()` (`webui/backbone_model_library.py`), in one
    of the five families, and an entry in its `CONFIG_CLASSES` and `NOTE_FILES` maps.
-5. A note file under `notes/models/`, named by `NOTE_FILES`. The library reads it through
-   `model_library_base.py` and the console renders it on the Architectures tab.
+5. A note file under `notes/models/`, named by `NOTE_FILES`. The library reads it and the
+   console renders it on the Architectures tab.
 6. Baseline entries in `tests/state_dict_baseline.json`, per section 4.
 
 `tests/webui/test_backbone_model_library.py` checks 3, 4 and 5 against each other:
 `test_config_classes_cover_the_backbone_registry`, `test_note_files_cover_the_backbone_registry`,
 `test_families_cover_the_backbone_registry_exactly_once` and `test_every_model_resolves_a_note`.
 `tests/models_backbone/test_backbone_architectures.py` puts the model itself through every
-head. The autoencoder and JEPA families follow the same pattern in their own
-`models/<family>/__init__.py` and model library.
+head.
 
 ## 6. Add an entry point
 

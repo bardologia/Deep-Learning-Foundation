@@ -107,9 +107,6 @@ class FigureComposer:
         if result.label_r2 is not None:
             pixel_map_specs.append(("label_r2_map", "label_r2", result.label_r2, "Label fit R² (GT curves vs raw cube)", "R²", {"cmap": "RdYlGn", "q_low": 2.0, "q_high": 98.0}))
 
-        if result.extract_r2 is not None:
-            pixel_map_specs.append(("extract_r2_map", "extract_r2", result.extract_r2, "Extraction fit R² (refit Gaussians vs predicted curve)", "R²", {"cmap": "RdYlGn", "q_low": 2.0, "q_high": 98.0}))
-
         if result.flip_consistency is not None:
             pixel_map_specs.append(("flip_consistency_map", "flip_consistency", result.flip_consistency, "Flip-equivariance disagreement (curve MSE)", "MSE", {"cmap": cfg.cmap_error, "log": True}))
 
@@ -174,41 +171,6 @@ class FigureComposer:
         )
 
         logger.subsection(f"Metric histograms : {len(figure_paths['metric_histograms'])} figures in {meta.figures_dir / 'histograms'}")
-
-    def _compose_embedding_maps(self, result: Result, figure_paths: Dict[str, List[Path]]) -> None:
-
-        if result.embedding_maps is None:
-            return
-
-        maps          = result.embedding_maps
-        slice_plotter = self.plotter.slice
-        cfg           = self.cfg
-        out_dir       = self.meta.figures_dir / "embedding"
-
-        specs = (
-            ("embedding_error_map",  "embedding_error",  maps.embedding_error,  "Per-pixel embedding MSE (predicted vs target embedding)", "MSE",    {"cmap": cfg.cmap_error, "log": True}),
-            ("embedding_cosine_map", "embedding_cosine", maps.embedding_cosine, "Per-pixel embedding cosine similarity",                   "cosine", {"cmap": "RdYlGn", "q_low": 2.0, "q_high": 98.0}),
-            ("embedding_decode_map", "decode_floor",     maps.decode_mse,       "Decoder-only MSE (decode(encode(GT)) vs GT, normalised)", "MSE",    {"cmap": cfg.cmap_error, "log": True}),
-            ("embedding_chain_map",  "chain_error",      maps.chain_mse,        "Full-chain MSE (decode(prediction) vs GT, normalised)",   "MSE",    {"cmap": cfg.cmap_error, "log": True}),
-        )
-
-        for key, fname, data, title, label, extra in specs:
-            figure_paths[key] = [slice_plotter.plot_pixel_metric_map(
-                metric_map = data,
-                title      = title,
-                label      = label,
-                out_path   = out_dir / f"{fname}.png",
-                row_offset = result.row_offset,
-                col_offset = result.col_offset,
-                **extra,
-            )]
-
-        figure_paths["embedding_histograms"] = slice_plotter.plot_metric_histograms(
-            {"embedding_error": maps.embedding_error, "embedding_cosine": maps.embedding_cosine},
-            out_dir / "histograms",
-        )
-
-        self.logger.subsection(f"Embedding maps : error, cosine, decoder floor, full chain written to {out_dir}")
 
     def _compose_param_plots(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
 
@@ -556,15 +518,10 @@ class FigureComposer:
         self._compose_input_channels(result, run, figure_paths)
         self._compose_profiles(result, run, z_axis_np, param_space, figure_paths)
         self._compose_pixel_maps(result, figure_paths)
-        self._compose_embedding_maps(result, figure_paths)
 
         if param_space:
             self._compose_param_plots(result, run, figure_paths)
-
-            if result.params_source == "model":
-                self._compose_slot_organization(result, run, figure_paths)
-            else:
-                self.logger.subsection("Slot-organization figures skipped: the parameters were extracted from the predicted curves and sorted by position, so slot index carries no model-side meaning.")
+            self._compose_slot_organization(result, run, figure_paths)
 
         self._compose_slices(result, run, global_metrics, z_axis_np, indices, figure_paths)
         self._compose_ssim(result, global_metrics, z_axis_np, indices, figure_paths)

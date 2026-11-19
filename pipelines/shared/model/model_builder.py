@@ -22,25 +22,14 @@ class ModelBuilder:
         return {"image_size": int(max(patch_size))}
 
     @staticmethod
-    def square_patch(model_names, size, stride) -> tuple[tuple[int, int], tuple[int, int]]:
-        if not any(name in BACKBONE_IMAGE_SIZE_MODELS for name in model_names):
+    def square_patch(model_name: str, size, stride) -> tuple[tuple[int, int], tuple[int, int]]:
+        if model_name not in BACKBONE_IMAGE_SIZE_MODELS:
             return tuple(size), tuple(stride)
 
         side = int(max(size))
         step = int(max(stride))
 
         return (side, side), (step, step)
-
-    @staticmethod
-    def squaring_note(model_names, size, stride) -> str | None:
-        squared_size, squared_stride = ModelBuilder.square_patch(model_names, size, stride)
-
-        if squared_size == tuple(size) and squared_stride == tuple(stride):
-            return None
-
-        square_only = [name for name in model_names if name in BACKBONE_IMAGE_SIZE_MODELS]
-
-        return f"patch {size[0]}x{size[1]} with stride {stride[0]}x{stride[1]} squared to {squared_size[0]}x{squared_size[1]} with stride {squared_stride[0]}x{squared_stride[1]}: {', '.join(square_only)} need a square input. The patch count and spatial context differ from the configured geometry, which docs/resolved_entry_config.json still records"
 
     @staticmethod
     def split_key(model_key: str) -> tuple[str, str]:

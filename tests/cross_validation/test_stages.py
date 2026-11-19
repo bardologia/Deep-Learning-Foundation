@@ -345,14 +345,6 @@ def test_inference_stage_job_command_carries_fold_without_split(tmp_path, test_d
     assert job.log_path == stage.stage_dir / name / stage.worker_logname
 
 
-def test_training_stage_keeps_bare_fold_names_for_profile_autoencoder(tmp_path):
-    config               = stage_config(tmp_path)
-    config.training_type = "profile_autoencoder"
-    stage                = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_file_logger(tmp_path, "stages_test"))
-
-    assert stage.items == [f"fold_{index}" for index in range(5)]
-
-
 def test_report_stage_invokes_collector_and_report(tmp_path, monkeypatch):
     config  = stage_config(tmp_path)
     planner = make_planner(config)
@@ -361,7 +353,7 @@ def test_report_stage_invokes_collector_and_report(tmp_path, monkeypatch):
     seen = {}
 
     class FakeCollector:
-        def __init__(self, run_dir, splits, training_type, logger):
+        def __init__(self, run_dir, splits, logger):
             seen["splits"]       = splits
             self.seed_dispersion = {}
 
@@ -391,39 +383,6 @@ def test_report_stage_invokes_collector_and_report(tmp_path, monkeypatch):
     assert seen["model_name"]       == config.backbone_name
     assert seen["wrote"]            is True
     assert out_dir                  == seen["out_dir"]
-
-
-def test_report_stage_model_name_for_profile_autoencoder(tmp_path, monkeypatch):
-    config                  = stage_config(tmp_path)
-    config.training_type    = "profile_autoencoder"
-    config.inference_splits = []
-    planner                 = make_planner(config)
-    stage                = CrossValidationReportStage(config=config, run_tag="rt", planner=planner, logger=make_file_logger(tmp_path, "stages_test"))
-
-    seen = {}
-
-    class FakeCollector:
-        def __init__(self, run_dir, splits, training_type, logger):
-            seen["splits"]       = splits
-            self.seed_dispersion = {}
-
-        def collect_by_split(self):
-            return [], {}
-
-    class FakeReport:
-        def __init__(self, base_records, records_by_split, planner, out_dir, model_name, embed_images, logger, seed_dispersion=None):
-            seen["model_name"] = model_name
-
-        def write_all(self):
-            return []
-
-    monkeypatch.setattr(stages_module, "FoldCollector",         FakeCollector, raising=True)
-    monkeypatch.setattr(stages_module, "CrossValidationReport", FakeReport,    raising=True)
-
-    stage.run()
-
-    assert seen["splits"]     == []
-    assert seen["model_name"] == config.autoencoder.ae_model_name
 
 
 def test_report_stage_honours_an_explicit_run_dir(tmp_path):
@@ -469,7 +428,7 @@ def test_report_rebuilder_aborts_when_a_fold_lacks_its_run_summary(tmp_path):
         CrossValidationReportRebuilder(run_dir, make_file_logger(tmp_path, "rebuild_test")).rebuild()
 
 
-def test_fold_tree_survey_reads_family_model_splits_and_plan(tmp_path):
+def test_fold_tree_survey_reads_model_splits_and_plan(tmp_path):
     run_dir   = build_finished_run(tmp_path / "workspace", "cv_20260912_100000", splits=("val", "test"))
     survey    = FoldTreeSurvey(run_dir)
     fold_runs = survey.fold_runs()
@@ -481,9 +440,8 @@ def test_fold_tree_survey_reads_family_model_splits_and_plan(tmp_path):
 
     assert sorted(fold_runs) == [0, 1, 2]
     assert first == run_dir / "folds" / "resunet_fold_0"
-    assert survey.training_type(first) == "backbone"
     assert survey.model_name(first) == "resunet"
-    assert survey.splits(fold_runs, "backbone") == ["test", "val"]
+    assert survey.splits(fold_runs) == ["test", "val"]
     assert [plan.split_regions for plan in survey.planner(fold_runs).plans()] == [plan.split_regions for plan in expected.plans()]
 
 
@@ -516,7 +474,7 @@ def test_training_stage_reuses_a_completed_unit_found_through_its_manifest(tmp_p
     config.seeds = [1, 2]
 
     old = tmp_path / "rt" / "folds" / "old-label_fold_0" / "seed1"
-    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_0/seed1", fold_index=0, seed=1, training_type="backbone", inference_regions={"test": (0, 1, 2, 3)})
+    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_0/seed1", fold_index=0, seed=1, inference_regions={"test": (0, 1, 2, 3)})
     mark_complete(old)
 
     stage  = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_file_logger(tmp_path, "stages_test"))
@@ -544,7 +502,7 @@ def test_training_stage_resumes_an_unfinished_unit_in_its_own_directory(tmp_path
     config.training.resume = True
 
     old = tmp_path / "rt" / "folds" / "old-label_fold_2"
-    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_2", fold_index=2, seed=None, training_type="backbone", inference_regions={})
+    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_2", fold_index=2, seed=None, inference_regions={})
     (old / "last.pt").write_text("x")
 
     stage   = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_file_logger(tmp_path, "stages_test"))
@@ -566,7 +524,7 @@ def test_inference_stage_scores_the_directory_the_manifest_identifies(tmp_path, 
     config = data_config(tmp_path, test_data_dir, resume=True)
 
     old = tmp_path / "rt" / "folds" / "old-label_fold_1"
-    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_1", fold_index=1, seed=None, training_type="backbone", inference_regions={})
+    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_1", fold_index=1, seed=None, inference_regions={})
     mark_complete(old)
     stamp_split_inference(old, "val")
 
@@ -614,7 +572,7 @@ def test_status_report_lists_every_unit_with_its_directory_and_state(tmp_path, t
     config = data_config(tmp_path, test_data_dir, resume=True)
 
     old = tmp_path / "rt" / "folds" / "old-label_fold_0"
-    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_0", fold_index=0, seed=None, training_type="backbone", inference_regions={})
+    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_0", fold_index=0, seed=None, inference_regions={})
     mark_complete(old)
     stamp_split_inference(old, "val")
 

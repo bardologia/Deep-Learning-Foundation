@@ -103,29 +103,24 @@ class ModelTogglePanel {
 
 
 class ModelCardPanel {
-  constructor(view, leaf, headLeaf = null, headGate = null) {
+  constructor(view, leaf, headLeaf = null) {
     this.view      = view;
     this.leaf      = leaf;
     this.headLeaf  = headLeaf;
-    this.headGate  = headGate;
     this.families  = view.modelFamilies || [];
     this.heads     = view.modelHeads || [];
     this.cards     = new Map();
     this.headChips = new Map();
     this.currentEl = null;
-    this.headHint  = null;
   }
 
   build() {
     const root     = document.createElement("section");
     root.className = "model-panel";
 
-    const isAe     = this.leaf.path.endsWith("ae_model_name");
     const head     = document.createElement("header");
     head.className = "special-head";
-    head.innerHTML = isAe
-      ? `<h3 class="special-head__name">Autoencoder</h3><span class="special-head__hint">the autoencoder to train</span>`
-      : `<h3 class="special-head__name">Model</h3><span class="special-head__hint">the architecture to train</span>`;
+    head.innerHTML = `<h3 class="special-head__name">Model</h3><span class="special-head__hint">the architecture to train</span>`;
 
     const current   = document.createElement("span");
     current.className = "model-panel__count";
@@ -142,7 +137,6 @@ class ModelCardPanel {
 
     this.view.controls[this.leaf.path] = { leaf: this.leaf, reset: () => this._paint() };
     if (this.headLeaf) this.view.controls[this.headLeaf.path] = { leaf: this.headLeaf, reset: () => this._paint() };
-    if (this.headLeaf && this.headGate) this.view.repainters.push(() => this._paint());
     this._paint();
     return root;
   }
@@ -161,15 +155,6 @@ class ModelCardPanel {
 
     block.appendChild(name);
     block.appendChild(grid);
-
-    if (this.headGate) {
-      const hint       = document.createElement("p");
-      hint.className   = "model-family__hint";
-      hint.textContent = this.headGate.hint;
-      hint.hidden      = true;
-      this.headHint    = hint;
-      block.appendChild(hint);
-    }
 
     return block;
   }
@@ -246,24 +231,16 @@ class ModelCardPanel {
 
     if (this.headLeaf && this.headChips.size) {
       const currentHead = this.view._effective(this.headLeaf);
-      const locked      = Boolean(this.headGate) && this.view._whenHolds(this.headGate.when);
       let headLabel     = currentHead;
 
       this.headChips.forEach((chip, key) => {
-        const on      = key === currentHead;
-        const allowed = !locked || this.headGate.only.includes(key);
+        const on = key === currentHead;
         chip.classList.toggle("is-on", on);
-        chip.classList.toggle("is-locked", !allowed);
-        chip.disabled = !allowed;
         chip.setAttribute("aria-pressed", String(on));
         if (on) headLabel = chip.querySelector(".model-chip__name").textContent;
       });
 
-      if (this.headHint) this.headHint.hidden = !locked;
-
-      const invalid = locked && !this.headGate.only.includes(currentHead);
-      this.currentEl.classList.toggle("model-panel__count--warn", invalid);
-      label = `${label} · ${headLabel} head${invalid ? " (invalid with a profile AE)" : ""}`;
+      label = `${label} · ${headLabel} head`;
     }
 
     this.currentEl.textContent = label;
@@ -276,11 +253,9 @@ class ArchOverridesPanel {
     this.view      = view;
     this.leaf      = leaf;
     this.modelLeaf = modelLeaf;
-    this.modelBy   = (panel && panel.modelBy) || null;
     this.title     = (panel && panel.title) || "Architecture";
     this.bodyEl    = null;
     this.countEl   = null;
-    this.hintEl    = null;
   }
 
   build() {
@@ -291,7 +266,6 @@ class ArchOverridesPanel {
     head.className = "special-head";
     head.innerHTML = `<h3 class="special-head__name"></h3><span class="special-head__hint">fields of the selected model; untouched fields train at their defaults</span>`;
     head.querySelector(".special-head__name").textContent = this.title;
-    this.hintEl = head.querySelector(".special-head__hint");
 
     const count     = document.createElement("span");
     count.className = "model-panel__count";
@@ -305,28 +279,14 @@ class ArchOverridesPanel {
     root.appendChild(body);
 
     this.view.controls[this.leaf.path] = { leaf: this.leaf, reset: () => this._paint() };
-    this._modelPaths().forEach((path) => this.view._onDependency(path, () => this._paint()));
+    this.view._onDependency(this.modelLeaf.path, () => this._paint());
 
     this._paint();
     return root;
   }
 
-  _modelPaths() {
-    if (!this.modelBy) return [this.modelLeaf.path];
-    return [this.modelBy.field, ...new Set(Object.values(this.modelBy.models))];
-  }
-
-  _activeModelLeaf() {
-    if (!this.modelBy) return this.modelLeaf;
-    const type = String(this.view._effective(this.view.byPath.get(this.modelBy.field)));
-    const path = this.modelBy.models[type];
-    return path ? this.view.byPath.get(path) : null;
-  }
-
   _model() {
-    const modelLeaf = this._activeModelLeaf();
-    if (!modelLeaf) return null;
-    const key = String(this.view._effective(modelLeaf));
+    const key = String(this.view._effective(this.modelLeaf));
     for (const family of this.view.modelFamilies || []) {
       for (const model of family.models || []) {
         if (model.key === key) return model;
@@ -377,12 +337,6 @@ class ArchOverridesPanel {
   _paint() {
     this.bodyEl.innerHTML = "";
 
-    if (!this._activeModelLeaf()) {
-      this._paintRaw();
-      return;
-    }
-    this.hintEl.textContent = "fields of the selected model; untouched fields train at their defaults";
-
     const model  = this._model();
     const fields = model ? this._fields(model) : [];
 
@@ -402,24 +356,6 @@ class ArchOverridesPanel {
     const strays = Object.keys(overrides).filter((name) => !known.has(name));
     if (strays.length) this.bodyEl.appendChild(this._strayBlock(strays, overrides));
 
-    this._refreshCount();
-  }
-
-  _paintRaw() {
-    this.hintEl.textContent = "this training type publishes no model card; edit the override dict directly";
-
-    const row     = document.createElement("div");
-    row.className = "cfg-edit__row arch-row arch-row--raw";
-    row.title     = `--${this.leaf.path}`;
-
-    const label       = document.createElement("div");
-    label.className   = "cfg-edit__name";
-    label.textContent = this.leaf.path;
-    row.appendChild(label);
-
-    const control = this.view._textControl(this.leaf);
-    row.appendChild(control.el);
-    this.bodyEl.appendChild(row);
     this._refreshCount();
   }
 

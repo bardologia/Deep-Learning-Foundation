@@ -1,8 +1,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from types   import SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -11,7 +10,7 @@ import pipelines.benchmark.batch_probe as module
 from configuration.benchmark                 import BenchmarkConfig
 from pipelines.backbone.dataset.pipeline     import DatasetPipeline
 from pipelines.backbone.training.trainer     import Trainer
-from pipelines.benchmark.batch_probe         import EntryMaxBatchProbe, MaxBatchProbe
+from pipelines.benchmark.batch_probe         import MaxBatchProbe
 from tools.monitoring.logger                 import Logger
 from tools.training.pretraining.batch_finder import TrainStepMemoryProbe
 
@@ -285,39 +284,6 @@ def test_run_skips_the_lr_range_test_when_disabled(monkeypatch, tmp_path):
     assert result["lr_multiplier"] is None
 
 
-def test_entry_probe_builds_through_the_pipeline_trainer_builder(tmp_path):
-    config                    = BenchmarkConfig()
-    config.paths.log_base_dir = tmp_path
-
-    calls = {}
-
-    class _TrainableModel:
-        def __init__(self) -> None:
-            self.training = False
-
-        def train(self) -> None:
-            self.training = True
-
-    model   = _TrainableModel()
-    trainer = SimpleNamespace(model=model)
-    dataset = _StubDataset(size=8, input_channels=9)
-
-    def build(work_dir, logger):
-        calls["work_dir"] = Path(work_dir)
-        calls["logger"]   = logger
-        return trainer, dataset, model
-
-    probe = EntryMaxBatchProbe(config=config, model_name="pae_mlp", work_dir=tmp_path / "probe", build_trainer=build)
-
-    built_trainer, built_dataset = probe._build_probe_setup()
-
-    assert built_trainer is trainer
-    assert built_dataset is dataset
-    assert model.training is True
-    assert calls["work_dir"] == tmp_path / "probe" / "context"
-    assert calls["logger"] is probe.logger
-
-
 def test_run_validates_size_match_channels_against_the_dataset(monkeypatch, tmp_path):
     result, captured = _run_with_stubbed_context(monkeypatch, tmp_path, _StubDataset(size=64, input_channels=7))
 
@@ -371,5 +337,3 @@ def test_build_context_probes_with_the_swept_loss_union(monkeypatch, tmp_path, t
     assert dataset_config.n_gaussians == gaussian_cfg.n_default_gaussians
 
     probe.logger.close()
-
-

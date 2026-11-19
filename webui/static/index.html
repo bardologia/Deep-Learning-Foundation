@@ -150,15 +150,8 @@
     <div class="page__head page__head--figure">
       <h2 class="page__title">Architectures</h2>
       <p class="page__lead">
-        Four model zoos: the supervised backbones, the profile autoencoders, the image
-        autoencoder, and the JEPA variants that couple them. Pick a zoo, then a model to see its design.
+        The supervised backbone zoo and its output heads. Pick a model to see its design.
       </p>
-      <div class="model-zoo" id="model-zoo">
-        <button class="model-zoo__btn is-active" data-zoo="backbone" data-figure="backbone" data-endpoint="/api/backbones">Backbone</button>
-        <button class="model-zoo__btn" data-zoo="autoencoder" data-figure="profileae" data-endpoint="/api/profile-autoencoders">Profile AE</button>
-        <button class="model-zoo__btn" data-zoo="image_autoencoder" data-figure="imageae" data-endpoint="/api/image-autoencoders">Image AE</button>
-        <button class="model-zoo__btn" data-zoo="jepa" data-figure="embed" data-endpoint="/api/jepa-variants">JEPA</button>
-      </div>
       <hairline-figure name="backbone" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="master master--stack">
@@ -1151,13 +1144,8 @@
     <div class="ft">
       <aside class="ft__deck">
         <h3 class="ft-deck__title">Target</h3>
-        <div class="ft-modes" id="ft-modes" role="tablist" aria-label="Tuning mode">
-          <button class="ft-mode is-active" data-mode="profile_autoencoder" role="tab">Profile AE</button>
-          <button class="ft-mode" data-mode="image_autoencoder" role="tab">Image AE</button>
-          <button class="ft-mode" data-mode="backbone" role="tab">Backbone</button>
-        </div>
 
-        <div class="ft-paths" id="ft-paths" hidden>
+        <div class="ft-paths" id="ft-paths">
           <div class="ft-field">
             <span class="ft-field__label">Dataset</span>
             <select class="ft-input ft-select" id="ft-dataset-select" aria-label="Dataset"></select>
