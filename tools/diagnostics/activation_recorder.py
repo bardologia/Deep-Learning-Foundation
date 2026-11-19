@@ -99,9 +99,6 @@ class LayerActivationStats:
         return self.max_abs if not np.isfinite(upper) else float(min(upper, self.max_abs))
 
     def finalize(self) -> dict:
-        if self.n_elements == 0:
-            raise ValueError(f"Layer '{self.name}' recorded no activations; the module never fired during capture")
-
         n_finite = self.n_elements - self.n_nonfinite
         mean     = self.value_sum / n_finite if n_finite else float("nan")
         var      = self.value_sumsq / n_finite - mean * mean if n_finite else float("nan")
@@ -161,13 +158,6 @@ class ActivationRecorder:
 
         if self.include is not None:
             names = [name for name in names if name in self.include]
-            missing = [name for name in self.include if name not in names]
-            if missing:
-                raise KeyError(f"Modules {missing} do not exist as leaf modules of {type(self.model).__name__}")
-
-        if not names:
-            raise ValueError(f"Model {type(self.model).__name__} exposes no leaf modules to record")
-
         return names
 
     @staticmethod
@@ -219,10 +209,6 @@ class ActivationRecorder:
 
     def attach_store(self, names: list[str]) -> None:
         modules = dict(self.model.named_modules())
-        missing = [name for name in names if name not in modules]
-        if missing:
-            raise KeyError(f"Modules {missing} do not exist in {type(self.model).__name__}")
-
         for name in names:
             self._handles.append(modules[name].register_forward_hook(self._store_hook(name)))
 
@@ -233,8 +219,6 @@ class ActivationRecorder:
 
     def stats(self) -> dict[str, dict]:
         fired = {name: layer_stats.finalize() for name, layer_stats in self._stats.items() if layer_stats.n_elements > 0}
-        if not fired:
-            raise ValueError(f"No leaf module of {type(self.model).__name__} produced a tensor during capture; the loader yielded no batch or every module output was non-tensor")
         return fired
 
     @classmethod

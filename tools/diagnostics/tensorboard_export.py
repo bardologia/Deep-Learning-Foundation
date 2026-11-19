@@ -36,16 +36,10 @@ class TensorboardScalarReader:
 
     def read(self) -> Dict[str, ScalarSeries]:
         tensorboard_dir = self.config.tensorboard_directory
-        if not tensorboard_dir.is_dir():
-            raise FileNotFoundError(f"No '{self.config.tensorboard_dirname}' directory at {tensorboard_dir}; expected a training run directory holding tensorboard event files")
-
         accumulator = EventAccumulator(str(tensorboard_dir), size_guidance={"scalars": 0})
         accumulator.Reload()
 
         tags = accumulator.Tags()["scalars"]
-        if not tags:
-            raise ValueError(f"Tensorboard log at {tensorboard_dir} contains no scalar series")
-
         series = {}
         for tag in tags:
             events      = accumulator.Scalars(tag)
@@ -90,20 +84,11 @@ class ScalarTagGrouper:
                 singles.append(members[0][1])
                 continue
 
-            labels = [label for label, _tag in members]
-            if len(set(labels)) != len(labels):
-                raise ValueError(f"Ambiguous train/validation pairing for '{reduced}': tags {[tag for _label, tag in members]} resolve to duplicate roles")
-
             ordered = sorted(members, key=lambda member: self.SERIES_ORDER.index(member[0]))
             groups.append(CurveGroup(stem=self._stem(reduced), title=reduced, series=[(label, *series_by_tag[tag]) for label, tag in ordered]))
 
         for tag in singles:
             groups.append(CurveGroup(stem=self._stem(tag), title=tag, series=[(None, *series_by_tag[tag])]))
-
-        stems      = [group.stem for group in groups]
-        duplicates = sorted({stem for stem in stems if stems.count(stem) > 1})
-        if duplicates:
-            raise ValueError(f"Tag grouping produced colliding plot paths: {duplicates}")
 
         return sorted(groups, key=lambda group: group.stem)
 

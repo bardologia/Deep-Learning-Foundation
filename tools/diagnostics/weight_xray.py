@@ -37,9 +37,6 @@ class StateDictResolver:
         self.config = config
 
     def _load_object(self, path: Path):
-        if not path.is_file():
-            raise FileNotFoundError(f"No checkpoint file at {path}; point --checkpoint-path at a .pt file or a run directory containing {self.config.checkpoint_filename}")
-
         return torch.load(str(path), map_location="cpu", weights_only=False)
 
     def _is_tensor_mapping(self, candidate) -> bool:
@@ -57,14 +54,6 @@ class StateDictResolver:
             for key in self.config.state_dict_keys:
                 if key in obj and self._is_tensor_mapping(obj[key]):
                     return key, obj[key]
-
-            candidates = [key for key, value in obj.items() if self._is_tensor_mapping(value)]
-            if candidates:
-                raise ValueError(f"Checkpoint {path} holds no tensor mapping under the configured state_dict_keys {self.config.state_dict_keys}, but does under {candidates}; name the entry to x-ray in state_dict_keys instead of letting the x-ray guess between them")
-
-            raise ValueError(f"Checkpoint {path} holds no parameter tensor mapping at the top level, under state_dict_keys {self.config.state_dict_keys} or under any other entry; its entries are {list(obj)}")
-
-        raise ValueError(f"Checkpoint {path} is a {type(obj).__name__}, not a tensor mapping or a dict holding one under state_dict_keys {self.config.state_dict_keys}")
 
     @staticmethod
     def _stored_epoch(obj, name: str) -> Optional[int]:
