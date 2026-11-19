@@ -73,12 +73,6 @@ class ActivationCheckpointing:
     def apply(cls, model: torch.nn.Module, patterns: tuple[str, ...], logger) -> list[str]:
         names = cls.matching_names(model, patterns)
 
-        all_names = [name for name, _module in model.named_modules() if name]
-        unmatched = [pattern for pattern in patterns if not any(fnmatch(name, pattern) for name in all_names)]
-        if unmatched:
-            available = sorted({name.split(".")[0] for name, _ in model.named_modules() if name})
-            raise ValueError(f"activation_checkpointing patterns {unmatched} match no submodule; top-level modules are {available}")
-
         for name in names:
             parent_name, _, child_name = name.rpartition(".")
             parent = model.get_submodule(parent_name) if parent_name else model

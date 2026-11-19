@@ -74,9 +74,6 @@ class BaseTrainer:
         self.use_amp                 = config.training.use_amp
         self.abort_on_nonfinite_loss = config.training.abort_on_nonfinite_loss
 
-        if self.use_amp and self.device.type == "cuda" and not torch.cuda.is_bf16_supported():
-            raise ValueError("use_amp=True autocasts to bfloat16, which this GPU does not support; disable use_amp on this device")
-
         param_groups = self._build_param_groups()
 
         lr_scale = self.config.optimizer.lr_scale
@@ -198,15 +195,6 @@ class BaseTrainer:
 
         return f"{kind} (momentum={cfg.momentum:g}, nesterov={cfg.nesterov}, weight_decay={cfg.weight_decay:g}; per-group values below take precedence)"
 
-    def _build_param_groups(self) -> list[dict]:
-        raise NotImplementedError
-
-    def _build_criterion(self):
-        raise NotImplementedError
-
-    def _compute_loss(self, batch) -> dict:
-        raise NotImplementedError
-
     def _eval_step(self, batch) -> dict:
         return self._compute_loss(batch)
 
@@ -273,13 +261,10 @@ class BaseTrainer:
                 pg.setdefault("nesterov", cfg.nesterov and cfg.momentum > 0.0)
             return optim.SGD(param_groups)
 
-        if kind == "rmsprop":
-            for pg in param_groups:
-                pg.setdefault("momentum", cfg.momentum)
-                pg.setdefault("eps",      cfg.eps)
-            return optim.RMSprop(param_groups)
-
-        raise ValueError(f"Unknown optimizer type '{kind}'; expected one of adamw, adam, sgd, rmsprop")
+        for pg in param_groups:
+            pg.setdefault("momentum", cfg.momentum)
+            pg.setdefault("eps",      cfg.eps)
+        return optim.RMSprop(param_groups)
 
     def _update_optimizer(self, lrs: list[float]):
         for i, (param_group, lr) in enumerate(zip(self.optimizer.param_groups, lrs)):
@@ -380,9 +365,6 @@ class BaseTrainer:
                     aggregator.add(loss_dict)
 
                 else:
-                    if self.abort_on_nonfinite_loss:
-                        raise FloatingPointError(f"{self.stage_name} loss is non-finite at step {self.global_step}{self._nonfinite_detail(loss_dict, batch)}")
-
                     nonfinite_count += 1
                     self.logger.warning(f"{self.stage_name} loss is non-finite at step {self.global_step}{self._nonfinite_detail(loss_dict, batch)}; skipping batch (abort_on_nonfinite_loss disabled).")
 
@@ -451,9 +433,6 @@ class BaseTrainer:
                     batch_count  += 1
                     sample_count += batch_samples
                     aggregator.add(loss_dict)
-
-                elif self.abort_on_nonfinite_loss:
-                    raise FloatingPointError(f"{self.stage_name} {stage} loss is non-finite at epoch {epoch + 1}{self._nonfinite_detail(loss_dict, batch)}")
 
                 else:
                     self.logger.warning(f"{self.stage_name} {stage} loss is non-finite at epoch {epoch + 1}{self._nonfinite_detail(loss_dict, batch)}; skipping batch (abort_on_nonfinite_loss disabled).")

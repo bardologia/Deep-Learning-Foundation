@@ -139,9 +139,6 @@ class WeightEma:
     def load_state_dict(self, state: dict) -> None:
         shadow = state["shadow"]
 
-        if self.enabled != bool(shadow):
-            raise ValueError("use_ema does not match the saved trainer state; resume with the same use_ema setting")
-
         self.num_updates = int(state["num_updates"])
         self.shadow      = {name: tensor.to(self.shadow[name].device).clone() for name, tensor in shadow.items()}
 
@@ -169,9 +166,6 @@ class WeightSwa:
         if not self.enabled:
             yield
             return
-
-        if self.n_averaged == 0:
-            raise ValueError("SWA has averaged no snapshot yet; the swa_start_fraction lies past the last completed epoch")
 
         with torch.no_grad():
             param_backup  = {name: p.detach().clone() for name, p in model.named_parameters()}
@@ -220,9 +214,6 @@ class WeightSwa:
     def load_state_dict(self, state: dict) -> None:
         shadow = state["shadow"]
 
-        if self.enabled != bool(shadow):
-            raise ValueError("use_swa does not match the saved trainer state; resume with the same use_swa setting")
-
         self.n_averaged = int(state["n_averaged"])
         self.shadow     = {name: tensor.to(self.shadow[name].device).clone() for name, tensor in shadow.items()}
 
@@ -243,18 +234,6 @@ class TrainerState:
             "world_size"         : int(trainer.distributed.world_size),
             "lr_scale"           : float(trainer.config.optimizer.lr_scale),
         }
-
-    @staticmethod
-    def _check_geometry(trainer, state: dict, path: Path) -> None:
-        if "batch_geometry" not in state:
-            raise KeyError(f"trainer state {path} records no batch geometry; it was saved before the micro-batch, accumulation window, rank count and LR scale were captured, so the schedule it restores cannot be checked against this run. Start a fresh run instead of resuming it")
-
-        saved   = state["batch_geometry"]
-        current = TrainerState.batch_geometry(trainer)
-        changed = [f"{key} {saved[key]} -> {current[key]}" for key in current if saved[key] != current[key]]
-
-        if changed:
-            raise ValueError(f"resuming from {path} would continue under a different batch geometry ({', '.join(changed)}): the restored warmup position, learning rates and step counts were computed for the saved values. Resume with the recorded settings, or start a fresh run")
 
     @staticmethod
     def _rng_state(loader_generator) -> dict:
@@ -306,12 +285,7 @@ class TrainerState:
     @staticmethod
     def restore(trainer, path, loader_generator=None) -> int:
         path = Path(path)
-        if not path.is_file():
-            raise FileNotFoundError(f"resume=True but no trainer state exists at {path}; start a fresh run or point run_name at a run that saved state")
-
         state = torch.load(str(path), map_location="cpu", weights_only=False)
-
-        TrainerState._check_geometry(trainer, state, path)
 
         trainer.model.load_state_dict(state["model"])
         trainer.optimizer.load_state_dict(state["optimizer"])

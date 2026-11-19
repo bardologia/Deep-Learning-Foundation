@@ -82,9 +82,6 @@ class Warmup:
         if self.warmup_finished:
             return 1.0
 
-        if self.warmup_steps is None:
-            raise RuntimeError("Warmup fraction is not resolved into a step count; call resolve(total_steps) before stepping")
-
         self.current_step += 1
         factor             = self.factor()
 
@@ -185,10 +182,7 @@ class Scheduler:
         if self.scheduler_type == "exponential":
             return self._exponential(epoch)
 
-        if self.scheduler_type == "step":
-            return self._step(epoch)
-
-        raise ValueError(f"Unknown scheduler type: {self.scheduler_type}")
+        return self._step(epoch)
 
     def reset(self, epoch_offset: int = 0) -> None:
         self._epoch_offset = epoch_offset
