@@ -1,10 +1,3 @@
-"""Shared discovery and serving of analysis payloads for the web UI results tabs.
-
-An analysis pipeline writes a schema-versioned JSON payload into
-``<params run>/<subdir>/<timestamp>/``; this browser scans a datasets root for
-those payloads and serves them to the matching interactive tab, refusing reads
-outside the catalogued roots and payloads written under another schema.
-"""
 
 from __future__ import annotations
 
@@ -16,21 +9,6 @@ from web_logger    import WebLogger
 
 
 class AnalysisPayloadBrowser:
-    """Lists and reads one pipeline's analysis payloads under catalogued dataset roots.
-
-    Subclasses declare the payload contract and naming; the scan, containment
-    and schema-rejection behaviour is shared.
-
-    Attributes:
-        roots     : Catalogue confining report reads to scanned roots.
-        logger    : Web UI logger.
-        LABEL     : Log prefix of the tab.
-        SUBDIR    : Analysis directory name scanned beneath each parameter run.
-        MARKER    : Payload filename identifying a completed analysis.
-        SCHEMA    : Payload schema version the tab renders; anything else is rejected.
-        COUNT_KEY : Payload list whose length is logged on a successful read.
-        ENTRY     : Entry-point name named in the schema-mismatch rerun hint.
-    """
 
     LABEL     : str
     SUBDIR    : str
@@ -40,25 +18,10 @@ class AnalysisPayloadBrowser:
     ENTRY     : str
 
     def __init__(self, logger: WebLogger) -> None:
-        """Builds the browser with its own root catalogue.
-
-        Args:
-            logger : Web UI logger.
-        """
         self.roots  = CatalogRoots()
         self.logger = logger
 
     def analyses(self, base: str) -> dict:
-        """Lists the completed analyses under a datasets root.
-
-        Args:
-            base : Datasets root to scan; registered in the catalogue on success.
-
-        Returns:
-            Dictionary with "ok"; on success also "root" and "entries" (id, run,
-            group, stamp per analysis, newest first), on failure "error" and an
-            empty "entries" list.
-        """
         root, error = self.roots.open(base, empty_error="set the datasets directory first")
         if error:
             self.logger.warning(f"{self.LABEL}: scan refused for {base!r}: {error}")
@@ -83,17 +46,6 @@ class AnalysisPayloadBrowser:
         return {"ok": True, "root": str(root), "entries": entries}
 
     def report(self, analysis_id: str) -> dict:
-        """Reads the payload of one analysis.
-
-        Args:
-            analysis_id : Analysis directory as listed by `analyses`.
-
-        Returns:
-            Dictionary with "ok" and the payload under "payload" on success, or
-            "error" when the directory is unknown, outside every catalogued
-            root, missing its payload file, or carrying a payload schema the tab
-            no longer renders.
-        """
         raw = (analysis_id or "").strip()
         if not raw:
             return {"ok": False, "error": "no analysis selected"}
@@ -118,7 +70,6 @@ class AnalysisPayloadBrowser:
         return {"ok": True, "id": str(target), "payload": payload}
 
     def _refuse(self, target: Path, error: str) -> dict:
-        """Logs a rejected payload read and returns its error result."""
         self.logger.warning(f"{self.LABEL}: {target} refused: {error}")
 
         return {"ok": False, "error": error}

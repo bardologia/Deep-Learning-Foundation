@@ -1,13 +1,3 @@
-"""Background watcher for the stall this user's jobs inflict on the other users.
-
-Samples the per-user cgroup slices every few seconds: each neighbour's own
-pressure-stall averages say whether their tasks are waiting for CPU, memory or
-disk, and the slices' CPU time and charged memory say which user holds the
-dominant share of the resource they wait for. An alert is raised once a neighbour
-is stalled for a sustained stretch, attributed to this user only when this user is
-the dominant consumer, and can fire an automatic nuke when severe self-caused
-stall persists. Processes of this user whose RSS keeps climbing are flagged early.
-"""
 
 from __future__ import annotations
 
@@ -24,32 +14,6 @@ from web_logger import WebLogger
 
 
 class ContentionMonitor:
-    """Polls the user slices and reports whose tasks stall and who causes it.
-
-    Attributes:
-        paths       : Project paths, used to find the block device backing the repository.
-        logger      : Web logger carrying the alerts to the console.
-        notifier    : Notifier the announced alerts and auto-nuke firings are pushed through.
-        nuke        : Object exposing `nuke()`, invoked when auto-nuke fires.
-        throttle    : Object exposing `apply()`, invoked when an alarm this user causes is announced.
-        politeness  : Politeness settings deciding whether the throttle fires automatically.
-        lock        : Guards the shared signal, alert and event state.
-        uid         : Numeric user id whose slice and processes count as "mine".
-        page        : Page size in bytes, for converting swap counters to megabytes.
-        cores       : Logical CPU count used to normalise load.
-        device      : Kernel name of the disk holding the repository, or None.
-        sources     : Availability of the host pressure files, the user slices, this user's own slice and the disk device.
-        signals     : Most recent sample from `_sample`.
-        active      : Currently raised alerts keyed by resource kind.
-        events      : Bounded log of announced alerts and auto-nuke firings.
-        streaks     : Consecutive breach counts per resource kind.
-        announced   : Kinds whose alert has been surfaced to the user.
-        throttled   : Kinds whose announced alert already triggered the throttle.
-        auto_nuke   : Whether the automatic nuke is armed.
-        nuke_streak : Consecutive samples of severe self-caused stall.
-        last_nuke   : Monotonic timestamp of the last auto-nuke, for the cooldown.
-        proc_hist   : Per-pid RSS history used for growth detection.
-    """
 
     INTERVAL            = 5.0
     SECTOR              = 512
@@ -73,16 +37,6 @@ class ContentionMonitor:
     LEAK_RECENT_MB      = 60.0
 
     def __init__(self, paths, logger: WebLogger, notifier: JobNotifier, nuke, throttle: JobThrottle, politeness: JobPoliteness) -> None:
-        """Reads the host constants, checks the kernel sources and prepares empty sampling state.
-
-        Args:
-            paths      : Project paths whose repo root selects the monitored disk.
-            logger     : Web logger the alerts are written to.
-            notifier   : Notifier the announced alerts, throttles and auto-nuke firings are pushed through.
-            nuke       : Killer object whose `nuke()` terminates this user's runs.
-            throttle   : Throttle whose `apply()` lowers this user's running processes' priority.
-            politeness : Politeness settings deciding whether the throttle fires automatically.
-        """
         self.paths      = paths
         self.logger     = logger
         self.notifier   = notifier
@@ -116,7 +70,6 @@ class ContentionMonitor:
         self.prev_t      = 0.0
 
     def start(self) -> None:
-        """Starts the daemon sampling thread, or logs an error when a kernel source is missing."""
         if not self.sources["psi"]:
             self.logger.error(f"contention monitor disabled: {UserSlices.PSI_ROOT} is missing, the kernel has no pressure-stall accounting")
             return
@@ -131,14 +84,6 @@ class ContentionMonitor:
         self.logger.muted(f"contention monitor armed (device {self.device or 'n/a'}, share floor {self.SHARE_FLOOR:.0%})")
 
     def arm(self, value: bool) -> dict:
-        """Arms or disarms the automatic nuke and returns the refreshed state.
-
-        Args:
-            value : True to arm, False to disarm and reset the streak.
-
-        Returns:
-            The monitor state as returned by `state`.
-        """
         with self.lock:
             self.auto_nuke = bool(value)
             if not self.auto_nuke:
@@ -147,7 +92,6 @@ class ContentionMonitor:
         return self.state()
 
     def mine_memory_share(self) -> float | None:
-        """Returns this user's share of used RAM in [0, 1], or None before the first sample."""
         with self.lock:
             signals = self.signals
 
@@ -156,13 +100,6 @@ class ContentionMonitor:
         return signals["mem"]["mine_share"]
 
     def state(self) -> dict:
-        """Returns the monitor snapshot served to the web UI.
-
-        Returns:
-            Dictionary with the auto-nuke flag, the politeness settings, the kinds
-            currently throttled, the source availability, the latest signals, the
-            currently active alerts and the recent event log.
-        """
         with self.lock:
             return {
                 "auto_nuke"  : self.auto_nuke,
@@ -175,7 +112,6 @@ class ContentionMonitor:
             }
 
     def _watch(self) -> None:
-        """Samples and evaluates stall forever, logging and swallowing errors."""
         while True:
             time.sleep(self.INTERVAL)
             try:
@@ -187,15 +123,6 @@ class ContentionMonitor:
                 self.logger.error(f"contention monitor error: {exc}")
 
     def _sample(self) -> dict:
-        """Takes one sample of every user's stall and share of each resource.
-
-        Returns:
-            Dictionary with the host PSI averages, swap rates in MB/s, memory usage
-            and this user's share of it, disk throughput and this user's share of
-            it, load per core and this user's CPU share, this user's process count
-            and RAM, any RAM-growth candidate, the leading memory consumer, the
-            per-user rows and the worst-stalled neighbour per resource.
-        """
         now = time.monotonic()
         dt  = max(now - self.prev_t, 1e-6) if self.prev_t else self.INTERVAL
 
@@ -232,15 +159,6 @@ class ContentionMonitor:
         }
 
     def _read_swap(self, dt: float) -> dict:
-        """Differentiates the vmstat swap counters into rates.
-
-        Args:
-            dt : Seconds elapsed since the previous sample.
-
-        Returns:
-            Dictionary with "in_mbs" and "out_mbs" in MB/s; zeros on the first
-            sample or when /proc/vmstat cannot be read.
-        """
         pin, pout = 0, 0
         try:
             for line in open("/proc/vmstat").read().splitlines():
@@ -261,11 +179,6 @@ class ContentionMonitor:
         return {"in_mbs": in_mbs, "out_mbs": out_mbs}
 
     def _read_memory(self) -> dict:
-        """Returns machine memory usage derived from MemTotal minus MemAvailable.
-
-        Returns:
-            Dictionary with "used_pct" and "used_gb"; zeros when meminfo is empty.
-        """
         info = MemInfo.fields()
         if not info:
             return {"used_pct": 0.0, "used_gb": 0.0}
@@ -276,16 +189,6 @@ class ContentionMonitor:
         return {"used_pct": (100.0 * used / total) if total else 0.0, "used_gb": used / (1024.0 ** 3)}
 
     def _read_disk(self, dt: float) -> dict:
-        """Differentiates the diskstats counters of the repository's device.
-
-        Args:
-            dt : Seconds elapsed since the previous sample.
-
-        Returns:
-            Dictionary with the device name, busy percentage, mean request latency
-            in milliseconds, and read, write and total throughput in MB/s; all zero
-            on the first sample or when the device cannot be read.
-        """
         empty = {"device": self.device, "util": 0.0, "await_ms": 0.0, "read_mbs": 0.0, "write_mbs": 0.0, "total_mbs": 0.0}
         if self.device is None:
             return empty
@@ -321,13 +224,6 @@ class ContentionMonitor:
         }
 
     def _diskstat_row(self):
-        """Returns the raw counters of the monitored device from /proc/diskstats.
-
-        Returns:
-            Tuple of reads completed, sectors read, milliseconds reading, writes
-            completed, sectors written, milliseconds writing and I/O ticks, or None
-            when the file is unreadable or the device is absent.
-        """
         try:
             lines = open("/proc/diskstats").read().splitlines()
         except OSError:
@@ -342,23 +238,6 @@ class ContentionMonitor:
         return None
 
     def _scan(self, now: float, dt: float) -> dict:
-        """Sweeps the process table for this user's processes and the machine's biggest one.
-
-        This user's storage I/O comes from differencing the per-pid `/proc/<pid>/io`
-        counters of the processes present in two consecutive samples; the kernel
-        exposes no per-user I/O counter here, so children that exit between samples
-        are not counted. Memory per process is the attributed figure for growth
-        tracking, and a per-uid process count feeds the leading-consumer stat.
-
-        Args:
-            now : Monotonic timestamp of this sample, used for growth history.
-            dt  : Seconds elapsed since the previous sample.
-
-        Returns:
-            Dictionary with this user's process count and I/O in MB/s, any
-            RAM-growth candidate, the process count per uid and the biggest process
-            on the machine as a (bytes, pid, command, uid) tuple.
-        """
         nproc    = 0
         per_mem  = {}
         per_comm = {}
@@ -391,26 +270,6 @@ class ContentionMonitor:
         return {"nproc": nproc, "io_mbs": io_mbs, "leak": self._growth_candidate(now, per_mem, per_comm), "user_n": user_n, "biggest": biggest}
 
     def _users(self, slices: list, dt: float, used_gb: float, user_n: dict) -> list[dict]:
-        """Turns the slice rows into per-user rows with CPU and memory shares.
-
-        CPU is the slice's usage delta over the interval, so children that already
-        exited are included, and the share is this user's delta over the sum of
-        every user's delta. Memory is the anonymous plus shared memory charged to
-        the slice, and its share uses used RAM as the base, the same base as the
-        active-users table.
-
-        Args:
-            slices  : Rows as returned by `UserSlices.rows`.
-            dt      : Seconds elapsed since the previous sample.
-            used_gb : Used RAM in GB (total minus available).
-            user_n  : Process count per uid from the process sweep.
-
-        Returns:
-            Rows with the user name and uid, whether it is this user, the process
-            count, CPU percent (100 per core) and share of the users' CPU, memory in
-            GB and share of used RAM, and the slice's "some" and "full" stall per
-            resource; sorted by the worst "some" stall, then CPU.
-        """
         prev             = self.prev_slices
         self.prev_slices = {row["uid"]: row["cpu_usec"] for row in slices}
 
@@ -440,16 +299,6 @@ class ContentionMonitor:
         return rows
 
     def _others(self, users: list[dict]) -> dict:
-        """Summarises the neighbours' stall per resource.
-
-        Args:
-            users : Per-user rows as returned by `_users`.
-
-        Returns:
-            Mapping per resource with the worst neighbour's "some" stall, their
-            "full" stall, their "user" name (None without neighbours), and "n", the
-            number of neighbours whose "some" stall reaches the resource's threshold.
-        """
         limits = {"cpu": self.CPU_STALL, "mem": self.MEM_STALL, "io": self.IO_STALL}
         out    = {}
 
@@ -466,17 +315,6 @@ class ContentionMonitor:
         return out
 
     def _top_consumer(self, users: list[dict], biggest: tuple) -> dict | None:
-        """Describes the user holding the most memory and the single biggest process.
-
-        Args:
-            users   : Per-user rows as returned by `_users`.
-            biggest : Tuple of memory in bytes, pid, command and uid of the largest single process on the machine.
-
-        Returns:
-            Dictionary naming the leading user, their memory in GB and process
-            count, whether that user is this one, and the biggest process; None
-            when no slice was sampled.
-        """
         if not users:
             return None
 
@@ -495,23 +333,6 @@ class ContentionMonitor:
         }
 
     def _growth_candidate(self, now: float, per_mem: dict, per_comm: dict) -> dict | None:
-        """Updates the per-process memory history and flags the worst steady grower.
-
-        A process qualifies when it holds at least LEAK_MEM_FLOOR_GB, has grown
-        faster than LEAK_GROWTH_MBPM over its whole window, and has also gained
-        LEAK_RECENT_MB over the most recent samples, so a one-off jump that has
-        since flattened is not reported.
-
-        Args:
-            now      : Monotonic timestamp of this sample.
-            per_mem  : Memory in bytes per pid for this user's processes.
-            per_comm : Command name per pid.
-
-        Returns:
-            Dictionary with the pid, command, current memory in GB, growth rate in
-            MB/min, total growth in GB, window length in minutes and a ready-made
-            message, or None when nothing qualifies.
-        """
         for pid in [p for p in self.proc_hist if p not in per_mem]:
             del self.proc_hist[pid]
         for pid, proc_mem in per_mem.items():
@@ -545,11 +366,6 @@ class ContentionMonitor:
         return best
 
     def _pid_io(self, pid: int) -> int:
-        """Returns a process's cumulative read plus write bytes, 0 if unreadable.
-
-        Args:
-            pid : Process id to read /proc/<pid>/io for.
-        """
         try:
             total = 0
             for line in open(f"/proc/{pid}/io").read().splitlines():
@@ -560,18 +376,6 @@ class ContentionMonitor:
             return 0
 
     def _evaluate(self, signals: dict) -> None:
-        """Turns one sample into breach, clear and ownership verdicts per resource.
-
-        A resource breaches when the worst-stalled neighbour's "some" stall reaches
-        its threshold (memory also on swap-out), clears below CLEAR_MARGIN of it,
-        escalates to danger when that neighbour's "full" stall reaches its own
-        threshold, and is this user's when this user is the dominant consumer of
-        the resource; a memory-growth candidate is tracked as its own kind. Auto-nuke
-        is then reconsidered.
-
-        Args:
-            signals : Sample dictionary as returned by `_sample`.
-        """
         swap   = signals["swap"]
         mem    = signals["mem"]
         disk   = signals["io"]
@@ -612,22 +416,11 @@ class ContentionMonitor:
         self._check_nuke()
 
     def _who(self, other: dict) -> str:
-        """Names the worst-stalled neighbour, with the count of further stalled neighbours.
-
-        Args:
-            other : One resource entry as returned by `_others`.
-        """
         name  = other["user"] or "no neighbour"
         extra = other["n"] - 1
         return f"{name} and {extra} more" if extra > 0 else name
 
     def _check_nuke(self) -> None:
-        """Fires the automatic nuke once severe self-caused stall persists.
-
-        Requires auto-nuke armed, NUKE_SUSTAIN consecutive samples with a danger
-        alert this user owns (leaks excluded), and NUKE_COOLDOWN seconds since the
-        previous firing. The outcome is logged and appended to the event log.
-        """
         with self.lock:
             if not self.auto_nuke:
                 self.nuke_streak = 0
@@ -660,19 +453,6 @@ class ContentionMonitor:
         self.notifier.system_alert("auto-nuke fired", message, "urgent")
 
     def _track(self, kind: str, level: str, breached: bool, cleared: bool, mine: bool, message: str) -> None:
-        """Advances the streak for one resource and raises or drops its alert.
-
-        An alert is raised only after SUSTAIN consecutive breaches, and dropped only
-        once the signal falls back below the hysteretic clear threshold.
-
-        Args:
-            kind     : Resource key, one of "mem", "io", "cpu" or "leak".
-            level    : Severity of the alert, "warn" or "danger".
-            breached : Whether the breach thresholds are met in this sample.
-            cleared  : Whether the signal is back below the clear thresholds.
-            mine     : Whether this user is the dominant consumer of the resource.
-            message  : Human-readable description shown with the alert.
-        """
         if breached:
             self.streaks[kind] = self.streaks.get(kind, 0) + 1
             if self.streaks[kind] >= self.SUSTAIN:
@@ -683,19 +463,6 @@ class ContentionMonitor:
                 self._drop(kind)
 
     def _raise(self, kind: str, level: str, mine: bool, message: str) -> None:
-        """Records or refreshes an alert, announcing it only when this user causes it.
-
-        A refreshed alert is announced again only when ownership flips to this user
-        or when its severity escalates to danger, so a standing alert stays quiet.
-        Every announcement is also pushed through the notifier, and the first
-        announcement of a resource alert triggers the automatic throttle.
-
-        Args:
-            kind    : Resource key the alert belongs to.
-            level   : Severity of the alert, "warn" or "danger".
-            mine    : Whether this user is the dominant consumer of the resource.
-            message : Human-readable description shown with the alert.
-        """
         with self.lock:
             known = self.active.get(kind)
             if known is None:
@@ -717,16 +484,6 @@ class ContentionMonitor:
             self._throttle_once(kind)
 
     def _throttle_once(self, kind: str) -> None:
-        """Lowers this user's running processes' priority the first time a resource alert is announced.
-
-        Skipped for the leak kind, when auto-throttle is off, or while the same
-        alert already triggered a throttle; the alert must drop before it can
-        throttle again. The outcome is logged, appended to the event log and
-        pushed through the notifier.
-
-        Args:
-            kind : Resource key of the announced alert.
-        """
         if kind == "leak" or not self.politeness.auto_throttle():
             return
 
@@ -744,11 +501,6 @@ class ContentionMonitor:
         self.notifier.system_alert("auto-throttle", message, "default" if result["ok"] else "high")
 
     def _drop(self, kind: str) -> None:
-        """Clears an alert, logging the recovery only if it had been announced.
-
-        Args:
-            kind : Resource key whose alert is cleared.
-        """
         with self.lock:
             known     = self.active.pop(kind, None)
             announced = kind in self.announced
@@ -759,15 +511,6 @@ class ContentionMonitor:
             self.logger.muted(f"stall cleared: {kind}")
 
     def _resolve_device(self):
-        """Returns the kernel device name of the filesystem holding the repository.
-
-        Walks /proc/mounts for the longest mount point containing the repo root and
-        backed by a /dev node, then resolves that node through any symlink.
-
-        Returns:
-            Device name such as "nvme0n1p2" or "dm-3", or None when no mount matches
-            or /proc/mounts is unreadable.
-        """
         target = self.paths.repo_root.resolve()
         best   = ("", None)
         try:

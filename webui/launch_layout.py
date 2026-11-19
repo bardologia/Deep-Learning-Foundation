@@ -1,11 +1,3 @@
-"""Declarative layout of the web UI launch forms, and its expansion into panels.
-
-Holds the single source of truth for how each script's resolved configuration is
-presented: which fields are essentials, how they group into sections and panels,
-and which widget renders each one. Expansion resolves templates and path
-prefixes, and validation refuses any layout that names an unknown field, claims
-one twice, or leaves a resolved config field unexposed.
-"""
 
 from __future__ import annotations
 
@@ -14,41 +6,19 @@ from collections import Counter
 
 
 class LayoutError(Exception):
-    """Raised when a launch layout does not match the script's resolved config."""
     pass
 
 
 class GpuWidgets:
-    """Widget descriptors selecting GPUs on a launch form.
-
-    Attributes:
-        ONE  : Selector pinning a launch to a single device.
-        MANY : Selector choosing the pool a fan-out spreads over.
-    """
 
     ONE  = {"kind": "gpu"}
     MANY = {"kind": "gpu", "multi": True}
 
 
 class InferenceEssentials:
-    """Builds the essentials row shared by the four inference launch forms.
-
-    Every inference entry exposes the same runs root, run filter, skip switch
-    and GPU pool, but each family records its split in its own configuration
-    block, and the run picker needs that path so its listing marks runs as
-    already scored on the split this launch will use.
-    """
 
     @staticmethod
     def for_block(split_path: str) -> list:
-        """Returns the essentials row for an inference entry.
-
-        Args:
-            split_path : Dotted path of the split leaf in the entry's own inference block.
-
-        Returns:
-            The essentials entries of the launch form.
-        """
         return [
             "runs_dir",
             {"path": "run_filter", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir", "splitFrom": split_path, "pendingButton": True}},
@@ -59,13 +29,6 @@ class InferenceEssentials:
 
 
 class LaunchLayout:
-    """Expands the declared launch layouts into validated per-script form specs.
-
-    ``LAYOUTS`` declares one spec per script key, ``TEMPLATES`` holds reusable
-    field groups shared between them, and the widget constants describe how
-    individual fields are rendered (numbers with bounds and presets, choices,
-    dataset and run pickers, multi-value inputs, GPU selectors).
-    """
 
     NORM_PRESETS_INPUT = ["min_max", "min_max_log1p", "robust_iqr", "robust_iqr_log1p", "fixed_div_pi", "zscore", "zscore_log1p", "fixed_log1p", "fixed_angle_01"]
     NORM_PRESETS       = NORM_PRESETS_INPUT + ["fixed_bounds"]
@@ -1700,20 +1663,6 @@ class LaunchLayout:
     }
 
     def _field_entry(self, item, prefix, widgets):
-        """Expands one declared field into an entry with fully qualified paths.
-
-        Bare strings become plain field entries, ``gate`` and ``gateOn`` items
-        recurse into their nested fields, and any declared widget is registered
-        against the qualified path.
-
-        Args:
-            item    : Declared field: a name, a gate wrapper, or a dict with ``path``.
-            prefix  : Dotted config prefix the panel sits at, empty at the root.
-            widgets : Widget registry, extended in place with path to widget spec.
-
-        Returns:
-            The expanded entry dict carrying qualified paths.
-        """
         if isinstance(item, str):
             return {"path": self._join(prefix, item)}
 
@@ -1732,20 +1681,9 @@ class LaunchLayout:
         return {"path": path}
 
     def _join(self, prefix, name):
-        """Returns the dotted path of a field under a prefix, or the bare name."""
         return f"{prefix}.{name}" if prefix else name
 
     def _expand_groups(self, groups, prefix, widgets):
-        """Expands every field of every group under a common path prefix.
-
-        Args:
-            groups  : Declared groups, each with an optional title and a field list.
-            prefix  : Dotted config prefix the groups sit at.
-            widgets : Widget registry, extended in place.
-
-        Returns:
-            Groups with expanded field entries, preserving declaration order.
-        """
         expanded = []
         for group in groups:
             fields = [self._field_entry(item, prefix, widgets) for item in group["fields"]]
@@ -1753,34 +1691,11 @@ class LaunchLayout:
         return expanded
 
     def _panel_groups(self, panel, prefix, widgets):
-        """Expands a panel's groups, resolving a named template when it uses one.
-
-        Args:
-            panel   : Declared panel spec.
-            prefix  : Dotted config prefix the panel sits at.
-            widgets : Widget registry, extended in place.
-
-        Returns:
-            The panel's expanded groups.
-        """
         if "template" in panel:
             return self._expand_groups(self.TEMPLATES[panel["template"]], prefix, widgets)
         return self._expand_groups(panel["groups"], prefix, widgets)
 
     def _expand_panel(self, panel, widgets):
-        """Expands one panel according to its kind.
-
-        Special and hidden panels pass their field lists through untouched, pair
-        panels expand once at the base prefix and mirror every widget onto the
-        override prefix, and plain field panels expand at their own prefix.
-
-        Args:
-            panel   : Declared panel spec with a ``kind`` of ``special``, ``hidden``, ``pair`` or a plain fields panel.
-            widgets : Widget registry, extended in place.
-
-        Returns:
-            The expanded panel dict handed to the frontend.
-        """
         if panel["kind"] == "special":
             expanded = {"kind": "special", "panel": panel["panel"], "fields": list(panel["fields"])}
             if "modelFrom" in panel:
@@ -1810,15 +1725,6 @@ class LaunchLayout:
         return {"kind": "fields", "title": panel.get("title"), "note": panel.get("note"), "groups": groups}
 
     def _expand(self, key):
-        """Expands a declared layout into essentials, sections and a widget map.
-
-        Args:
-            key : Script key whose layout is expanded.
-
-        Returns:
-            Layout dict with ``essentials``, ``sections`` and ``widgets``, plus
-            the ``type_tab`` and ``legacy`` blocks when the spec declares them.
-        """
         spec    = self.LAYOUTS[key]
         widgets = {}
 
@@ -1838,12 +1744,6 @@ class LaunchLayout:
         return layout
 
     def _entry_claims(self, entry, out):
-        """Collects the config paths an expanded entry exposes, gates included.
-
-        Args:
-            entry : Expanded field entry, possibly a gate wrapper.
-            out   : List of claimed paths, extended in place.
-        """
         if "gate" in entry:
             out.append(entry["gate"])
             for sub in entry["fields"]:
@@ -1856,28 +1756,12 @@ class LaunchLayout:
         out.append(entry["path"])
 
     def _entry_gate_conditions(self, entry, out):
-        """Collects the ``gateOn`` conditions of an entry and its nested fields.
-
-        Args:
-            entry : Expanded field entry.
-            out   : List of gate conditions, extended in place.
-        """
         if "gateOn" in entry:
             out.append(entry["gateOn"])
         for sub in entry.get("fields", []):
             self._entry_gate_conditions(sub, out)
 
     def _gate_conditions(self, layout):
-        """Returns every value-gate condition in a layout's essentials and panels.
-
-        Special and hidden panels carry no expanded entries and are skipped.
-
-        Args:
-            layout : Expanded layout dict.
-
-        Returns:
-            The ``gateOn`` condition dicts found anywhere in the layout.
-        """
         conditions = []
         for entry in layout["essentials"]:
             self._entry_gate_conditions(entry, conditions)
@@ -1892,24 +1776,11 @@ class LaunchLayout:
         return conditions
 
     def _when_conditions(self, when):
-        """Returns a ``when`` clause as a list, accepting a single condition or none."""
         if when is None:
             return []
         return list(when) if isinstance(when, list) else [when]
 
     def _claims(self, layout):
-        """Returns every config path the layout claims, duplicates kept.
-
-        Special and hidden panels claim their listed fields directly, and a pair
-        panel claims each of its rows twice, once under the base prefix and once
-        under the override prefix.
-
-        Args:
-            layout : Expanded layout dict.
-
-        Returns:
-            The claimed dotted paths in traversal order.
-        """
         claimed = []
 
         for entry in layout["essentials"]:
@@ -1936,21 +1807,6 @@ class LaunchLayout:
         return claimed
 
     def _validate(self, key, layout, leaves):
-        """Checks an expanded layout against the script's resolved config leaves.
-
-        Every resolved field must be claimed exactly once, every claimed path
-        must exist, and section gates, value gates, special-panel model and head
-        gates, choice gates and legacy blocks must reference known fields with
-        exactly one of ``in`` or ``set``. Number widgets must carry bounds.
-
-        Args:
-            key    : Script key being validated, used in the error message.
-            layout : Expanded layout dict.
-            leaves : Resolved config leaves, each carrying a dotted ``path``.
-
-        Raises:
-            LayoutError : With every problem found, one per line.
-        """
         paths   = [leaf["path"] for leaf in leaves]
         known   = set(paths)
         claimed = self._claims(layout)
@@ -2043,19 +1899,6 @@ class LaunchLayout:
             raise LayoutError("\n".join(problems))
 
     def build(self, key, leaves):
-        """Builds and validates the launch form layout for a script.
-
-        Args:
-            key    : Script key to lay out.
-            leaves : Resolved config leaves, each carrying a dotted ``path``.
-
-        Returns:
-            The expanded layout with a ``mode`` of ``single`` when it holds one
-            section and no essentials, otherwise ``sections``.
-
-        Raises:
-            LayoutError : If no layout is declared for the key, or the declared layout does not match the resolved config.
-        """
         if key not in self.LAYOUTS:
             raise LayoutError(f"no launch layout declared for {key}")
 

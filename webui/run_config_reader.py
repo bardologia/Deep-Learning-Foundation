@@ -1,15 +1,3 @@
-"""Recovery of a run's recorded configuration for the launch pages and the job lines.
-
-Backs the "copy configs from a previous run" control: lists the run directories
-under a root that carry a resolved config file, and reads one such file back as
-dotted config paths with values rendered by the shared ``ConfigValueRenderer``,
-exactly as the config resolver renders defaults, so the launch form can diff them
-against its leaves. The identity and lifecycle fields that name the source run
-are withheld, so copying a configuration never points the new launch at the run
-it was copied from. Also finds the recording a launch with ``resume_from`` set
-will load, so a job can be described by the settings it will really run with
-rather than by the defaults of its entry point.
-"""
 
 from __future__ import annotations
 
@@ -22,15 +10,6 @@ from web_logger          import WebLogger
 
 
 class RunConfigReader:
-    """Finds and reads the resolved config files written into run directories.
-
-    Attributes:
-        CANDIDATES      : Config file locations searched inside a run directory, in priority order.
-        PRUNED          : Directory names that hold a run's own artifacts and can never be a nested run root, so the walk does not descend into them.
-        IDENTITY_LEAVES : Leaf names naming the source run's own directory or resume state; withheld from every read.
-        MAX_DEPTH       : Deepest directory level below the root the walk reaches.
-        logger          : Web logger used to record what each listing and read found.
-    """
 
     CANDIDATES      = ("docs/resolved_entry_config.json", "pipeline/resolved_config.json", "resolved_config.json")
     PRUNED          = ("docs", "pipeline")
@@ -38,11 +17,9 @@ class RunConfigReader:
     MAX_DEPTH       = 6
 
     def __init__(self, logger: WebLogger) -> None:
-        """Stores the logger used to report listing and read results."""
         self.logger = logger
 
     def _config_file(self, run_dir: Path) -> Path | None:
-        """Returns the first resolved config file present in a run directory, or None."""
         for relative in self.CANDIDATES:
             candidate = run_dir / relative
             if candidate.is_file():
@@ -50,20 +27,6 @@ class RunConfigReader:
         return None
 
     def _walk(self, directory: Path, depth: int):
-        """Yields (run directory, config file) pairs below a root, recursing to the depth cap.
-
-        A directory holding a config is both yielded and descended into: parameter
-        runs live under ``<dataset>/params/<name>`` of an already preprocessed
-        dataset, and benchmark units under a staged root that carries its own
-        config, so stopping at the first hit would hide them.
-
-        Args:
-            directory : Directory whose children are inspected.
-            depth     : Recursion level below the listing root.
-
-        Yields:
-            Tuples of (run directory, resolved config file inside it).
-        """
         for entry in sorted(directory.iterdir()):
             if not entry.is_dir() or entry.name.startswith(".") or entry.name in self.PRUNED:
                 continue
@@ -76,17 +39,6 @@ class RunConfigReader:
                 yield from self._walk(entry, depth + 1)
 
     def list_runs(self, raw_base: str) -> dict:
-        """Lists every run below a root that holds a resolved config file.
-
-        Args:
-            raw_base : Absolute path of the run root to search.
-
-        Returns:
-            Dict with ``ok``, the resolved ``base`` and a ``runs`` list of entries
-            carrying the run name relative to the base, its absolute path and the
-            config file's path relative to the run directory; ``ok`` False with an
-            error when the base is not a directory.
-        """
         base = Path(raw_base).expanduser() if raw_base else None
         if base is None or not base.is_dir():
             return {"ok": False, "error": f"not a directory: {raw_base}"}
@@ -103,27 +55,9 @@ class RunConfigReader:
         return {"ok": True, "base": str(base), "runs": entries}
 
     def _is_identity(self, path: str) -> bool:
-        """Returns whether a dotted config path names the source run rather than its settings."""
         return path.rsplit(".", 1)[-1] in self.IDENTITY_LEAVES
 
     def read(self, raw_path: str) -> dict:
-        """Reads the resolved config of one run as dotted paths with rendered values.
-
-        The run's identity and lifecycle fields are split out into ``identity``
-        instead of being served as copyable settings: applying them would point
-        the new launch at the source run's own directory, where the resume gate
-        either skips the launch or deletes the run that was copied from.
-
-        Args:
-            raw_path : Absolute path of the run directory.
-
-        Returns:
-            Dict with ``ok``, the ``run`` name, the ``source`` file relative to the
-            run directory, the ``config`` mapping of copyable dotted config paths
-            to rendered string values and the ``identity`` list of the withheld
-            paths; ``ok`` False with an error when the directory holds no resolved
-            config file or the file is unreadable.
-        """
         run_dir = Path(raw_path).expanduser() if raw_path else None
         if run_dir is None or not run_dir.is_dir():
             return {"ok": False, "error": f"not a run directory: {raw_path}"}
@@ -148,35 +82,11 @@ class RunConfigReader:
 
 
 class ResumeRecording:
-    """The configuration recording a resumed launch reads back, found from the pasted path.
-
-    A launch with ``resume_from`` set runs on the configuration its target
-    recorded, not on the entry point's defaults, so anything describing that
-    launch beforehand has to read the same file the entry point will. The
-    locators that own where each kind of recording lives are reused rather than
-    their paths repeated here.
-
-    Attributes:
-        MAX_CLIMB : Deepest number of parent directories searched above the pasted path.
-    """
 
     MAX_CLIMB = 8
 
     @staticmethod
     def locate(raw_path: str) -> Path | None:
-        """Returns the recording a resume of the path reads, or None when no directory at or above it holds one.
-
-        A run's own resolved entry config wins over any recording above it, as
-        it does in the resume itself; otherwise the staged pipeline recording,
-        the training sweep recording and the tuning recording are probed at the
-        path and at each parent.
-
-        Args:
-            raw_path : Path pasted into ``resume_from``.
-
-        Returns:
-            Path of the recording, or None.
-        """
         from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
         from pipelines.shared.orchestration.resumed_run    import StagedRunLocator, TuningRunLocator
         from pipelines.shared.training.resume_source       import SweepRecording
@@ -198,15 +108,6 @@ class ResumeRecording:
 
     @staticmethod
     def values(raw_path: str) -> dict:
-        """Returns the recorded configuration as dotted paths to rendered strings, empty when the path records none.
-
-        Args:
-            raw_path : Path pasted into ``resume_from``.
-
-        Returns:
-            Mapping of dotted config path to rendered value, rendered the way
-            the config resolver renders defaults so the two can be mixed.
-        """
         found = ResumeRecording.locate(raw_path)
         if found is None:
             return {}

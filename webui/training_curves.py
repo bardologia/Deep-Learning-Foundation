@@ -1,4 +1,3 @@
-"""Scalar training curves read from run TensorBoard event files for the web UI."""
 
 from __future__ import annotations
 
@@ -13,13 +12,6 @@ from web_logger     import WebLogger
 
 
 class TrainingCurves:
-    """Lists training runs and serves their downsampled scalar series.
-
-    Attributes:
-        logger : Console logger for discovery messages.
-        roots  : Catalogued runs roots used to resolve and sandbox run paths.
-        cache  : LRU cache of parsed scalar series keyed by run directory.
-    """
 
 
     MAX_POINTS   = 1000
@@ -27,27 +19,12 @@ class TrainingCurves:
     DEFAULT_TAGS = ("loss/val", "loss/validation", "val/loss")
 
     def __init__(self, logger: WebLogger) -> None:
-        """Stores the logger and prepares the runs-root resolver and scalar cache.
-
-        Args:
-            logger : Console logger for discovery messages.
-        """
 
         self.logger = logger
         self.roots  = CatalogRoots()
         self.cache  = LruCache(self.CACHE_CAP)
 
     def runs(self, base: str) -> dict:
-        """Lists runs holding TensorBoard event files under a catalogued root.
-
-        Args:
-            base : Runs root key or path accepted by the catalogue.
-
-        Returns:
-            Dictionary with ``ok``, the resolved ``root`` and a ``runs`` list of
-            entries with absolute id, root-relative name and event mtime, newest
-            first; ``ok`` is False with an ``error`` when the root cannot be opened.
-        """
 
         root, error = self.roots.open(base)
         if error:
@@ -68,20 +45,6 @@ class TrainingCurves:
         return {"ok": True, "root": str(root), "runs": runs}
 
     def curves(self, run_ids: list, tag: str) -> dict:
-        """Returns downsampled scalar series for the requested runs and tag.
-
-        When the requested tag is absent from every run a default loss-like tag is
-        chosen instead.
-
-        Args:
-            run_ids : Absolute run directory paths to load.
-            tag     : Preferred scalar tag to plot.
-
-        Returns:
-            Dictionary with ``ok``, the resolved ``tag``, the union of available
-            ``tags``, and a ``series`` list of per-run step and value lists; ``ok`` is
-            False with an ``error`` for unknown runs or runs without scalars.
-        """
 
         loaded = []
         for run_id in run_ids:
@@ -108,14 +71,6 @@ class TrainingCurves:
         return {"ok": True, "tag": tag, "tags": all_tags, "series": series}
 
     def _scalars(self, run_dir: Path) -> dict:
-        """Returns the scalar series of a run, reloading only when events changed.
-
-        Args:
-            run_dir : Run directory holding a ``tensorboard`` subdirectory.
-
-        Returns:
-            Mapping of scalar tag to a list of (step, value) pairs.
-        """
 
         tb_dir = run_dir / "tensorboard"
         stamp  = max((f.stat().st_mtime for f in tb_dir.glob("events.out.tfevents.*")), default=0.0)
@@ -137,16 +92,6 @@ class TrainingCurves:
         return scalars
 
     def _downsample(self, points: list) -> tuple[list, list]:
-        """Strides a series down to at most ``MAX_POINTS`` samples.
-
-        The final point is always retained so the curve keeps its true endpoint.
-
-        Args:
-            points : List of (step, value) pairs in recording order.
-
-        Returns:
-            Tuple of integer steps and float values of the kept samples.
-        """
 
         stride = max(1, math.ceil(len(points) / self.MAX_POINTS))
         kept   = points[::stride]
@@ -159,17 +104,6 @@ class TrainingCurves:
 
     @classmethod
     def _default_tag(cls, all_tags: list) -> str:
-        """Returns the preferred plotting tag among the available scalar tags.
-
-        Preference falls from the configured validation-loss names, to any tag naming
-        both validation and loss, to any loss tag, to the first tag available.
-
-        Args:
-            all_tags : Sorted union of scalar tags across the selected runs.
-
-        Returns:
-            Tag name to plot by default.
-        """
 
         for preferred in cls.DEFAULT_TAGS:
             if preferred in all_tags:
@@ -183,15 +117,6 @@ class TrainingCurves:
         return all_tags[0]
 
     def _run_dir(self, raw: str) -> Path | None:
-        """Returns the run directory for a request path, or None when not usable.
-
-        Args:
-            raw : Candidate run directory path from the client.
-
-        Returns:
-            Resolved path when it lies inside a catalogued root and holds a
-            ``tensorboard`` directory, otherwise None.
-        """
 
         if not raw:
             return None

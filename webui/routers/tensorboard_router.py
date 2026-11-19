@@ -1,8 +1,3 @@
-"""API routes managing TensorBoard instances and proxying their web UI.
-
-The declared routes start, list and stop instances, while the raw /tb/ section is
-proxied verbatim to the local TensorBoard process owning that instance id.
-"""
 
 from __future__ import annotations
 
@@ -14,36 +9,26 @@ from tensorboard_manager import TensorboardManager
 
 
 class TensorboardRouter(SubRouter):
-    """Manages TensorBoard instances and forwards /tb/ traffic to them.
-
-    Attributes:
-        tensorboard : Manager owning the running TensorBoard processes.
-        launcher    : Run launcher used to resolve interpreters and log directories.
-    """
 
     PASSTHRU_REQUEST  = ("Content-Type", "Accept", "X-XSRF-Protected")
     PASSTHRU_RESPONSE = ("Content-Type", "Content-Encoding", "Cache-Control", "Location")
 
     def __init__(self, tensorboard: TensorboardManager, launcher: RunLauncher) -> None:
-        """Stores the TensorBoard manager and run launcher, then declares the routes."""
         self.tensorboard = tensorboard
         self.launcher    = launcher
 
         super().__init__(("/api/tensorboard",), ("/tb/",))
 
     def declare(self, table: RouteTable) -> None:
-        """Registers the /api/tensorboard routes."""
         table.add("GET",  "/api/tensorboard",         self.instances)
         table.add("GET",  "/api/tensorboard/tree",    self.tree)
         table.add("POST", "/api/tensorboard/start",   self.start)
         table.wildcard("POST", "/api/tensorboard/", "/stop", self.stop)
 
     def instances(self, exchange: HttpExchange) -> None:
-        """Answers with the running TensorBoard instances."""
         exchange.send_json({"instances": self.tensorboard.list_instances()})
 
     def tree(self, exchange: HttpExchange) -> None:
-        """Answers with the folder tree of runs under the backbone training runs root."""
         interpreter = self.launcher.preferred_interpreter("train_backbone")
         runs_root   = self.launcher.runs_root("train_backbone", interpreter)
 
@@ -54,7 +39,6 @@ class TensorboardRouter(SubRouter):
         exchange.send_result(self.tensorboard.run_tree(runs_root))
 
     def start(self, exchange: HttpExchange) -> None:
-        """Starts, or reuses, a TensorBoard instance for the requested log directory."""
         body        = exchange.body
         interpreter = body.get("interpreter") or self.launcher.preferred_interpreter()
 
@@ -72,23 +56,9 @@ class TensorboardRouter(SubRouter):
         exchange.send_result(self.tensorboard.ensure(logdir, interpreter))
 
     def stop(self, exchange: HttpExchange, tb_id: str) -> None:
-        """Stops the TensorBoard instance addressed by the wildcard id."""
         exchange.send_result(self.tensorboard.stop(tb_id))
 
     def handle_raw(self, exchange: HttpExchange) -> None:
-        """Proxies a /tb/<id>/... request to the TensorBoard process owning that id.
-
-        Copies the allow-listed request headers, forwards method, path and body to the
-        instance's loopback port, and writes back its status, allow-listed response
-        headers and payload.
-
-        Args:
-            exchange : Request being answered, carrying the raw handler.
-
-        Returns:
-            None. Answers 404 for an unknown instance id and 502 when the instance is
-            unreachable.
-        """
         handler  = exchange.handler
         segments = handler.path.split("/")
         tb_id    = segments[2].split("?")[0] if len(segments) > 2 else ""

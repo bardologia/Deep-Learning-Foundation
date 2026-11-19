@@ -1,8 +1,3 @@
-"""Composition root of the ML Template control console HTTP server.
-
-Instantiates every console component, wires them into the request router, and
-runs the threaded HTTP server together with the background monitors.
-"""
 
 from __future__ import annotations
 
@@ -67,7 +62,6 @@ from routers.tensorboard_router import TensorboardRouter
 
 
 class _Server(ThreadingHTTPServer):
-    """Threading HTTP server carrying the request router on the server object."""
 
 
     request_queue_size = 64
@@ -75,47 +69,27 @@ class _Server(ThreadingHTTPServer):
 
 
 class _Handler(BaseHTTPRequestHandler):
-    """HTTP/1.1 request handler that delegates every method to the router."""
 
 
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:
-        """Routes a GET request through the server's request router."""
 
         self.server.router.route(self)
 
     def do_POST(self) -> None:
-        """Routes a POST request through the server's request router."""
 
         self.server.router.route(self)
 
     def log_message(self, fmt: str, *args) -> None:
-        """Suppresses the default per-request access logging."""
 
         return
 
 
 class WebUIServer:
-    """Builds and runs the control console: components, routes and background loops.
-
-    Attributes:
-        host   : Interface the HTTP server binds to.
-        port   : TCP port the HTTP server binds to.
-        logger : Console logger shared by every component.
-        paths  : Project path resolver rooted at the repository.
-        router : Request router holding the ordered route handlers.
-    """
 
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8772, root: Path | None = None) -> None:
-        """Constructs every console component and assembles the request router.
-
-        Args:
-            host : Interface to bind the HTTP server to.
-            port : TCP port to bind the HTTP server to.
-            root : Repository root override; discovered from this file when None.
-        """
 
         self.host   = host
         self.port   = port
@@ -203,7 +177,6 @@ class WebUIServer:
         ])
 
     def _report_ready(self) -> None:
-        """Prints the startup banner with the URL, profile, roots, script count and interpreters."""
 
         scripts      = self.catalog.list_scripts()
         interpreters = self.paths.discover_interpreters()
@@ -221,13 +194,6 @@ class WebUIServer:
         ])
 
     def serve(self) -> None:
-        """Serves the console until interrupted, then stops the background workers.
-
-        Starts the contention, resource, GPU, energy and progress monitors, the
-        finalize chains of launched runs and the sequence runner, runs the HTTP
-        server on a worker thread, and blocks in the detacher wait loop until a
-        keyboard interrupt or detach request arrives.
-        """
 
         server        = _Server((self.host, self.port), _Handler)
         server.router = self.router

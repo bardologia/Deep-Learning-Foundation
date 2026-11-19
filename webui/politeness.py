@@ -1,12 +1,3 @@
-"""Launch-time priority of console jobs and the runtime throttle of running ones.
-
-JobPoliteness keeps the persisted politeness level and renders the nice and
-ionice prefix every local launch starts under. JobThrottle lowers the CPU and
-I/O priority of every process this user owns, sparing the console's own line,
-for the contention monitor to call when this user is found slowing the
-neighbours. Both only ever lower priority, which an unprivileged user may do;
-neither can raise it back, so a throttled job stays throttled until it ends.
-"""
 
 from __future__ import annotations
 
@@ -18,15 +9,6 @@ from web_logger import WebLogger
 
 
 class JobPoliteness:
-    """Persisted politeness level and the command prefix it stands for.
-
-    Attributes:
-        paths    : Project paths supplying the logs directory the settings live in.
-        logger   : Console logger for configuration changes.
-        lock     : Guards the settings.
-        path     : Settings file under the logs directory.
-        settings : Current "level" and "auto_throttle" flag.
-    """
 
     SETTINGS_NAME = "politeness.json"
     LEVELS        = {
@@ -37,12 +19,6 @@ class JobPoliteness:
     DEFAULTS      = {"level": "polite", "auto_throttle": True}
 
     def __init__(self, paths, logger: WebLogger) -> None:
-        """Resolves the settings file and loads the persisted level.
-
-        Args:
-            paths  : Project paths supplying the logs directory.
-            logger : Console logger for configuration changes.
-        """
         self.paths    = paths
         self.logger   = logger
         self.lock     = threading.Lock()
@@ -50,12 +26,6 @@ class JobPoliteness:
         self.settings = self._load()
 
     def _load(self) -> dict:
-        """Returns the persisted settings, or the defaults when no settings file exists.
-
-        Raises:
-            KeyError   : The file lacks one of the settings keys.
-            ValueError : The file names a level that does not exist.
-        """
         if not self.path.exists():
             return dict(self.DEFAULTS)
 
@@ -66,22 +36,14 @@ class JobPoliteness:
         return {"level": level, "auto_throttle": bool(loaded["auto_throttle"])}
 
     def level(self) -> str:
-        """Returns the current level name."""
         with self.lock:
             return self.settings["level"]
 
     def auto_throttle(self) -> bool:
-        """Returns whether running jobs are throttled automatically when this user slows the neighbours."""
         with self.lock:
             return self.settings["auto_throttle"]
 
     def prefix(self) -> list[str]:
-        """Returns the argv prefix a local launch starts under for the current level.
-
-        Returns:
-            Empty list for "off", otherwise `nice -n <value>` followed by the
-            `ionice` class and, for the best-effort class, its level.
-        """
         spec = self.LEVELS[self.level()]
         if spec["nice"] == 0:
             return []
@@ -92,22 +54,12 @@ class JobPoliteness:
         return argv
 
     def state(self) -> dict:
-        """Returns the settings with the level's description, the rendered prefix and the settings path."""
         with self.lock:
             settings = dict(self.settings)
         spec = self.LEVELS[settings["level"]]
         return {**settings, "nice": spec["nice"], "label": spec["label"], "prefix": " ".join(self.prefix()), "levels": list(self.LEVELS), "settings_path": str(self.path)}
 
     def configure(self, payload: dict) -> dict:
-        """Validates and persists a new level and auto-throttle flag.
-
-        Args:
-            payload : Request body with "level" and "auto_throttle"; a missing key keeps its current value.
-
-        Returns:
-            The new state under an "ok" flag, or an "ok" of False with an
-            "error" when the level is unknown.
-        """
         with self.lock:
             current = dict(self.settings)
 
@@ -125,38 +77,21 @@ class JobPoliteness:
         return {"ok": True, **self.state()}
 
     def _persist(self) -> None:
-        """Writes the current settings to the settings file, creating its directory."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self.settings, indent=2) + "\n")
 
 
 class JobThrottle:
-    """Drops every process of this user to the lowest CPU and I/O priority, sparing the console.
-
-    Attributes:
-        nuke   : Process nuke whose target enumeration names this user's processes minus the console's own line.
-        logger : Console logger for the outcome.
-    """
 
     NICE      = 19
     IO_CLASS  = 3
     TIMEOUT_S = 15.0
 
     def __init__(self, nuke, logger: WebLogger) -> None:
-        """Records the nuke used for enumeration and the logger."""
         self.nuke   = nuke
         self.logger = logger
 
     def _run(self, argv: list[str]) -> tuple[int, str]:
-        """Runs one priority command and returns its exit code with the tail of its stderr.
-
-        Args:
-            argv : Command line of `renice` or `ionice`.
-
-        Returns:
-            Tuple of the exit code (127 when the binary is missing or timed out)
-            and the last stderr line, empty on success.
-        """
         try:
             done = subprocess.run(argv, capture_output=True, text=True, timeout=self.TIMEOUT_S)
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -166,13 +101,6 @@ class JobThrottle:
         return done.returncode, (lines[-1] if lines else "")
 
     def apply(self) -> dict:
-        """Renices and ionices every target process once.
-
-        Returns:
-            Mapping with "ok" when both commands exited cleanly, "processes", the
-            number of pids targeted, the "renice" and "ionice" exit codes, and
-            "error", the stderr tail of the failing command or an empty string.
-        """
         targets = self.nuke.targets()
         if not targets:
             self.logger.muted("throttle requested, no processes to lower")

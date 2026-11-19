@@ -1,55 +1,3 @@
-"""Execution engine that walks experiment sequences over the job backends.
-
-Holds the live state of every started sequence, launches a block as soon as all
-of its predecessor blocks have finished, launches independent blocks in
-parallel, holds checkpoint blocks until they are explicitly released, skips the
-descendants of a failed block, and injects the sequence's shared dataset into
-each block's overrides at launch time. Every block runs through the process
-manager.
-
-An isolated sequence gets a fresh workspace directory per execution under the
-repository's ``runs/sequences`` tree; every block's run-output root and every
-runs-tree input root are redirected into it, so repeated executions never
-collide and downstream blocks read exactly the runs this execution produced.
-A start may instead name the workspace of an earlier execution to resume it:
-the run reuses that directory, so the blocks that still launch read and write
-the runs the earlier execution already produced. Every isolated execution
-mirrors its live state into a JSON file inside the workspace whenever it
-changes; the in-memory state dies with the server, but the file survives, and
-a resume scan reads it to report which blocks already finished so the resumed
-start can bypass them instead of redoing them. That bypass list lives only in
-the execution's live state, never in the stored definition, so a later plain
-start in a fresh workspace runs every block again.
-
-A block whose skip toggle is set is bypassed instead of launched: it counts as
-satisfied for its successors, so after a crash or stop the finished parts of a
-sequence can be marked skip and a restart replays only the rest. The toggle is
-read fresh from the store on every scan, so it can be flipped mid-run for any
-block that has not launched yet.
-
-A block carries one finalize switch per post-experiment step: the seed
-comparison aggregating each trial's seed runs, the trial comparison writing the
-experiment's comparison reports, and the report mailer sending the experiment
-bundle. The enabled steps are chained in that order onto the block's successful
-end. The chain runs on the block's trial-sweep directory, inside the isolated
-workspace when the sequence has one and under the entry's own log directory
-otherwise, and does not gate the block's successors: they launch as soon as the
-block's own job finishes, while the chain runs beside them. A failed chain step
-marks the block finalize_failed, which still satisfies its successors but ends
-the sequence as failed.
-
-A tuning block that declares decisions records its own verdict: once its job
-ended, the block enters ``deciding``, the runner reads the best configuration
-the run wrote, splits it over the declared axes, ``model_overrides`` and
-``training.batch_size``, and records each through the store, which re-stamps the
-sequence; only then does the block count as done for its successors. A missing
-or ambiguous best configuration fails the block. While the block runs, the
-board reads the study snapshots its workers write into the workspace.
-
-The notifier is told about the moments that need a person: a block held at its
-checkpoint, a recorded verdict, a failed block or finalize step, and the end of
-the sequence.
-"""
 
 from __future__ import annotations
 
@@ -67,22 +15,6 @@ from sequence_decisions             import TuningVerdict
 
 
 class SequenceRunner:
-    """Advances started sequences by polling job states and launching ready blocks.
-
-    Attributes:
-        store            : Sequence store supplying the current definition of each sequence.
-        processes        : Process manager whose job table supplies local block job states.
-        launcher         : Run launcher executing local blocks.
-        resolver         : Config resolver used to find which dataset fields a block's entry exposes.
-        chain            : Derivation of the compare-and-mail chain appended to finalize blocks.
-        verdict          : Reader of the best configuration a finished tuning block records as its verdict.
-        notifier         : Job notifier block failures and sequence endings are pushed through.
-        logger           : Console logger.
-        active           : Live sequence states keyed by sequence id.
-        released         : Released checkpoint block ids per sequence id.
-        persisted        : Last state-file text written per sequence id, to skip unchanged writes.
-        lock             : Guards the active table, the released sets, and the state-file staleness check and write.
-    """
 
     INTERVAL_S     = 2.0
     ENDED_OK       = ("finished",)
@@ -90,7 +22,6 @@ class SequenceRunner:
     STATE_FILENAME = "sequence_state.json"
 
     def __init__(self, store, processes, launcher, resolver, notifier, logger: WebLogger) -> None:
-        """Stores the collaborators and starts with no active sequences."""
         self.store     = store
         self.processes = processes
         self.launcher  = launcher
@@ -105,26 +36,6 @@ class SequenceRunner:
         self.lock      = threading.Lock()
 
     def start_sequence(self, sequence_id: str, resume_dir: str = "", bypass: list | None = None) -> dict:
-        """Starts one sequence, in a fresh workspace or resuming a previous one.
-
-        A non-empty ``resume_dir`` names the workspace directory of an earlier
-        isolated execution; the run reuses it instead of creating a fresh one,
-        and the blocks named in ``bypass`` are bypassed for this execution
-        only, so the remaining blocks read and write the runs that execution
-        produced. The bypass list is never written into the stored definition,
-        so a later plain start runs every block again.
-
-        Args:
-            sequence_id : Identifier of the sequence to start.
-            resume_dir  : Workspace directory of the execution to resume, or empty to start fresh.
-            bypass      : Identifiers of blocks bypassed for this execution only, typically the ones a resume scan reported finished.
-
-        Returns:
-            Result with the fresh state, or ``ok`` False when the sequence is
-            unknown, empty, already running, the resume workspace is invalid,
-            or a block would mail reports without the SMTP password in the
-            server environment.
-        """
         entry = self.store.get(sequence_id)
         if entry is None:
             return {"ok": False, "error": "sequence not found"}
@@ -159,14 +70,6 @@ class SequenceRunner:
         return {"ok": True, "state": self.state(sequence_id)}
 
     def _mail_preflight(self, blocks: list) -> str:
-        """Returns the start-blocking error when mailing is enabled without an SMTP password.
-
-        Args:
-            blocks : Block definitions of the sequence being started.
-
-        Returns:
-            Error naming the mailing blocks and the variable, or an empty string.
-        """
         mailers  = [block["name"] or block["title"] for block in blocks if not block["skip"] and block["finalize"][self.chain.MAIL_STEP]]
         variable = self.chain.mail_blocked() if mailers else ""
 
@@ -176,28 +79,6 @@ class SequenceRunner:
         return f"block(s) {', '.join(mailers)} enable the report-mail finalize step, but the server environment has no {variable}; export it and restart the webui, or switch the mail step off"
 
     def resume_scan(self, sequence_id: str, resume_dir: str) -> dict:
-        """Reads the execution state a previous run recorded into its workspace.
-
-        The runner mirrors every isolated execution's live state into the
-        workspace, so a scan of that file reports which blocks already ran to
-        completion; the caller feeds those back as the resumed start's bypass
-        list. A block whose finalize chain failed counts as finished here: its
-        own job completed, so it is proposed for bypassing instead of being
-        retrained. A block the recorded execution itself bypassed as part of
-        its resume list also counts as finished, so chained resumes keep
-        proposing it; a block bypassed by a manual skip toggle does not, since
-        nothing shows it ever ran.
-
-        Args:
-            sequence_id : Identifier of the sequence being resumed.
-            resume_dir  : Workspace directory of the execution to resume.
-
-        Returns:
-            Result with ``recorded`` False when the workspace holds no state
-            file, or the recorded per-block statuses plus the ids of the blocks
-            that finished and still exist in the sequence; ``ok`` False when the
-            sequence is unknown or the workspace is invalid.
-        """
         entry = self.store.get(sequence_id)
         if entry is None:
             return {"ok": False, "error": "sequence not found"}
@@ -219,16 +100,6 @@ class SequenceRunner:
         return {"ok": True, "recorded": True, "run_dir": run_dir, "statuses": statuses, "done": done}
 
     def release(self, sequence_id: str, block_id: str) -> dict:
-        """Releases one held checkpoint block so the next scan launches it.
-
-        Args:
-            sequence_id : Identifier of the running sequence.
-            block_id    : Identifier of the held block.
-
-        Returns:
-            Result with the updated state, or ``ok`` False when the sequence is
-            not active or the block is not currently held.
-        """
         with self.lock:
             state = self.active.get(sequence_id)
             if state is None:
@@ -245,18 +116,6 @@ class SequenceRunner:
         return {"ok": True, "state": self.state(sequence_id)}
 
     def stop_sequence(self, sequence_id: str) -> dict:
-        """Stops one sequence, cancelling its running blocks and skipping the rest.
-
-        Blocks whose launch is still in flight are cancelled too; the launching
-        thread sees the status change when it records the outcome and stops the
-        job it just submitted.
-
-        Args:
-            sequence_id : Identifier of the sequence to stop.
-
-        Returns:
-            Result with the stopped state, or ``ok`` False when it is not active.
-        """
         with self.lock:
             state = self.active.get(sequence_id)
             if state is None or state["status"] not in ("running", "held"):
@@ -284,19 +143,6 @@ class SequenceRunner:
         return {"ok": True, "state": self.state(sequence_id)}
 
     def clear_state(self, sequence_id: str) -> dict:
-        """Discards one sequence's finished execution state so the board returns to idle.
-
-        The workspace state file is left in place, so a later resume scan still
-        sees which blocks the execution finished; only the in-memory state that
-        the board and the rail render is dropped.
-
-        Args:
-            sequence_id : Identifier of the sequence whose state is discarded.
-
-        Returns:
-            Result with ``cleared`` True when a state was dropped, False when
-            there was none, or ``ok`` False while the sequence is still active.
-        """
         with self.lock:
             state = self.active.get(sequence_id)
             if state is not None and state["status"] in ("running", "held"):
@@ -311,7 +157,6 @@ class SequenceRunner:
         return {"ok": True, "cleared": cleared}
 
     def state(self, sequence_id: str) -> dict | None:
-        """Returns a snapshot of one sequence's live state, or None when never started."""
         with self.lock:
             state = self.active.get(sequence_id)
             if state is None:
@@ -319,32 +164,20 @@ class SequenceRunner:
             return {**state, "blocks": {block_id: self._copy_block_state(block) for block_id, block in state["blocks"].items()}}
 
     def states(self) -> dict:
-        """Returns a snapshot of every live sequence state keyed by sequence id."""
         with self.lock:
             return {sequence_id: {**state, "blocks": {block_id: self._copy_block_state(block) for block_id, block in state["blocks"].items()}} for sequence_id, state in self.active.items()}
 
     @staticmethod
     def _fresh_block_state() -> dict:
-        """Returns the initial live state of one block."""
         return {"status": "pending", "job_id": None, "error": "", "experiment_dir": "", "finalize": None, "verdict": None}
 
     @staticmethod
     def _copy_block_state(block_state: dict) -> dict:
-        """Returns a snapshot copy of one block's live state, its finalize chain and verdict states included."""
         finalize = block_state["finalize"]
         verdict  = block_state["verdict"]
         return {**block_state, "finalize": dict(finalize) if finalize else None, "verdict": dict(verdict) if verdict else None}
 
     def _resume_workspace(self, entry: dict, resume_dir: str) -> tuple:
-        """Validates the workspace of a previous execution against the sequences tree.
-
-        Args:
-            entry      : Sequence definition being started.
-            resume_dir : Workspace directory fed by the caller.
-
-        Returns:
-            Pair of the normalised workspace path and an error message; exactly one of the two is non-empty.
-        """
         if not entry["isolate"]:
             return "", "the sequence does not isolate its executions, so there is no workspace to resume; turn 'Isolated dir' on"
 
@@ -358,15 +191,6 @@ class SequenceRunner:
         return str(workspace), ""
 
     def _make_workspace(self, entry: dict) -> str:
-        """Creates and returns a fresh per-execution run directory for an isolated sequence.
-
-        The directory lives under ``<repo_root>/runs/sequences`` and is named after
-        the sequence and a start stamp; a numeric suffix keeps it unique when the
-        same sequence starts twice within one second.
-
-        Args:
-            entry : Sequence definition supplying the name.
-        """
         slug = re.sub(r"[^A-Za-z0-9_-]+", "_", entry["name"]).strip("_").lower() or "sequence"
         base = self.store.paths.runs_dir / "sequences" / f"{slug}_{time.strftime('%Y-%m-%d_%H-%M-%S')}"
 
@@ -381,47 +205,14 @@ class SequenceRunner:
         return str(candidate)
 
     def _backend(self, job_id: str):
-        """Returns the process manager owning the job."""
         return self.processes
 
     def _job_status(self, job_id: str) -> str:
-        """Returns the process manager's status for one job, or "failed" when it is gone.
-
-        Args:
-            job_id : Console job id of a launched block.
-        """
         with self.processes.lock:
             record = self.processes.jobs.get(job_id)
             return record["status"] if record else "failed"
 
     def _launch_overrides(self, entry: dict, block: dict, interpreter: str, run_dir: str) -> tuple:
-        """Returns the block's overrides with the dataset and workspace injected, plus the resolved leaf defaults.
-
-        The dataset injection targets whichever dataset fields the block's entry
-        config actually exposes: ``paths.dataset_path`` and ``paths.parameters_path``
-        for single-dataset entries, and ``dataset_base_path`` plus ``dataset_filter``
-        for multi-dataset entries, derived from the selected dataset directory.
-        The workspace injection redirects the entry's run-output root into the
-        sequence's run directory: ``paths.log_base_dir`` for the entries that
-        expose it, ``logdir`` for the training entries that name it that way, and
-        ``runs_dir`` for run-consuming inputs. The last two are only redirected
-        when their effective value points at the project's runs tree, taking the
-        block's own override when it sets one and the entry's default otherwise,
-        so a deliberately external directory is left alone.
-
-        Args:
-            entry       : Sequence definition supplying the shared dataset selection.
-            block       : Block definition supplying the stored overrides.
-            interpreter : Interpreter used to resolve the entry's config leaves.
-            run_dir     : Isolated workspace directory of this execution, or empty.
-
-        Returns:
-            Pair of the launch overrides and the leaf defaults keyed by path;
-            the overrides are None when the entry could not be resolved, and
-            the leaves are empty when no resolution was needed. A block with
-            finalize steps on always resolves, since its sweep directory is
-            derived from the leaf defaults.
-        """
         overrides = dict(block["overrides"])
         dataset   = entry["dataset"]["dataset_path"]
         if not dataset and not run_dir and not any(block["finalize"].values()):
@@ -454,15 +245,6 @@ class SequenceRunner:
         return overrides, leaves
 
     def _runs_tree_path(self, value: str) -> bool:
-        """Returns whether a path value sits inside the project's runs tree.
-
-        A relative value counts as in-tree when it names the reference layout's
-        run-output root or a path below it, since the entry configs default their
-        run-output roots to checkout-relative paths.
-
-        Args:
-            value : Effective value of a runs-tree input, the block's override when it sets one and the entry's resolved default otherwise.
-        """
         reference = str(ReferenceLayout.RUNS_ROOT)
 
         if value == reference or value.startswith(f"{reference}/"):
@@ -471,15 +253,6 @@ class SequenceRunner:
         return any(value == root or value.startswith(f"{root}/") for root in self._runs_roots())
 
     def _runs_roots(self) -> tuple:
-        """Returns the path roots whose subtrees count as the project's runs tree.
-
-        The root is the checkout's own run-output directory, which the machine
-        profile may have moved elsewhere; the reference layout's relative root is
-        matched by ``_runs_tree_path`` itself.
-
-        Raises:
-            ValueError : If the root cannot be determined from the configuration.
-        """
         roots = tuple(root for root in (str(self.store.paths.runs_dir),) if root.strip("/") not in ("", str(ReferenceLayout.RUNS_ROOT)))
 
         if not roots:
@@ -487,16 +260,6 @@ class SequenceRunner:
         return roots
 
     def _launch_block(self, entry: dict, block: dict, run_dir: str) -> None:
-        """Launches one ready block outside the runner lock and records the outcome.
-
-        Config resolution and the launch run with the lock released, so the
-        sequence API stays responsive for the whole submission.
-
-        Args:
-            entry   : Sequence definition the block belongs to.
-            block   : Block definition to launch, read fresh from the store.
-            run_dir : Isolated workspace directory of this execution, or empty.
-        """
         interpreter       = block["interpreter"] or self.launcher.preferred_interpreter(block["script"])
         overrides, leaves = self._launch_overrides(entry, block, interpreter, run_dir)
 
@@ -521,19 +284,6 @@ class SequenceRunner:
         self._record_launch(entry, block, job_id, "", experiment_dir)
 
     def _record_launch(self, entry: dict, block: dict, job_id: str, error: str, experiment_dir: str = "") -> None:
-        """Writes a finished launch back into the live state, tearing the job down when it is stale.
-
-        A stop landing while the launch was in flight has already moved the
-        block off "launching", so the outcome is discarded and the job that was
-        just started is stopped instead of being adopted.
-
-        Args:
-            entry          : Sequence definition the block belongs to.
-            block          : Block definition that was launched.
-            job_id         : Console job id of the started job, or empty on failure.
-            error          : Failure description, or empty when the launch succeeded.
-            experiment_dir : Trial-sweep directory the block's finalize chain runs on, or empty.
-        """
         with self.lock:
             state       = self.active.get(entry["sequence_id"])
             block_state = state["blocks"].get(block["block_id"]) if state else None
@@ -558,21 +308,6 @@ class SequenceRunner:
             self.logger.ok(f"sequence {entry['sequence_id']}: launched block '{block['title']}' as job {job_id}")
 
     def _launch_finalize_step(self, entry: dict, block: dict, block_state: dict, run_dir: str) -> None:
-        """Launches one step of a block's compare-and-mail chain and records the outcome.
-
-        The step runs locally through the process manager whatever the block's
-        own target, so the comparisons and the mailing always read the local
-        tree. The step always runs attached, whatever the sequence's detach
-        flag: a detached process hides its exit code, so a crashed comparison
-        would read as finished and wave the chain through to a mail step that
-        has nothing to send.
-
-        Args:
-            entry       : Sequence definition the block belongs to.
-            block       : Block definition whose chain is advancing.
-            block_state : Live state snapshot supplying the step index and experiment directory.
-            run_dir     : Isolated workspace directory of the execution.
-        """
         step = block_state["finalize"]["steps"][block_state["finalize"]["step"]]
 
         try:
@@ -589,19 +324,6 @@ class SequenceRunner:
         self._record_finalize_launch(entry, block, step, result["job_id"], "")
 
     def _record_finalize_launch(self, entry: dict, block: dict, step: str, job_id: str, error: str) -> None:
-        """Writes a finished chain-step launch back into the live state, tearing the job down when it is stale.
-
-        A stop landing while the step launched has already moved the block off
-        "finalizing", so the outcome is discarded and the job stopped instead
-        of being adopted, mirroring the block-launch path.
-
-        Args:
-            entry  : Sequence definition the block belongs to.
-            block  : Block definition whose chain step was launched.
-            step   : Entry-point key of the launched step.
-            job_id : Console job id of the started job, or empty on failure.
-            error  : Failure description, or empty when the launch succeeded.
-        """
         with self.lock:
             state       = self.active.get(entry["sequence_id"])
             block_state = state["blocks"].get(block["block_id"]) if state else None
@@ -625,12 +347,6 @@ class SequenceRunner:
             self.logger.ok(f"sequence {entry['sequence_id']}: block '{block['title']}' finalize step '{step}' running as job {job_id}")
 
     def _finish(self, block: dict, block_state: dict) -> None:
-        """Moves a block whose work ended into deciding when it records a verdict off its run, else into done.
-
-        Args:
-            block       : Block definition, read fresh from the store.
-            block_state : Its live state, mutated in place under the runner lock.
-        """
         if self.verdict.records(block):
             block_state["status"]  = "deciding"
             block_state["verdict"] = {"launching": False, "values": {}}
@@ -638,27 +354,6 @@ class SequenceRunner:
             block_state["status"] = "done"
 
     def _advance(self, sequence_id: str, state: dict) -> list:
-        """Advances one running sequence: syncs jobs, walks finalize chains, marks ready blocks.
-
-        A block that is ready to run is marked "launching" and returned instead
-        of being launched here, so the caller can perform the blocking launch
-        with the runner lock released; a finalize chain step that is ready to
-        run is returned the same way. A block marked skip (or bypassed for this
-        execution) turns bypassed only once its own predecessors are satisfied,
-        so a skip mark never unlocks the blocks behind it ahead of their turn.
-        A finishing block with any finalize switch
-        on moves to "finalizing" instead of "done" and its enabled steps launch
-        one by one, without holding back its successors.
-
-        Args:
-            sequence_id : Identifier of the sequence being advanced.
-            state       : Its live state, mutated in place under the runner lock.
-
-        Returns:
-            List of launch tuples for outside the lock: ("block", entry, block, run_dir)
-            for ready blocks and ("finalize", entry, block, block_state, run_dir)
-            for ready chain steps.
-        """
         entry = self.store.get(sequence_id)
         if entry is None:
             state["status"] = "stopped"
@@ -763,19 +458,6 @@ class SequenceRunner:
         return launches
 
     def _notify_ended(self, entry: dict, state: dict, blocks: dict) -> None:
-        """Pushes one notification when an advance pass moved a sequence into a terminal state.
-
-        A failed sequence reports every broken block with its error at high
-        priority; a finished one reports the block count at default priority.
-        The advance pass only runs on running or held sequences, so the
-        transition into "failed" or "done" happens exactly once and the
-        notification cannot repeat.
-
-        Args:
-            entry  : Sequence definition supplying the name.
-            state  : Live state whose status was just recomputed.
-            blocks : Current block definitions keyed by block id.
-        """
         if state["status"] == "failed":
             broken = [f"{blocks[block_id]['title']}: {block_state['error'] or block_state['status']}" for block_id, block_state in state["blocks"].items() if block_state["status"] in ("failed", "finalize_failed", "cancelled")]
             self.notifier.system_alert(f"sequence failed: {entry['name']}", "; ".join(broken) or "a block was skipped without a recorded error")
@@ -783,15 +465,6 @@ class SequenceRunner:
             self.notifier.system_alert(f"sequence finished: {entry['name']}", f"all {len(state['blocks'])} block(s) completed", "default")
 
     def _persist_states(self) -> None:
-        """Mirrors every isolated sequence's live state into its workspace when it changed.
-
-        The state file is what a later resume scan reads to know which blocks
-        already finished, so it survives the server restart the in-memory
-        state dies with. The staleness check and the write both run under the
-        runner lock, and the write lands through a staging file replaced over
-        the target, so the stop path and the watch scan can never interleave
-        their rewrites and a reader never sees a half-written file.
-        """
         with self.lock:
             for sequence_id, state in self.active.items():
                 if not state["run_dir"]:
@@ -809,18 +482,6 @@ class SequenceRunner:
                 self.persisted[sequence_id] = text
 
     def study_progress(self, sequence_id: str, block_id: str) -> dict:
-        """Returns the study snapshots a tuning block's workers wrote into the execution workspace.
-
-        Args:
-            sequence_id : Identifier of the sequence holding the block.
-            block_id    : Identifier of the tuning block.
-
-        Returns:
-            Result with ``studies``, the last snapshot per tuned model keyed by
-            the model directory; ``ok`` False with an error when the sequence or
-            block is unknown, the block runs no tuning study, has no fixed run
-            tag, or the sequence never ran in an isolated workspace.
-        """
         entry = self.store.get(sequence_id)
         if entry is None:
             return {"ok": False, "error": "sequence not found"}
@@ -846,15 +507,6 @@ class SequenceRunner:
         return {"ok": True, "studies": files}
 
     def _leaves(self, script: str, interpreter: str) -> dict:
-        """Returns an entry's resolved leaf defaults keyed by path.
-
-        Args:
-            script      : Entry-point key to resolve.
-            interpreter : Interpreter the entry resolves under.
-
-        Raises:
-            ValueError : If the entry's configuration cannot be resolved.
-        """
         resolved = self.resolver.resolve(script, interpreter)
         if not resolved.get("ok"):
             raise ValueError(f"could not resolve the config of '{script}': {resolved.get('error', 'unknown error')}")
@@ -862,20 +514,6 @@ class SequenceRunner:
         return {leaf["path"]: str(leaf["value"]) for leaf in resolved["leaves"]}
 
     def _record_verdict(self, entry: dict, block: dict, run_dir: str) -> None:
-        """Records a finished tuning block's best configuration as its verdict and moves the block on.
-
-        Runs outside the runner lock: locating the best configuration resolves
-        the entry's config leaves, and recording the verdict re-stamps the
-        whole sequence through the store. A block that left deciding meanwhile
-        keeps the status it has and nothing is recorded. A verdict that cannot
-        be read fails the block, so its successors never run on the untuned
-        recipe by accident.
-
-        Args:
-            entry   : Sequence definition the block belongs to.
-            block   : Block definition, read fresh from the store.
-            run_dir : Isolated workspace directory of this execution, or empty.
-        """
         interpreter = block["interpreter"] or self.launcher.preferred_interpreter(block["script"])
         values      = {}
         error       = ""
@@ -919,13 +557,6 @@ class SequenceRunner:
             self.notifier.system_alert(f"sequence block decided: {block['title']}", f"sequence '{entry['name']}': '{block['name'] or block['title']}' recorded {recorded}", "default")
 
     def scan(self) -> None:
-        """Runs one advance pass over every running or held sequence, then launches what it marked.
-
-        The advance pass is the only part holding the runner lock; the launches
-        it collected run afterwards with the lock released, and each records its
-        own outcome back into the live state, after which the workspace state
-        files are refreshed.
-        """
         with self.lock:
             launches = []
             for sequence_id, state in self.active.items():
@@ -943,12 +574,10 @@ class SequenceRunner:
         self._persist_states()
 
     def start(self) -> None:
-        """Starts the background polling thread that advances sequences forever."""
         worker = threading.Thread(target=self._watch, daemon=True)
         worker.start()
 
     def _watch(self) -> None:
-        """Scans on the fixed interval forever, logging any scan failure instead of exiting."""
         while True:
             time.sleep(self.INTERVAL_S)
             try:

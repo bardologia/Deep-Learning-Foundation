@@ -1,11 +1,3 @@
-"""Interactive single-pixel interrogation of a trained volumetric model.
-
-Backs the web UI Microscope tab: loads a finished backbone or dual run in a
-background thread, then answers per-pixel questions about it: predicted
-Gaussian slots and reflectivity curves, parameter fields over the patch, input
-attribution, channel ablation, flip equivariance, occlusion, perturbation
-sweeps, activation vitals, feature maps and convolution kernels.
-"""
 
 from __future__ import annotations
 
@@ -29,20 +21,6 @@ from pipelines.shared.inference.run_classifier import RunArtifacts
 
 
 class ModelProbe:
-    """Holds one loaded training run and answers per-pixel probe requests.
-
-    A single run is held at a time, loaded asynchronously and guarded by a lock
-    so that concurrent HTTP handlers see a consistent model, dataset and layer
-    index. Every probe method takes an row/column pixel, cuts the patch the
-    model was trained on around it, and reports on the centre pixel.
-
-    Attributes:
-        logger  : Web UI logger receiving load and failure messages.
-        lock    : Mutex guarding ``loaded`` and ``status``.
-        scanner : Run scanner used to list candidate runs under a root.
-        loaded  : Dict with the loaded run, channel labels, probeable layer names and types, curve renderer, patch size and device, or ``None``.
-        status  : Load state payload with ``state``, ``path``, ``progress``, ``stage``, ``error`` and the ``info`` summary of the loaded run.
-    """
 
     FAMILIES        = ("amp", "mu", "sigma")
     FIELD_CMAPS     = {"amp": "magma", "mu": "viridis", "sigma": "cividis"}
@@ -55,11 +33,6 @@ class ModelProbe:
     CONFIG_NAMES    = (RunArtifacts.BACKBONE_CONFIG, RunArtifacts.DUAL_CONFIG)
 
     def __init__(self, logger: WebLogger) -> None:
-        """Creates an idle probe with no run loaded.
-
-        Args:
-            logger : Web UI logger for load progress and failures.
-        """
         self.logger  = logger
         self.lock    = threading.Lock()
         self.scanner = RunScanner(CatalogRoots())
@@ -68,18 +41,6 @@ class ModelProbe:
         self.status = {"state": "idle", "path": "", "progress": 0.0, "stage": "", "error": "", "info": None}
 
     def runs(self, base: str) -> dict:
-        """Returns the probeable runs found under a runs root.
-
-        A run qualifies when it holds ``best_model.pt`` together with a backbone
-        or dual config in its meta directory.
-
-        Args:
-            base : Runs root to scan.
-
-        Returns:
-            ``{"ok": True, "root": ..., "runs": [...]}`` on success, otherwise
-            ``{"ok": False, "error": ..., "runs": []}``.
-        """
         scanned = self.scanner.checkpoint_runs(base, self.CHECKPOINT, self.CONFIG_NAMES)
         if not scanned["ok"]:
             return {"ok": False, "error": scanned["error"], "runs": []}
@@ -88,16 +49,6 @@ class ModelProbe:
 
     @classmethod
     def _reject_unloadable(cls, run_path: str, roots: CatalogRoots) -> str:
-        """Returns why a run cannot be probed, or an empty string when it can.
-
-        Args:
-            run_path : Candidate run directory.
-            roots    : Catalogued runs roots the directory must sit inside.
-
-        Returns:
-            A human-readable refusal message, empty when the directory is a
-            finished backbone or dual run under a catalogued root.
-        """
         run_dir = Path(run_path)
 
         if not run_dir.is_dir():
@@ -112,18 +63,6 @@ class ModelProbe:
         return ""
 
     def start_load(self, run_path: str, split: str = "test", device: str = "cpu") -> dict:
-        """Starts loading a run in a background thread and returns immediately.
-
-        Args:
-            run_path : Directory of the finished training run to probe.
-            split    : Dataset split whose region and curves are loaded.
-            device   : Torch device the model is placed on.
-
-        Returns:
-            ``{"ok": True}`` once the worker is running, otherwise
-            ``{"ok": False, "error": ...}`` when the run is unloadable or a load
-            is already in flight.
-        """
         refusal = self._reject_unloadable(run_path, self.scanner.roots)
         if refusal:
             return {"ok": False, "error": refusal}
@@ -139,24 +78,11 @@ class ModelProbe:
         return {"ok": True}
 
     def _set_load(self, progress: float, stage: str) -> None:
-        """Publishes load progress in [0, 1] and the stage label under the lock."""
         with self.lock:
             self.status["progress"] = progress
             self.status["stage"]    = stage
 
     def _probe_layers(self, model) -> list[str]:
-        """Returns the names of leaf modules worth probing.
-
-        Containers are excluded, and so are the attention dropout leaves named in
-        FUSED_LEAVES: the fused attention kernel applies their probability without
-        calling the module, so they never produce an activation to show.
-
-        Args:
-            model : Module whose leaf modules are listed.
-
-        Returns:
-            Dotted names of the probeable leaf modules.
-        """
         from tools.diagnostics.activation_recorder import ActivationRecorder
 
         modules = dict(model.named_modules())
@@ -164,7 +90,6 @@ class ModelProbe:
 
     @classmethod
     def _loader_class(cls, is_dual: bool):
-        """Returns the dual or backbone run loader class for the run family."""
         from pipelines.backbone.inference.loader import RunLoader
         from pipelines.dual.inference.loader     import DualRunLoader
 
@@ -172,7 +97,6 @@ class ModelProbe:
 
     @classmethod
     def _model_label(cls, run, is_dual: bool) -> str:
-        """Returns the display name of the run's model, naming both dual trunks."""
         if not is_dual:
             return run.backbone_name
 
@@ -180,17 +104,6 @@ class ModelProbe:
         return f"{run.backbone_name} ({config.params_backbone} + {config.existence_backbone})"
 
     def _load_worker(self, run_path: str, split: str, device: str) -> None:
-        """Loads checkpoint, dataset and layer index, publishing the ready status.
-
-        On success ``loaded`` holds the run bundle and ``status`` carries the
-        run summary; any exception leaves the probe unloaded with the error
-        recorded in ``status``.
-
-        Args:
-            run_path : Directory of the run being loaded.
-            split    : Dataset split to load.
-            device   : Torch device the model is placed on.
-        """
         try:
             from pipelines.backbone.inference.analysis.input_attribution import ChannelLabeler
             from pipelines.backbone.inference.probes            import PredictionCurves
@@ -251,31 +164,16 @@ class ModelProbe:
             self.logger.error(f"model probe load failed: {error}")
 
     def load_status(self) -> dict:
-        """Returns a snapshot of the current load state, progress and error."""
         with self.lock:
             return dict(self.status)
 
     def layers(self) -> dict:
-        """Returns the probeable layers of the loaded model with their module types.
-
-        Returns:
-            ``{"ok": True, "layers": [{"name": ..., "type": ...}, ...]}`` in
-            forward order, or an error payload when no model is loaded.
-        """
         with self.lock:
             if self.loaded is None:
                 return {"ok": False, "error": "no model loaded"}
             return {"ok": True, "layers": [{"name": name, "type": self.loaded["types"][name]} for name in self.loaded["layers"]]}
 
     def map_png(self) -> bytes | None:
-        """Returns a grayscale PNG of the primary track amplitude over the region.
-
-        The amplitude image has shape (rows, cols) and is scaled with the
-        supervisor amplitude clim convention.
-
-        Returns:
-            PNG bytes, or ``None`` when no model is loaded.
-        """
         with self.lock:
             if self.loaded is None:
                 return None
@@ -289,22 +187,6 @@ class ModelProbe:
 
     @classmethod
     def _window_at(cls, run, patch: tuple, row: int, col: int) -> tuple[np.ndarray, int, int]:
-        """Cuts the model input patch centred on a pixel, clamped to the region.
-
-        Args:
-            run   : Loaded run bundle providing the complex stack, Aux and region.
-            patch : Patch size as (row, col) in pixels.
-            row    : Row index of the pixel within the split region.
-            col    : Range index of the pixel within the split region.
-
-        Returns:
-            A tuple of the assembled input window of shape
-            (1, channels, patch_az, patch_rg) as float32, and the pixel's row
-            and column inside that window.
-
-        Raises:
-            ValueError : If the pixel falls outside the split region.
-        """
         ph, pw = patch
         n_rows   = run.split_region.row_size
         n_cols   = run.split_region.col_size
@@ -323,19 +205,9 @@ class ModelProbe:
         return window[None].astype(np.float32), row - top, col - left
 
     def _window(self, row: int, col: int) -> tuple[np.ndarray, int, int]:
-        """Returns the input window and centre offsets for a pixel of the loaded run."""
         return self._window_at(self.loaded["run"], self.loaded["patch"], row, col)
 
     def _slots(self, params_center: np.ndarray) -> list[dict]:
-        """Unpacks a centre-pixel parameter vector into per-component slot records.
-
-        Args:
-            params_center : Flat parameter vector of shape (3 * n_gaussians,) laid out as amplitude, mu in metres and sigma in metres per slot.
-
-        Returns:
-            One dict per slot with ``slot``, ``amp``, ``mu``, ``sigma`` and the
-            ``active`` flag from the amplitude threshold.
-        """
         from tools.data.gaussians import GaussianActivity
 
         run   = self.loaded["run"]
@@ -352,18 +224,6 @@ class ModelProbe:
         return slots
 
     def _predict_window(self, window: np.ndarray, cy: int, cx: int) -> tuple[list[dict], list[float], np.ndarray]:
-        """Runs the model on one window and reads out the centre pixel prediction.
-
-        Args:
-            window : Input patch of shape (1, channels, patch_az, patch_rg).
-            cy     : Row of the pixel of interest inside the patch.
-            cx     : Column of the pixel of interest inside the patch.
-
-        Returns:
-            A tuple of the slot records, the rendered reflectivity curve sampled
-            on the run's height axis, and the raw centre parameter vector of
-            shape (3 * n_gaussians,).
-        """
         run      = self.loaded["run"]
         renderer = self.loaded["renderer"]
 
@@ -374,31 +234,10 @@ class ModelProbe:
         return self._slots(center), [float(v) for v in curve], center
 
     def _center_curves(self, params: np.ndarray, cy: int, cx: int) -> np.ndarray:
-        """Renders the centre-pixel curve of every item in a batch of parameter maps.
-
-        Args:
-            params : Predicted parameters of shape (batch, 3 * n_gaussians, patch_az, patch_rg).
-            cy     : Row of the pixel of interest inside the patch.
-            cx     : Column of the pixel of interest inside the patch.
-
-        Returns:
-            Reflectivity curves of shape (batch, height samples).
-        """
         center = params[:, :, cy, cx][:, :, None, None]
         return self.loaded["renderer"].render(center)[:, :, 0, 0]
 
     def _match_gt(self, pred_center: np.ndarray, gt_center: np.ndarray) -> list[dict]:
-        """Hungarian-matches predicted slots to the active ground-truth slots.
-
-        Args:
-            pred_center : Predicted parameter vector of shape (3 * n_gaussians,).
-            gt_center   : Ground-truth parameter vector of the same shape.
-
-        Returns:
-            One dict per active ground-truth slot with the original ``gt_slot``
-            index, the matched ``pred_slot``, and the signed residuals ``d_amp``,
-            ``d_mu`` in metres and ``d_sigma`` in metres.
-        """
         import torch
 
         from tools.data.gaussians  import GaussianActivity
@@ -431,19 +270,6 @@ class ModelProbe:
         return matches
 
     def _fit_facts(self, curve: list, gt_curve: list | None, raw_curve: list, slots: list, gt_slots: list | None) -> dict:
-        """Summarises how well the prediction fits the raw and ground-truth curves.
-
-        Args:
-            curve     : Predicted reflectivity curve over the height axis.
-            gt_curve  : Ground-truth curve on the same axis, or ``None``.
-            raw_curve : Beamformed reflectivity profile on the same axis.
-            slots     : Predicted slot records.
-            gt_slots  : Ground-truth slot records, or ``None``.
-
-        Returns:
-            Dict with ``curve_mse_raw``, ``curve_mse_gt``, ``pred_active`` and
-            ``gt_active``; the ground-truth entries are ``None`` when absent.
-        """
         pred = np.asarray(curve, dtype=np.float64)
 
         return {
@@ -454,18 +280,6 @@ class ModelProbe:
         }
 
     def predict(self, body: dict) -> dict:
-        """Returns the model prediction at one pixel beside ground truth and raw data.
-
-        Args:
-            body : Request payload with integer ``row`` and ``col`` pixel indices.
-
-        Returns:
-            Payload with the ``z_axis``, predicted ``slots`` and
-            ``curve``, the ground-truth ``gt_slots``, ``gt_curve`` and Hungarian
-            ``matches`` when parameters exist, the beamformed ``raw_curve``, and
-            the ``fit`` summary; an error payload when no model is loaded or the
-            pixel is invalid.
-        """
         with self.lock:
             if self.loaded is None:
                 return {"ok": False, "error": "no model loaded"}
@@ -507,23 +321,11 @@ class ModelProbe:
                 return {"ok": False, "error": str(error)}
 
     def _field_png(self, cell: np.ndarray, cmap: str, vmin: float, vmax: float) -> str:
-        """Returns a base64 PNG of a 2-D field rendered with the given colormap and clim."""
         buf = io.BytesIO()
         plt.imsave(buf, np.asarray(cell, dtype=np.float32), cmap=cmap, vmin=vmin, vmax=vmax, format="png")
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
     def _field_payload(self, cell: np.ndarray, cmap: str, vmin: float | None = None, vmax: float | None = None) -> dict:
-        """Renders a 2-D field to PNG and reports its true value range.
-
-        Args:
-            cell : Field of shape (rows, cols).
-            cmap : Matplotlib colormap name.
-            vmin : Lower clim; defaults to the field minimum.
-            vmax : Upper clim; defaults to the field maximum, raised when degenerate.
-
-        Returns:
-            Dict with the base64 ``png`` and the field's ``min`` and ``max``.
-        """
         lo = float(cell.min()) if vmin is None else float(vmin)
         hi = float(cell.max()) if vmax is None else float(vmax)
         hi = hi if hi > lo else lo + 1.0
@@ -531,19 +333,6 @@ class ModelProbe:
         return {"png": self._field_png(cell, cmap, lo, hi), "min": float(cell.min()), "max": float(cell.max())}
 
     def _error_map(self, params: np.ndarray, row: int, col: int, cy: int, cx: int) -> np.ndarray | None:
-        """Returns the per-pixel curve MSE against ground truth over the patch.
-
-        Args:
-            params : Predicted parameters of shape (1, 3 * n_gaussians, patch_az, patch_rg).
-            row     : Row index of the centre pixel in the split region.
-            col     : Range index of the centre pixel in the split region.
-            cy     : Row of the centre pixel inside the patch.
-            cx     : Column of the centre pixel inside the patch.
-
-        Returns:
-            Mean squared curve error of shape (patch_az, patch_rg), or ``None``
-            when the dataset carries no ground-truth parameters.
-        """
         run = self.loaded["run"]
         gt  = run.dataset.gt_parameters
         if gt is None:
@@ -560,17 +349,6 @@ class ModelProbe:
         return ((pred_curves - gt_curves) ** 2).mean(axis=1)[0]
 
     def fields(self, body: dict) -> dict:
-        """Returns the predicted parameter fields over the patch around a pixel.
-
-        Args:
-            body : Request payload with integer ``row`` and ``col`` pixel indices.
-
-        Returns:
-            Payload with the patch ``center`` and size, per-slot amplitude, mu
-            and sigma field images, the ``activity`` count of active slots per
-            pixel, and the ground-truth ``error`` map when available; an error
-            payload when no model is loaded or the pixel is invalid.
-        """
         from tools.data.gaussians import GaussianActivity
 
         with self.lock:
@@ -613,20 +391,6 @@ class ModelProbe:
 
     @classmethod
     def _family_gradients_at(cls, run, device: str, window: np.ndarray, cy: int, cx: int, slot: int) -> list[tuple[str, np.ndarray]]:
-        """Computes input-gradient magnitudes for each parameter family at one pixel.
-
-        Args:
-            run    : Loaded run bundle providing the model.
-            device : Torch device the window is moved to.
-            window : Input patch of shape (1, channels, patch_az, patch_rg).
-            cy     : Row of the pixel of interest inside the patch.
-            cx     : Column of the pixel of interest inside the patch.
-            slot   : Scatterer slot to attribute, or a negative value to sum the family across all slots.
-
-        Returns:
-            One (family, gradient) pair per family, each gradient of shape
-            (channels, patch_az, patch_rg) holding absolute sensitivities.
-        """
         import torch
 
         x = torch.from_numpy(window).to(device).requires_grad_(True)
@@ -642,30 +406,16 @@ class ModelProbe:
         return gradients
 
     def _family_gradients(self, window: np.ndarray, cy: int, cx: int, slot: int) -> list[tuple[str, np.ndarray]]:
-        """Returns per-family input gradients at a pixel for the loaded run."""
         return self._family_gradients_at(self.loaded["run"], self.loaded["device"], window, cy, cx, slot)
 
     @classmethod
     def _cell_png(cls, cell: np.ndarray) -> str:
-        """Returns a base64 magma PNG of a peak-normalised attribution cell."""
         buf = io.BytesIO()
         plt.imsave(buf, cell, cmap="magma", vmin=0.0, vmax=1.0, format="png")
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
     @classmethod
     def _radial_profile(cls, grad: np.ndarray, cy: int, cx: int) -> dict:
-        """Measures how attribution mass accumulates with distance from the pixel.
-
-        Args:
-            grad : Gradient magnitudes of shape (channels, patch_az, patch_rg).
-            cy   : Row of the pixel of interest inside the patch.
-            cx   : Column of the pixel of interest inside the patch.
-
-        Returns:
-            Dict with the integer ``radii`` in pixels, the ``cumulative``
-            fraction of total attribution inside each radius, and the radii
-            ``r50`` and ``r90`` reaching half and ninety percent of the mass.
-        """
         total_map = grad.sum(axis=0)
         total     = float(total_map.sum())
 
@@ -680,19 +430,6 @@ class ModelProbe:
         return {"radii": [int(v) for v in radii], "cumulative": [float(v) for v in cumulative], "r50": r50, "r90": r90}
 
     def _family_payload(self, family: str, grad: np.ndarray, cy: int, cx: int) -> dict:
-        """Packages one family's attribution into per-channel shares, images and reach.
-
-        Args:
-            family : Parameter family name, one of ``amp``, ``mu`` or ``sigma``.
-            grad   : Gradient magnitudes of shape (channels, patch_az, patch_rg).
-            cy     : Row of the pixel of interest inside the patch.
-            cx     : Column of the pixel of interest inside the patch.
-
-        Returns:
-            Dict with ``family``, the ``dead`` flag when the gradient vanishes,
-            per-channel ``shares`` summing to one, base64 ``cells`` per channel
-            and the ``radial`` reach profile.
-        """
         total = float(grad.sum())
         if total <= 0.0:
             return {"family": family, "dead": True, "shares": [0.0] * grad.shape[0], "cells": [None] * grad.shape[0], "radial": None}
@@ -713,16 +450,6 @@ class ModelProbe:
         }
 
     def attribution(self, body: dict) -> dict:
-        """Returns input attribution for one pixel, per parameter family.
-
-        Args:
-            body : Request payload with integer ``row`` and ``col`` pixel indices and an optional ``slot`` (default -1, summing over all slots).
-
-        Returns:
-            Payload with the channel ``labels``, the patch ``center`` and size,
-            the probed ``slot`` and one entry per family; an error payload when
-            no model is loaded, the pixel is invalid or the slot is out of range.
-        """
         with self.lock:
             if self.loaded is None:
                 return {"ok": False, "error": "no model loaded"}
@@ -751,16 +478,6 @@ class ModelProbe:
                 return {"ok": False, "error": str(error)}
 
     def _slot_shift(self, base_slots: list[dict], moved_slots: list[dict]) -> tuple[int, float]:
-        """Compares two slot readouts slot by slot.
-
-        Args:
-            base_slots  : Slot records from the unmodified input.
-            moved_slots : Slot records after a perturbation.
-
-        Returns:
-            The number of slots whose active flag changed, and the largest
-            absolute mu shift in metres over slots active in either readout.
-        """
         flips    = 0
         mu_shift = 0.0
 
@@ -773,18 +490,6 @@ class ModelProbe:
         return flips, mu_shift
 
     def ablation(self, body: dict) -> dict:
-        """Ranks input channels by the damage zeroing each one does at a pixel.
-
-        Args:
-            body : Request payload with integer ``row`` and ``col`` pixel indices.
-
-        Returns:
-            Payload with the unperturbed ``base_power`` of the centre curve and
-            a ``channels`` list ordered by ``delta_mse``, each entry carrying the
-            channel index and label, the curve ``delta_mse``, the count of slot
-            activity ``flips`` and the ``max_mu_shift`` in metres; an error
-            payload when no model is loaded or the pixel is invalid.
-        """
         with self.lock:
             if self.loaded is None:
                 return {"ok": False, "error": "no model loaded"}
@@ -826,21 +531,6 @@ class ModelProbe:
                 return {"ok": False, "error": str(error)}
 
     def flips(self, body: dict) -> dict:
-        """Tests flip equivariance at a pixel over rows, columns and both axes.
-
-        Each flipped patch is predicted and the parameter map flipped back
-        before the centre curve is read, so an equivariant model reproduces the
-        unflipped curve.
-
-        Args:
-            body : Request payload with integer ``row`` and ``col`` pixel indices.
-
-        Returns:
-            Payload with the ``z_axis``, the unflipped
-            ``base_power`` and one entry per flip carrying its ``slots``,
-            ``curve`` and ``delta_mse`` against the unflipped curve; an error
-            payload when no model is loaded or the pixel is invalid.
-        """
         with self.lock:
             if self.loaded is None:
                 return {"ok": False, "error": "no model loaded"}
@@ -880,21 +570,6 @@ class ModelProbe:
                 return {"ok": False, "error": str(error)}
 
     def occlusion(self, body: dict) -> dict:
-        """Maps how blanking each patch tile changes the centre-pixel curve.
-
-        The patch is tiled by occluders one eighth of its size in each axis, and
-        every tile is zeroed in turn across a single batched forward pass.
-
-        Args:
-            body : Request payload with integer ``row`` and ``col`` pixel indices.
-
-        Returns:
-            Payload with the patch ``center`` and size, ``occluder`` and ``grid``
-            dimensions, the ``center_cell`` holding the probed pixel, the
-            unoccluded ``base_power``, the ``worst`` tile with its ``delta_mse``
-            and the rendered ``map`` of curve MSE per tile; an error payload when
-            no model is loaded or the pixel is invalid.
-        """
         with self.lock:
             if self.loaded is None:
                 return {"ok": False, "error": "no model loaded"}
@@ -937,18 +612,6 @@ class ModelProbe:
 
     @classmethod
     def _perturb(cls, window: np.ndarray, perturbation: dict) -> np.ndarray:
-        """Returns a copy of the window with one perturbation applied.
-
-        Args:
-            window       : Input patch of shape (batch, channels, patch_az, patch_rg).
-            perturbation : Spec with ``kind`` in ``PERTURBATIONS``, plus ``channel`` for the channel kinds, ``factor`` for scaling (default 0.5), and ``sigma`` and ``seed`` for additive Gaussian noise (defaults 0.5 and 0).
-
-        Returns:
-            The perturbed window, same shape as the input.
-
-        Raises:
-            ValueError : If ``kind`` is not a known perturbation.
-        """
         kind      = perturbation.get("kind")
         perturbed = window.copy()
 
@@ -968,21 +631,6 @@ class ModelProbe:
         return perturbed
 
     def _sweep_variants(self, window: np.ndarray, kind: str, channel: int | None) -> tuple[np.ndarray, list[np.ndarray], int]:
-        """Builds the perturbed windows spanning a sweep of perturbation strengths.
-
-        Args:
-            window  : Input patch of shape (1, channels, patch_az, patch_rg).
-            kind    : Sweepable perturbation, ``scale_channel`` or ``noise``.
-            channel : Channel index for ``scale_channel``, ignored for noise.
-
-        Returns:
-            The nine strength values from 0 to 2, the perturbed windows in
-            strength-major order, and the number of repeats per strength (one
-            for scaling, three noise seeds for noise).
-
-        Raises:
-            ValueError : If the perturbation kind has no strength axis.
-        """
         if kind == "scale_channel":
             values   = np.linspace(0.0, 2.0, 9)
             variants = [self._perturb(window, {"kind": kind, "channel": channel, "factor": float(v)}) for v in values]
@@ -997,18 +645,6 @@ class ModelProbe:
         raise ValueError(f"kind '{kind}' has no strength to sweep; sweep one of ('scale_channel', 'noise')")
 
     def sweep(self, body: dict) -> dict:
-        """Traces the curve response as a perturbation strength is swept.
-
-        Args:
-            body : Request payload with integer ``row`` and ``col`` pixel indices, the ``kind`` to sweep, and ``channel`` for ``scale_channel``.
-
-        Returns:
-            Payload with the swept ``kind``, ``channel`` and its ``label``, the
-            unperturbed ``base_power`` and one ``points`` entry per strength
-            carrying the ``value``, mean ``delta_mse``, seed ``spread`` and the
-            worst slot activity ``flips``; an error payload when no model is
-            loaded, the pixel is invalid or the channel is out of range.
-        """
         with self.lock:
             if self.loaded is None:
                 return {"ok": False, "error": "no model loaded"}
@@ -1059,17 +695,6 @@ class ModelProbe:
                 return {"ok": False, "error": str(error)}
 
     def whatif(self, body: dict) -> dict:
-        """Compares the pixel prediction before and after one chosen perturbation.
-
-        Args:
-            body : Request payload with integer ``row`` and ``col`` pixel indices and a ``perturbation`` spec accepted by ``_perturb``.
-
-        Returns:
-            Payload with the ``z_axis``, the ``base_slots`` and
-            ``base_curve``, the ``perturbed_slots`` and ``perturbed_curve``, and
-            the ``delta_mse`` between the two curves; an error payload when no
-            model is loaded, the pixel is invalid or the perturbation is unknown.
-        """
         with self.lock:
             if self.loaded is None:
                 return {"ok": False, "error": "no model loaded"}
@@ -1103,14 +728,6 @@ class ModelProbe:
 
     @classmethod
     def _vital_flags(cls, stat: dict) -> list[str]:
-        """Returns the warning labels a layer's activation statistics earn.
-
-        Args:
-            stat : Activation statistics for one layer, carrying ``nonfinite_frac``, ``zero_frac`` and ``dead_channel_frac``.
-
-        Returns:
-            Any of ``nonfinite``, ``mostly zero`` and ``dead channels``.
-        """
         flags = []
         if stat["nonfinite_frac"] > 0.0:
             flags.append("nonfinite")
@@ -1122,19 +739,6 @@ class ModelProbe:
 
     @classmethod
     def _vitals_payload(cls, model, stats: dict) -> dict:
-        """Assembles the per-layer activation health table and its summary.
-
-        Args:
-            model : Module the statistics were recorded on.
-            stats : Activation statistics keyed by module name and call site, as ActivationRecorder.stats returns them.
-
-        Returns:
-            Dict with ``entries`` ordered by first execution, each carrying the
-            layer name, type, output shape, parameter count, zero fraction, dead
-            and total channel counts, effective channel fraction, maximum
-            absolute activation and flags, plus a ``summary`` with the layer
-            count, total parameters and number of flagged layers.
-        """
         from tools.diagnostics.activation_recorder import ActivationRecorder
 
         modules = dict(model.named_modules())
@@ -1162,15 +766,6 @@ class ModelProbe:
         return {"entries": entries, "summary": summary}
 
     def vitals(self, body: dict) -> dict:
-        """Records activation health across every layer on one forward chan.
-
-        Args:
-            body : Request payload with integer ``row`` and ``col`` pixel indices selecting the patch fed through the model.
-
-        Returns:
-            The vitals payload merged with ``ok``, or an error payload when no
-            model is loaded or the pixel is invalid.
-        """
         import torch
 
         from tools.diagnostics.activation_recorder import ActivationRecorder
@@ -1198,24 +793,6 @@ class ModelProbe:
                 return {"ok": False, "error": str(error)}
 
     def features_png(self, row: int, col: int, layer: str, max_channels: int = 16) -> bytes | None:
-        """Renders the strongest activation maps of one layer for a pixel's patch.
-
-        Channels are ranked by absolute activation energy and laid out on a
-        four-column grid.
-
-        Args:
-            row           : Row index of the pixel within the split region.
-            col           : Range index of the pixel within the split region.
-            layer        : Name of the probeable layer to record.
-            max_channels : Number of channels drawn, strongest first.
-
-        Returns:
-            PNG bytes, or ``None`` when no model is loaded, the layer is unknown
-            or the layer produced no activation.
-
-        Raises:
-            ValueError : If the layer's activation is not a 4-D (B, C, H, W) map.
-        """
         import torch
 
         from tools.diagnostics.activation_recorder import ActivationRecorder
@@ -1264,7 +841,6 @@ class ModelProbe:
         return self._figure_png(fig)
 
     def _figure_png(self, fig) -> bytes:
-        """Returns a tight-laid-out matplotlib figure as PNG bytes and closes it."""
         fig.tight_layout()
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=110)
@@ -1272,14 +848,6 @@ class ModelProbe:
         return buf.getvalue()
 
     def _kernel_matrix_png(self, w: np.ndarray) -> bytes:
-        """Renders a 1x1 convolution weight as a symmetric output-by-input heatmap.
-
-        Args:
-            w : Convolution weight of shape (out_channels, in_channels, 1, 1).
-
-        Returns:
-            PNG bytes of the weight matrix on a diverging scale centred at zero.
-        """
         matrix = w[:, :, 0, 0]
         peak   = float(np.abs(matrix).max()) or 1.0
 
@@ -1293,23 +861,6 @@ class ModelProbe:
         return self._figure_png(fig)
 
     def kernels_png(self, layer: str, max_out: int = 12, max_in: int = 8) -> bytes | None:
-        """Renders the strongest convolution kernels of one layer.
-
-        Transposed convolutions are transposed back to output-major order, 1x1
-        weights render as a matrix, and larger kernels form a grid of the output
-        channels with the largest norm against the inputs with the largest mass.
-
-        Args:
-            layer   : Name of the probeable layer whose weight is drawn.
-            max_out : Number of output channels shown, strongest first.
-            max_in  : Number of input channels shown, strongest first.
-
-        Returns:
-            PNG bytes, or ``None`` when no model is loaded or the layer is unknown.
-
-        Raises:
-            ValueError : If the layer holds no 4-D convolution weight.
-        """
         with self.lock:
             if self.loaded is None or layer not in self.loaded["layers"]:
                 return None

@@ -1,12 +1,3 @@
-"""Whole-run model survey: fit quality, attribution, robustness and layer vitals.
-
-Loads a trained checkpoint with its dataset, tiles the split region, and runs
-seven channels per tile (prediction fit, gradient attribution, channel ablation,
-flip symmetry, noise robustness, occlusion) plus layer vitals and a sampled
-effective-receptive-field phase, then reduces everything to one JSON payload for
-the web UI. The survey runs on a background thread with cooperative
-cancellation and coarse progress reporting.
-"""
 
 from __future__ import annotations
 
@@ -24,31 +15,10 @@ from pipelines.shared.inference.run_classifier import RunArtifacts
 
 
 class SurveyCancelled(Exception):
-    """Raised inside the worker thread when the user cancels a running survey."""
     pass
 
 
 class ModelSurvey:
-    """Runs and serves a full diagnostic survey of one trained run.
-
-    Only one survey runs at a time; start spawns the worker thread, cancel sets
-    a flag the per-unit tick honours, and the finished payload is held until the
-    next survey replaces it.
-
-    Attributes:
-        logger      : Console logger for completion and failure messages.
-        lock        : Guards the status, result and cancellation flag.
-        scanner     : Scanner listing checkpointed runs under the catalog roots.
-        loaded      : Loaded run bundle (model, dataset, labels, renderer, patch size) while a survey is in flight, None otherwise.
-        result      : Payload of the last finished survey, or None.
-        cancel_flag : Set by cancel to stop the worker at the next tick.
-        tile_cap    : Maximum tiles to survey; 0 surveys every tile.
-        erf_samples : Number of random windows in the sampled-gradient phase.
-        cpu_threads : Torch intra-op thread ceiling for the worker.
-        total_units : Total progress units for the current survey.
-        done_units  : Progress units completed so far.
-        status      : Public state with the run path, progress fraction, stage and error.
-    """
 
     LOADER_NAME  = "model_survey"
     NOISE_SIGMAS = tuple(float(v) for v in np.linspace(0.0, 2.0, 9))
@@ -61,11 +31,6 @@ class ModelSurvey:
     DISTANCE_BIN = 4.0
 
     def __init__(self, logger: WebLogger) -> None:
-        """Prepares an idle survey with default tile, sample and thread budgets.
-
-        Args:
-            logger : Console logger for survey completion and failure messages.
-        """
         self.logger  = logger
         self.lock    = threading.Lock()
         self.scanner = RunScanner(CatalogRoots())
@@ -81,15 +46,6 @@ class ModelSurvey:
         self.status      = {"state": "idle", "path": "", "progress": 0.0, "stage": "", "error": ""}
 
     def runs(self, base: str) -> dict:
-        """Lists the surveyable runs under a catalog root.
-
-        Args:
-            base : Catalog root key to scan.
-
-        Returns:
-            Mapping with "ok", the resolved "root" and the "runs" entries that
-            carry both a checkpoint and a config, or "ok" False with an "error".
-        """
         scanned = self.scanner.checkpoint_runs(base, ModelProbe.CHECKPOINT, ModelProbe.CONFIG_NAMES)
         if not scanned["ok"]:
             return {"ok": False, "error": scanned["error"], "runs": []}
@@ -97,11 +53,6 @@ class ModelSurvey:
         return {"ok": True, "root": scanned["root"], "runs": scanned["entries"]}
 
     def _reject_config(self, body: dict) -> str:
-        """Returns why the requested survey settings are unusable, or an empty string.
-
-        Args:
-            body : Request body with the split, device, tile cap, receptive-field sample count and CPU thread count.
-        """
         split   = body.get("split", "test")
         device  = body.get("device", "cpu")
         tiles   = int(body.get("tiles", self.TILE_CAP))
@@ -122,16 +73,6 @@ class ModelSurvey:
         return ""
 
     def start(self, body: dict) -> dict:
-        """Validates the request and launches the survey worker thread.
-
-        Args:
-            body : Request body with the run "path", "split", "device", "tiles", "erf_samples" and "threads".
-
-        Returns:
-            Mapping with "ok" True once the worker started, or "ok" False with
-            an "error" when the run cannot be loaded, the settings are invalid,
-            or a survey is already running.
-        """
         run_path = body.get("path", "")
         refusal  = ModelProbe._reject_unloadable(run_path, self.scanner.roots) or self._reject_config(body)
         if refusal:
@@ -153,12 +94,6 @@ class ModelSurvey:
         return {"ok": True}
 
     def cancel(self) -> dict:
-        """Asks the running survey to stop at its next progress tick.
-
-        Returns:
-            Mapping with "ok" True once the flag is set, or "ok" False with an
-            "error" when no survey is running.
-        """
         with self.lock:
             if self.status["state"] != "running":
                 return {"ok": False, "error": "no survey is running"}
@@ -166,32 +101,21 @@ class ModelSurvey:
         return {"ok": True}
 
     def survey_status(self) -> dict:
-        """Returns a snapshot of the survey state, progress fraction, stage and error."""
         with self.lock:
             return dict(self.status)
 
     def survey_result(self) -> dict:
-        """Returns the payload of the last finished survey, or an error when there is none."""
         with self.lock:
             if self.result is None:
                 return {"ok": False, "error": "no finished survey; start one and wait for it to complete"}
             return {"ok": True, "result": self.result}
 
     def _set(self, progress: float, stage: str) -> None:
-        """Publishes a progress fraction in [0, 1] and a human-readable stage label."""
         with self.lock:
             self.status["progress"] = progress
             self.status["stage"]    = stage
 
     def _tick(self, stage: str) -> None:
-        """Counts one completed progress unit and publishes the new stage.
-
-        Args:
-            stage : Label describing the work that just completed.
-
-        Raises:
-            SurveyCancelled : If cancel was requested since the previous tick.
-        """
         with self.lock:
             if self.cancel_flag:
                 raise SurveyCancelled()
@@ -200,13 +124,6 @@ class ModelSurvey:
         self._set(min(1.0, self.done_units / self.total_units), stage)
 
     def _load(self, run_path: str, split: str, device: str) -> None:
-        """Loads the checkpoint, dataset and rendering helpers into the loaded bundle.
-
-        Args:
-            run_path : Directory of the trained run; a dual config in its meta directory selects the dual loader.
-            split    : Dataset split to survey ("train", "val" or "test").
-            device   : Torch device the model and windows are placed on.
-        """
         from pipelines.backbone.inference.analysis.input_attribution import ChannelLabeler
         from pipelines.backbone.inference.probes            import PredictionCurves
         from tools.monitoring.logger                        import Logger
@@ -234,16 +151,6 @@ class ModelSurvey:
         }
 
     def _tile_origins(self) -> tuple[list, int, int, int]:
-        """Lays non-overlapping model windows over the split region and subsamples them.
-
-        Returns:
-            Tuple of the selected (row top, range left) origins, the total
-            number of tiles the region holds, and the row and range extents
-            in pixels the full tiling covers.
-
-        Raises:
-            ValueError : If the split region is smaller than the model window.
-        """
         run    = self.loaded["run"]
         ph, pw = self.loaded["patch"]
         n_rows   = run.split_region.row_size
@@ -264,17 +171,6 @@ class ModelSurvey:
         return selected, len(origins), len(az_starts) * ph, len(rg_starts) * pw
 
     def _tile_window(self, top: int, left: int) -> np.ndarray:
-        """Assembles the normalised model input for one tile.
-
-        Args:
-            top  : Row index of the tile's first row.
-            left : Range index of the tile's first column.
-
-        Returns:
-            Input stack of shape (1, channels, patch_height, patch_width) as
-            float32, built from the complex derived-channel window and the Aux
-            channel when the dataset carries one.
-        """
         run    = self.loaded["run"]
         ph, pw = self.loaded["patch"]
 
@@ -285,16 +181,6 @@ class ModelSurvey:
         return run.dataset.assemble_window(complex_window, aux_window)[None].astype(np.float32)
 
     def _row_chunks(self, batch: int, n_rows: int, width: int):
-        """Splits a tile's rows into slices whose rendered curves fit the memory budget.
-
-        Args:
-            batch  : Number of parameter maps rendered together.
-            n_rows : Row rows in the tile.
-            width  : Range columns in the tile.
-
-        Yields:
-            Half-open (row_start, row_end) row ranges covering the tile.
-        """
         run  = self.loaded["run"]
         cost = batch * run.n_gaussians * len(run.z_axis) * width
         rows = max(1, self.CHUNK_BUDGET // max(1, cost))
@@ -303,32 +189,9 @@ class ModelSurvey:
             yield row0, min(n_rows, row0 + rows)
 
     def _render_rows(self, params: np.ndarray, row0: int, row1: int) -> np.ndarray:
-        """Renders z curves for a row band of a Gaussian parameter map.
-
-        Args:
-            params : Parameter map of shape (batch, 3 * n_gaussians, rows, width), interleaved as amplitude, mean and spread per slot.
-            row0   : First row row of the band.
-            row1   : Row past the last one in the band.
-
-        Returns:
-            Rendered curves of shape (batch, n_z, row1 - row0, width).
-        """
         return self.loaded["renderer"].render(params[:, :, row0:row1, :])
 
     def _base_pass(self, acc: dict, params: np.ndarray, top: int, left: int) -> None:
-        """Accumulates fit, detection and matched-parameter statistics for one tile.
-
-        Compares the predicted curves against the raw reference profiles and,
-        when the dataset carries ground-truth parameters, against the GT curves,
-        the per-pixel active-slot counts, and the Hungarian-matched per-family
-        absolute parameter error.
-
-        Args:
-            acc    : Accumulator the statistics are appended to in place.
-            params : Predicted parameter map of shape (1, 3 * n_gaussians, patch_height, patch_width).
-            top    : Row index of the tile's first row.
-            left   : Range index of the tile's first column.
-        """
         import torch
 
         from tools.data.gaussians  import GaussianActivity
@@ -373,12 +236,6 @@ class ModelSurvey:
                 acc["mse_gt"].append(((pred_curves - gt_curves) ** 2).mean(axis=1)[0].ravel())
 
     def _gradient_pass(self, acc: dict, window: np.ndarray) -> None:
-        """Accumulates per-channel input-gradient magnitude for each parameter family.
-
-        Args:
-            acc    : Accumulator whose "grad" table is incremented per family.
-            window : Model input of shape (1, channels, patch_height, patch_width).
-        """
         import torch
 
         run = self.loaded["run"]
@@ -394,16 +251,6 @@ class ModelSurvey:
             acc["grad"][family] += grad.sum(axis=(1, 2))
 
     def _delta_pass(self, params: np.ndarray, base_index: int = 0):
-        """Measures how far each batch member's curves move away from a reference member.
-
-        Args:
-            params     : Parameter maps of shape (batch, 3 * n_gaussians, patch_height, patch_width).
-            base_index : Batch index whose curves serve as the reference.
-
-        Returns:
-            Per-pixel mean squared curve difference of shape
-            (batch, patch_height, patch_width); the reference row is zero.
-        """
         ph, pw = self.loaded["patch"]
         deltas = []
 
@@ -414,12 +261,6 @@ class ModelSurvey:
         return np.concatenate(deltas, axis=1)
 
     def _ablation_pass(self, acc: dict, window: np.ndarray) -> None:
-        """Zeroes each input channel in turn and accumulates the curve and detection damage.
-
-        Args:
-            acc    : Accumulator whose per-channel delta, slot-flip and pixel counts are incremented.
-            window : Model input of shape (1, channels, patch_height, patch_width).
-        """
         from tools.data.gaussians import GaussianActivity
 
         run        = self.loaded["run"]
@@ -440,15 +281,6 @@ class ModelSurvey:
         acc["abl_pixels"] += deltas.shape[1] * deltas.shape[2]
 
     def _flip_pass(self, acc: dict, window: np.ndarray) -> None:
-        """Measures how far the prediction drifts under each flip of the input window.
-
-        Every flipped prediction is flipped back before comparison, so a model
-        equivariant to the flip contributes zero.
-
-        Args:
-            acc    : Accumulator whose per-flip delta and pixel counts are incremented.
-            window : Model input of shape (1, channels, patch_height, patch_width).
-        """
         run = self.loaded["run"]
 
         batch  = np.concatenate([np.flip(window, axes) if axes else window for _, axes in ModelProbe.FLIPS], axis=0)
@@ -465,13 +297,6 @@ class ModelSurvey:
         acc["flip_pixels"] += deltas.shape[1] * deltas.shape[2]
 
     def _noise_pass(self, acc: dict, window: np.ndarray, tile_index: int) -> None:
-        """Measures curve drift under additive input noise at each survey sigma.
-
-        Args:
-            acc        : Accumulator whose per-sigma delta and pixel counts are incremented.
-            window     : Model input of shape (1, channels, patch_height, patch_width).
-            tile_index : Tile position, mixed into the perturbation seeds so different tiles get different noise draws.
-        """
         run = self.loaded["run"]
 
         variants = [ModelProbe._perturb(window, {"kind": "noise", "sigma": sigma, "seed": tile_index * 100 + index}) for index, sigma in enumerate(self.NOISE_SIGMAS)]
@@ -483,19 +308,12 @@ class ModelSurvey:
         acc["noise_pixels"] += deltas.shape[1] * deltas.shape[2]
 
     def _occlusion_grid(self) -> tuple[int, int, int, int]:
-        """Returns the occluder height, width, row count and column count for the patch."""
         ph, pw = self.loaded["patch"]
         oh, ow = max(2, ph // 8), max(2, pw // 8)
 
         return oh, ow, int(np.ceil(ph / oh)), int(np.ceil(pw / ow))
 
     def _occlusion_distances(self) -> np.ndarray:
-        """Precomputes the pixel distance from every patch pixel to each occluder centre.
-
-        Returns:
-            Distances in pixels of shape (n_occluders, patch_height, patch_width),
-            with the occluders ordered row-major over the occlusion grid.
-        """
         ph, pw               = self.loaded["patch"]
         oh, ow, rows, cols   = self._occlusion_grid()
 
@@ -511,13 +329,6 @@ class ModelSurvey:
         return distances
 
     def _occlusion_pass(self, acc: dict, window: np.ndarray, distances: np.ndarray) -> None:
-        """Occludes each grid cell in turn and bins the curve damage by distance from it.
-
-        Args:
-            acc       : Accumulator whose distance-binned delta sums and counts are incremented.
-            window    : Model input of shape (1, channels, patch_height, patch_width).
-            distances : Pixel distances of shape (n_occluders, patch_height, patch_width) from _occlusion_distances.
-        """
         run                = self.loaded["run"]
         ph, pw             = self.loaded["patch"]
         oh, ow, rows, cols = self._occlusion_grid()
@@ -535,15 +346,6 @@ class ModelSurvey:
         np.add.at(acc["occl_count"], bins.ravel(), 1)
 
     def _vitals_phase(self, tiles: list) -> dict:
-        """Records per-layer activation statistics over every surveyed tile.
-
-        Args:
-            tiles : (row top, range left) origins of the surveyed tiles.
-
-        Returns:
-            Layer vitals payload pairing each module with its recorded
-            activation statistics.
-        """
         import torch
 
         from tools.diagnostics.activation_recorder import ActivationRecorder
@@ -563,18 +365,6 @@ class ModelSurvey:
         return ModelProbe._vitals_payload(model, recorder.stats())
 
     def _gradient_map_payload(self, maps: dict, live: dict, center: list | None) -> dict:
-        """Turns accumulated per-family gradient maps into channel shares and PNG cells.
-
-        Args:
-            maps   : Per-family summed gradient magnitude of shape (channels, patch_height, patch_width), or None for a family that never produced a gradient.
-            live   : Per-family count of samples that contributed a gradient.
-            center : (row, column) of the probed pixel inside the patch, or None to fall back to the patch centre.
-
-        Returns:
-            Mapping with one entry per family holding its per-channel gradient
-            share and peak-normalised map PNGs, plus the centre pixel, the patch
-            size and the sample count.
-        """
         ph, pw     = self.loaded["patch"]
         n_channels = len(self.loaded["labels"])
 
@@ -602,18 +392,6 @@ class ModelSurvey:
         }
 
     def _sampling_phase(self, coverage_az: int, coverage_rg: int) -> tuple[dict, dict]:
-        """Estimates the effective receptive field from randomly placed centre-pixel gradients.
-
-        Args:
-            coverage_az : Row extent in pixels the tiling covers.
-            coverage_rg : Range extent in pixels the tiling covers.
-
-        Returns:
-            Tuple of the receptive-field payload, holding the mean cumulative
-            radial gradient profile and the 50% and 90% radii in pixels per
-            parameter family, and the gradient-map payload from
-            _gradient_map_payload.
-        """
         run    = self.loaded["run"]
         ph, pw = self.loaded["patch"]
         rng    = np.random.default_rng(0)
@@ -667,7 +445,6 @@ class ModelSurvey:
         return {"families": families, "samples": self.erf_samples}, self._gradient_map_payload(maps, live, center)
 
     def _spread(self, values: list) -> dict:
-        """Returns the mean, median and 90th percentile of a list of flat per-pixel arrays."""
         merged = np.concatenate(values)
         return {
             "mean"   : float(merged.mean()),
@@ -676,24 +453,6 @@ class ModelSurvey:
         }
 
     def _finalize(self, acc: dict, tiles: list, total_tiles: int, vitals: dict, erf: dict, gradients: dict, seconds: float) -> dict:
-        """Reduces every accumulator into the survey payload served to the web UI.
-
-        Args:
-            acc         : Accumulator filled by the per-tile channels.
-            tiles       : Surveyed tile origins.
-            total_tiles : Number of tiles the region holds before subsampling.
-            vitals      : Layer vitals payload.
-            erf         : Effective-receptive-field payload.
-            gradients   : Gradient-map payload.
-            seconds     : Wall-clock survey duration in seconds.
-
-        Returns:
-            Mapping with the run identity and coverage, the curve fit spreads,
-            the detection and matched-parameter summaries when ground truth is
-            available, the gradient attribution shares, the receptive-field and
-            gradient maps, the ablation ranking, the flip and noise deltas, the
-            distance-binned occlusion curve, and the layer vitals.
-        """
         run    = self.loaded["run"]
         labels = self.loaded["labels"]
         pixels = len(tiles) * self.loaded["patch"][0] * self.loaded["patch"][1]
@@ -772,12 +531,6 @@ class ModelSurvey:
         }
 
     def _survey(self) -> None:
-        """Runs every survey phase over the loaded run and publishes the result.
-
-        Sequences the six per-tile channels, then the layer vitals and sampled
-        gradient phases, then the reduction. A cancellation raised at any tick
-        leaves the status "cancelled" and the result unset.
-        """
         started                                       = time.monotonic()
         tiles, total_tiles, coverage_az, coverage_rg  = self._tile_origins()
 
@@ -847,16 +600,6 @@ class ModelSurvey:
                 self.status = {"state": "cancelled", "path": self.loaded["path"], "progress": 0.0, "stage": "", "error": ""}
 
     def _worker(self, run_path: str, split: str, device: str) -> None:
-        """Runs one survey on the background thread under a capped torch thread count.
-
-        Any failure is recorded in the status as an error state; the thread
-        count and the loaded bundle are always restored on the way out.
-
-        Args:
-            run_path : Directory of the trained run to survey.
-            split    : Dataset split to survey.
-            device   : Torch device the model runs on.
-        """
         import torch
 
         previous = torch.get_num_threads()

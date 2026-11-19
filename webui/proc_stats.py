@@ -1,9 +1,3 @@
-"""Thin /proc readers for host memory, CPU counters and per-process statistics.
-
-Every reader returns None or an empty container when the kernel file is
-unreadable or a process has already exited, so callers can sample a moving
-process table without racing it.
-"""
 
 from __future__ import annotations
 
@@ -14,11 +8,9 @@ import time
 
 
 class MemInfo:
-    """Reads host memory totals from /proc/meminfo."""
 
     @staticmethod
     def fields() -> dict:
-        """Returns every /proc/meminfo field in bytes, or an empty dict when unreadable."""
         info = {}
         try:
             for line in open("/proc/meminfo").read().splitlines():
@@ -30,7 +22,6 @@ class MemInfo:
 
     @staticmethod
     def used_percent() -> float | None:
-        """Returns memory in use as a percentage of MemTotal, or None when unreadable."""
         info  = MemInfo.fields()
         total = info.get("MemTotal", 0)
         if total <= 0:
@@ -39,18 +30,9 @@ class MemInfo:
 
 
 class CpuCounters:
-    """Reads the cumulative per-CPU jiffy counters from /proc/stat."""
 
     @staticmethod
     def read() -> dict:
-        """Returns busy and total jiffies per CPU line.
-
-        Idle and iowait jiffies are excluded from the busy figure.
-
-        Returns:
-            Mapping from CPU name ("cpu", "cpu0", ...) to a (busy, total)
-            jiffy pair; empty when /proc/stat is unreadable.
-        """
         counters = {}
         try:
             lines = open("/proc/stat").read().splitlines()
@@ -69,25 +51,16 @@ class CpuCounters:
 
 
 class PssCache:
-    """Caches proportional set size readings, which are expensive to sample per process.
-
-    Attributes:
-        lock     : Guards the entry table against concurrent samplers.
-        entries  : Mapping from pid to a (monotonic timestamp, PSS in bytes) pair.
-        pruned_t : Monotonic timestamp of the last prune sweep.
-    """
 
     TTL_S   = 5.0
     PRUNE_S = 60.0
 
     def __init__(self) -> None:
-        """Creates an empty cache with no entries and no prune history."""
         self.lock     = threading.Lock()
         self.entries  = {}
         self.pruned_t = 0.0
 
     def _read(self, pid: int) -> int | None:
-        """Returns the process's PSS in bytes from smaps_rollup, or None when unreadable."""
         try:
             for line in open(f"/proc/{pid}/smaps_rollup"):
                 if line.startswith("Pss:"):
@@ -97,7 +70,6 @@ class PssCache:
         return None
 
     def _prune(self, now: float) -> None:
-        """Drops entries older than the prune window, at most once per window."""
         if now - self.pruned_t < self.PRUNE_S:
             return
 
@@ -105,15 +77,6 @@ class PssCache:
         self.entries  = {pid: entry for pid, entry in self.entries.items() if now - entry[0] < self.PRUNE_S}
 
     def value(self, pid: int) -> int | None:
-        """Returns the process's PSS in bytes, re-reading /proc only once the TTL expires.
-
-        Args:
-            pid : Process id to sample.
-
-        Returns:
-            Proportional set size in bytes, or None when the process is gone or
-            its smaps_rollup is not readable.
-        """
         now = time.monotonic()
 
         with self.lock:
@@ -131,14 +94,12 @@ class PssCache:
 
 
 class ProcStats:
-    """Per-process readings taken from /proc, with a shared PSS cache."""
 
     PAGE  = os.sysconf("SC_PAGE_SIZE")
     CACHE = PssCache()
 
     @staticmethod
     def username(uid: int) -> str:
-        """Returns the account name for a uid, or the uid as text when it has no entry."""
         try:
             return pwd.getpwuid(uid).pw_name
         except KeyError:
@@ -146,16 +107,6 @@ class ProcStats:
 
     @staticmethod
     def stat(pid: int) -> dict | None:
-        """Returns the parsed /proc/<pid>/stat fields the console uses.
-
-        Args:
-            pid : Process id to read.
-
-        Returns:
-            Mapping with the command name, state letter, parent pid, summed
-            user and system jiffies, thread count, start time in clock ticks,
-            and resident set size in bytes; None when the process is gone.
-        """
         try:
             raw    = open(f"/proc/{pid}/stat").read()
             close  = raw.rindex(")")
@@ -174,12 +125,10 @@ class ProcStats:
 
     @staticmethod
     def pss(pid: int) -> int | None:
-        """Returns the cached proportional set size of a process in bytes."""
         return ProcStats.CACHE.value(pid)
 
     @staticmethod
     def private(pid: int) -> int | None:
-        """Returns the process's private (non-shared) resident memory in bytes, or None."""
         try:
             parts    = open(f"/proc/{pid}/statm").read().split()
             resident = int(parts[1])
@@ -190,12 +139,6 @@ class ProcStats:
 
     @staticmethod
     def attributed(pid: int) -> int | None:
-        """Returns the memory in bytes fairly charged to a process.
-
-        Prefers proportional set size so shared pages are split between the
-        processes mapping them, and falls back to private resident memory when
-        smaps_rollup is not readable.
-        """
         pss = ProcStats.pss(pid)
         if pss is not None:
             return pss
@@ -203,24 +146,14 @@ class ProcStats:
 
     @staticmethod
     def ppid(pid: int) -> int:
-        """Returns the parent pid of a process, or 0 when the process is gone."""
         stat = ProcStats.stat(pid)
         return stat["ppid"] if stat is not None else 0
 
 
 class ProcSweep:
-    """Walks the whole /proc process table in one pass."""
 
     @staticmethod
     def rows() -> list[dict]:
-        """Returns one row per live process on the host.
-
-        Processes that exit mid-sweep are skipped rather than raising.
-
-        Returns:
-            List of mappings with "pid", the owning "uid", the parsed "stat"
-            fields, and "attributed" memory in bytes.
-        """
         rows = []
 
         for entry in os.listdir("/proc"):
@@ -243,13 +176,6 @@ class ProcSweep:
 
 
 class UserSlices:
-    """Reads the per-user cgroup v2 slices that systemd keeps under user.slice.
-
-    Every login user owns one `user-<uid>.slice`. Its three pressure files exist
-    whatever controllers are delegated, `cpu.stat` reports the slice's summed CPU
-    time with exited children included, and `memory.stat` gives the memory charged
-    to the user as long as the memory controller is delegated to user.slice.
-    """
 
     ROOT      = "/sys/fs/cgroup/user.slice"
     PSI_ROOT  = "/proc/pressure"
@@ -257,29 +183,14 @@ class UserSlices:
 
     @staticmethod
     def host_available() -> bool:
-        """Returns whether the kernel exposes machine-wide pressure-stall files."""
         return os.path.isfile(os.path.join(UserSlices.PSI_ROOT, "cpu"))
 
     @staticmethod
     def available() -> bool:
-        """Returns whether the user.slice cgroup tree exists on this host."""
         return os.path.isdir(UserSlices.ROOT)
 
     @staticmethod
     def pressure(path: str) -> dict:
-        """Parses one pressure file into its 10-second averages.
-
-        Args:
-            path : Path of a `cpu.pressure`, `memory.pressure` or `io.pressure` file.
-
-        Returns:
-            Mapping with "some" and "full", the avg10 percentages of time at least one
-            task, respectively every task, of the group was stalled.
-
-        Raises:
-            OSError   : The file cannot be read.
-            ValueError: The file does not carry the expected fields.
-        """
         out = {"some": 0.0, "full": 0.0}
         for line in open(path).read().splitlines():
             head, *tokens = line.split()
@@ -290,16 +201,10 @@ class UserSlices:
 
     @staticmethod
     def host_pressure() -> dict:
-        """Returns the machine-wide pressure keyed "cpu", "mem" and "io".
-
-        Raises:
-            OSError: `/proc/pressure` is unavailable on this kernel.
-        """
         return {key: UserSlices.pressure(os.path.join(UserSlices.PSI_ROOT, name)) for key, name in UserSlices.RESOURCES}
 
     @staticmethod
     def self_slice_uid() -> int | None:
-        """Returns the uid of the user slice the calling process lives in, or None when outside user.slice."""
         try:
             line = open("/proc/self/cgroup").read()
         except OSError:
@@ -314,7 +219,6 @@ class UserSlices:
 
     @staticmethod
     def _counter(path: str, keys: tuple) -> dict:
-        """Returns the named integer fields of a flat-keyed cgroup file, missing keys as 0."""
         out = {key: 0 for key in keys}
         for line in open(path).read().splitlines():
             key, _, value = line.partition(" ")
@@ -324,13 +228,6 @@ class UserSlices:
 
     @staticmethod
     def rows() -> list[dict]:
-        """Returns one row per user slice, skipping slices that vanish mid-read.
-
-        Returns:
-            List of mappings with the "uid", the cumulative "cpu_usec" of the slice,
-            its "mem" in bytes charged as anonymous plus shared memory, and "stall",
-            the pressure keyed "cpu", "mem" and "io" as returned by `pressure`.
-        """
         rows = []
 
         for entry in os.listdir(UserSlices.ROOT):

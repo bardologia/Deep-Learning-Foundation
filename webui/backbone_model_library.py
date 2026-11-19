@@ -1,9 +1,3 @@
-"""Curated catalogue of the single-trunk backbone zoo for the web UI.
-
-Maps every backbone key to its config dataclass and explanatory note, groups the
-models into families with selection guidance, and supplies the per-field hints the
-architecture panels show next to the tunable parameters.
-"""
 
 from __future__ import annotations
 
@@ -13,7 +7,6 @@ from model_library_base import ModelDefaultsLibrary
 
 
 class BackboneModelLibrary(ModelDefaultsLibrary):
-    """Backbone-family model library backing the web UI architecture panels."""
 
     CONFIG_MODULE = backbone
 
@@ -130,16 +123,9 @@ class BackboneModelLibrary(ModelDefaultsLibrary):
     }
 
     def _note_files(self) -> dict[str, str]:
-        """Returns the note filename per key, covering both backbones and heads."""
         return {**self.NOTE_FILES, **self.HEAD_NOTE_FILES}
 
     def heads(self) -> list[dict]:
-        """Returns the selectable output heads with their structure and use case.
-
-        Returns:
-            One entry per head with its config key, display name, a summary of the
-            projection it applies, whether it is the default, and when to pick it.
-        """
         return [
             {
                 "key": "conv", "name": "Conv", "structure": "Single conv projection",
@@ -164,14 +150,6 @@ class BackboneModelLibrary(ModelDefaultsLibrary):
         ]
 
     def _families(self) -> list[dict]:
-        """Returns the backbone zoo grouped into families, in display order.
-
-        Returns:
-            One entry per family with its name, a blurb, and its models; each model
-            carries the config key, display name, skip-connection and head style,
-            an approximate parameter count, whether it is recommended, and the
-            regime it is meant for.
-        """
         return [
             {
                 "family" : "CNN encoder-decoder",

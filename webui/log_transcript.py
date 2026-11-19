@@ -1,8 +1,3 @@
-"""Flattening of ANSI terminal output into plain scrollback text.
-
-Replays the cursor movement and erase sequences emitted by Rich progress
-displays so a captured log file can be rendered as static text in the web UI.
-"""
 
 from __future__ import annotations
 
@@ -10,13 +5,6 @@ import re
 
 
 class AnsiTranscript:
-    """Virtual terminal screen that replays ANSI escapes into plain lines.
-
-    Attributes:
-        lines : Screen buffer, one list of single characters per row.
-        row   : Zero-based index of the row the cursor sits on.
-        col   : Zero-based column the cursor sits on within the current row.
-    """
 
     CSI  = re.compile(r"\x1b\[([0-9;:?]*)[ -/]*([@-~])")
     OSC  = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
@@ -25,13 +13,11 @@ class AnsiTranscript:
     CTRL = re.compile(r"[\x00-\x09\x0b-\x1f]")
 
     def __init__(self) -> None:
-        """Creates an empty one-row screen with the cursor at the origin."""
         self.lines = [[]]
         self.row   = 0
         self.col   = 0
 
     def _put(self, run: str) -> None:
-        """Writes printable text at the cursor, honouring newline, return and tab."""
         for char in run:
             if char == "\n":
                 self.row += 1
@@ -53,12 +39,10 @@ class AnsiTranscript:
                 self.col += 1
 
     def _count(self, params: str, default: int = 1) -> int:
-        """Returns the first numeric escape parameter, or ``default`` when absent."""
         head = params.split(";")[0]
         return int(head) if head.isdigit() else default
 
     def _erase_line(self, params: str) -> None:
-        """Applies an EL erase to the current row: to end, to start, or whole line."""
         mode = self._count(params, 0)
         line = self.lines[self.row]
 
@@ -71,7 +55,6 @@ class AnsiTranscript:
             line.clear()
 
     def _erase_display(self, params: str) -> None:
-        """Applies an ED erase: below the cursor for mode 0, otherwise full reset."""
         mode = self._count(params, 0)
 
         if mode == 0:
@@ -84,7 +67,6 @@ class AnsiTranscript:
         self.col   = 0
 
     def _move(self, params: str, final: str) -> None:
-        """Moves the cursor for the CUU/CUD/CUF/CUB/CNL/CPL/CHA escape ``final``."""
         count = self._count(params)
 
         if final == "A":
@@ -106,7 +88,6 @@ class AnsiTranscript:
             self.col = max(0, self._count(params) - 1)
 
     def _control(self, params: str, final: str) -> None:
-        """Dispatches one CSI sequence to erase or cursor handling, ignoring private modes."""
         if params.startswith("?"):
             return
 
@@ -118,7 +99,6 @@ class AnsiTranscript:
             self._move(params, final)
 
     def _colours_only(self, text: str) -> str | None:
-        """Returns the stripped text when it carries only colour escapes, else ``None``."""
         if self.MOVE.search(text) is not None:
             return None
 
@@ -129,17 +109,6 @@ class AnsiTranscript:
         return "\n".join(line.rstrip() for line in plain.split("\n"))
 
     def flatten(self, text: str) -> str:
-        """Returns ``text`` rendered as plain scrollback with escape sequences applied.
-
-        Colour-only input is stripped directly; input containing cursor motion or
-        erase sequences is replayed onto the screen buffer first.
-
-        Args:
-            text : Raw terminal output, possibly containing ANSI escape sequences.
-
-        Returns:
-            Newline-joined plain text with trailing whitespace removed per line.
-        """
         text  = self.LONE.sub("", self.OSC.sub("", text))
         plain = self._colours_only(text)
 

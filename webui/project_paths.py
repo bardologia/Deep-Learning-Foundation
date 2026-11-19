@@ -1,11 +1,3 @@
-"""Repository layout, machine profile, entry-point script registry and interpreter discovery.
-
-Resolves the directories the web UI writes to, maps every launchable script key
-to its file under main/ and its entry config class, and finds the conda
-interpreters a job can be launched with. The machine profile written by the
-installer supplies the runs and data roots, the preferred environment and the
-conda install to scan; without one the roots are the checkout's own.
-"""
 
 from __future__ import annotations
 
@@ -17,25 +9,6 @@ from tools.runtime.machine_profile  import MachineProfile
 
 
 class ProjectPaths:
-    """Resolved paths of a ML-Template checkout plus its script and interpreter registry.
-
-    Attributes:
-        profile        : Machine profile of this installation; absent when none was written.
-        webui_root     : Directory holding this module and the static assets.
-        repo_root      : Root of the ML-Template repository.
-        main_dir       : Directory holding the entry-point scripts.
-        scripts_dir    : Directory holding the auxiliary scripts.
-        config_dir     : Root of the configuration package.
-        static_dir     : Directory served as the front end's static assets.
-        runs_dir       : Root of the run-output tree the entry points write into, the profile's runs root when set.
-        data_root      : Directory holding the datasets, the profile's data root or the checkout's.
-        logs_dir       : Directory the web UI writes logs and state files into.
-        gpu_guard_dir  : Directory holding GPU guard state files.
-        gpu_pools_dir  : Directory holding per-job live GPU pool files.
-        saved_runs_dir : Directory holding saved launch configurations.
-        templates_dir  : Directory holding one JSON file per stored config template.
-        sequences_dir  : Directory holding one JSON file per stored experiment sequence.
-    """
 
     REQUIRED_DIRS = ("main", "configuration", "tools")
     CONDA_BASES   = ("miniconda3", "anaconda3", ".conda")
@@ -88,15 +61,6 @@ class ProjectPaths:
     }
 
     def __init__(self, root: Path | None = None, profile: MachineProfile | None = None) -> None:
-        """Resolves every project directory and verifies the root is a real checkout.
-
-        Args:
-            root    : Repository root; defaults to the parent of the webui directory.
-            profile : Machine profile to read roots and the environment from; None loads the one the environment selects.
-
-        Raises:
-            ValueError : If the resolved root lacks any of REQUIRED_DIRS.
-        """
         self.profile        = MachineProfile.current() if profile is None else profile
         self.webui_root     = Path(__file__).resolve().parent
         self.repo_root      = self.webui_root.parent if root is None else Path(root).resolve()
@@ -116,7 +80,6 @@ class ProjectPaths:
         self._require_repository()
 
     def _require_repository(self) -> None:
-        """Raises ValueError when the repository root is missing a required directory."""
         missing = [name for name in self.REQUIRED_DIRS if not (self.repo_root / name).is_dir()]
 
         if missing:
@@ -124,26 +87,15 @@ class ProjectPaths:
 
     @property
     def priority(self) -> list[str]:
-        """Interpreter labels preferred for launches: the profile's project environment."""
         return [f"conda:{self.profile.env_name}"]
 
     def roots(self) -> dict:
-        """Returns the browse roots the front end starts from."""
         return {"datasets": str(self.data_root), "runs": str(self.runs_dir)}
 
     def profile_signature(self) -> tuple:
-        """Returns the mtime signature of the profile file, empty when profiles are disabled or absent."""
         return self.tree_signature([self.profile.path]) if self.profile.path is not None else ()
 
     def tree_signature(self, paths) -> tuple:
-        """Returns a cache key of (name, mtime_ns) pairs for the given paths.
-
-        Args:
-            paths : Iterable of paths to stamp; unreadable entries are skipped.
-
-        Returns:
-            Tuple of (file name, modification time in nanoseconds) pairs.
-        """
         stamps = []
         for path in paths:
             try:
@@ -153,7 +105,6 @@ class ProjectPaths:
         return tuple(stamps)
 
     def config_signature(self) -> tuple:
-        """Returns the mtime signature of every Python file under the configuration package."""
         return self.tree_signature(sorted(self.config_dir.rglob("*.py")))
 
     SCRIPT_DIRS = {
@@ -197,22 +148,9 @@ class ProjectPaths:
     }
 
     def has_script(self, key: str) -> bool:
-        """Returns whether the key names a registered entry-point script."""
         return key in self.SCRIPT_DIRS
 
     def script_entry(self, key: str) -> dict:
-        """Returns the absolute path, repo-relative path and entry config class of a script.
-
-        Args:
-            key : Registered script key, such as "train_backbone".
-
-        Returns:
-            Mapping with "path", "rel", "config_module" and "config_class"; the
-            two config entries are None for scripts without an entry override.
-
-        Raises:
-            KeyError : If the key is not registered in SCRIPT_DIRS.
-        """
         override = self.ENTRY_OVERRIDES.get(key, {})
         subdir   = self.SCRIPT_DIRS[key]
         rel      = f"main/{subdir}/{key}.py"
@@ -225,17 +163,6 @@ class ProjectPaths:
         }
 
     def discover_interpreters(self) -> list[dict]:
-        """Returns the conda interpreters available on this machine.
-
-        Scans the profile's conda root and then the miniconda, anaconda and .conda
-        installs under the home directory for base and per-environment
-        interpreters, and prepends the running interpreter when it is not one of
-        them.
-
-        Returns:
-            List of entries with "label", "path" and a "current" flag marking
-            the interpreter this server runs under.
-        """
         found   = []
         seen    = set()
         current = str(Path(sys.executable))
@@ -264,17 +191,6 @@ class ProjectPaths:
         return found
 
     def preferred_interpreter(self, interpreters: list[dict], script_key: str = "") -> str:
-        """Returns the interpreter path a script should default to.
-
-        Args:
-            interpreters : Discovered interpreter entries as returned by discover_interpreters.
-            script_key   : Script key the launch is for; every script shares the profile's preference.
-
-        Returns:
-            Path of the highest-priority matching interpreter, the first
-            discovered one when none match, or the running interpreter when the
-            list is empty.
-        """
         for wanted in self.priority:
             for item in interpreters:
                 if item["label"] == wanted:

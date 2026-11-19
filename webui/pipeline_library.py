@@ -1,17 +1,10 @@
-"""Curated catalog of the project's pipelines shown in the web UI.
-
-Each entry names a pipeline, the entry-point script that runs it, a short
-description, and the ordered stages the pipeline moves through.
-"""
 
 from __future__ import annotations
 
 
 class PipelineLibrary:
-    """Static descriptions of every processing, training and analysis pipeline."""
 
     def collect(self) -> list[dict]:
-        """Returns one descriptor per pipeline, each with key, script and stage list."""
         return [
             {
                 "key"    : "synthesis",
