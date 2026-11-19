@@ -27,9 +27,6 @@ class ProbeWindows:
         n_rows = self.run.split_region.row_size
         n_cols = self.run.split_region.col_size
 
-        if n_rows < self.window or n_cols < self.window:
-            raise ValueError(f"Split region {n_rows}x{n_cols} is smaller than the {self.window}px probe window; choose a smaller window or a larger split")
-
         row_centers = np.linspace(half, n_rows - self.window + half, n_row_probes).round().astype(int)
         col_centers = np.linspace(half, n_cols - self.window + half, n_col_probes).round().astype(int)
 

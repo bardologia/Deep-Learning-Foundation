@@ -32,13 +32,11 @@ from tools.runtime.git_state                           import GitState
 class InferencePipeline:
 
     def __init__(self, config: InferenceConfig, region_pass: RegionPass | None = None) -> None:
-
         self.config      = config
         self.region_pass = region_pass
         self.target      = TargetDataset.of(config)
 
     def _setup(self, cfg: InferenceConfig) -> tuple[InferenceMetadata, Logger, Plotter]:
-
         meta = InferenceMetadata(cfg, self.target)
         meta.create_dirs()
         ConfigCli.save_resolved(cfg, meta.config_path)
@@ -61,7 +59,6 @@ class InferencePipeline:
         return meta, logger, plotter
 
     def _setup_rows(self, cfg: InferenceConfig, meta: InferenceMetadata) -> dict:
-
         return {
             "Run Directory"       : cfg.run_directory,
             "Output Dir"          : meta.output_dir,
@@ -77,7 +74,6 @@ class InferencePipeline:
         }
 
     def _load_run(self, cfg: InferenceConfig, logger: Logger):
-
         loader = RunLoader(cfg.run_directory, logger=logger)
         return loader.load(
             split           = cfg.split,
@@ -90,7 +86,6 @@ class InferencePipeline:
         )
 
     def _predict(self, cfg: InferenceConfig, meta: InferenceMetadata, run, logger: Logger):
-
         predictor = Predictor(
             run              = run,
             logger           = logger,
@@ -105,12 +100,10 @@ class InferencePipeline:
 
     @staticmethod
     def _equal_indices(n_total: int, n_slices: int) -> np.ndarray:
-
         n_slices = max(1, min(n_slices, n_total))
         return np.unique(np.linspace(n_total * 0.1, n_total * 0.9, n_slices).round().astype(int))
 
     def _compute_slice_indices(self, cfg: InferenceConfig, n_z: int, n_rows: int, n_cols: int) -> dict:
-
         return {
             "slice_z_idx"   : self._equal_indices(n_z,    cfg.n_z_slices),
             "slice_col_idx" : self._equal_indices(n_cols, cfg.n_col_slices),
@@ -121,7 +114,6 @@ class InferencePipeline:
         }
 
     def _evaluate_metrics(self, cfg: InferenceConfig, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict, logger: Logger) -> dict:
-
         param_space = result.params_pred is not None and result.params_gt is not None
 
         global_metrics = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold, logger).compute(
@@ -155,7 +147,6 @@ class InferencePipeline:
         return global_metrics
 
     def _evaluate_label_quality(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, global_metrics: dict, logger: Logger) -> None:
-
         logger.section("[Inference: Label Quality]")
 
         r2_map, stats = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold, logger).label_quality(run.full_curves)
@@ -171,7 +162,6 @@ class InferencePipeline:
         logger.subsection(f"Label quality : mean fit R² = {stats['label_r2_mean']:.4f}, {stats['label_r2_frac_below_half'] * 100.0:.1f}% of labels below R² 0.5")
 
     def _evaluate_cube_ssim(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, global_metrics: dict, indices: dict, logger: Logger) -> None:
-
         if not cfg.compute_cube_ssim:
             logger.section("[Inference: Cube SSIM skipped]")
             logger.subsection("compute_cube_ssim is disabled; the standard SSIM against the raw cube is absent from metrics and report.")
@@ -195,7 +185,6 @@ class InferencePipeline:
         logger.subsection(f"Cube SSIM : z {stats['ssim_cube_z_mean']:.4f}, col {stats['ssim_cube_col_mean']:.4f}, row {stats['ssim_cube_row_mean']:.4f} vs the raw cube")
 
     def _evaluate_flip_consistency(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-
         if not cfg.compute_flip_consistency:
             logger.section("[Inference: Flip Consistency skipped]")
             logger.subsection("compute_flip_consistency is disabled; the flip-equivariance disagreement map is absent from metrics, figures, and report.")
@@ -211,8 +200,6 @@ class InferencePipeline:
         result.flip_consistency = flip_map
 
         finite = flip_map[np.isfinite(flip_map)]
-        if not finite.size:
-            raise ValueError("Flip-consistency map holds no finite value; the stitched disagreement is degenerate")
 
         err_flat  = result.pixel_mse.reshape(-1).astype(np.float64)
         flip_flat = flip_map.reshape(-1).astype(np.float64)
@@ -232,7 +219,6 @@ class InferencePipeline:
         logger.subsection(f"Flip consistency : mean disagreement {global_metrics['flip_mse_mean']:.4g}, correlation with pixel MSE {corr:.3f}")
 
     def _stratify_errors(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-
         if not cfg.compute_stratified:
             logger.section("[Inference: Stratified Errors skipped]")
             logger.subsection("compute_stratified is disabled; the covariate-stratified error curves are absent from metrics, figures, and report.")
@@ -274,7 +260,6 @@ class InferencePipeline:
         logger.subsection(f"Stratified over {sorted(tables)}; strongest rank correlation with error: {strongest} ({finite[strongest]:.3f})")
 
     def _classify_failures(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-
         if result.params_pred is None or result.params_gt is None:
             logger.section("[Inference: Failure Modes skipped]")
             logger.subsection("No parameter cubes are available; the failure-mode classification is absent from metrics, figures, and report.")
@@ -304,7 +289,6 @@ class InferencePipeline:
         logger.subsection(f"Miss rate by GT separation : {scalars['failure_sep_status']}")
 
     def _calibrate_presence(self, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-
         if result.failure_pairs is None:
             logger.section("[Inference: Presence Calibration skipped]")
             logger.subsection("No parameter cubes are available; the presence reliability curve is absent from metrics, figures, and report.")
@@ -324,7 +308,6 @@ class InferencePipeline:
         logger.subsection(f"Presence calibration : overall precision {scalars['presence_overall_precision'] * 100.0:.1f}%, amp-precision rank correlation {scalars['presence_rank_corr']:.3f}")
 
     def _audit_normalization(self, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-
         logger.section("[Inference: Normalization Audit]")
 
         stats = NormalizationAudit(run, result).run()
@@ -340,7 +323,6 @@ class InferencePipeline:
             logger.warning(f"Normalization audit, {line}")
 
     def _compose_figures(self, composer: FigureComposer, result, run, global_metrics: dict, z_axis_np: np.ndarray, indices: dict) -> Dict[str, List[Path]]:
-
         return composer.compose(
             result         = result,
             run            = run,
@@ -360,7 +342,6 @@ class InferencePipeline:
         figure_paths   : Dict[str, List[Path]],
         gif_paths      : Dict[str, Path],
     ) -> Path:
-
         return Report(
             output_dir       = meta.output_dir,
             run_summary      = ReportPayloadBuilder.run_summary(run, z_axis_np),
@@ -373,7 +354,6 @@ class InferencePipeline:
         ).assemble()
 
     def run(self) -> Path:
-
         cfg                   = self.config
         meta, logger, plotter = self._setup(cfg)
         try:

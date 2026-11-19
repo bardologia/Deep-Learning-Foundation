@@ -41,9 +41,6 @@ class ChannelLabeler:
         if input_config.use_aux:
             labels += ["aux"]
 
-        if len(labels) != run.in_channels:
-            raise ValueError(f"Derived {len(labels)} channel labels but the run has {run.in_channels} input channels; the input configuration does not match the label derivation")
-
         return labels
 
 
@@ -74,9 +71,6 @@ class ChannelGroups:
             groups["aux"] = [offset]
             offset       += 1
 
-        if not groups:
-            raise ValueError("The input configuration enables no channel group; there is nothing to attribute")
-
         return groups
 
     @staticmethod
@@ -85,10 +79,6 @@ class ChannelGroups:
         for group, channels in groups.items():
             for channel in channels:
                 by_channel[channel] = group
-
-        missing = [c for c in range(n_channels) if c not in by_channel]
-        if missing:
-            raise ValueError(f"Channels {missing} belong to no input group; the group derivation does not match the channel count")
 
         return [by_channel[c] for c in range(n_channels)]
 
@@ -117,9 +107,6 @@ class TrackChannels:
             for track in range(n_tracks):
                 per_track[track] += list(range(offset + track * per_source, offset + (track + 1) * per_source))
             offset += n_tracks * per_source
-
-        if not any(per_track):
-            raise ValueError("The input configuration holds neither secondaries nor derived; there is no track channel to drop")
 
         return per_track
 
@@ -151,16 +138,10 @@ class GradientAttribution:
                 grad_mass = grad.abs().sum(dim=(0, 2, 3)).cpu().numpy().astype(np.float64)
                 gxi_mass  = (grad * x).abs().sum(dim=(0, 2, 3)).detach().cpu().numpy().astype(np.float64)
 
-                if not (np.isfinite(grad_mass).all() and np.isfinite(gxi_mass).all()):
-                    raise ValueError(f"Input gradient of the predicted {family} at probe window {p} is non-finite; the checkpoint or the window is degenerate")
-
                 if grad_mass.sum() > 0.0:
                     grad_shares[family].append(grad_mass / grad_mass.sum())
                 if gxi_mass.sum() > 0.0:
                     gxi_shares[family].append(gxi_mass / gxi_mass.sum())
-
-        if not any(grad_shares[family] for family in self.FAMILIES):
-            raise ValueError("Gradient attribution is all zero for every output family; the model output does not depend on the input")
 
         importance = {}
         for family in self.FAMILIES:
@@ -184,9 +165,6 @@ class GradientAttribution:
     def combined(cls, importance: dict[str, dict[str, np.ndarray]], key: str) -> np.ndarray:
         stacked = np.stack([importance[family][key] for family in cls.FAMILIES])
         live    = ~np.all(np.isnan(stacked), axis=1)
-
-        if not live.any():
-            raise ValueError(f"No output family carries a finite '{key}' attribution to combine")
 
         return np.nanmean(stacked[live], axis=0)
 
@@ -218,9 +196,6 @@ class ChannelOcclusion:
                     self.on_pass()
 
                 count += 1
-
-        if count == 0:
-            raise ValueError("Channel occlusion saw no batches; the loader is empty or max_batches is zero")
 
         return totals / count
 

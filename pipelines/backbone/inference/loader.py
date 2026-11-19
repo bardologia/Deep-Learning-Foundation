@@ -25,32 +25,6 @@ from pipelines.shared.inference.metadata        import TargetDataset
 from pipelines.shared.inference.run_artifacts   import RunArtifactLoader
 
 
-class AbsentCube:
-
-    def __init__(self, run_directory: Path) -> None:
-
-        self.run_directory = run_directory
-
-    def _refuse(self, usage: str) -> None:
-
-        raise ValueError(f"Run '{self.run_directory}' was loaded with load_cube=False, so the raw cube was never read; {usage} needs it. Reload the run with load_cube=True.")
-
-    def __getattr__(self, name: str):
-
-        if name.startswith("__"):
-            raise AttributeError(name)
-
-        self._refuse(f"attribute '{name}'")
-
-    def __getitem__(self, index):
-
-        self._refuse("indexing full_curves")
-
-    def __array__(self, dtype=None, copy=None):
-
-        self._refuse("converting full_curves to an array")
-
-
 @dataclass
 class Run:
 
@@ -73,7 +47,7 @@ class Run:
     dataset            : PatchDataset
     loader             : DataLoader
     checkpoint_meta    : dict
-    full_curves        : np.ndarray | AbsentCube
+    full_curves        : np.ndarray | None
     complex_inputs     : np.ndarray | None = None
     n_secondaries      : int               = 0
     secondary_labels   : list | None       = None
@@ -84,32 +58,9 @@ class RunLoader(RunArtifactLoader):
     PARAMS_PER_GAUSSIAN = 3
 
     def _persisted_n_gaussians(self, run_summary: dict) -> int:
-
-        if "n_gaussians" not in run_summary:
-            raise KeyError(f"meta/run_summary.json of run '{self.run_directory}' carries no 'n_gaussians'; the Gaussian count is read from that field and is no longer derived from out_channels, so re-train the run or write the extraction K it was trained with into the summary.")
-
         return int(run_summary["n_gaussians"])
 
-    def _validate_out_channels(self, out_channels: int, n_gaussians: int) -> None:
-
-        expected = self.PARAMS_PER_GAUSSIAN * n_gaussians
-
-        if out_channels != expected:
-            raise ValueError(f"Run '{self.run_directory}' persists out_channels={out_channels} but n_gaussians={n_gaussians} requires a {expected}-channel parameter head; the run summary describes a head this loader cannot read.")
-
-    def _validate_target_gaussians(self, target: TargetDataset, label_gaussians: int, n_gaussians: int) -> None:
-
-        if label_gaussians != n_gaussians:
-            raise ValueError(f"Run '{self.run_directory}' predicts K={n_gaussians} Gaussians but the target labels {target.parameters_path} were fitted with K={label_gaussians}; pick a parameter run of {target.name} extracted at K={n_gaussians}.")
-
-    def _validate_target_channels(self, target: TargetDataset, dataset_channels: int, in_channels: int) -> None:
-
-        if dataset_channels != in_channels:
-            channels = ", ".join(target.secondary_labels) if target.secondary_labels else "every secondary channel"
-            raise ValueError(f"Run '{self.run_directory}' consumes {in_channels} input channels but the target {target.name} with secondaries {channels} yields {dataset_channels}; set inference.target.secondary_labels to as many secondary channels of {target.name} as the run was trained with.")
-
     def _build_model(self, backbone_name: str, in_channels: int, out_channels: int, patch_size: Tuple[int, int]):
-
         model_config, _ = BackboneModelConfigIO.load(self.meta_directory)
         self.model_head = model_config.head
 
@@ -121,7 +72,6 @@ class RunLoader(RunArtifactLoader):
         return model
 
     def _wrap_model(self, model, device: str, norm_stats: Stats, z_axis: np.ndarray, amp_max: float | None) -> ModelWrapper:
-
         return ModelWrapper(
             model               = model,
             device              = device,
@@ -143,7 +93,6 @@ class RunLoader(RunArtifactLoader):
         region_override : Optional[CropRegion] = None,
         target          : Optional[TargetDataset] = None,
     ) -> Run:
-
         self.logger.section("[Inference: Load Run]")
         self.logger.subsection(f"Run Directory : {self.run_directory} \n")
 
@@ -161,13 +110,8 @@ class RunLoader(RunArtifactLoader):
         out_channels  = int(run_summary["out_channels"])
         n_gaussians   = self._persisted_n_gaussians(run_summary)
 
-        self._validate_out_channels(out_channels, n_gaussians)
-
         gaussian           = GaussianConfig.from_dataset(dataset_config.preprocessing_run_directory, dataset_config.parameters_path)
         activity_threshold = gaussian.activity_threshold
-
-        if target is not None:
-            self._validate_target_gaussians(target, gaussian.n_default_gaussians, n_gaussians)
 
         ckpt_path = self.run_directory / checkpoint_name
         model     = self._build_model(backbone_name, in_channels, out_channels, dataset_config.patch.size)
@@ -191,9 +135,6 @@ class RunLoader(RunArtifactLoader):
 
         dataset_axis = GaussianAxis.build(gaussian.x_min, gaussian.x_max, layout.profile_length)
         self._validate_x_axis(z_axis, dataset_axis, ckpt_path, dataset_config.preprocessing_run_directory)
-
-        if target is not None:
-            self._validate_target_channels(target, dataset.input_channels, in_channels)
 
         core_region = None
         if region_override is not None:
@@ -258,5 +199,5 @@ class RunLoader(RunArtifactLoader):
             complex_inputs     = arrays["inputs"],
             n_secondaries      = arrays["n_secondaries"],
             secondary_labels   = arrays["secondary_labels"],
-            full_curves        = arrays["cube"] if load_cube else AbsentCube(self.run_directory),
+            full_curves        = arrays["cube"] if load_cube else None,
         )

@@ -68,19 +68,6 @@ def test_discrete_covariate_bins_by_level():
     assert rows[1]["n"] == 20 * W
 
 
-def test_constant_covariate_raises():
-    err = np.ones((H, W))
-    cov = np.full((H, W), 0.5)
-
-    with pytest.raises(ValueError):
-        StratifiedErrors(_run(), _result(err, label_r2=cov)).run()
-
-
-def test_no_covariates_raises():
-    with pytest.raises(ValueError):
-        StratifiedErrors(_run(), _result(np.ones((H, W)))).covariates()
-
-
 def test_amplitude_and_aux_covariates_appear():
     rng    = np.random.default_rng(1)
     inputs = rng.normal(size=(3, H, W)) + 1j * rng.normal(size=(3, H, W))

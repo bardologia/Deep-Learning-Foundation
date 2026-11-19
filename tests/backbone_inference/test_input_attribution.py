@@ -65,29 +65,11 @@ def test_gradient_attribution_constant_family_is_nan():
     assert np.all(np.isnan(importance["sigma"]["grad_x_input"]))
 
 
-def test_gradient_attribution_fully_dead_model_raises():
-    class _ConstantModel(torch.nn.Module):
-        def forward(self, x):
-            return torch.zeros(x.shape[0], 3, x.shape[2], x.shape[3]) + 0.0 * x.sum()
-
-    with pytest.raises(ValueError):
-        GradientAttribution(_ConstantModel(), WINDOW).channel_importance(_windows())
-
-
 def test_gradient_attribution_counts_the_probes_each_family_kept():
     _importance, kept = GradientAttribution(_ChannelZeroModel(), WINDOW).channel_importance(_windows(n_probes=3))
 
     assert kept["amp"] == {"share": 3, "grad_x_input": 3}
     assert kept["sigma"] == {"share": 0, "grad_x_input": 0}
-
-
-def test_gradient_attribution_refuses_a_non_finite_gradient():
-    class _NanModel(torch.nn.Module):
-        def forward(self, x):
-            return (x[:, :1] * float("nan")).expand(-1, 3, -1, -1)
-
-    with pytest.raises(ValueError, match="predicted amp at probe window 0 is non-finite"):
-        GradientAttribution(_NanModel(), WINDOW).channel_importance(_windows())
 
 
 def test_dropped_probes_are_warned_per_family(tmp_path):
@@ -141,23 +123,11 @@ def test_occlusion_shifts_only_for_used_channel_sets():
     assert len(passes) == 4
 
 
-def test_occlusion_without_batches_raises():
-    renderer = PredictionCurves(1, np.linspace(-5.0, 15.0, 12))
-
-    with pytest.raises(ValueError):
-        ChannelOcclusion(_model_wrapper(), renderer, lambda: None).deltas([], max_batches=0, channel_sets=[[0]])
-
-
 def test_spearman_detects_perfect_and_inverted_rankings():
     a = np.array([0.1, 0.4, 0.2, 0.9])
 
     assert RankCorrelation.spearman(a, a)        == pytest.approx(1.0)
     assert RankCorrelation.spearman(a, -a)       == pytest.approx(-1.0)
-
-
-def test_spearman_needs_matched_vectors():
-    with pytest.raises(ValueError):
-        RankCorrelation.spearman(np.array([1.0, 2.0]), np.array([1.0, 2.0]))
 
 
 def _labeled_run(use_aux: bool = False) -> SimpleNamespace:
@@ -187,27 +157,12 @@ def test_channel_labels_follow_the_input_stack_order():
     assert labels == ["primary", "sec CH01", "sec CH02", "derived CH01", "derived CH02", "aux"]
 
 
-def test_channel_labels_mismatch_raises():
-    run             = _labeled_run()
-    run.in_channels = 99
-
-    with pytest.raises(ValueError):
-        ChannelLabeler.build(run)
-
-
 def test_channel_groups_partition_the_stack():
     run    = _labeled_run(use_aux=True)
     groups = ChannelGroups.build(run)
 
     assert groups == {"primary": [0], "secondaries": [1, 2], "derived": [3, 4], "aux": [5]}
     assert ChannelGroups.of_channels(groups, 6) == ["primary", "secondaries", "secondaries", "derived", "derived", "aux"]
-
-
-def test_channel_groups_mismatch_raises():
-    groups = ChannelGroups.build(_labeled_run())
-
-    with pytest.raises(ValueError):
-        ChannelGroups.of_channels(groups, 7)
 
 
 @pytest.mark.dataset

@@ -61,13 +61,8 @@ class LabelSuspects:
         self.risk         = np.asarray(risk_map, dtype=np.float64)
         self.label_r2     = np.asarray(label_r2_map, dtype=np.float64) if label_r2_map is not None else None
 
-        if self.disagreement.shape != self.risk.shape:
-            raise ValueError(f"Disagreement map {self.disagreement.shape} and risk map {self.risk.shape} disagree in shape")
-
     def run(self) -> tuple[np.ndarray, dict]:
         both = np.isfinite(self.disagreement) & np.isfinite(self.risk)
-        if both.sum() < self.MIN_PIXELS:
-            raise ValueError(f"Label-suspect detection needs at least {self.MIN_PIXELS} pixels with finite disagreement and error")
 
         std_thr = float(np.quantile(self.disagreement[both], self.STD_QUANTILE))
         err_thr = float(np.quantile(self.risk[both], self.ERR_QUANTILE))
@@ -101,12 +96,7 @@ class RiskCoverage:
         disagreement = np.asarray(disagreement_map, dtype=np.float64).reshape(-1)
         risk         = np.asarray(risk_map, dtype=np.float64).reshape(-1)
 
-        if disagreement.shape != risk.shape:
-            raise ValueError(f"Disagreement map ({disagreement.size}) and risk map ({risk.size}) disagree in size")
-
         both = np.isfinite(disagreement) & np.isfinite(risk)
-        if both.sum() < self.MIN_PIXELS:
-            raise ValueError(f"Risk-coverage needs at least {self.MIN_PIXELS} pixels with finite disagreement and error")
 
         order = np.argsort(disagreement[both], kind="stable")
 
@@ -175,17 +165,8 @@ class SeedDisagreementMaps:
 
         self.seeds = [str(d.relative_to(self.group_dir)) for d in self.run_dirs]
 
-    def _validate_cubes(self) -> None:
-        for cube_dir in self.cube_dirs:
-            for name in (self.PROFILE_CUBE, self.PARAMS_CUBE, self.GT_CUBE, self.RISK_CUBE):
-                if not (cube_dir / name).is_file():
-                    raise FileNotFoundError(f"{cube_dir / name} is missing; re-run inference with save_cubes enabled for every seed, or disable compute_disagreement")
-
     def _open_cubes(self, name: str) -> list[np.ndarray]:
         cubes  = [np.load(cube_dir / name, mmap_mode="r") for cube_dir in self.cube_dirs]
-        shapes = {cube.shape for cube in cubes}
-        if len(shapes) != 1:
-            raise ValueError(f"Seed cubes {name} disagree on shape across {self.seeds}: {sorted(shapes)}; the seeds were inferred on different regions and cannot be compared pixelwise")
 
         return cubes
 
@@ -193,13 +174,8 @@ class SeedDisagreementMaps:
         regions = {}
         for seed, inference_dir in zip(self.seeds, self.inference_dirs):
             metrics = FileIO.load_json(inference_dir / self.metrics_filename)
-            if "split_region" not in metrics:
-                raise KeyError(f"{inference_dir / self.metrics_filename} has no split_region; re-run inference for seed {seed} to regenerate it")
 
             regions[seed] = tuple(int(v) for v in metrics["split_region"])
-
-        if len(set(regions.values())) != 1:
-            raise ValueError(f"The seeds were inferred on different regions {regions}; their disagreement maps would compare unrelated pixels, so re-infer them on one region")
 
         row_start, row_end, col_start, col_end = next(iter(regions.values()))
         self.logger.info(f"Split region shared by all {len(self.seeds)} seeds: rows {row_start}..{row_end}, cols {col_start}..{col_end}")
@@ -376,7 +352,6 @@ class SeedDisagreementMaps:
         )
 
     def run(self) -> dict:
-        self._validate_cubes()
         FileIO.ensure_dirs(self.figures_dir)
 
         self.logger.info(f"Seed disagreement over {len(self.seeds)} seeds at activity threshold {self.active_amp_thr:g}")

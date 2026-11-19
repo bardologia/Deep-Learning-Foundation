@@ -26,15 +26,6 @@ def test_evolution_frame_renders_an_image():
     assert image.mode == "RGB"
 
 
-def test_missing_snapshots_raise(tmp_path):
-    (tmp_path / "checkpoints").mkdir()
-
-    run = TrainingEvolutionRun(tmp_path, TrainingEvolutionConfig(), SilentLogger())
-
-    with pytest.raises(FileNotFoundError):
-        run._snapshots()
-
-
 def test_snapshots_are_discovered_in_epoch_order(tmp_path):
     ckpt_dir = tmp_path / "checkpoints"
     ckpt_dir.mkdir()

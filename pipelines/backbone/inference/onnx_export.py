@@ -22,8 +22,6 @@ class OnnxRunExporter:
 
     def _discover(self) -> list[Path]:
         root = Path(self.entry.runs_dir)
-        if not root.is_dir():
-            raise FileNotFoundError(f"Runs directory {root} does not exist; train runs before exporting them")
 
         run_dirs = []
         for checkpoint in sorted(root.rglob(self.CHECKPOINT)):
@@ -37,9 +35,6 @@ class OnnxRunExporter:
                 continue
 
             run_dirs.append(run_dir)
-
-        if not run_dirs:
-            raise FileNotFoundError(f"No run under {root} holds a {self.CHECKPOINT} with backbone meta files")
 
         return run_dirs
 

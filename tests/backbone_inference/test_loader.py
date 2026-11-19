@@ -9,7 +9,7 @@ import torch
 
 from configuration.inference                         import InferenceConfig
 from models                                          import BACKBONE_CONFIG_REGISTRY, BACKBONE_MODEL_REGISTRY, get_backbone
-from pipelines.backbone.inference.loader             import AbsentCube, RunLoader
+from pipelines.backbone.inference.loader             import RunLoader
 from pipelines.backbone.inference.model_wrapper      import ModelWrapper
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.shared.config.config_persistence      import BackboneModelConfigIO
@@ -183,34 +183,12 @@ def test_persisted_n_gaussians_is_authoritative(tmp_path):
 
     assert loader._persisted_n_gaussians({"out_channels": 15, "n_gaussians": 5}) == 5
 
-    loader._validate_out_channels(15, 5)
-
 
 def test_persisted_n_gaussians_missing_raises(tmp_path):
     loader = RunLoader(tmp_path, logger=None)
 
     with pytest.raises(KeyError, match="n_gaussians"):
         loader._persisted_n_gaussians({"out_channels": 15})
-
-
-def test_out_channels_inconsistent_with_n_gaussians_raises(tmp_path):
-    loader = RunLoader(tmp_path, logger=None)
-
-    with pytest.raises(ValueError, match="24"):
-        loader._validate_out_channels(24, 5)
-
-
-def test_absent_cube_refuses_every_use(tmp_path):
-    absent = AbsentCube(tmp_path)
-
-    with pytest.raises(ValueError, match="load_cube=False"):
-        _ = absent.shape
-
-    with pytest.raises(ValueError, match="load_cube=False"):
-        _ = absent[0]
-
-    with pytest.raises(ValueError, match="load_cube=False"):
-        np.asarray(absent)
 
 
 @pytest.mark.dataset

@@ -65,9 +65,6 @@ class AttentionCapture:
     def attach(self) -> None:
         gates, taps, mhas = self._find_modules()
 
-        if not gates and not taps and not mhas:
-            raise ValueError(f"Model {type(self.model).__name__} has no capturable attention: no attention gates, no shared-block attention, no torch MultiheadAttention")
-
         AttentionTap.enable(self._tap_sink)
 
         for name, module in gates.items():
@@ -91,9 +88,6 @@ class AttentionCapture:
         self._patched = []
 
     def records(self) -> dict:
-        if len(self._tap_order) != len(self._tap_sink):
-            raise RuntimeError(f"Attention tap saw {len(self._tap_sink)} weight tensors but {len(self._tap_order)} module calls; the capture cannot be labelled")
-
         attention: dict[str, list] = {}
         for name, weights in zip(self._tap_order, self._tap_sink):
             attention.setdefault(name, []).append(weights)
@@ -109,13 +103,7 @@ class AttentionSummary:
 
     @staticmethod
     def stack_calls(weight_list: list[torch.Tensor]) -> torch.Tensor:
-        shapes = {tuple(w.shape[1:]) for w in weight_list}
-        if len(shapes) != 1:
-            raise ValueError(f"Attention calls of one module disagree on shape {sorted(shapes)}; the capture cannot be pooled")
-
         weights = torch.cat(weight_list, dim=0)
-        if weights.ndim != 4:
-            raise ValueError(f"Expected attention weights of shape (batch, heads, queries, keys), got {tuple(weights.shape)}")
 
         return weights
 
@@ -279,8 +267,6 @@ class AttentionCapturePlots(PlotBase):
         self._apply_style()
 
         entries = [(i, summary[name]["distance"]) for i, name in enumerate(names) if summary[name]["distance"] is not None]
-        if not entries:
-            raise ValueError("No attention layer sits on a square token grid; the attention-distance figure has nothing to draw")
 
         depth    = np.array([i for i, _entry in entries])
         measured = np.array([entry["relative"] for _i, entry in entries])

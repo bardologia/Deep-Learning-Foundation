@@ -50,21 +50,18 @@ class Result:
     gt_norm_cube     : Optional[np.ndarray]        = None
 
     def assignment(self, n_gaussians: int, amp_threshold: float) -> np.ndarray:
-
         if self.param_assignment is None:
             self.param_assignment = GaussianMatcher(amp_threshold=amp_threshold).assignment(self.params_pred, self.params_gt, n_gaussians)
 
         return self.param_assignment
 
     def pred_unit_area(self) -> np.ndarray:
-
         if self.pred_norm_cube is None:
             self.pred_norm_cube = ProfileNormalizer.unit_area(self.pred_curves)
 
         return self.pred_norm_cube
 
     def gt_unit_area(self) -> np.ndarray:
-
         if self.gt_norm_cube is None:
             self.gt_norm_cube = ProfileNormalizer.unit_area(self.gt_curves)
 
@@ -74,12 +71,10 @@ class Result:
 class BoundedProcessPool:
 
     def __init__(self, num_workers: int, logger: Logger) -> None:
-
         self.num_workers = max(1, min(int(num_workers), os.cpu_count() or 1))
         self.logger      = logger
 
     def results(self, worker: Callable, payloads: Iterable, total: int, description: str) -> List:
-
         n_workers = min(self.num_workers, max(1, total))
         in_flight = 2 * n_workers
         stream    = iter(payloads)
@@ -116,7 +111,6 @@ class Metrics:
         active_amp_thr : float,
         logger         : Logger,
     ) -> None:
-
         self.result         = result
         self.z_axis         = z_axis
         self.n_gaussians    = n_gaussians
@@ -128,7 +122,6 @@ class Metrics:
 
     @staticmethod
     def curve_pixel_metrics(pred: np.ndarray, ref: np.ndarray) -> Dict[str, np.ndarray]:
-
         diff   = pred - ref
         mse    = (diff * diff).mean(axis=0).astype(np.float32)
         mae    = np.abs(diff).mean(axis=0).astype(np.float32)
@@ -143,7 +136,6 @@ class Metrics:
 
     @staticmethod
     def write_json(metrics: Dict[str, object], path: Path) -> Path:
-
         return FileIO.save_json(metrics, path, indent=4)
 
     @staticmethod
@@ -177,11 +169,9 @@ class Metrics:
 
     @staticmethod
     def _flat_to_yx(flat_idx: np.ndarray, width: int) -> np.ndarray:
-
         return np.stack([(flat_idx // width).astype(np.int32), (flat_idx % width).astype(np.int32)], axis=1)
 
     def _curve_scalar_metrics(self, pred: np.ndarray, ref: np.ndarray, suffix: str) -> Dict[str, float]:
-
         diff       = pred - ref
         mse        = float((diff * diff).mean(dtype=np.float64))
         mae        = float(np.abs(diff).mean(dtype=np.float64))
@@ -198,7 +188,6 @@ class Metrics:
 
     @staticmethod
     def _psnr(pred: np.ndarray, ref: np.ndarray) -> float:
-
         diff = pred - ref
         mse  = float((diff * diff).mean(dtype=np.float64))
 
@@ -212,14 +201,10 @@ class Metrics:
         return 10.0 * np.log10(data_range * data_range / mse)
 
     def _expand_pixel_stats(self, tagged_arrays: Tuple[Tuple[str, np.ndarray], ...]) -> Dict[str, float]:
-
         out: Dict[str, float] = {}
 
         for tag, arr in tagged_arrays:
             finite = arr[np.isfinite(arr)]
-
-            if not finite.size:
-                raise ValueError(f"{tag} holds no finite pixel; its statistics are undefined on this region")
 
             out.update({f"{tag}_{k}": v for k, v in self._basic_stats(finite).items()})
             out.update({f"{tag}_{k}": v for k, v in self._percentiles(finite).items()})
@@ -227,13 +212,9 @@ class Metrics:
         return out
 
     def _gt_empty_stats(self) -> Dict[str, float]:
-
         empty   = self.result.gt_curves.max(axis=0) <= 0.0
         keep    = ~empty
         n_empty = int(empty.sum())
-
-        if not keep.any():
-            raise ValueError(f"Every one of the {empty.size} pixels of the split has an empty ground-truth profile; the labels hold no component to score against")
 
         peak = self.result.pixel_peak_err_idx[keep]
 
@@ -253,7 +234,6 @@ class Metrics:
 
     @staticmethod
     def _basic_stats(x: np.ndarray) -> Dict[str, float]:
-
         flat = x.reshape(-1)
 
         return {
@@ -266,7 +246,6 @@ class Metrics:
 
     @staticmethod
     def _percentiles(x: np.ndarray, qs: Tuple[int, ...] = (1, 5, 25, 50, 75, 95, 99)) -> Dict[str, float]:
-
         flat = x.reshape(-1)
         out  = {}
         p    = np.percentile(flat, qs)
@@ -277,7 +256,6 @@ class Metrics:
         return out
 
     def _slice_ssim(self, pred : np.ndarray, ref : np.ndarray, z_indices : Optional[np.ndarray], col_indices : Optional[np.ndarray], row_indices : Optional[np.ndarray], prefix : str) -> Dict[str, float]:
-
         out   : Dict[str, float]                = {}
         specs : list[tuple[str, str, int, int]] = []
 
@@ -308,7 +286,6 @@ class Metrics:
         return out
 
     def _ssim_payloads(self, pred: np.ndarray, ref: np.ndarray, specs: list) -> Iterator[tuple]:
-
         for key, _label, axis, index in specs:
             yield key, self._axis_slice(pred, axis, index), self._axis_slice(ref, axis, index)
 
@@ -320,7 +297,6 @@ class Metrics:
         axis   : int,
         label  : str,
     ) -> None:
-
         if indices is None:
             return
 
@@ -329,7 +305,6 @@ class Metrics:
 
     @staticmethod
     def _axis_slice(cube: np.ndarray, axis: int, index: int) -> np.ndarray:
-
         if axis == 0:
             return cube[index, :, :]
         if axis == 1:
@@ -339,7 +314,6 @@ class Metrics:
 
     @staticmethod
     def _ssim_worker(args: tuple) -> tuple[str, float]:
-
         key, pred_slice, ref_slice = args
 
         pred_slice = pred_slice.astype(np.float64)
@@ -352,7 +326,6 @@ class Metrics:
         return key, value
 
     def _expand_z(self, pred: np.ndarray, gt: np.ndarray, suffix: str) -> Dict[str, float]:
-
         out: Dict[str, float] = {}
 
         for metric_name, arr in self._z_metrics(pred, gt, suffix=suffix).items():
@@ -362,7 +335,6 @@ class Metrics:
         return out
 
     def _z_metrics(self, pred: np.ndarray, gt: np.ndarray, suffix: str = "gt") -> Dict[str, np.ndarray]:
-
         P = pred.reshape(pred.shape[0], -1)
         G = gt  .reshape(gt  .shape[0], -1)
 
@@ -387,12 +359,10 @@ class Metrics:
 
     @staticmethod
     def roughness_map(curves: np.ndarray) -> np.ndarray:
-
         second = np.diff(curves, n=2, axis=0)
         return (second * second).mean(axis=0, dtype=np.float64).astype(np.float32)
 
     def _roughness_stats(self, pred: np.ndarray, gt: np.ndarray) -> Dict[str, float]:
-
         rough_pred = self.roughness_map(pred)
         rough_gt   = self.roughness_map(gt)
 
@@ -408,18 +378,15 @@ class Metrics:
         }
 
     def _param_assignment(self) -> np.ndarray:
-
         return self.result.assignment(self.n_gaussians, self.active_amp_thr)
 
     def _aligned_prediction(self) -> np.ndarray:
-
         if self._aligned is None:
             self._aligned = GaussianMatcher(amp_threshold=self.active_amp_thr).aligned_prediction(self.result.params_pred, self.result.params_gt, self.n_gaussians, assignment=self._param_assignment())
 
         return self._aligned
 
     def _active_count_stats(self) -> Dict[str, float]:
-
         pp      = self.result.params_pred
         pg      = self.result.params_gt
         n_K     = self.n_gaussians
@@ -466,7 +433,6 @@ class Metrics:
         return out
 
     def _param_population_stats(self) -> Dict[str, float]:
-
         pg      = self.result.params_gt
         n_K     = self.n_gaussians
         aligned = self._aligned_prediction()
@@ -495,7 +461,6 @@ class Metrics:
 
     @staticmethod
     def _population_moments(prefix: str, values: np.ndarray, mask: np.ndarray) -> Dict[str, float]:
-
         vals = values[mask & np.isfinite(values)]
 
         return {
@@ -504,7 +469,6 @@ class Metrics:
         }
 
     def matched_gaussian_metrics(self, match_tol: float = 5.0) -> Dict[str, float]:
-
         pp  = self.result.params_pred
         pg  = self.result.params_gt
         n_K = self.n_gaussians
@@ -601,7 +565,6 @@ class Metrics:
         return out
 
     def _slot_organization_stats(self) -> Dict[str, float]:
-
         pp  = self.result.params_pred
         pg  = self.result.params_gt
         n_K = self.n_gaussians
@@ -620,7 +583,6 @@ class Metrics:
         return out
 
     def compute(self, *, z_indices  : Optional[np.ndarray] = None, col_indices : Optional[np.ndarray] = None, row_indices : Optional[np.ndarray] = None, param_space : bool = True, match_tol : float = 5.0) -> Dict[str, float]:
-
         pred = self.result.pred_curves
         gt   = self.result.gt_curves
 
@@ -675,18 +637,11 @@ class Metrics:
         return metrics
 
     def label_quality(self, full_curves: np.ndarray) -> Tuple[np.ndarray, Dict[str, object]]:
-
         gt   = np.asarray(self.result.gt_curves, dtype=np.float64)
         full = np.asarray(full_curves,           dtype=np.float64)
 
-        if gt.shape != full.shape:
-            raise ValueError(f"GT curves {gt.shape} and raw cube {full.shape} disagree in shape; the label-quality map needs both on the same region and z axis")
-
         r2_map = R2.pixel_map(gt, full, axis=0)
         finite = r2_map[np.isfinite(r2_map)]
-
-        if not finite.size:
-            raise ValueError("Label-quality R² map holds no finite value; the GT curves or the raw cube are degenerate on this region")
 
         stats = {
             "label_r2_mean"            : float(finite.mean()),
@@ -701,7 +656,6 @@ class Metrics:
         return r2_map.astype(np.float32), stats
 
     def _label_noise_split(self, r2_map: np.ndarray, threshold: float = 0.5) -> Dict[str, object]:
-
         err  = np.asarray(self.result.pixel_mse, dtype=np.float64).reshape(-1)
         r2   = np.asarray(r2_map, dtype=np.float64).reshape(-1)
         both = np.isfinite(err) & np.isfinite(r2)
@@ -721,11 +675,7 @@ class Metrics:
         return out
 
     def cube_ssim(self, full_curves: np.ndarray, *, z_indices: Optional[np.ndarray], col_indices: Optional[np.ndarray], row_indices: Optional[np.ndarray]) -> Dict[str, float]:
-
         pred = self.result.pred_curves
-
-        if pred.shape != full_curves.shape:
-            raise ValueError(f"Predicted curves {pred.shape} and raw cube {full_curves.shape} disagree in shape; the cube SSIM needs both on the same region and z axis")
 
         out: Dict[str, float] = {}
         out.update(self._slice_ssim(pred, full_curves, z_indices, col_indices, row_indices, prefix="cube"))

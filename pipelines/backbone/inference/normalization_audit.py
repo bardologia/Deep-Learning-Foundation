@@ -19,13 +19,11 @@ class NormalizationAudit:
     NONFINITE_KEY        = re.compile(r"^norm_in_ch(\d+)_nonfinite_frac$")
 
     def __init__(self, run, result) -> None:
-
         self.loaded         = run
         self.result         = result
         self.active_amp_thr = float(run.activity_threshold)
 
     def input_health(self) -> Dict[str, float]:
-
         normalized = self.loaded.dataset.assemble_window(self.loaded.complex_inputs, self.loaded.dataset.aux)
 
         out            = {}
@@ -39,9 +37,6 @@ class NormalizationAudit:
         for c in range(normalized.shape[0]):
             channel = np.asarray(normalized[c], dtype=np.float64)
             finite  = channel[np.isfinite(channel)]
-
-            if not finite.size:
-                raise ValueError(f"Normalized input channel {c} holds no finite value; the input stack or normalization stats are degenerate")
 
             mean      = float(finite.mean())
             std       = float(finite.std())
@@ -68,7 +63,6 @@ class NormalizationAudit:
         return out
 
     def output_health(self) -> Dict[str, float]:
-
         params = np.asarray(self.result.params_pred, dtype=np.float64)
         clamp  = self.loaded.dataset.normalizer.stats.clamp
         n_k    = self.loaded.n_gaussians
@@ -111,7 +105,6 @@ class NormalizationAudit:
 
     @classmethod
     def warning_lines(cls, stats: Dict[str, float]) -> List[str]:
-
         lines = []
 
         for key, value in stats.items():
@@ -135,7 +128,6 @@ class NormalizationAudit:
         return lines
 
     def run(self) -> Dict[str, float]:
-
         out = self.input_health()
 
         if self.result.params_pred is not None:

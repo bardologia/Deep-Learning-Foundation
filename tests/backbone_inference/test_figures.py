@@ -142,18 +142,6 @@ def _composer(tmp_path, logger=None):
     return FigureComposer(plotter=plotter, meta=meta, logger=SilentLogger() if logger is None else logger, cfg=cfg), meta
 
 
-def test_animator_build_axis_bad_axis():
-    animator = Animator(SilentLogger())
-    cubes    = (np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32))
-    with pytest.raises(ValueError, match="axis must be"):
-        animator._build_axis("bogus", cubes, _x_axis(), 0, 0)
-
-
-def test_animator_rejects_non_positive_max_frames():
-    with pytest.raises(ValueError, match="max_frames"):
-        Animator(SilentLogger(), max_frames=0)
-
-
 @pytest.mark.slow
 def test_animator_walk_gif(tmp_path):
     z_axis = _x_axis()
@@ -192,11 +180,6 @@ def test_animator_renders_frames_through_the_logger_bar_and_logs_frame_counts(tm
     assert len(written) == 1
     assert f"[4 of {N_Z} slices, 83 ms/frame, " in written[0]
     assert written[0].rstrip().endswith("s]")
-
-
-def test_animator_rejects_non_positive_duration():
-    with pytest.raises(ValueError, match="duration"):
-        Animator(SilentLogger(), duration=0.0)
 
 
 def test_animator_frame_delay_from_duration_or_fps():

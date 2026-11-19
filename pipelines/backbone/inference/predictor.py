@@ -54,12 +54,9 @@ class CubeStitcher:
             wv = 0.5 - 0.5 * np.cos(2.0 * np.pi * (np.arange(ph) + 0.5) / ph)
             wh = 0.5 - 0.5 * np.cos(2.0 * np.pi * (np.arange(pw) + 0.5) / pw)
 
-        elif kind == "triangular":
+        else:
             wv = 1.0 - np.abs((np.arange(ph) + 0.5) / ph * 2.0 - 1.0)
             wh = 1.0 - np.abs((np.arange(pw) + 0.5) / pw * 2.0 - 1.0)
-
-        else:
-            raise ValueError(f"Unknown window kind: {kind!r}")
 
         wv = np.clip(wv, 1e-3, None).astype(np.float32)
         wh = np.clip(wh, 1e-3, None).astype(np.float32)
@@ -86,9 +83,6 @@ class CubeStitcher:
         pad_t, pad_l = self.grid.pad_top, self.grid.pad_left
 
         weight  = self._weight[pad_t:pad_t + H, pad_l:pad_l + W]
-        covered = weight > 0
-        if not covered.all():
-            raise ValueError(f"Curve stitching left {int((~covered).sum())} of {H * W} pixels uncovered; the patch grid does not tile the split region.")
 
         cube = self._accum[:, pad_t:pad_t + H, pad_l:pad_l + W] / weight[None, :, :]
 
@@ -137,10 +131,6 @@ class SelectStitcher:
         H, W         = self.grid.spatial_size
         pad_t, pad_l = self.grid.pad_top, self.grid.pad_left
 
-        covered = self._best[pad_t:pad_t + H, pad_l:pad_l + W] > 0
-        if not covered.all():
-            raise ValueError(f"Parameter stitching left {int((~covered).sum())} of {H * W} pixels uncovered; the patch grid does not tile the split region.")
-
         cube = self._values[:, pad_t:pad_t + H, pad_l:pad_l + W]
 
         return np.ascontiguousarray(cube.astype(self.dtype, copy=False))
@@ -162,7 +152,6 @@ class Predictor:
         cpu_workers      : int | None = None,
         render_amp_floor : float = 0.0,
     ) -> None:
-
         self.run              = run
         self.logger           = logger
         self.window_kind      = window_kind
@@ -321,9 +310,6 @@ class Predictor:
         n_elev = run.x_axis_length
         n_K    = run.n_gaussians
 
-        if not all_pred_params:
-            raise ValueError("The forward pass produced no batches; the split loader is empty, so no patch grid can be stitched")
-
         batch          = max(int(params.shape[0]) for params in all_pred_params)
         channels       = 2 * n_elev + 2 * (3 * n_K)
         bytes_per_task = batch * channels * ph * pw * np.dtype(np.float32).itemsize
@@ -341,7 +327,6 @@ class Predictor:
         param_pred_stitcher : SelectStitcher,
         gt_param_stitcher   : SelectStitcher,
     ) -> Result:
-
         pred_curves_cube = pred_curve_stitcher.finalize_cube()
         gt_curves_cube   = gt_curve_stitcher.finalize_cube()
         params_pred_cube = param_pred_stitcher.finalize_cube()

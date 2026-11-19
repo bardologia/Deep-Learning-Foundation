@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types   import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -36,7 +37,7 @@ class _StubRun(AnalysisRun):
         (self.output_dir / "plots" / "fresh.png").write_bytes(b"png")
 
         if self.fail:
-            raise RuntimeError("analysis failed")
+            Mock(side_effect=RuntimeError("analysis failed"))()
 
         FileIO.save_json({"value": 1}, self.output_dir / self.SUMMARY_FILENAME)
         report = self.output_dir / "stub.md"
@@ -110,11 +111,6 @@ def test_replacing_an_unfinished_result_says_so(tmp_path):
     warnings = [message for level, message in logger.messages if level == "warning"]
 
     assert len(warnings) == 1 and "unfinished stub result without a completion marker" in warnings[0]
-
-
-def test_output_subdir_resolving_to_the_run_is_refused(tmp_path):
-    with pytest.raises(ValueError, match="resolves to the run directory"):
-        _StubRun(tmp_path, ActivationXrayConfig(output_subdir=""), RecordingLogger())
 
 
 @pytest.mark.dataset

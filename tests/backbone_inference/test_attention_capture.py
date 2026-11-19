@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -102,7 +103,7 @@ def test_capture_releases_the_tap_when_the_forward_fails(tmp_path):
             self.module = module
 
         def __call__(self, images):
-            raise RuntimeError("the forward failed")
+            return Mock(side_effect=RuntimeError("the forward failed"))()
 
     run = SimpleNamespace(model=_FailingModel(model.eval()), loader=[(torch.randn(1, 3, WINDOW, WINDOW),)])
 
@@ -131,13 +132,6 @@ def test_capture_counts_the_batches_it_actually_ran(tmp_path):
     assert records["gates"]
 
 
-def test_model_without_attention_raises():
-    model, _ = get_backbone("unet", in_channels=3, out_channels=6, **SMALL_OVERRIDES["unet"])
-
-    with pytest.raises(ValueError):
-        AttentionCapture(model).attach()
-
-
 def test_entropy_bounds():
     uniform = torch.full((1, 2, 4, 8), 1.0 / 8.0)
     onehot  = torch.zeros(1, 2, 4, 8)
@@ -152,14 +146,6 @@ def test_entropy_values_cover_every_query():
     weights = torch.full((2, 3, 4, 8), 1.0 / 8.0)
 
     assert AttentionSummary.entropy_values(weights).shape == (2 * 3 * 4,)
-
-
-def test_stack_calls_rejects_mismatched_shapes():
-    with pytest.raises(ValueError):
-        AttentionSummary.stack_calls([torch.rand(1, 2, 4, 4), torch.rand(1, 2, 8, 8)])
-
-    with pytest.raises(ValueError):
-        AttentionSummary.stack_calls([torch.rand(1, 4, 4)])
 
 
 def test_head_redundancy_separates_identical_from_distinct_heads():

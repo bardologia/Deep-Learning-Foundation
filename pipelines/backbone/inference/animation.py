@@ -96,12 +96,6 @@ class Animator:
         separate_panels : bool = False,
         num_workers     : int | None = None,
     ) -> None:
-        if max_frames < 1:
-            raise ValueError(f"max_frames must be >= 1, got {max_frames}; use a large value instead of 0 to leave GIFs uncapped.")
-
-        if duration is not None and duration <= 0.0:
-            raise ValueError(f"duration must be positive seconds or None, got {duration}.")
-
         self.logger          = logger
         self.cmap            = cmap
         self.err_cmap        = err_cmap
@@ -152,18 +146,15 @@ class Animator:
                 origin    = "lower",
             )
 
-        if axis == "row":
-            return dict(
-                n_total   = row,
-                get_slice = lambda i: self._slice_row(cubes, sort_idx, i),
-                extent    = [col_offset, col_offset + col, float(z_axis[0]), float(z_axis[-1])],
-                x_label   = "col index",
-                y_label   = "z",
-                title_fn  = lambda i: f"row = {i + row_offset}",
-                origin    = "lower",
-            )
-
-        raise ValueError(f"axis must be z|col|row, got {axis!r}")
+        return dict(
+            n_total   = row,
+            get_slice = lambda i: self._slice_row(cubes, sort_idx, i),
+            extent    = [col_offset, col_offset + col, float(z_axis[0]), float(z_axis[-1])],
+            x_label   = "col index",
+            y_label   = "z",
+            title_fn  = lambda i: f"row = {i + row_offset}",
+            origin    = "lower",
+        )
 
     @staticmethod
     def _slice_z(cubes: tuple, i: int) -> tuple:

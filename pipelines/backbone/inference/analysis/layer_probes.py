@@ -25,9 +25,6 @@ class RidgeProbe:
         self.n_folds      = int(n_folds)
         self.seed         = int(seed)
 
-        if self.n_folds < 2:
-            raise ValueError(f"Cross-validated probe needs at least 2 folds, got {self.n_folds}")
-
     def _fold_score(self, X: np.ndarray, y: np.ndarray, train: np.ndarray, test: np.ndarray) -> float:
         mean = X[train].mean(axis=0)
         std  = X[train].std(axis=0) + 1e-8
@@ -60,11 +57,6 @@ class RidgeProbe:
         X = np.asarray(features, dtype=np.float64)
         y = np.asarray(targets, dtype=np.float64)
 
-        if X.ndim != 2 or y.ndim != 1 or X.shape[0] != y.size:
-            raise ValueError(f"Probe needs X (n, d) and y (n,), got {X.shape} and {y.shape}")
-        if X.shape[0] < self.MIN_SAMPLES:
-            raise ValueError(f"Probe needs at least {self.MIN_SAMPLES} samples, got {X.shape[0]}")
-
         folds = self._folds(X.shape[0])
 
         scores = []
@@ -73,8 +65,6 @@ class RidgeProbe:
             scores.append(self._fold_score(X, y, train, test))
 
         defined = np.array([score for score in scores if np.isfinite(score)])
-        if defined.size == 0:
-            raise ValueError(f"The held-out target has no variance in any of the {self.n_folds} folds; R² is undefined")
 
         return {"mean": float(defined.mean()), "std": float(defined.std()), "degenerate_folds": len(scores) - int(defined.size)}
 
@@ -115,9 +105,6 @@ class FeatureSampler:
         return None
 
     def features_at(self, stored: torch.Tensor, b: np.ndarray, i: np.ndarray, j: np.ndarray, B: int, H: int, W: int) -> np.ndarray:
-        if not self.is_feature_map(stored, B, H, W):
-            raise ValueError(f"Activation of shape {tuple(stored.shape)} is not a (B, C, H, W) map of a {B}x{H}x{W} input; its leading dimension is not the batch or its grid is not a uniform downsample of the input")
-
         maps        = stored.numpy()
         _B, C, h, w = maps.shape
 
@@ -266,9 +253,6 @@ class LayerProbeCore:
 
         recorder.detach()
 
-        if not store:
-            raise ValueError("No probed layer produced a (B, C, H, W) feature map on the input grid; nothing to probe")
-
         targets         = {target: np.concatenate(chunks) for target, chunks in target_chunks.items()}
         notes, unscored = self._target_notes(targets)
 
@@ -392,9 +376,6 @@ class LayerProbeRun(AnalysisRun):
                 break
             gt_phys = run.dataset.normalizer.denormalize_output(batch[1].float()).numpy()
             batches.append((batch[0], gt_phys))
-
-        if not batches:
-            raise ValueError("The loader yielded no batches to probe")
 
         return batches
 

@@ -81,7 +81,6 @@ class SlicePlotter(PlotTools):
         q_low      : float = 1.0,
         q_high     : float = 99.0,
     ) -> Path:
-
         H, W   = metric_map.shape
         extent = [col_offset, col_offset + W, row_offset + H, row_offset]
 
@@ -147,7 +146,6 @@ class SlicePlotter(PlotTools):
         return paths
 
     def _amplitude_panel(self, channel: np.ndarray, title: str, path: Path, extent: list) -> Path:
-
         amplitude  = np.abs(channel).astype(np.float32)
         vmin, vmax = self._amplitude_clim(amplitude)
 
@@ -195,8 +193,6 @@ class SlicePlotter(PlotTools):
         vmin, vmax = self._shared_clim(gt_slice, pred_slice)
 
         err_finite = err_gt_slice[np.isfinite(err_gt_slice)]
-        if err_finite.size == 0:
-            raise ValueError(f"Slice '{stem}' has no finite error values; the prediction slice is entirely NaN against the reference.")
 
         emax_gt  = float(np.percentile(err_finite, 99.0))
         ssim_str = f"   SSIM = {ssim_value:.4f}" if ssim_value is not None and np.isfinite(ssim_value) else ""
@@ -255,16 +251,13 @@ class SlicePlotter(PlotTools):
             x_extent_lo, x_extent_hi = row_offset, row_offset + pred_slice.shape[1]
             title_pos                = f"col = {index + col_offset}"
 
-        elif axis == "row":
+        else:
             pred_slice = pred_cube[:, index, :]
             gt_slice   = gt_cube  [:, index, :]
             full_slice = full_cube[:, index, :] if full_cube is not None else None
             x_label    = "col index"
             x_extent_lo, x_extent_hi = col_offset, col_offset + pred_slice.shape[1]
             title_pos                = f"row = {index + row_offset}"
-
-        else:
-            raise ValueError(f"axis must be 'col' or 'row', got {axis!r}")
 
         sort_idx      = np.argsort(z_axis)
         x_axis_sorted = z_axis[sort_idx]
@@ -337,7 +330,6 @@ class SlicePlotter(PlotTools):
         )
 
     def plot_metric_histograms(self, metric_arrays: Dict[str, np.ndarray], out_dir: Path) -> List[Path]:
-
         paths = []
 
         for name, arr in metric_arrays.items():
@@ -375,7 +367,6 @@ class SlicePlotter(PlotTools):
         prefix         : str = "gt",
         series_label   : str = "pred × GT (Gaussian)",
     ) -> Path:
-
         vals_gt = np.array([global_metrics[f"ssim_{prefix}_{axis}_{i}"]  for i in range(n_slices)], dtype=np.float64)
         x_phys  = slice_indices.astype(np.float64) + ax_offset
 

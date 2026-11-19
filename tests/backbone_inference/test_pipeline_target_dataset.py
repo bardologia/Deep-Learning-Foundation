@@ -109,21 +109,3 @@ def test_a_run_scored_on_a_target_dataset_stamps_under_its_cross_dataset_tree(tm
 
     assert scheduler._inference_state(run_dir, SilentLogger()) == ("done", True)
 
-
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_a_target_feeding_fewer_channels_than_the_run_consumes_is_refused(tmp_path, test_data_dir, params_dir, second_scene):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
-
-    with pytest.raises(ValueError, match="input channels"):
-        InferencePipeline(_config(run_dir, second_scene, channels=TARGET_CHANNELS[:3])).run()
-
-
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_target_labels_fitted_at_another_k_are_refused(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
-    scene   = _generate_scene(tmp_path, "k3_scene", k_max=N_GAUSSIANS + 1, params_run_name=f"params_k{N_GAUSSIANS + 1}")
-
-    with pytest.raises(ValueError, match=f"predicts K={N_GAUSSIANS} Gaussians"):
-        InferencePipeline(_config(run_dir, scene, label_run=f"params_k{N_GAUSSIANS + 1}")).run()

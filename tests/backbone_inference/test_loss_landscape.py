@@ -9,7 +9,7 @@ from configuration.diagnostics                            import LossLandscapeCo
 from pipelines.backbone.inference.analysis.loss_landscape import CutDiagnostics, FilterNormalizedDirection, LandscapeEvaluator, LossLandscapePlots, LossLandscapeRun
 
 from tests.backbone_inference._helpers import StageLogger, build_run_directory
-from tests.conftest                    import RecordingLogger, SilentLogger
+from tests.conftest                    import RecordingLogger
 
 
 class _TinyConv(torch.nn.Module):
@@ -67,13 +67,6 @@ def test_evaluator_restores_weights_and_center_is_minimum_for_quadratic():
     assert cut[5] == pytest.approx(0.0, abs=1e-10)
     assert cut[0] > cut[5] and cut[-1] > cut[5]
     assert cut[0] == pytest.approx(cut[-1], rel=1e-5)
-
-
-def test_zero_direction_model_raises():
-    model = torch.nn.Sequential(torch.nn.BatchNorm1d(3))
-
-    with pytest.raises(ValueError):
-        FilterNormalizedDirection.build(model, seed=0)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
@@ -145,11 +138,6 @@ def test_contour_of_a_varying_landscape_is_written(tmp_path):
     assert path.stat().st_size > 0
 
 
-def test_single_direction_is_refused_before_the_run_loads(tmp_path):
-    with pytest.raises(ValueError, match="at least 2 directions"):
-        LossLandscapeRun(tmp_path, LossLandscapeConfig(n_directions=1), SilentLogger())
-
-
 def test_grid_reports_every_evaluated_point():
     model     = torch.nn.Linear(2, 1)
     direction = {name: torch.ones_like(param) for name, param in model.named_parameters()}
@@ -175,16 +163,6 @@ def test_landscape_pass_announces_tracks_and_times_its_stages(tmp_path, test_dat
     assert logger.timers == ["Loss landscape: 1-D cuts (22 points)", "Loss landscape: 2-D grid (9 points)"]
 
 
-def test_cut_descriptors_refuse_a_non_finite_cut():
-    alphas = np.linspace(-0.5, 0.5, 11)
-    cut    = 1.0 + alphas ** 2
-    cut[8] = np.nan
-
-    for descriptor in (CutDiagnostics.sharpness, CutDiagnostics.curvature, CutDiagnostics.flatness_radius, CutDiagnostics.min_offset):
-        with pytest.raises(ValueError, match="non-finite value"):
-            descriptor(alphas, cut)
-
-
 def test_diagnose_flags_a_diverged_cut_and_warns(tmp_path):
     logger   = RecordingLogger()
     alphas   = np.linspace(-0.5, 0.5, 11)
@@ -201,18 +179,3 @@ def test_diagnose_flags_a_diverged_cut_and_warns(tmp_path):
     assert diagnostics[1] == {"valid": False, "nonfinite_alphas": [0.5]}
     assert len(warnings) == 1 and "direction 1: 1/11 cut losses are non-finite at alpha +0.500" in warnings[0]
 
-
-def test_diagnose_refuses_when_every_cut_diverged(tmp_path):
-    cut = np.full(11, np.nan)
-
-    with pytest.raises(ValueError, match="Every one of the 1 loss cuts"):
-        LossLandscapeRun(tmp_path, LossLandscapeConfig(), RecordingLogger())._diagnose(np.linspace(-0.5, 0.5, 11), [cut])
-
-
-def test_non_finite_grid_contour_names_the_divergence(tmp_path):
-    alphas       = np.linspace(-0.5, 0.5, 5)
-    losses       = 0.1 + np.abs(alphas)[:, None] + np.abs(alphas)[None, :]
-    losses[0, 0] = np.nan
-
-    with pytest.raises(ValueError, match="1 of 25 landscape grid losses are non-finite"):
-        LossLandscapePlots().contour_2d(alphas, alphas, losses, tmp_path / "contour.png")

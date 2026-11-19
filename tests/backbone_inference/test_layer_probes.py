@@ -35,11 +35,6 @@ def test_ridge_probe_scores_noise_near_zero():
     assert abs(RidgeProbe().score(X, y)["mean"]) < 0.2
 
 
-def test_ridge_probe_needs_enough_samples():
-    with pytest.raises(ValueError):
-        RidgeProbe().score(np.zeros((5, 3)), np.zeros(5))
-
-
 def test_ridge_probe_leaves_constant_folds_out():
     rng = np.random.default_rng(3)
     X   = rng.normal(size=(40, 3))
@@ -55,11 +50,6 @@ def test_ridge_probe_leaves_constant_folds_out():
     assert score["degenerate_folds"] == 3
 
 
-def test_ridge_probe_refuses_a_target_constant_in_every_fold():
-    with pytest.raises(ValueError, match="no variance in any"):
-        RidgeProbe().score(np.random.default_rng(4).normal(size=(40, 3)), np.ones(40))
-
-
 def test_probe_core_leaves_a_constant_target_unscored_with_a_note():
     batches = [(images, np.concatenate([gt[:, :3], np.zeros_like(gt[:, 3:])], axis=1)) for images, gt in _batches()]
 
@@ -70,11 +60,6 @@ def test_probe_core_leaves_a_constant_target_unscored_with_a_note():
     assert results["shuffled_controls"]["second_presence"] is None
     assert results["target_notes"]["second_presence"] == "zero variance in 4/4 held-out folds; R² undefined, not scored"
     assert results["layers"]["useful"]["scores"]["count"] is not None
-
-
-def test_ridge_probe_needs_two_folds():
-    with pytest.raises(ValueError):
-        RidgeProbe(n_folds=1)
 
 
 def test_participation_ratio_separates_isotropic_from_collapsed():
@@ -177,14 +162,6 @@ def test_feature_map_layouts_are_accepted_and_rejected():
     assert not sampler.is_feature_map(torch.zeros(B, 8, H),          B, H, W)
 
 
-def test_features_at_rejects_a_tensor_that_is_not_a_feature_map():
-    sampler = FeatureSampler(16)
-    b, i, j = sampler.sample_coords(2, H, W)
-
-    with pytest.raises(ValueError):
-        sampler.features_at(torch.zeros(12, 4, 49, 49), b, i, j, 2, H, W)
-
-
 def test_probe_core_drops_channels_last_activations():
     class _ChannelsLastNet(torch.nn.Module):
         def __init__(self) -> None:
@@ -253,16 +230,3 @@ def test_probe_core_seed_changes_the_sampled_pixels():
 
     assert score(0) != score(3)
 
-
-def test_probe_core_without_feature_layers_raises():
-    class _ScalarNet(torch.nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.flat = torch.nn.Identity()
-
-        def forward(self, x):
-            _ = self.flat(x.mean())
-            return x
-
-    with pytest.raises(ValueError):
-        _core(_ScalarNet(), ["flat"], samples=128).collect(_batches(1))

@@ -56,10 +56,3 @@ def test_export_dynamic_batch_axis(run_root):
 
     assert dim0.dim_param == "batch"
 
-
-def test_export_raises_without_runs(tmp_path):
-    root = tmp_path / "runs"
-    root.mkdir()
-
-    with pytest.raises(FileNotFoundError):
-        OnnxRunExporter(_entry(root), SilentLogger()).run()

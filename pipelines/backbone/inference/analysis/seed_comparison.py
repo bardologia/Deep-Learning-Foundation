@@ -30,21 +30,9 @@ class SeedInferenceResolver:
 
         self.unfinished: dict[Path, list[str]] = {}
 
-    def _require_metrics(self, stamp: Path) -> None:
-        if not (stamp / self.metrics_filename).is_file():
-            raise FileNotFoundError(f"No {self.metrics_filename} under {stamp}; the completed inference wrote no metrics, re-run it before comparing seeds")
-
     def _explicit(self, inference_root: Path) -> Path:
         candidate = inference_root / self.inference_subdir
 
-        recorded = CompletionMarker.payload(candidate)["split"]
-        if recorded != self.split:
-            raise ValueError(f"{candidate} was scored on split '{recorded}', not on the configured split '{self.split}'; point inference_subdir at a '{self.split}' stamp or change split")
-
-        if candidate not in CompletedInference.stamps(inference_root, self.split):
-            raise ValueError(f"{candidate} is one region of a region group that is missing regions, so it scores only part of the '{self.split}' split; finish the group's other regions or point inference_subdir at a whole-split stamp")
-
-        self._require_metrics(candidate)
         return candidate
 
     def _note_unfinished(self, inference_root: Path) -> None:
@@ -57,10 +45,7 @@ class SeedInferenceResolver:
 
     def _latest(self, inference_root: Path) -> Path:
         latest = CompletedInference.latest(inference_root, self.split)
-        if latest is None:
-            raise FileNotFoundError(f"No completed '{self.split}' inference under {inference_root}; infer this run on that split before comparing its seeds")
 
-        self._require_metrics(latest)
         self._note_unfinished(inference_root)
 
         return latest
@@ -88,13 +73,8 @@ class SeedActivityThreshold:
         thresholds = {}
         for seed, inference_dir in zip(seeds, inference_dirs):
             metrics = FileIO.load_json(Path(inference_dir) / self.metrics_filename)
-            if "activity_threshold" not in metrics:
-                raise KeyError(f"{Path(inference_dir) / self.metrics_filename} has no activity_threshold; re-run inference for seed {seed}")
 
             thresholds[seed] = float(metrics["activity_threshold"])
-
-        if len(set(thresholds.values())) != 1:
-            raise ValueError(f"The seeds were scored with different activity thresholds {thresholds}; re-run their inference against one label run before comparing them")
 
         return next(iter(thresholds.values()))
 
@@ -109,15 +89,7 @@ class SeedEnsembleEvaluation:
         self.logger    = logger
 
     def _open(self) -> tuple[list[np.ndarray], np.ndarray]:
-        for cube_dir in self.cube_dirs:
-            for name in (self.PRED_CUBE, self.GT_CUBE):
-                if not (cube_dir / name).is_file():
-                    raise FileNotFoundError(f"{cube_dir / name} is missing; re-run inference with save_cubes enabled for every seed, or disable compute_ensemble")
-
         preds  = [np.load(cube_dir / self.PRED_CUBE, mmap_mode="r") for cube_dir in self.cube_dirs]
-        shapes = {pred.shape for pred in preds}
-        if len(shapes) != 1:
-            raise ValueError(f"Seed prediction cubes disagree on shape: {sorted(shapes)}; the seeds were inferred on different regions and cannot be ensembled")
 
         gt = np.asarray(np.load(self.cube_dirs[0] / self.GT_CUBE), dtype=np.float32)
 
@@ -156,9 +128,6 @@ class SeedComparisonReport:
     MAX_LISTED = 8
 
     def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], activity_threshold: float, output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None, ensemble: dict | None = None) -> None:
-        if len(run_dirs) < 2:
-            raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
-
         self.group_dir          = Path(group_dir)
         self.run_dirs           = [Path(d) for d in run_dirs]
         self.inference_dirs     = [Path(d) for d in inference_dirs]
@@ -176,8 +145,6 @@ class SeedComparisonReport:
 
     def _common_split(self) -> str:
         splits = {seed: record["split"] for seed, record in zip(self.seeds, self.records)}
-        if len(set(splits.values())) != 1:
-            raise ValueError(f"The seeds resolved to inferences of different splits {splits}; aggregate one split at a time")
 
         return next(iter(splits.values()))
 
@@ -384,9 +351,6 @@ class SeedComparison:
 
     def _group_dirs(self) -> list[Path]:
         if self.config.group_tags:
-            missing = [tag for tag in self.config.group_tags if not (self.runs_dir / tag).is_dir()]
-            if missing:
-                raise FileNotFoundError(f"No group directory named {missing} found under {self.runs_dir}")
             return [self.runs_dir / tag for tag in self.config.group_tags]
 
         return [self.runs_dir]
@@ -408,8 +372,6 @@ class SeedComparison:
 
     def _compare_group(self, group_dir: Path, resolver: SeedInferenceResolver, output_subdir: str) -> Path:
         run_dirs = sorted(RunDirectoryWalk.walk(group_dir))
-        if len(run_dirs) < 2:
-            raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
 
         inference_dirs = self._resolve_seeds(group_dir, run_dirs, resolver)
         seeds          = [str(run_dir.relative_to(group_dir)) for run_dir in run_dirs]

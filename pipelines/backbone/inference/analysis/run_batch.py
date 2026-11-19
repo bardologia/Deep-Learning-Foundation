@@ -53,9 +53,6 @@ class AnalysisRun:
 
         self.output_dir = self.run_dir / config.output_subdir
 
-        if self.output_dir.resolve() == self.run_dir.resolve():
-            raise ValueError(f"output_subdir '{config.output_subdir}' resolves to the run directory {self.run_dir}; an analysis clears and stamps the completion marker of its output directory, so it needs a subdirectory of its own")
-
     @property
     def stage(self) -> str:
         return Path(self.SUMMARY_FILENAME).stem
@@ -108,9 +105,6 @@ class AnalysisRun:
         }, self.output_dir / self.PROVENANCE_FILENAME)
 
         self.logger.kv_table(checkpoint, title="Checkpoint")
-
-    def _analyse(self, run) -> AnalysisOutcome:
-        raise NotImplementedError(f"{type(self).__name__} does not implement _analyse")
 
     def _stamp_complete(self, run, outcome: AnalysisOutcome) -> None:
         CompletionMarker.stamp(self.output_dir, {

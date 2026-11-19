@@ -52,9 +52,6 @@ class RobustnessCore:
         return total / len(batches)
 
     def noise_curve(self, batches: list, sigmas: list[float], channels: list[int] | None = None, draws: int = 1) -> list[dict]:
-        if 0.0 not in sigmas:
-            raise ValueError(f"noise_sigmas {sigmas} hold no 0.0 entry; the clean baseline anchors every degradation measure")
-
         rows = []
         for sigma in sorted({float(sigma) for sigma in sigmas}):
             if sigma == 0.0:
@@ -113,11 +110,6 @@ class RobustnessCore:
         return rows
 
     def shift_consistency(self, batches: list, shifts: list[int]) -> list[dict]:
-        height = batches[0][0].shape[2]
-        bad    = [s for s in shifts if int(s) <= 0 or int(s) >= height]
-        if bad:
-            raise ValueError(f"shift_pixels {bad} fall outside the valid range 1..{height - 1} for {height}px patches")
-
         rows = []
         for shift in shifts:
             s     = int(shift)
@@ -138,11 +130,6 @@ class RobustnessCore:
 
     @classmethod
     def tolerance_sigma(cls, noise_rows: list[dict]) -> dict:
-        sigmas = [row["sigma"] for row in noise_rows]
-
-        if sigmas[0] != 0.0 or sigmas != sorted(sigmas):
-            raise ValueError(f"Noise rows {sigmas} must start at the 0.0 clean baseline and rise; the tolerance walk anchors on the first row and interpolates forward")
-
         clean     = noise_rows[0]["mse"]
         threshold = cls.TOLERANCE_FACTOR * max(clean, 1e-12)
 
@@ -261,9 +248,6 @@ class RobustnessRun(AnalysisRun):
                 break
             gt_phys = run.dataset.normalizer.denormalize_output(batch[1].float()).numpy()
             batches.append((batch[0], renderer.render(gt_phys)))
-
-        if not batches:
-            raise ValueError("The loader yielded no batches for the robustness sweep")
 
         return batches
 

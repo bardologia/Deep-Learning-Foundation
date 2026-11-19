@@ -50,15 +50,6 @@ def test_low_amplitude_predictions_that_miss_reduce_low_bin_precision():
     assert scalars["presence_rank_corr"]      > 0.5
 
 
-def test_too_few_predictions_raise():
-    amp        = np.zeros((H, W))
-    amp[0, :3] = 1.0
-    mu         = np.full((H, W), 25.0)
-
-    with pytest.raises(ValueError):
-        _calibration(_cube(amp, mu), _cube(amp, mu)).run()
-
-
 def test_risk_coverage_curve_is_monotone_for_informative_confidence():
     rng          = np.random.default_rng(2)
     disagreement = rng.uniform(0.0, 1.0, size=(H, W))

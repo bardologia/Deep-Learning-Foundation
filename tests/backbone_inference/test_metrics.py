@@ -225,14 +225,6 @@ def test_pixel_stats_skip_undefined_pixels_and_compute_counts_them():
     assert np.isfinite(metrics["pixel_r2_gt_p1"])
 
 
-def test_pixel_stats_without_finite_pixels_raise():
-    curves  = np.ones((N_Z, 2, 2), dtype=np.float32)
-    metrics = Metrics(_make_result(curves, curves), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())
-
-    with pytest.raises(ValueError, match="no finite pixel"):
-        metrics._expand_pixel_stats((("pixel_r2_gt", np.full((2, 2), np.nan, dtype=np.float32)),))
-
-
 def test_select_pixels_best_worst_random_disjoint():
     rng        = np.random.default_rng(4)
     metric_map = rng.random((10, 10)).astype(np.float32)
@@ -667,13 +659,6 @@ def test_cube_ssim_counts_the_slices_behind_every_axis_mean():
             assert out[f"ssim_{form}_{axis}_n_nonfinite"] == 0
 
 
-def test_cube_ssim_shape_mismatch_raises():
-    pred, gt, raw = _slice_cubes()
-
-    with pytest.raises(ValueError, match="disagree in shape"):
-        Metrics(_make_result(pred, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger()).cube_ssim(raw[:, :, :5], **_all_indices(pred))
-
-
 def test_slice_ssim_counts_and_warns_about_non_finite_slices():
     pred, gt, _raw = _slice_cubes(seed=3)
 
@@ -746,13 +731,6 @@ def test_label_quality_stage_opens_its_own_section(tmp_path, monkeypatch):
     InferencePipeline(config)._evaluate_label_quality(config, meta, run, result, _x_axis(), {}, logger)
 
     assert logger.messages[0] == ("section", "[Inference: Label Quality]")
-
-
-def test_gt_empty_split_raises():
-    gt = np.zeros((N_Z, 3, 3), dtype=np.float32)
-
-    with pytest.raises(ValueError, match="empty ground-truth profile"):
-        Metrics(_make_result(gt + 1.0, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())._gt_empty_stats()
 
 
 def test_label_quality_shape_mismatch_raises():

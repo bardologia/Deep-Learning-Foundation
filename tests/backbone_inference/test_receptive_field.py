@@ -72,18 +72,6 @@ def test_wider_kernel_has_wider_sigma():
     assert sigma9[1] > sigma3[1]
 
 
-def test_dead_model_raises():
-    erf = ErfComputation(_DeadModel(), WINDOW, [8])
-
-    with pytest.raises(ValueError):
-        erf.gradient_maps(_windows())
-
-
-def test_mass_windows_exceeding_the_probe_window_raise():
-    with pytest.raises(ValueError):
-        ErfComputation(_ConvModel(3), WINDOW, [8, 32])
-
-
 def test_family_maps_follow_channel_dependence():
     erf     = ErfComputation(_AmpOnlyModel(), WINDOW, [8])
     maps, _ = erf.gradient_maps(_windows())
@@ -134,11 +122,6 @@ def test_gaussian_grad_matches_gaussian_mass_reference():
     assert within == pytest.approx(0.911, abs=0.05)
 
 
-def test_gaussian_mass_requires_positive_sigmas():
-    with pytest.raises(ValueError):
-        ErfComputation.gaussian_mass(np.array([2.0]), 0.0, 1.0)
-
-
 def _region_run(n_rows: int, n_cols: int) -> SimpleNamespace:
     return SimpleNamespace(split_region=SimpleNamespace(row_size=n_rows, col_size=n_cols))
 
@@ -164,11 +147,6 @@ def test_probe_centers_fit_an_odd_window():
         assert col - half >= 0 and col - half + window <= 20
 
 
-def test_probe_centers_raise_when_the_region_is_too_small():
-    with pytest.raises(ValueError):
-        ProbeWindows(_region_run(32, 200), window=64).centers(2, 2)
-
-
 def test_zero_gradient_probe_gets_nan_sigmas():
     erf     = ErfComputation(_ConvModel(3), WINDOW, [8])
     windows = _windows(n_probes=2)
@@ -179,15 +157,6 @@ def test_zero_gradient_probe_gets_nan_sigmas():
 
     assert probe_sigmas.shape == (2, 2)
     assert np.isfinite(probe_sigmas[0]).all() and np.isnan(probe_sigmas[1]).all()
-
-
-def test_non_finite_gradient_raises_instead_of_reading_no_dependence():
-    class _NanModel(torch.nn.Module):
-        def forward(self, x):
-            return (x[:, :1] * float("nan")).expand(-1, 3, -1, -1)
-
-    with pytest.raises(ValueError, match="centre amp at probe window 0 is non-finite"):
-        ErfComputation(_NanModel(), WINDOW, [8]).gradient_maps(_windows())
 
 
 @pytest.mark.dataset

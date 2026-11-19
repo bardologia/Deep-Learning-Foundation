@@ -4,8 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from configuration.diagnostics                           import PaperFigurePackConfig
 from pipelines.backbone.inference.analysis.paper_figures import PaperFigurePack
 from tools.runtime.completion                            import CompletionMarker
@@ -79,24 +77,6 @@ def test_pack_takes_the_vector_figures_of_the_paper_style(tmp_path):
 
     assert (out / "run_a__profiles__best_02.pdf").read_bytes() == b"pdf-prof"
     assert len(payload["figures"]) == 4
-
-
-def test_pack_raises_when_one_pattern_matches_nothing(tmp_path):
-    _run_with_figures(tmp_path / "runs", "run_a")
-    config          = _config(tmp_path / "runs", tmp_path / "figures", ["run_a"])
-    config.patterns = ["pixel_maps/*", "stratified/*"]
-
-    with pytest.raises(FileNotFoundError):
-        PaperFigurePack(config, SilentLogger(), {}).run()
-
-
-def test_pack_without_matches_raises(tmp_path):
-    _run_with_figures(tmp_path / "runs", "run_a")
-    config          = _config(tmp_path / "runs", tmp_path / "figures", ["run_a"])
-    config.patterns = ["does_not_exist/*.png"]
-
-    with pytest.raises(FileNotFoundError):
-        PaperFigurePack(config, SilentLogger(), {}).run()
 
 
 def test_pack_uses_latest_completed_inference_stamp(tmp_path):

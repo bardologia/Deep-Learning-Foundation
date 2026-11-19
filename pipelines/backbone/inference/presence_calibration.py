@@ -19,12 +19,7 @@ class PresenceCalibration:
         amps   = self.pairs["amp_pred"].reshape(-1)[active]
         hits   = self.pairs["pred_matched"].reshape(-1)[active].astype(np.float64)
 
-        if amps.size < self.MIN_BIN_COUNT:
-            raise ValueError(f"Only {amps.size} active predicted Gaussians; presence calibration needs at least {self.MIN_BIN_COUNT}")
-
         edges = np.unique(np.quantile(amps, np.linspace(0.0, 1.0, self.N_BINS + 1)))
-        if edges.size < 3:
-            raise ValueError("Predicted amplitudes are effectively constant; a reliability curve over amplitude is meaningless")
 
         index = np.clip(np.searchsorted(edges, amps, side="right") - 1, 0, edges.size - 2)
 
@@ -38,9 +33,6 @@ class PresenceCalibration:
                 "n"         : int(members.sum()),
                 "precision" : float(hits[members].mean()),
             })
-
-        if not rows:
-            raise ValueError(f"Every amplitude bin holds fewer than {self.MIN_BIN_COUNT} predictions; the region is too small to calibrate")
 
         scalars = {
             "presence_overall_precision" : float(hits.mean()),

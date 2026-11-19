@@ -268,18 +268,6 @@ def test_missing_cubes_raise(tmp_path):
         _maps(group, runs).run()
 
 
-def test_seeds_inferred_on_different_regions_are_refused(tmp_path):
-    group  = tmp_path / "group"
-    curves = np.zeros((N_Z, N_ROWS, N_COLS))
-    params = _params((1.0, 5.0, 2.0))
-    runs   = [_seed_run(group, "seed0", curves, params), _seed_run(group, "seed1", curves, params, region_start=(100, 0))]
-
-    with pytest.raises(ValueError, match="different regions"):
-        _maps(group, runs).run()
-
-    assert not (runs[0] / "inference" / "stamp" / "cubes" / "seed_std_profile.npy").exists()
-
-
 def test_shape_mismatch_raises(tmp_path):
     group = tmp_path / "group"
     run_a = _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))

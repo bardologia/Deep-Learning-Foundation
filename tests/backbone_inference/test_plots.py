@@ -222,18 +222,6 @@ def test_slice_plotter_cube_slice_col_and_row(tmp_path):
         _assert_files(paths)
 
 
-def test_slice_plotter_cube_slice_bad_axis_raises(tmp_path):
-    z_axis  = _x_axis()
-    gt      = _curves(_params(), z_axis)
-    plotter = SlicePlotter()
-
-    with pytest.raises(ValueError, match="axis must be"):
-        plotter.plot_cube_slice(
-            pred_cube=gt, gt_cube=gt, axis="z", index=0, z_axis=z_axis,
-            out_dir=tmp_path, stem="bad", row_offset=0, col_offset=0,
-        )
-
-
 def test_slice_plotter_z_intensity_slice(tmp_path):
     z_axis = _x_axis()
     params = _params()

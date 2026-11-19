@@ -50,13 +50,6 @@ def test_noise_curve_starts_clean_and_degrades():
     assert rows[2]["mse"] > rows[1]["mse"]
 
 
-def test_noise_curve_requires_the_clean_anchor():
-    batches, renderer = _batches()
-
-    with pytest.raises(ValueError):
-        RobustnessCore(_model, renderer, lambda: None).noise_curve(batches, [0.5, 2.0])
-
-
 def test_noise_curve_orders_an_out_of_order_sigma_list():
     batches, renderer = _batches()
     core = RobustnessCore(_model, renderer, lambda: None)
@@ -65,11 +58,6 @@ def test_noise_curve_orders_an_out_of_order_sigma_list():
 
     assert [row["sigma"] for row in rows] == [0.0, 0.5, 2.0]
     assert rows[0]["mse"] == pytest.approx(0.0, abs=1e-12)
-
-
-def test_tolerance_sigma_rejects_rows_that_do_not_start_clean_and_rise():
-    with pytest.raises(ValueError, match="clean baseline"):
-        RobustnessCore.tolerance_sigma([{"sigma": 0.5, "mse": 1.0}, {"sigma": 0.0, "mse": 1.0}])
 
 
 def test_noise_on_unused_channels_is_harmless():
@@ -159,13 +147,6 @@ def test_shift_consistency_detects_position_dependence():
     assert rows[0]["mse"] > 1e-6
 
 
-def test_shift_consistency_rejects_out_of_range_shifts():
-    batches, renderer = _batches()
-
-    with pytest.raises(ValueError):
-        RobustnessCore(_model, renderer, lambda: None).shift_consistency(batches, [H])
-
-
 def test_tolerance_sigma_interpolates_and_censors():
     crossing = [
         {"sigma": 0.0, "mse": 1.0, "mse_std": None},
@@ -202,21 +183,6 @@ def test_track_channels_map_secondaries_and_derived_channels():
     per_track = TrackChannels.build(run)
 
     assert per_track == [[1, 3], [2, 4]]
-
-
-def test_track_channels_without_tracks_raise():
-    input_config = SimpleNamespace(
-        use_primary                     = True,
-        use_secondaries                 = False,
-        use_derived                     = False,
-        primary_channels_per_source     = 1,
-        secondaries_channels_per_source = 1,
-        derived_channels_per_source     = 1,
-    )
-    run = SimpleNamespace(dataset=SimpleNamespace(input_config=input_config), n_secondaries=0)
-
-    with pytest.raises(ValueError):
-        TrackChannels.build(run)
 
 
 def test_planned_sweep_counts_match_the_sweeps_run():

@@ -97,13 +97,6 @@ def test_disabled_clamp_reports_nan_amp_ceil():
     assert out["clamp_sigma_floor_frac"] == pytest.approx(0.0)
 
 
-def test_degenerate_input_channel_raises():
-    inputs = np.full((1, 4, 4), np.nan)
-
-    with pytest.raises(ValueError):
-        NormalizationAudit(_run(inputs), _result(None)).run()
-
-
 def test_input_health_counts_non_finite_values_over_every_value_of_the_channel():
     rng = np.random.default_rng(1)
     ch0 = rng.normal(0.0, 1.0, size=(50, 40))

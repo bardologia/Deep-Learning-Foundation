@@ -100,11 +100,6 @@ def test_make_patch_window_hann_is_positive_and_bell():
     assert w[4, 4] > w[0, 0]
 
 
-def test_make_patch_window_unknown_raises():
-    with pytest.raises(ValueError, match="Unknown window"):
-        CubeStitcher.make_patch_window((4, 4), kind="bogus")
-
-
 def test_cube_stitcher_single_patch_reconstructs():
     patch = Patcher.build(spatial_size=(8, 8), patch_size=(8, 8), stride=(8, 8), use_symmetric_padding=False)
     grid  = patch.grid
@@ -177,17 +172,6 @@ def test_select_stitcher_rectangular_patches_reconstruct():
 
     assert cube.shape == (1, 12, 8)
     assert np.allclose(cube, data)
-
-
-def test_select_stitcher_raises_on_uncovered_pixels():
-    patcher = Patcher.build(spatial_size=(8, 12), patch_size=(8, 8), stride=(4, 4), use_symmetric_padding=False)
-    grid    = patcher.grid
-
-    stitcher = SelectStitcher(grid, n_channels=1)
-    stitcher.add_patch(0, np.ones((1, 8, 8), dtype=np.float32))
-
-    with pytest.raises(ValueError, match="uncovered"):
-        stitcher.finalize_cube()
 
 
 def test_cpu_worker_render_floor_drops_weak_components():

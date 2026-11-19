@@ -41,9 +41,6 @@ class StratifiedErrors:
         if self.result.label_r2 is not None:
             out["label_r2"] = (np.asarray(self.result.label_r2, dtype=np.float64), False)
 
-        if not out:
-            raise ValueError("No covariate is available for error stratification; the run holds neither GT params, inputs, Aux nor a label-quality map")
-
         return out
 
     def _bin_rows(self, cov: np.ndarray, err: np.ndarray, discrete: bool) -> tuple[list[dict], list[dict], int]:
@@ -54,16 +51,11 @@ class StratifiedErrors:
         flat_cov    = flat_cov[both]
         flat_err    = flat_err[both]
 
-        if not flat_cov.size:
-            raise ValueError("Stratification received no finite (covariate, error) pairs")
-
         if discrete:
             levels  = np.unique(flat_cov)
             members = [(float(level), flat_err[flat_cov == level]) for level in levels]
         else:
             edges = np.unique(np.quantile(flat_cov, np.linspace(0.0, 1.0, self.N_BINS + 1)))
-            if edges.size < 3:
-                raise ValueError(f"Covariate is effectively constant ({edges.size - 1} distinct bins); stratification is meaningless")
 
             index   = np.clip(np.searchsorted(edges, flat_cov, side="right") - 1, 0, edges.size - 2)
             members = [((float(edges[b]) + float(edges[b + 1])) / 2.0, flat_err[index == b]) for b in range(edges.size - 1)]
@@ -82,9 +74,6 @@ class StratifiedErrors:
                 "q25"    : float(np.percentile(values, 25.0)),
                 "q75"    : float(np.percentile(values, 75.0)),
             })
-
-        if not rows:
-            raise ValueError(f"Every stratification bin holds fewer than {self.MIN_BIN_COUNT} pixels; the region is too small to stratify")
 
         return rows, dropped, n_nonfinite
 

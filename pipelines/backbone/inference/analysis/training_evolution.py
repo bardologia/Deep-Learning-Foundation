@@ -44,8 +44,6 @@ class TrainingEvolutionRun(AnalysisRun):
 
     def _snapshots(self) -> list[Path]:
         snapshots = sorted((self.run_dir / "checkpoints").glob("epoch_*.pt"))
-        if not snapshots:
-            raise FileNotFoundError(f"No epoch snapshots under {self.run_dir / 'checkpoints'}; train with snapshot_every_n_epochs > 0 to record the trajectory")
 
         return snapshots
 

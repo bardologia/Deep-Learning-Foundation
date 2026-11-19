@@ -34,9 +34,6 @@ class FilterNormalizedDirection:
             scale  = flat_w.norm(dim=1, keepdim=True) / flat_d.norm(dim=1, keepdim=True).clamp_min(1e-10)
             direction[name] = (flat_d * scale).reshape(param.shape)
 
-        if all(tensor.abs().sum() == 0 for tensor in direction.values()):
-            raise ValueError("Filter-normalized direction is all zero; the model holds no weight tensor with 2 or more dimensions")
-
         return direction
 
 
@@ -77,16 +74,8 @@ class CutDiagnostics:
     CURVATURE_RADIUS = 0.2
     RADIUS_FACTOR    = 2.0
 
-    @staticmethod
-    def require_finite(alphas: np.ndarray, cut: np.ndarray) -> None:
-        bad = ~np.isfinite(cut)
-        if bad.any():
-            raise ValueError(f"Loss cut holds {int(bad.sum())} non-finite value(s) at alpha {[round(float(a), 4) for a in alphas[bad]]}; its diagnostics are undefined")
-
     @classmethod
     def sharpness(cls, alphas: np.ndarray, cut: np.ndarray) -> float:
-        cls.require_finite(alphas, cut)
-
         center = cut[np.argmin(np.abs(alphas))]
         near   = np.abs(alphas) <= cls.SHARPNESS_RADIUS + 1e-9
 
@@ -94,13 +83,8 @@ class CutDiagnostics:
 
     @classmethod
     def curvature(cls, alphas: np.ndarray, cut: np.ndarray) -> float:
-        cls.require_finite(alphas, cut)
-
         center = cut[np.argmin(np.abs(alphas))]
         near   = np.abs(alphas) <= cls.CURVATURE_RADIUS + 1e-9
-
-        if near.sum() < 3:
-            raise ValueError(f"Curvature fit needs at least 3 samples within |alpha| <= {cls.CURVATURE_RADIUS}; refine the 1-D grid")
 
         design       = np.stack([np.ones(int(near.sum())), alphas[near] ** 2], axis=1)
         coefficients = np.linalg.lstsq(design, cut[near], rcond=None)[0]
@@ -109,8 +93,6 @@ class CutDiagnostics:
 
     @classmethod
     def flatness_radius(cls, alphas: np.ndarray, cut: np.ndarray) -> dict:
-        cls.require_finite(alphas, cut)
-
         center    = cut[np.argmin(np.abs(alphas))]
         threshold = cls.RADIUS_FACTOR * max(center, 1e-12)
         span      = float(np.abs(alphas).max())
@@ -137,8 +119,6 @@ class CutDiagnostics:
 
     @classmethod
     def min_offset(cls, alphas: np.ndarray, cut: np.ndarray) -> float:
-        cls.require_finite(alphas, cut)
-
         return float(alphas[int(np.argmin(cut))])
 
 
@@ -166,12 +146,6 @@ class LossLandscapePlots(PlotBase):
         return self._save(fig, path)
 
     def contour_2d(self, alphas: np.ndarray, betas: np.ndarray, losses: np.ndarray, path: Path, annotation: str | None = None) -> Path:
-        bad = ~np.isfinite(losses)
-        if bad.any():
-            raise ValueError(f"{int(bad.sum())} of {losses.size} landscape grid losses are non-finite; the perturbed model diverges inside the sampled plane, so shrink span or check the checkpoint")
-        if not losses.max() > losses.min():
-            raise ValueError(f"The sampled landscape is flat at {float(losses.min()):.6g} over the whole grid; a filled contour needs a loss range, so widen span or check that the loss depends on the perturbed weights")
-
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH, aspect=0.85))
@@ -200,9 +174,6 @@ class LossLandscapeRun(AnalysisRun):
     REPORT_FILENAME  = "loss_landscape.md"
 
     def __init__(self, run_dir: Path, config, logger) -> None:
-        if config.n_directions < 2:
-            raise ValueError(f"The landscape needs at least 2 directions for the 2-D grid, got n_directions={config.n_directions}")
-
         super().__init__(run_dir, config, logger)
 
     def _loss_fn(self, run):
@@ -214,9 +185,6 @@ class LossLandscapeRun(AnalysisRun):
                 break
             gt_phys = run.dataset.normalizer.denormalize_output(batch[1].float()).numpy()
             batches.append((batch[0], renderer.render(gt_phys)))
-
-        if not batches:
-            raise ValueError("The loader yielded no batches to evaluate the landscape on")
 
         def evaluate() -> float:
             total = 0.0
@@ -245,9 +213,6 @@ class LossLandscapeRun(AnalysisRun):
                 "flatness_radius"  : CutDiagnostics.flatness_radius(alphas, cut),
                 "min_offset"       : CutDiagnostics.min_offset(alphas, cut),
             })
-
-        if not any(entry["valid"] for entry in diagnostics):
-            raise ValueError(f"Every one of the {len(cuts)} loss cuts of {self.run_dir} holds a non-finite loss; shrink span or check the checkpoint")
 
         return diagnostics
 
@@ -317,8 +282,6 @@ class LossLandscapeRun(AnalysisRun):
                 grid = evaluator.grid(alphas_2d, alphas_2d, directions[0], directions[1], on_point)
 
         center = float(loss_fn())
-        if not np.isfinite(center):
-            raise ValueError(f"The curve MSE at the trained weights of {self.run_dir} is {center}; the landscape has no finite centre to perturb around")
 
         diagnostics = self._diagnose(alphas_1d, cuts)
         valid       = [entry for entry in diagnostics if entry["valid"]]

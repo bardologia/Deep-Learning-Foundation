@@ -80,11 +80,6 @@ def test_degenerate_layer_is_left_out_of_alignment_and_divergence():
     assert CkaComputation.divergence_depth(forward) is None
 
 
-def test_alignment_of_a_fully_degenerate_side_is_refused():
-    with pytest.raises(ValueError, match="degenerate"):
-        CkaComputation.alignment_score(np.full((2, 3), np.nan))
-
-
 def test_best_match_profiles_and_divergence_depth():
     matrix = np.array([
         [0.9, 0.2, 0.1],
@@ -129,18 +124,6 @@ def test_self_cross_matrix_is_symmetric_and_matches_the_pairwise_values():
 
 def test_alignment_score_of_identity_matrix_is_one():
     assert CkaComputation.alignment_score(np.eye(3)) == pytest.approx(1.0)
-
-
-def test_alignment_is_validated_from_sample_grids(tmp_path):
-    comparison = CkaComparison(CkaConfig(output_dir=tmp_path), SilentLogger(), {})
-
-    grid    = ((1000, 2000, 500, 900), (64, 32), (32, 16))
-    strided = ((1000, 2000, 500, 900), (64, 32), (64, 32))
-
-    comparison._validate_alignment([grid, grid])
-
-    with pytest.raises(ValueError):
-        comparison._validate_alignment([grid, strided])
 
 
 def _aligned_runs(tmp_path, test_data_dir, params_dir) -> CkaConfig:

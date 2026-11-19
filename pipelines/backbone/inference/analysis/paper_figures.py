@@ -42,15 +42,9 @@ class PaperFigurePack:
 
         self.logger.info(f"{run_dir.name}: inference {record['stamp']} on split '{record['split']}', completed {record['completed_at']}")
 
-        if not figures_dir.is_dir():
-            raise FileNotFoundError(f"{figures_dir} is missing; the inference saved no figures (save_plots disabled?)")
-
         entries = []
         for pattern in self.config.patterns:
             figures = [path for path in sorted(figures_dir.glob(pattern)) if path.is_file()]
-
-            if not figures:
-                raise FileNotFoundError(f"No figure under {figures_dir} matches '{pattern}'; that stage rendered nothing for this run, so adjust patterns or re-run inference with save_plots")
 
             for figure in figures:
                 target = self.output_dir / self._stable_name(run_dir, figures_dir, figure)

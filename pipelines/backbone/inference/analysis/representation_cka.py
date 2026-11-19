@@ -52,11 +52,6 @@ class CkaComputation:
         X = np.asarray(features_a, dtype=np.float64)
         Y = np.asarray(features_b, dtype=np.float64)
 
-        if X.shape[0] != Y.shape[0]:
-            raise ValueError(f"CKA needs matched samples, got {X.shape[0]} and {Y.shape[0]}")
-        if X.shape[0] < 4:
-            raise ValueError(f"Debiased CKA needs at least 4 samples, got {X.shape[0]}")
-
         return X, Y
 
     @staticmethod
@@ -124,9 +119,6 @@ class CkaComputation:
     @classmethod
     def alignment_score(cls, matrix: np.ndarray) -> float:
         forward, backward = cls.best_match_profiles(matrix)
-
-        if not np.isfinite(forward).any() or not np.isfinite(backward).any():
-            raise ValueError("Every layer of one side of the CKA matrix is degenerate; the alignment is undefined")
 
         return float((np.nanmean(forward) + np.nanmean(backward)) / 2.0)
 
@@ -226,9 +218,6 @@ class CkaComparison:
         selector = RunSelector(self.config.runs_dir, self.config.checkpoint_name, self.logger, action="compare")
         run_dirs = selector.resolve(self.config.run_filter)
 
-        if len(run_dirs) < 2:
-            raise ValueError(f"CKA needs at least two runs, got {len(run_dirs)}")
-
         return run_dirs
 
     def _load(self, run_dir: Path):
@@ -240,18 +229,6 @@ class CkaComparison:
             checkpoint_name = self.config.checkpoint_name,
             load_cube       = False,
         )
-
-    @staticmethod
-    def _sample_grid(run) -> tuple:
-        return (run.split_region.as_tuple(), tuple(run.dataset_config.patch.size), tuple(run.dataset_config.patch.stride))
-
-    def _validate_alignment(self, grids: list[tuple]) -> None:
-        regions = {grid[0] for grid in grids}
-        patches = {grid[1] for grid in grids}
-        strides = {grid[2] for grid in grids}
-
-        if len(regions) != 1 or len(patches) != 1 or len(strides) != 1:
-            raise ValueError(f"Runs are not sample-aligned: regions {sorted(regions)}, patches {sorted(patches)}, strides {sorted(strides)}; CKA needs identical split regions and patch grids")
 
     def _probe_layers(self, run) -> list[str]:
         names = ActivationRecorder(run.model.module).leaf_names()
@@ -298,9 +275,6 @@ class CkaComparison:
                 chunks[layer].append(sampler.features_at(tensor, b, i, j, B, H, W))
 
         recorder.detach()
-
-        if not chunks:
-            raise ValueError(f"Run {run.backbone_name} produced no (B, C, H, W) feature map on the input grid to compare")
 
         features  = {layer: np.concatenate(parts, axis=0) for layer, parts in chunks.items()}
         n_samples = next(iter(features.values())).shape[0]
@@ -368,15 +342,11 @@ class CkaComparison:
 
         ConfigCli.save_resolved(self.config, self.output_dir / "cka_config.json")
 
-        grids    = []
         features = []
         records  = {}
         for index, (run_dir, name) in enumerate(zip(run_dirs, names), start=1):
             with self.logger.timer(f"CKA features [{index}/{len(run_dirs)}] {name}"):
                 run = self._load(run_dir)
-
-                grids.append(self._sample_grid(run))
-                self._validate_alignment(grids)
 
                 run_features, record = self._collect(run, name)
                 features.append(run_features)

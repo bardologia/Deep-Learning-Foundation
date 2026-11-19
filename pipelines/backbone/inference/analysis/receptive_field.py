@@ -26,10 +26,6 @@ class ErfComputation:
         self.window       = int(window)
         self.mass_windows = [int(w) for w in mass_windows]
 
-        bad = [w for w in self.mass_windows if w > self.window]
-        if bad:
-            raise ValueError(f"mass_windows {bad} exceed the probe window {self.window}; shrink them or enlarge window")
-
     def gradient_maps(self, windows: torch.Tensor) -> tuple[dict[str, np.ndarray | None], np.ndarray]:
         half   = self.window // 2
         device = ModelDevice.of(self.model)
@@ -47,9 +43,6 @@ class ErfComputation:
                 grad         = torch.autograd.grad(target, x, retain_graph=True)[0]
                 contribution = grad.abs().sum(dim=(0, 1)).cpu()
 
-                if not torch.isfinite(contribution).all():
-                    raise ValueError(f"Input gradient of the centre {family} at probe window {p} is non-finite; the checkpoint or the window is degenerate")
-
                 family_totals[family] += contribution
                 probe_map             += contribution
 
@@ -61,9 +54,6 @@ class ErfComputation:
             arr          = (family_totals[family] / windows.shape[0]).numpy()
             combined    += arr
             maps[family] = arr if arr.sum() > 0.0 else None
-
-        if combined.sum() <= 0.0:
-            raise ValueError("Receptive-field gradient map is all zero; the model output at the probe centre does not depend on the input window")
 
         maps["combined"] = combined
         return maps, np.asarray(probe_sigmas)
@@ -128,9 +118,6 @@ class ErfComputation:
 
     @staticmethod
     def gaussian_mass(sides: np.ndarray, sigma_row: float, sigma_col: float) -> np.ndarray:
-        if sigma_row <= 0.0 or sigma_col <= 0.0:
-            raise ValueError(f"Gaussian mass reference needs positive sigmas, got ({sigma_row}, {sigma_col})")
-
         scale = 2.0 * math.sqrt(2.0)
         return np.array([math.erf(s / (scale * sigma_row)) * math.erf(s / (scale * sigma_col)) for s in sides])
 

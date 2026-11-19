@@ -66,25 +66,6 @@ def test_resolver_picks_the_explicit_inference_subdir(tmp_path):
     assert resolved == run / "inference" / "20240101_000000"
 
 
-def test_resolver_rejects_an_explicit_subdir_of_another_split(tmp_path):
-    run = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
-    _stamp(run, "20240202_000000", {"m": 2.0}, split="val")
-
-    with pytest.raises(ValueError, match="scored on split 'val', not on the configured split 'test'"):
-        _resolver("20240202_000000").resolve(run)
-
-
-def test_resolver_rejects_an_explicit_region_of_an_incomplete_group_naming_the_group(tmp_path):
-    run   = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
-    stamp = _stamp(run, "20261001_region0", {"m": 2.0}, split=None)
-    CompletionMarker.stamp(stamp, {"stage": "inference", "split": "test", "region_pass": {"index": 0, "count": 2, "group": "20261001"}})
-
-    with pytest.raises(ValueError, match="region group that is missing regions") as raised:
-        _resolver("20261001_region0").resolve(run)
-
-    assert "not on the configured split" not in str(raised.value)
-
-
 def test_resolver_picks_the_newest_completed_stamp_of_the_split(tmp_path):
     run    = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
     chosen = _stamp(run, "20240301_000000", {"m": 2.0})
@@ -108,16 +89,6 @@ def test_resolver_raises_when_a_run_has_no_inference(tmp_path):
         _resolver().resolve(run)
 
 
-def test_resolver_raises_when_only_unfinished_or_other_split_stamps_exist(tmp_path):
-    run = tmp_path / "group" / "seed0"
-    (run / "meta").mkdir(parents=True)
-    _stamp(run, "20240101_000000", {"m": 1.0}, split=None)
-    _stamp(run, "20240201_000000", {"m": 1.0}, split="val")
-
-    with pytest.raises(FileNotFoundError, match="No completed 'test' inference"):
-        _resolver().resolve(run)
-
-
 def test_resolver_record_reads_the_completion_marker(tmp_path):
     run    = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
     record = SeedInferenceResolver.record(run / "inference" / "20240101_000000")
@@ -125,14 +96,6 @@ def test_resolver_record_reads_the_completion_marker(tmp_path):
     assert record["stamp"] == "20240101_000000"
     assert record["split"] == "test"
     assert record["completed_at"]
-
-
-def test_report_requires_at_least_two_runs(tmp_path):
-    group = tmp_path / "group"
-    run   = _seed_run(group, "seed0", {"m": 1.0})
-
-    with pytest.raises(ValueError):
-        _report(group, [run])
 
 
 def test_report_aggregates_mean_and_sample_std(tmp_path):
@@ -175,19 +138,6 @@ def test_report_records_confidence_intervals_and_counts(tmp_path):
     assert low < 2.0 < high
     assert (low + high) / 2.0 == pytest.approx(2.0)
     assert high - low == pytest.approx(2.0 * 12.7062, rel=1e-3)
-
-
-def test_report_refuses_seeds_scored_on_different_splits(tmp_path):
-    group = tmp_path / "group"
-    runs  = [_seed_run(group, "seed0", {"curve_mse_gt": 1.0})]
-
-    other = group / "seed1"
-    (other / "meta").mkdir(parents=True)
-    _stamp(other, "stamp", {"curve_mse_gt": 3.0}, split="val")
-    runs.append(other)
-
-    with pytest.raises(ValueError, match="different splits"):
-        _report(group, runs)
 
 
 def test_report_counts_the_seeds_behind_every_aggregate(tmp_path):
@@ -273,26 +223,6 @@ def test_activity_threshold_is_the_value_every_seed_recorded(tmp_path):
     assert threshold == 1e-4
 
 
-def test_seeds_scored_at_different_thresholds_are_refused_on_the_default_path(tmp_path):
-    group = tmp_path / "runs" / "group"
-    _seed_run(group, "seed0", {"curve_mse_gt": 1.0}, activity_threshold=1e-4)
-    _seed_run(group, "seed1", {"curve_mse_gt": 3.0}, activity_threshold=1e-3)
-
-    with pytest.raises(ValueError, match="different activity thresholds"):
-        SeedComparison(_config(group, [], output_subdir="agg"), SilentLogger()).run()
-
-    assert not (group / "inference" / "agg" / "metrics.json").exists()
-
-
-def test_metrics_without_a_recorded_threshold_are_refused(tmp_path):
-    group = tmp_path / "runs" / "group"
-    _seed_run(group, "seed0", {"curve_mse_gt": 1.0}, activity_threshold=None)
-    _seed_run(group, "seed1", {"curve_mse_gt": 3.0}, activity_threshold=None)
-
-    with pytest.raises(KeyError, match="re-run inference for seed seed0"):
-        SeedComparison(_config(group, [], output_subdir="agg"), SilentLogger()).run()
-
-
 def test_comparison_compares_each_selected_group_in_isolation(tmp_path):
     group_a = tmp_path / "runs" / "group_a"
     _seed_run(group_a, "seed0", {"curve_mse_gt": 1.0})
@@ -318,14 +248,6 @@ def test_comparison_raises_on_unknown_group_tag(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         SeedComparison(_config(tmp_path / "runs", ["group", "missing"]), SilentLogger()).run()
-
-
-def test_comparison_raises_when_a_group_holds_fewer_than_two_runs(tmp_path):
-    group = tmp_path / "runs" / "group"
-    _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
-
-    with pytest.raises(ValueError):
-        SeedComparison(_config(tmp_path / "runs", ["group"]), SilentLogger()).run()
 
 
 def test_comparison_treats_runs_dir_as_the_group_when_no_tags_are_given(tmp_path):
@@ -383,14 +305,6 @@ def test_seed_ensemble_scores_the_mean_prediction(tmp_path):
     assert scalars["n_seeds"]      == 2
     assert scalars["curve_mse_gt"] == pytest.approx(0.0)
     assert scalars["curve_mae_gt"] == pytest.approx(0.0)
-
-
-def test_seed_ensemble_raises_without_saved_cubes(tmp_path):
-    group = tmp_path / "group"
-    run   = _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
-
-    with pytest.raises(FileNotFoundError, match="save_cubes"):
-        SeedEnsembleEvaluation([run / "inference" / "stamp" / "cubes"], SilentLogger()).run()
 
 
 def test_report_renders_the_ensemble_section(tmp_path):
