@@ -21,9 +21,6 @@ from configuration.architectures.backbone import (
     LocalCNNConfig,
     NAFNetConfig,
 )
-from configuration.architectures.dual import (
-    DualResUNetConfig,
-)
 from configuration.architectures.image_autoencoder import (
     ImageAutoencoderBaseConfig,
     Conv2dImageAutoencoderConfig,

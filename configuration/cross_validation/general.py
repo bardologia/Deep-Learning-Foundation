@@ -8,7 +8,6 @@ from configuration.benchmark.general import (
     ComparisonReportConfig,
     InferenceQueueConfig,
 )
-from configuration.cross_validation.dual                import DualCvConfig
 from configuration.cross_validation.image_autoencoder   import ImageAeCvConfig
 from configuration.cross_validation.profile_autoencoder import AeCvConfig
 from configuration.dataset                              import AugmentationConfig, InputConfig
@@ -54,7 +53,6 @@ class CrossValidationConfig:
 
     prior_bias_init : bool = False
 
-    dual              : DualCvConfig       = field(default_factory=DualCvConfig)
     jepa              : JepaCouplingConfig = field(default_factory=JepaCouplingConfig)
     autoencoder       : AeCvConfig         = field(default_factory=AeCvConfig)
     image_autoencoder : ImageAeCvConfig    = field(default_factory=ImageAeCvConfig)

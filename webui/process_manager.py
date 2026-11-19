@@ -140,7 +140,7 @@ class ProcessManager:
     HISTORY_LIMIT    = 50
     LOG_VIEW_BYTES   = 4194304
     ENDED_STATES     = ("finished", "failed", "cancelled")
-    POOL_SCRIPTS     = ("train_backbone", "train_dual", "train_jepa", "train_image_autoencoder", "train_profile_autoencoder", "benchmark", "cross_validate", "tune", "infer_backbone", "infer_profile_autoencoder", "infer_image_autoencoder", "infer_dual")
+    POOL_SCRIPTS     = ("train_backbone", "train_jepa", "train_image_autoencoder", "train_profile_autoencoder", "benchmark", "cross_validate", "tune", "infer_backbone", "infer_profile_autoencoder", "infer_image_autoencoder")
     POOL_FIELD       = "gpus_file"
 
     def __init__(self, paths: ProjectPaths, logger: WebLogger, notifier: JobNotifier, describer: JobDescriber, politeness: JobPoliteness) -> None:

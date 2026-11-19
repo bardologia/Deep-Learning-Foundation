@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import base64
 
-from types   import SimpleNamespace
-
 import numpy as np
 import pytest
 import torch
@@ -438,9 +436,8 @@ def _loadable_run(tmp_path, group: str = "backbone", name: str = "run_ok", confi
     return run_dir
 
 
-def test_runs_lists_loadable_backbone_and_dual_runs(tmp_path):
+def test_runs_lists_loadable_backbone_runs(tmp_path):
     backbone = _loadable_run(tmp_path)
-    dual     = _loadable_run(tmp_path, group="dual", name="run_dual", config_name="dual_model_config.json")
 
     bare = tmp_path / "backbone" / "run_bare"
     bare.mkdir(parents=True)
@@ -451,7 +448,7 @@ def test_runs_lists_loadable_backbone_and_dual_runs(tmp_path):
     out = ModelProbe(SilentLogger()).runs(str(tmp_path))
 
     assert out["ok"] is True
-    assert [run["id"] for run in out["runs"]] == sorted([str(backbone), str(dual)], reverse=True)
+    assert [run["id"] for run in out["runs"]] == [str(backbone)]
 
 
 def test_runs_reports_root_errors(tmp_path):
@@ -500,27 +497,8 @@ def test_load_refuses_a_run_without_the_persisted_config(tmp_path):
 
     assert out["ok"] is False
     assert "meta/model_config.json" in out["error"]
-    assert "meta/dual_model_config.json" in out["error"]
-    assert "backbone and dual" in out["error"]
 
 
-def test_loader_class_picks_the_dual_loader_for_dual_runs():
-    from pipelines.backbone.inference.loader import RunLoader
-    from pipelines.dual.inference.loader     import DualRunLoader
-
-    probe = ModelProbe(SilentLogger())
-
-    assert probe._loader_class(False) is RunLoader
-    assert probe._loader_class(True)  is DualRunLoader
-
-
-def test_model_label_names_the_dual_trunks():
-    probe  = ModelProbe(SilentLogger())
-    config = SimpleNamespace(params_backbone="unet_skip", existence_backbone="resunet")
-    run    = SimpleNamespace(backbone_name="dual_resunet", model=SimpleNamespace(module=SimpleNamespace(config=config)))
-
-    assert probe._model_label(run, False) == "dual_resunet"
-    assert probe._model_label(run, True)  == "dual_resunet (unet_skip + resunet)"
 
 
 class _SharedPoolModel(torch.nn.Module):

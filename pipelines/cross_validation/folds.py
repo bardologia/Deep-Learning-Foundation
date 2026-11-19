@@ -21,7 +21,7 @@ from tools.data.regions       import CropRegion, SplitRegions
 
 class FoldFamily:
 
-    SPATIAL      = ("backbone", "dual", "jepa")
+    SPATIAL      = ("backbone", "jepa")
     AUTOENCODERS = ("profile_autoencoder", "image_autoencoder")
     TYPES        = SPATIAL + AUTOENCODERS
 
@@ -56,12 +56,7 @@ class FoldFamily:
 
     @classmethod
     def model_label(cls, config: CrossValidationConfig) -> str:
-        from pipelines.shared.training.run_naming import RunNaming
-
         training_type = cls.validate(config.training_type)
-
-        if training_type == "dual":
-            return RunNaming.dual_model_tag(config.dual.params_backbone, config.dual.existence_backbone)
 
         if training_type == "profile_autoencoder":
             return config.autoencoder.ae_model_name
@@ -295,20 +290,10 @@ class FoldRunNaming:
         if config.training_type == "backbone":
             return RunNaming.training_tag(config.backbone_name, config.backbone_head, config.curriculum, self._n_gaussians(), config.augmentation)
 
-        if config.training_type == "dual":
-            return RunNaming.training_tag(FoldFamily.model_label(config), "set_pred", config.curriculum, self._n_gaussians(), config.augmentation, extras=(self._dual_input_tag(),))
-
         if config.training_type == "jepa":
             return RunNaming.jepa_tag(config.backbone_name, config.backbone_head, JepaNamingSpec.resolve(config.jepa), self._n_gaussians(), config.augmentation)
 
         return None
-
-    def _dual_input_tag(self) -> str:
-        from pipelines.dual.training.pipeline import TrunkChannelMap
-
-        dual = self.config.dual
-
-        return f"{TrunkChannelMap.group_label(tuple(dual.params_input))}.{TrunkChannelMap.group_label(tuple(dual.existence_input))}"
 
     def run_name(self, fold_index: int, seed: int | None) -> str:
         from pipelines.shared.training.run_naming import RunNaming
@@ -387,7 +372,6 @@ class FoldTreeSurvey:
 
     FAMILIES = {
         RunType.BACKBONE   : "backbone",
-        RunType.DUAL       : "dual",
         RunType.PROFILE_AE : "profile_autoencoder",
         RunType.IMAGE_AE   : "image_autoencoder",
     }

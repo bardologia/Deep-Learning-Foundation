@@ -4,9 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from pipelines.backbone.inference.pipeline      import InferenceComponents
-from pipelines.dual.inference.pipeline          import DUAL_INFERENCE_COMPONENTS
 from pipelines.jepa.inference.pipeline          import JEPA_INFERENCE_COMPONENTS, JEPA_PARAM_INFERENCE_COMPONENTS
-from pipelines.shared.config.config_persistence import BackboneModelConfigIO, DualModelConfigIO, ImageAutoencoderConfigIO, ProfileAutoencoderConfigIO
+from pipelines.shared.config.config_persistence import BackboneModelConfigIO, ImageAutoencoderConfigIO, ProfileAutoencoderConfigIO
 
 
 class InferenceComponentsResolver:
@@ -15,9 +14,6 @@ class InferenceComponentsResolver:
     def for_run(run_directory: Path) -> InferenceComponents:
         meta         = Path(run_directory) / "meta"
         has_backbone = BackboneModelConfigIO.exists(meta)
-
-        if DualModelConfigIO.exists(meta):
-            return DUAL_INFERENCE_COMPONENTS
 
         if ProfileAutoencoderConfigIO.exists(meta):
             if not has_backbone:

@@ -15,7 +15,6 @@ class JobDescriber:
 
     LEADS = {
         "train_backbone"            : "_lead_train_backbone",
-        "train_dual"                : "_lead_train_dual",
         "train_jepa"                : "_lead_train_jepa",
         "train_profile_autoencoder" : "_lead_train_profile_autoencoder",
         "benchmark"                 : "_lead_benchmark",
@@ -50,16 +49,6 @@ class JobDescriber:
             ("inference after",  "infer_after",           "flag"),
             ("inference at end", "infer_at_end",          "flag"),
         ],
-        "train_dual": [
-            ("params input",     "params_input",       "list"),
-            ("existence input",  "existence_input",    "list"),
-            ("dataset",          "paths.dataset_path", "opt_tail"),
-            ("epochs",           "training.epochs",    "text"),
-            ("run",              "run_name",           "opt"),
-            ("resuming",         "resume_from",        "opt_tail"),
-            ("inference after",  "infer_after",        "flag"),
-            ("inference at end", "infer_at_end",       "flag"),
-        ],
         "train_profile_autoencoder": [
             ("model",    "ae_model_name",         "text"),
             ("params",   "paths.parameters_path", "opt_tail"),
@@ -83,13 +72,6 @@ class JobDescriber:
             ("inference at end", "infer_at_end",       "flag"),
         ],
         "infer_backbone": [
-            ("root",                  "runs_dir",        "opt_tail"),
-            ("filter",                "run_filter",      "list", "all runs"),
-            ("split",                 "inference.split", "text"),
-            ("gpus",                  "gpus",            "list"),
-            ("rescoring scored runs", "skip_completed",  "unflag"),
-        ],
-        "infer_dual": [
             ("root",                  "runs_dir",        "opt_tail"),
             ("filter",                "run_filter",      "list", "all runs"),
             ("split",                 "inference.split", "text"),
@@ -267,16 +249,6 @@ class JobDescriber:
         model = self._join(values, "backbone_name", "backbone_head")
         return [part for part in (mode, model) if part]
 
-    def _lead_train_dual(self, values: dict, used: set) -> list[str]:
-        used.update(("trials_enabled", "trials_mode", "model_name", "params_backbone", "existence_backbone"))
-
-        mode      = f"{values.get('trials_mode', '')} trials experiment".strip() if self._truthy(values.get("trials_enabled", "")) else "single training"
-        params    = values.get("params_backbone", "")
-        existence = values.get("existence_backbone", "")
-        trunks    = params if params == existence else ".".join(part for part in (params, existence) if part)
-        model     = f"dual {trunks}" if trunks else ""
-        return [part for part in (mode, model) if part]
-
     def _lead_train_jepa(self, values: dict, used: set) -> list[str]:
         used.update(("trials_enabled", "trials_mode", "backbone_name", "backbone_head", "profile_autoencoder_run", "profile_autoencoder_mode", "image_autoencoder_run", "image_autoencoder_mode"))
 
@@ -306,7 +278,6 @@ class JobDescriber:
         return [f"{values.get('training_type', '')} benchmark".strip()]
 
     CV_MODEL_FIELDS = {
-        "dual"                : ("dual.params_backbone", "dual.existence_backbone"),
         "profile_autoencoder" : ("autoencoder.ae_model_name",),
         "image_autoencoder"   : ("image_autoencoder.ae_model_name",),
     }
@@ -322,12 +293,6 @@ class JobDescriber:
         return [part for part in (lead, self._cross_validate_model(training_type, values)) if part]
 
     def _cross_validate_model(self, training_type: str, values: dict) -> str:
-        if training_type == "dual":
-            params    = values.get("dual.params_backbone", "")
-            existence = values.get("dual.existence_backbone", "")
-            trunks    = params if params == existence else ".".join(part for part in (params, existence) if part)
-            return f"dual {trunks}" if trunks else ""
-
         if training_type in ("profile_autoencoder", "image_autoencoder"):
             return values.get(self.CV_MODEL_FIELDS[training_type][0], "")
 

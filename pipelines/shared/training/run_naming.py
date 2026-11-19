@@ -99,11 +99,6 @@ class RunNaming:
         return letters or "none"
 
     @staticmethod
-    def dual_model_tag(params_backbone: str, existence_backbone: str) -> str:
-        trunks = params_backbone if params_backbone == existence_backbone else f"{params_backbone}.{existence_backbone}"
-        return f"dual_{trunks}"
-
-    @staticmethod
     def masking_tag(masking) -> str:
         return f"mask_{masking.strategy}{masking.mask_ratio:g}"
 

@@ -134,7 +134,7 @@ def test_pipeline_inference_partial_when_failed(tmp_path, test_data_dir, monkeyp
 
 @pytest.mark.dataset
 def test_pipeline_runs_inference_for_every_training_type(tmp_path, test_data_dir, monkeypatch):
-    for training_type in ("backbone", "dual", "profile_autoencoder", "image_autoencoder"):
+    for training_type in ("backbone", "profile_autoencoder", "image_autoencoder"):
         order = []
         install_fake_stages(monkeypatch, order)
 

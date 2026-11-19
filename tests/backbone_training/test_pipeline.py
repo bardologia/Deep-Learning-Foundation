@@ -6,12 +6,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from configuration.architectures          import DualResUNetConfig
 from configuration.dataset                import DatasetConfig, InputConfig, PatchConfig, Representation, SplitRegions
 from configuration.dataset.gaussian    import GaussianConfig
 from configuration.training.backbone      import BackboneTrainerConfig
 from pipelines.backbone.training.pipeline import TrainingPipeline
-from pipelines.dual.training.pipeline     import DualTrainingPipeline
 from pipelines.shared.model.model_builder import ModelBuilder
 from tools.data.gaussians                 import GaussianActivity, GaussianSlotSorter
 from tools.data.io                        import FileIO
@@ -299,14 +297,3 @@ def test_pipeline_keeps_rectangular_patches_for_convolutional_backbones():
     assert pipeline.patch_squared               is False
     assert pipeline._patch_geometry_label()     == "patch (64, 32) stride (32, 16)"
     assert pipeline._patch_geometry_payload()["squared"] is False
-
-
-def test_dual_pipeline_squares_the_patch_when_a_trunk_is_square_only():
-    model_config                    = DualResUNetConfig()
-    model_config.params_backbone    = "resunet"
-    model_config.existence_backbone = "swin_unet"
-
-    pipeline = DualTrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="dual_resunet", model_config=model_config)
-
-    assert pipeline.dataset_config.patch.size   == (64, 64)
-    assert pipeline.dataset_config.patch.stride == (32, 32)

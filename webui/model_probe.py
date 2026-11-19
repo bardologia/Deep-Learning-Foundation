@@ -30,7 +30,7 @@ class ModelProbe:
     FUSED_LEAVES    = ("attention_dropout",)
     LOADER_NAME     = "model_probe"
     CHECKPOINT      = "best_model.pt"
-    CONFIG_NAMES    = (RunArtifacts.BACKBONE_CONFIG, RunArtifacts.DUAL_CONFIG)
+    CONFIG_NAME     = RunArtifacts.BACKBONE_CONFIG
 
     def __init__(self, logger: WebLogger) -> None:
         self.logger  = logger
@@ -41,7 +41,7 @@ class ModelProbe:
         self.status = {"state": "idle", "path": "", "progress": 0.0, "stage": "", "error": "", "info": None}
 
     def runs(self, base: str) -> dict:
-        scanned = self.scanner.checkpoint_runs(base, self.CHECKPOINT, self.CONFIG_NAMES)
+        scanned = self.scanner.checkpoint_runs(base, self.CHECKPOINT, self.CONFIG_NAME)
         if not scanned["ok"]:
             return {"ok": False, "error": scanned["error"], "runs": []}
 
@@ -57,8 +57,8 @@ class ModelProbe:
             return f"'{run_dir}' is outside every catalogued runs root; scan the runs directory first"
         if not (run_dir / cls.CHECKPOINT).is_file():
             return f"'{run_dir.name}' holds no {cls.CHECKPOINT}; it is not a finished training run (did you point at a runs root or an inference stamp?)"
-        if not any((run_dir / "meta" / name).is_file() for name in cls.CONFIG_NAMES):
-            return f"'{run_dir.name}' holds no meta/{' or meta/'.join(cls.CONFIG_NAMES)}; the microscope probes backbone and dual runs only, and this run is another family or predates config persistence"
+        if not (run_dir / "meta" / cls.CONFIG_NAME).is_file():
+            return f"'{run_dir.name}' holds no meta/{cls.CONFIG_NAME}; the microscope probes backbone runs only"
 
         return ""
 
@@ -88,32 +88,16 @@ class ModelProbe:
         modules = dict(model.named_modules())
         return [name for name in ActivationRecorder(model).leaf_names() if type(modules[name]).__name__ not in self.CONTAINER_TYPES and name.rsplit(".", 1)[-1] not in self.FUSED_LEAVES]
 
-    @classmethod
-    def _loader_class(cls, is_dual: bool):
-        from pipelines.backbone.inference.loader import RunLoader
-        from pipelines.dual.inference.loader     import DualRunLoader
-
-        return DualRunLoader if is_dual else RunLoader
-
-    @classmethod
-    def _model_label(cls, run, is_dual: bool) -> str:
-        if not is_dual:
-            return run.backbone_name
-
-        config = run.model.module.config
-        return f"{run.backbone_name} ({config.params_backbone} + {config.existence_backbone})"
-
     def _load_worker(self, run_path: str, split: str, device: str) -> None:
         try:
             from pipelines.backbone.inference.analysis.input_attribution import ChannelLabeler
+            from pipelines.backbone.inference.loader            import RunLoader
             from pipelines.backbone.inference.probes            import PredictionCurves
             from tools.monitoring.logger                        import Logger
 
             self._set_load(0.1, "loading checkpoint and dataset")
 
-            is_dual = (Path(run_path) / "meta" / RunArtifacts.DUAL_CONFIG).is_file()
-
-            run = self._loader_class(is_dual)(Path(run_path), logger=Logger(log_dir="", name=self.LOADER_NAME)).load(
+            run = RunLoader(Path(run_path), logger=Logger(log_dir="", name=self.LOADER_NAME)).load(
                 split           = split,
                 batch_size      = 1,
                 num_workers     = 0,
@@ -130,7 +114,7 @@ class ModelProbe:
 
             info = {
                 "run"          : run_path,
-                "backbone"     : self._model_label(run, is_dual),
+                "backbone"     : run.backbone_name,
                 "split"        : split,
                 "in_channels"  : run.in_channels,
                 "n_gaussians"  : run.n_gaussians,

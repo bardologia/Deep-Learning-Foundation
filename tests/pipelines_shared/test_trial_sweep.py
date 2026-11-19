@@ -6,11 +6,9 @@ from pathlib import Path
 import pytest
 
 from configuration.training.backbone                    import BackboneEntryConfig
-from configuration.training.dual                        import DualEntryConfig
 from configuration.training.jepa                        import JepaEntryConfig
 from configuration.training.profile_autoencoder         import ProfileAeEntryConfig
 from pipelines.backbone.training.launcher               import BackboneTrainingLauncher, TrainScheduler
-from pipelines.dual.training.launcher                   import DualTrainScheduler
 from pipelines.jepa.training.launcher                   import JepaTrainingLauncher, JepaTrialScheduler
 from pipelines.profile_autoencoder.training.launcher    import ProfileAeTrainingLauncher, ProfileAeTrialScheduler
 from tools.data.io                                      import FileIO
@@ -283,7 +281,6 @@ def test_seed_expanded_units_override_the_forwarded_seed_list(tmp_path):
 
 @pytest.mark.parametrize(("scheduler_class", "config_class"), (
     (TrainScheduler,          BackboneEntryConfig),
-    (DualTrainScheduler,      DualEntryConfig),
     (JepaTrialScheduler,      JepaEntryConfig),
     (ProfileAeTrialScheduler, ProfileAeEntryConfig),
 ))
@@ -296,7 +293,6 @@ def test_scheduler_fields_name_real_entry_config_fields(scheduler_class, config_
 
 @pytest.mark.parametrize(("scheduler_class", "config_class"), (
     (TrainScheduler,          BackboneEntryConfig),
-    (DualTrainScheduler,      DualEntryConfig),
     (JepaTrialScheduler,      JepaEntryConfig),
     (ProfileAeTrialScheduler, ProfileAeEntryConfig),
 ))

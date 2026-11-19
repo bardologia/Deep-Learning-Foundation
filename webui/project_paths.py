@@ -34,10 +34,6 @@ class ProjectPaths:
             "config_module" : "configuration.training.jepa",
             "config_class"  : "JepaEntryConfig",
         },
-        "train_dual": {
-            "config_module" : "configuration.training.dual",
-            "config_class"  : "DualEntryConfig",
-        },
         "infer_backbone": {
             "config_module" : "configuration.inference",
             "config_class"  : "BackboneInferenceEntryConfig",
@@ -49,10 +45,6 @@ class ProjectPaths:
         "infer_image_autoencoder": {
             "config_module" : "configuration.inference",
             "config_class"  : "ImageAeInferenceEntryConfig",
-        },
-        "infer_dual": {
-            "config_module" : "configuration.inference",
-            "config_class"  : "DualInferenceEntryConfig",
         },
         "cross_validate": {
             "config_module" : "configuration.cross_validation.general",
@@ -114,11 +106,9 @@ class ProjectPaths:
         "train_profile_autoencoder"       : "training",
         "train_image_autoencoder"         : "training",
         "train_jepa"                      : "training",
-        "train_dual"                      : "training",
         "infer_backbone"                  : "inference",
         "infer_profile_autoencoder"       : "inference",
         "infer_image_autoencoder"         : "inference",
-        "infer_dual"                      : "inference",
         "benchmark"                       : "experiments",
         "cross_validate"                  : "experiments",
         "tune"                            : "experiments",

@@ -15,21 +15,18 @@ class InferenceEntry:
         RunType.BACKBONE   : "BackboneInferenceEntryConfig",
         RunType.PROFILE_AE : "ProfileAeInferenceEntryConfig",
         RunType.IMAGE_AE   : "ImageAeInferenceEntryConfig",
-        RunType.DUAL       : "DualInferenceEntryConfig",
     }
 
     BLOCKS = {
         RunType.BACKBONE   : "inference",
         RunType.PROFILE_AE : "profile_inference",
         RunType.IMAGE_AE   : "image_inference",
-        RunType.DUAL       : "inference",
     }
 
     DESCRIPTIONS = {
         RunType.BACKBONE   : "Backbone and JEPA inference: sliding-window prediction, stitched cubes, and reports over every backbone/JEPA run found at any depth under runs_dir (one run, a sweep, an experiment or a whole tree); runs already scored on the split are skipped unless skip_completed is off.",
         RunType.PROFILE_AE : "Profile-autoencoder inference: reconstruction scoring over every standalone profile-autoencoder run found at any depth under runs_dir; runs already scored on the split are skipped unless skip_completed is off.",
         RunType.IMAGE_AE   : "Image-autoencoder inference: reconstruction scoring over every standalone image-autoencoder run found at any depth under runs_dir; runs already scored on the split are skipped unless skip_completed is off.",
-        RunType.DUAL       : "Dual-trunk model inference: sliding-window prediction, stitched cubes, and reports over every dual run found at any depth under runs_dir; runs already scored on the split are skipped unless skip_completed is off.",
     }
 
     def __init__(self, entry_script: Path, run_type: RunType) -> None:
@@ -44,14 +41,13 @@ class InferenceEntry:
     def _worker(self, run_dir: str, config_path: str, gpu_id: int) -> None:
         EnvironmentPinner.gpu(gpu_id, expandable_segments=True)
 
-        from pipelines.shared.inference.inference_dispatch import BackboneInferenceRunner, DualInferenceRunner, ImageAeInferenceRunner, ProfileAeInferenceRunner
+        from pipelines.shared.inference.inference_dispatch import BackboneInferenceRunner, ImageAeInferenceRunner, ProfileAeInferenceRunner
         from tools.runtime.config_cli           import ConfigCli
 
         runners = {
             RunType.BACKBONE   : BackboneInferenceRunner,
             RunType.PROFILE_AE : ProfileAeInferenceRunner,
             RunType.IMAGE_AE   : ImageAeInferenceRunner,
-            RunType.DUAL       : DualInferenceRunner,
         }
 
         config = ConfigCli.load_resolved(self._entry_config(), Path(config_path))

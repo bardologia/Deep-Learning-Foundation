@@ -6,11 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from configuration.training                     import BackboneEntryConfig, DualEntryConfig
+from configuration.training                     import BackboneEntryConfig
 from configuration.training.jepa                import JepaEntryConfig
 from configuration.training.profile_autoencoder import ProfileAeEntryConfig
 from pipelines.backbone.training.launcher       import BackboneTrainingLauncher, TrainScheduler
-from pipelines.dual.training.launcher           import DualTrainingLauncher, DualTrainScheduler
 from pipelines.jepa.training.launcher           import JepaTrainingLauncher, JepaTrialScheduler
 from pipelines.profile_autoencoder.training.launcher import ProfileAeTrainingLauncher, ProfileAeTrialScheduler
 from tools.runtime.config_cli                   import ConfigCli
@@ -27,7 +26,6 @@ ENTRIES = [
     ("train_profile_autoencoder", ProfileAeEntryConfig, ProfileAeTrainingLauncher, ProfileAeTrialScheduler),
     ("train_jepa",                JepaEntryConfig,      JepaTrainingLauncher,      JepaTrialScheduler),
     ("train_backbone",            BackboneEntryConfig,  BackboneTrainingLauncher,  TrainScheduler),
-    ("train_dual",                DualEntryConfig,      DualTrainingLauncher,      DualTrainScheduler),
 ]
 
 

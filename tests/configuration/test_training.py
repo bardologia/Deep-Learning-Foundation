@@ -297,7 +297,6 @@ def test_profile_ae_entry_lr_defaults_mirror_the_architecture_config():
 def test_every_seeded_entry_defaults_to_the_standard_seeds():
     from configuration.benchmark.general        import BenchmarkConfig
     from configuration.cross_validation.general import CrossValidationConfig
-    from configuration.training.dual            import DualEntryConfig
     from configuration.training.general.run     import standard_seeds
 
     assert standard_seeds() == [0, 1]
@@ -307,7 +306,6 @@ def test_every_seeded_entry_defaults_to_the_standard_seeds():
         JepaEntryConfig,
         ProfileAeEntryConfig,
         ImageAeEntryConfig,
-        DualEntryConfig,
         CrossValidationConfig,
         BenchmarkConfig,
     ]

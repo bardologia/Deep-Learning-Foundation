@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pipelines.shared.config.config_persistence import BackboneModelConfigIO, DualModelConfigIO, ImageAutoencoderConfigIO, ProfileAutoencoderConfigIO
+from pipelines.shared.config.config_persistence import BackboneModelConfigIO, ImageAutoencoderConfigIO, ProfileAutoencoderConfigIO
 from pipelines.shared.inference.metadata        import RegionPass
 from pipelines.shared.inference.run_classifier  import RunArtifacts, RunClassifier, RunType
 
@@ -35,13 +35,6 @@ def test_classify_image_autoencoder(tmp_path):
     assert RunClassifier.classify(run) == RunType.IMAGE_AE
 
 
-
-
-def test_classify_dual(tmp_path):
-    run = _make_run(tmp_path, "dual_model_config.json")
-    assert RunClassifier.classify(run) == RunType.DUAL
-
-
 def test_classify_jepa_run_routes_to_backbone(tmp_path):
     run = _make_run(tmp_path, "model_config.json", "profile_autoencoder_config.json")
     assert RunClassifier.classify(run) == RunType.BACKBONE
@@ -57,7 +50,6 @@ def test_run_classifier_artifacts_match_config_io_filenames():
     assert BackboneModelConfigIO.FILENAME      == RunArtifacts.BACKBONE_CONFIG
     assert ProfileAutoencoderConfigIO.FILENAME == RunArtifacts.PROFILE_AE_CONFIG
     assert ImageAutoencoderConfigIO.FILENAME   == RunArtifacts.IMAGE_AE_CONFIG
-    assert DualModelConfigIO.FILENAME          == RunArtifacts.DUAL_CONFIG
 
 
 def test_spatial_run_config_scores_a_fold_unit_over_its_recorded_block(tmp_path):
@@ -116,7 +108,6 @@ def test_inference_layout_places_nested_families_under_their_subdirectory(tmp_pa
     from pipelines.shared.inference.run_classifier import InferenceLayout
 
     assert InferenceLayout.base(tmp_path, RunType.BACKBONE)   == tmp_path / "inference"
-    assert InferenceLayout.base(tmp_path, RunType.DUAL)       == tmp_path / "inference"
     assert InferenceLayout.base(tmp_path, RunType.PROFILE_AE) == tmp_path / "inference" / "profile_ae"
     assert InferenceLayout.base(tmp_path, RunType.IMAGE_AE)   == tmp_path / "inference" / "image_ae"
 
@@ -172,11 +163,10 @@ def test_autoencoder_runners_drive_their_pipeline_once(tmp_path, monkeypatch, ru
     assert components           is None
 
 
-def test_dual_runner_scores_each_stored_region_with_the_dual_components(tmp_path, monkeypatch):
+def test_backbone_runner_scores_each_stored_region_in_its_own_pass(tmp_path, monkeypatch):
     import configuration.inference                       as inference_configs
     import pipelines.backbone.inference.pipeline         as backbone_pipeline
     import pipelines.shared.inference.inference_dispatch as dispatch
-    from pipelines.dual.inference.pipeline               import DUAL_INFERENCE_COMPONENTS
 
     monkeypatch.setattr(backbone_pipeline, "InferencePipeline", _RecordingPipeline)
     monkeypatch.setattr(_RecordingPipeline, "passes", [])
@@ -187,22 +177,19 @@ def test_dual_runner_scores_each_stored_region_with_the_dual_components(tmp_path
         {"row_start": 250, "row_end": 300, "col_start": 0, "col_end": 50},
     ])
 
-    dispatch.DualInferenceRunner(inference_configs.DualInferenceEntryConfig()).run(run)
+    dispatch.BackboneInferenceRunner(inference_configs.BackboneInferenceEntryConfig()).run(run)
 
-    overrides  = [config.region_override for config, _ in _RecordingPipeline.passes]
-    components = [components for _, components in _RecordingPipeline.passes]
+    overrides = [config.region_override for config, _ in _RecordingPipeline.passes]
 
     assert overrides == [[150, 200, 0, 50], [250, 300, 0, 50]]
     assert all(config.run_directory == run for config, _ in _RecordingPipeline.passes)
-    assert components == [DUAL_INFERENCE_COMPONENTS] * 2
     assert [region_pass.index for region_pass in _RecordingPipeline.region_passes] == [0, 1]
 
 
-def test_dual_runner_scores_an_enabled_target_in_one_pass_without_the_stored_regions(tmp_path, monkeypatch):
+def test_backbone_runner_scores_an_enabled_target_in_one_pass_without_the_stored_regions(tmp_path, monkeypatch):
     import configuration.inference                       as inference_configs
     import pipelines.backbone.inference.pipeline         as backbone_pipeline
     import pipelines.shared.inference.inference_dispatch as dispatch
-    from pipelines.dual.inference.pipeline               import DUAL_INFERENCE_COMPONENTS
 
     monkeypatch.setattr(backbone_pipeline, "InferencePipeline", _RecordingPipeline)
     monkeypatch.setattr(_RecordingPipeline, "passes", [])
@@ -213,19 +200,18 @@ def test_dual_runner_scores_an_enabled_target_in_one_pass_without_the_stored_reg
         {"row_start": 250, "row_end": 300, "col_start": 0, "col_end": 50},
     ])
 
-    entry                          = inference_configs.DualInferenceEntryConfig()
+    entry                          = inference_configs.BackboneInferenceEntryConfig()
     entry.inference.target.enabled = True
 
-    dispatch.DualInferenceRunner(entry).run(run)
+    dispatch.BackboneInferenceRunner(entry).run(run)
 
     assert len(_RecordingPipeline.passes) == 1
 
-    config, components = _RecordingPipeline.passes[0]
+    config, _ = _RecordingPipeline.passes[0]
 
     assert config.run_directory             == run
     assert config.output_subdir             is None
     assert config.region_override           is None
-    assert components                       == DUAL_INFERENCE_COMPONENTS
     assert _RecordingPipeline.region_passes == [None]
 
 

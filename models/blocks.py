@@ -486,10 +486,9 @@ class OutputHeadsMixin:
         self.existence_head = PixelMLP(self.embedding_channels, self.hidden_channels, self.n_gaussians, self._head_activation())
         self.amp_off        = nn.Parameter(torch.zeros(self.n_gaussians))
 
-    def _set_prediction_forward(self, embedding: torch.Tensor, existence_embedding: torch.Tensor | None = None) -> torch.Tensor:
-        gate_source  = embedding if existence_embedding is None else existence_embedding
+    def _set_prediction_forward(self, embedding: torch.Tensor) -> torch.Tensor:
         head_outputs = [head(embedding) for head in self.gaussian_heads]
-        gate         = torch.sigmoid(self.existence_head(gate_source))
+        gate         = torch.sigmoid(self.existence_head(embedding))
 
         B, _, H, W = head_outputs[0].shape
         out = torch.stack(head_outputs, dim=1)

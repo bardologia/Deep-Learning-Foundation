@@ -91,7 +91,7 @@ class RunScanner:
         entries.sort(key=lambda entry: entry["id"], reverse=True)
         return {"ok": True, "root": str(root), "entries": entries}
 
-    def checkpoint_runs(self, base: str, checkpoint_name: str, config_names: tuple[str, ...]) -> dict:
+    def checkpoint_runs(self, base: str, checkpoint_name: str, config_name: str) -> dict:
         root, error = self.roots.open(base)
         if error:
             return {"ok": False, "error": error, "entries": []}
@@ -99,7 +99,7 @@ class RunScanner:
         entries = []
         for marker in sorted(root.rglob(checkpoint_name)):
             run_dir = marker.parent
-            if not any((run_dir / "meta" / name).is_file() for name in config_names):
+            if not (run_dir / "meta" / config_name).is_file():
                 continue
 
             entries.append(self._entry(root, run_dir, "", run_dir))

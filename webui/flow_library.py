@@ -597,114 +597,6 @@ class FlowLibrary:
             "nodes": nodes, "steps": steps,
         }
 
-    def _dual_train(self) -> dict:
-        nodes = [
-            {"id": "xhat",   "tex": r"\hat{\mathbf{x}}",          "role": "measured",     "kind": "tensor", "shape": "B x C_in x P x P", "desc": "normalised input batch: primary magnitude, secondary magnitudes, derived phases", "sample": [["0.41", "-0.20"], ["-0.33", "0.27"]]},
-            {"id": "keys",   "tex": r"\mathcal{K}",               "role": "intermediate", "kind": "vector", "shape": "C_in",             "desc": "per-channel group keys from InputConfig.channel_group_keys",                            "sample": ["chan/mag", "chan/mag", "derived/angle", "..."]},
-            {"id": "xp",     "tex": r"\hat{\mathbf{x}}^{P}",      "role": "intermediate", "kind": "tensor", "shape": "B x C_P x P x P",  "desc": "channels routed to the parameter trunk (params_input groups)",                          "sample": [["0.41", "-0.20"], ["0.15", "0.62"]]},
-            {"id": "xe",     "tex": r"\hat{\mathbf{x}}^{E}",      "role": "intermediate", "kind": "tensor", "shape": "B x C_E x P x P",  "desc": "channels routed to the existence trunk (existence_input groups)",                       "sample": [["0.41", "-0.20"], ["0.15", "0.62"]]},
-            {"id": "zp",     "tex": r"\mathbf{z}^{P}",            "role": "calculated",   "kind": "tensor", "shape": "B x D_P x P x P",  "desc": "parameter-trunk decoder embedding (headless backbone output)",                          "sample": [["0.72", "0.11"], ["-0.34", "0.58"]]},
-            {"id": "ze",     "tex": r"\mathbf{z}^{E}",            "role": "calculated",   "kind": "tensor", "shape": "B x D_E x P x P",  "desc": "existence-trunk decoder embedding (headless backbone output)",                          "sample": [["0.19", "-0.42"], ["0.63", "0.07"]]},
-            {"id": "uk",     "tex": r"\mathbf{u}_k",              "role": "intermediate", "kind": "tensor", "shape": "B x K x 3 x P x P","desc": "per-slot head output: raw amplitude, mu and sigma in normalised space",                 "sample": [["0.83", "0.55", "0.31"], ["0.12", "0.74", "0.44"]]},
-            {"id": "gate",   "tex": r"\mathbf{g}",                "role": "calculated",   "kind": "tensor", "shape": "B x K x P x P",    "desc": "per-slot existence gate in (0, 1) from the existence trunk",                            "sample": [["0.97", "0.04"], ["0.91", "0.62"]]},
-            {"id": "aoff",   "tex": r"\mathbf{b}",                "role": "intermediate", "kind": "vector", "shape": "K",                "desc": "learned closed-gate amplitude offset amp_off, initialised to zero",                     "sample": ["-0.02", "0.01"]},
-            {"id": "thn",    "tex": r"\hat{\theta}_{\mathrm{n}}", "role": "calculated",   "kind": "tensor", "shape": "B x 3K x P x P",   "desc": "interleaved normalised parameter output, identical in layout to the backbone output",   "sample": ["0.81", "0.55", "0.31", "..."]},
-            {"id": "loss",   "tex": r"\mathcal{L}",               "role": "calculated",   "kind": "scalar", "shape": "1",                "desc": "weight-normalised composite loss, the same catalog the backbone uses",                  "sample": "4.4e-2"},
-            {"id": "groups", "tex": r"\{g_P, g_E, g_H\}",         "role": "intermediate", "kind": "set",    "shape": "3",                "desc": "AdamW parameter groups: parameter trunk, existence trunk, output head",                 "sample": ["params_trunk", "existence_trunk", "output_head"]},
-            {"id": "wbest",  "tex": r"\theta^{\star}",            "role": "final",        "kind": "vector", "shape": "|theta|",          "desc": "best-epoch checkpointed dual-trunk weights",                                            "sample": ["0.30", "-0.09", "..."]},
-        ]
-        steps = [
-            {
-                "id": "dual_keys", "title": "Channel group keys", "phase": "A - Input routing",
-                "note": "The dataset stack labels every input channel with a group key: the primary magnitude and the secondary magnitudes are chan/*, the derived channels are derived/*. TrunkChannelMap infers the channel count that reproduces in_channels under the active InputConfig and raises when that count is not unique. The dual pipeline refuses input.use_aux, so no aux/* key can appear.",
-                "inputs": ["xhat"], "outputs": ["keys"],
-                "lines": [
-                    [{"id": "keys", "tex": r"\mathcal{K}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\big(\underbrace{\mathtt{chan}/\ast}_{1 + N_s},\ \underbrace{\mathtt{derived}/\ast}_{N_i}\big),\qquad C_{\mathrm{in}} = 1 + N_s + N_i = 9\ \text{for the default stack}"}],
-                ],
-            },
-            {
-                "id": "dual_route", "title": "Trunk input routing", "phase": "A - Input routing",
-                "note": "params_input and existence_input each select a subset of the groups {chan, derived}; the resolved index tuples are stored as the params_channels and existence_channels buffers and applied with index_select. The shipped default is full-full, meaning both trunks see all nine channels; the routing trials mode enumerates the seven asymmetric variants (chan-full, full-chan, derived-full, full-derived, chan-derived, derived-chan and full-full).",
-                "inputs": ["xhat", "keys"], "outputs": ["xp", "xe"],
-                "lines": [
-                    [{"id": "xp", "tex": r"\hat{\mathbf{x}}^{P}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\hat{\mathbf{x}}\big[\,\mathcal{C}_P\,\big],\qquad \mathcal{C}_P = \{\,c : \mathrm{group}(\mathcal{K}_c) \in \mathtt{params\_input}\,\}"}],
-                    [{"id": "xe", "tex": r"\hat{\mathbf{x}}^{E}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\hat{\mathbf{x}}\big[\,\mathcal{C}_E\,\big],\qquad \mathcal{C}_E = \{\,c : \mathrm{group}(\mathcal{K}_c) \in \mathtt{existence\_input}\,\}"}],
-                ],
-            },
-            {
-                "id": "dual_trunks", "title": "Two independent trunks", "phase": "B - Trunks",
-                "note": "Each trunk is any architecture from the backbone zoo, built with head = 'none' so its encode_decode returns the decoder embedding instead of parameters. The trunks share no weights and no activations. Both default to unet_skip; params_features and existence_features resize their feature ladders, and per-trunk overrides reach any remaining field of the trunk config except the six reserved ones the dual model sets itself (in_channels, out_channels, params_per_gaussian, head, init_mode, features).",
-                "inputs": ["xp", "xe"], "outputs": ["zp", "ze"],
-                "lines": [
-                    [{"id": "zp", "tex": r"\mathbf{z}^{P}", "role": "calculated"}, {"tex": "="}, {"tex": r"f_{P}\big("}, {"id": "xp", "tex": r"\hat{\mathbf{x}}^{P}", "role": "intermediate"}, {"tex": r"\big),\qquad"}, {"id": "ze", "tex": r"\mathbf{z}^{E}", "role": "calculated"}, {"tex": "="}, {"tex": r"f_{E}\big("}, {"id": "xe", "tex": r"\hat{\mathbf{x}}^{E}", "role": "intermediate"}, {"tex": r"\big)"}],
-                    [{"tex": r"\text{features}_P = [64, 128, 248, 472],\quad \text{features}_E = [24, 48, 84, 156]\ \Rightarrow\ D_P = 64,\ D_E = 24"}],
-                ],
-            },
-            {
-                "id": "dual_capacity", "title": "Capacity split between the arms", "phase": "B - Trunks",
-                "note": "The two feature ladders set how the parameter budget is divided. The shipped defaults are the 90-10 rung of ratio_trials: 28.06 M weights in the parameter arm (parameter trunk plus the per-slot heads) against 3.12 M in the existence arm (existence trunk, existence head and amp_off), an exact 90.0 / 10.0 split. The ratio trials mode sweeps 50-50, 60-40, 70-30, 80-20 and 90-10 at a matched total, with match_tolerance = 0.01 guarding the parity.",
-                "inputs": ["zp", "ze"], "outputs": ["zp", "ze"],
-                "lines": [
-                    [{"tex": r"\rho = \dfrac{|f_P| + |h_{1..K}|}{|f_P| + |h_{1..K}| + |f_E| + |h_{\mathrm{ex}}| + K} = \dfrac{28.06\,\mathrm{M}}{31.18\,\mathrm{M}} = 0.900"}],
-                ],
-            },
-            {
-                "id": "dual_heads", "title": "Per-slot parameter heads", "phase": "C - Dual set-prediction head",
-                "note": "The parameter embedding feeds K independent pixelwise MLPs, one per Gaussian slot, each a 1x1 convolution to max(D_P/2, 16) hidden channels, a ReLU and a 1x1 convolution to the three parameters of that slot. set_pred is the only head the dual model accepts; any other head value raises at construction.",
-                "inputs": ["zp"], "outputs": ["uk"],
-                "lines": [
-                    [{"id": "uk", "tex": r"\mathbf{u}_k", "role": "intermediate"}, {"tex": "="}, {"tex": r"W^{(k)}_2\,\mathrm{ReLU}\big(W^{(k)}_1\,"}, {"id": "zp", "tex": r"\mathbf{z}^{P}", "role": "calculated"}, {"tex": r" + b^{(k)}_1\big) + b^{(k)}_2,\qquad k = 1,\dots,K"}],
-                ],
-            },
-            {
-                "id": "dual_gate", "title": "Existence gate and amplitude blend", "phase": "C - Dual set-prediction head",
-                "note": "The existence embedding feeds one pixelwise MLP that emits K logits, squashed by a sigmoid into per-slot occupancy gates. Only the amplitude channel is gated: it is a convex blend of the predicted amplitude and the learned per-slot offset amp_off, so a closed gate drives the slot towards its learned empty value while mu and sigma pass through untouched. The split lets the occupancy decision and the placement decision read different channels and be sized independently: the routing trials vary which groups feed which trunk, the ratio trials vary how much capacity each arm gets.",
-                "inputs": ["ze", "uk", "aoff"], "outputs": ["gate", "thn"],
-                "lines": [
-                    [{"id": "gate", "tex": r"\mathbf{g}", "role": "calculated"}, {"tex": "="}, {"tex": r"\sigma\big(h_{\mathrm{ex}}("}, {"id": "ze", "tex": r"\mathbf{z}^{E}", "role": "calculated"}, {"tex": r")\big) \in (0,1)^{K}"}],
-                    [{"tex": r"\hat{a}_k = g_k\,u_{k,1} + (1 - g_k)\,"}, {"id": "aoff", "tex": r"b_k", "role": "intermediate"}, {"tex": r",\qquad (\hat{\mu}_k, \hat{\sigma}_k) = (u_{k,2},\ u_{k,3})"}],
-                ],
-            },
-            {
-                "id": "dual_assemble", "title": "Interleaved output tensor", "phase": "C - Dual set-prediction head",
-                "note": "The gated slots are stacked and flattened back into the interleaved 3K channel layout the rest of the stack expects, so everything downstream (denormalisation, physical clamping, the loss catalog, inference, the cube explorer) treats a dual run exactly like a backbone run.",
-                "inputs": ["gate", "uk"], "outputs": ["thn"],
-                "lines": [
-                    [{"id": "thn", "tex": r"\hat{\theta}_{\mathrm{n}}", "role": "calculated"}, {"tex": "="}, {"tex": r"\big(\hat{a}_1, \hat{\mu}_1, \hat{\sigma}_1,\ \dots,\ \hat{a}_K, \hat{\mu}_K, \hat{\sigma}_K\big),\qquad 3K = C_{\mathrm{out}}"}],
-                ],
-            },
-            {
-                "id": "dual_loss", "title": "Shared composite loss", "phase": "D - Loss and optimisation",
-                "note": "The dual curriculum is the backbone curriculum: the same two-phase warmup and complete stages, the same weight-normalised composite over curve and parameter terms, and hungarian matching in both stages. The full training flow documents every term; nothing in the loss is dual-specific.",
-                "inputs": ["thn"], "outputs": ["loss"],
-                "lines": [
-                    [{"id": "loss", "tex": r"\mathcal{L}", "role": "calculated"}, {"tex": "="}, {"tex": r"\dfrac{\sum_j \alpha_j\,\ell_j}{\sum_j \alpha_j},\qquad \text{matching} = \mathtt{hungarian}"}],
-                ],
-            },
-            {
-                "id": "dual_groups", "title": "Three-group AdamW", "phase": "D - Loss and optimisation",
-                "note": "get_param_groups splits the model into the parameter trunk, the existence trunk and the output head, each with its own learning rate and weight decay (3e-4 / 3e-4 / 1e-3 and 1e-4 throughout). All six values are exposed to the tuner over a log-uniform range. Warmup, cosine annealing, gradient clipping, EMA, early stopping and checkpointing are the shared trainer components.",
-                "inputs": ["loss"], "outputs": ["groups", "wbest"],
-                "lines": [
-                    [{"id": "groups", "tex": r"\{g_P, g_E, g_H\}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\big\{(f_P;\ 3\!\times\!10^{-4}, 10^{-4}),\ (f_E;\ 3\!\times\!10^{-4}, 10^{-4}),\ (h;\ 10^{-3}, 10^{-4})\big\}"}],
-                    [{"id": "wbest", "tex": r"\theta^{\star}", "role": "final"}, {"tex": "="}, {"tex": r"\operatorname*{arg\,min}_{t}\ \mathcal{L}_{\mathrm{val}}(\theta_t)"}],
-                ],
-            },
-            {
-                "id": "dual_persist", "title": "Run naming, persistence and trials", "phase": "E - Run artifacts",
-                "note": "The run name carries both trunks: dual_<params>.<existence>, collapsed to dual_<backbone> when they match, followed by the head, matching, slot count, augmentation and presence tags and a routing tag built from the two group labels (full.full by default). DualModelConfigIO writes dual_model_config.json under meta/ so inference reconstructs both trunks faithfully. Beyond the shared trial modes, the dual scheduler adds routing (which channel groups feed which trunk) and ratio (how the parameter budget splits).",
-                "inputs": ["wbest"], "outputs": ["wbest"],
-                "lines": [
-                    [{"tex": r"\texttt{dual\_unet\_skip-set\_pred-hungarian-K2-...-full.full}"}],
-                ],
-            },
-        ]
-        return {
-            "key": "dual_train", "name": "Dual Trunks (Train)",
-            "blurb": "Two independent backbones read their own slice of the input stack: the parameter trunk feeds K per-slot MLP heads that place the Gaussians, the existence trunk feeds one head whose sigmoid gate decides which slots are occupied, and the gate blends each amplitude with a learned empty-slot offset. The output is the same interleaved 3K tensor a backbone produces, so the loss catalog, the curriculum and the whole inference stack are shared; only the routing of channels to trunks and the capacity split between the two arms are new axes.",
-            "nodes": nodes, "steps": steps,
-        }
-
     def _profile_ae_train(self) -> dict:
         nodes = [
             {"id": "params", "tex": r"\Theta",                    "role": "measured",     "kind": "tensor", "shape": "3K x n_row x n_col", "desc": "per-pixel Gaussian mixture parameters (a, mu, sigma) from extraction", "sample": [["0.81", "12.4", "1.9"], ["0.55", "31.8", "2.6"]]},
@@ -2005,7 +1897,6 @@ class FlowLibrary:
             self._param_extraction(),
             self._dataset(),
             self._training(),
-            self._dual_train(),
             self._profile_ae_train(),
             self._image_ae_train(),
             self._jepa_train(),

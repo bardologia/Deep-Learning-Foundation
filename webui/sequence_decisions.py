@@ -12,7 +12,6 @@ class SequenceDecisions:
 
     FAMILY_NAMESPACES = {
         "backbone"            : "",
-        "dual"                : "dual",
         "jepa"                : "jepa",
         "profile_autoencoder" : "autoencoder",
         "image_autoencoder"   : "image_autoencoder",

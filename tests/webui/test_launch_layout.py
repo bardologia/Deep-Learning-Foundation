@@ -8,7 +8,6 @@ from importlib import import_module
 
 import pytest
 
-from backbone_model_library import BackboneModelLibrary
 from launch_layout          import LaunchLayout, LayoutError
 from project_paths          import ProjectPaths
 from script_catalog         import ScriptCatalog
@@ -20,15 +19,13 @@ from configuration.benchmark.general        import BenchmarkConfig
 from configuration.comparison               import ComparisonEntryConfig
 from configuration.cross_validation.general import CrossValidationConfig
 from configuration.diagnostics              import ReportCollectionEntryConfig, ReportMailEntryConfig, TensorboardExportEntryConfig
-from configuration.inference                import BackboneInferenceEntryConfig, DualInferenceEntryConfig, ImageAeInferenceEntryConfig, ProfileAeInferenceEntryConfig
-from configuration.training                 import BackboneEntryConfig, DualEntryConfig, JepaEntryConfig, ProfileAeEntryConfig, ImageAeEntryConfig
+from configuration.inference                import BackboneInferenceEntryConfig, ImageAeInferenceEntryConfig, ProfileAeInferenceEntryConfig
+from configuration.training                 import BackboneEntryConfig, JepaEntryConfig, ProfileAeEntryConfig, ImageAeEntryConfig
 from configuration.tuning.general           import TuningEntryConfig
-from models.backbone                        import BACKBONE_MODEL_REGISTRY
 from pipelines.jepa.training.coupling                import TargetProvider
 from pipelines.jepa.training.experiments             import CouplingTrialPlanner, CurveTrialPlanner, JepaCurriculumTrialPlanner, MaskingTrialPlanner
 from pipelines.jepa.training.launcher                import JepaTrialScheduler
 from pipelines.profile_autoencoder.training.launcher import ProfileAeTrialScheduler
-from models.dual.dual_resunet               import DualResUNet
 from pipelines.backbone.training.loss_terms import LossComponentCatalog
 from tests.webui.conftest import WEBUI_ROOT
 
@@ -37,7 +34,6 @@ _TRAINING_PAGES = [
     ("train_jepa",                JepaEntryConfig),
     ("train_profile_autoencoder", ProfileAeEntryConfig),
     ("train_image_autoencoder",   ImageAeEntryConfig),
-    ("train_dual",                DualEntryConfig),
     ("benchmark",                 BenchmarkConfig),
     ("cross_validate",            CrossValidationConfig),
     ("tune",                      TuningEntryConfig),
@@ -48,7 +44,6 @@ _INFERENCE_PAGES = [
     ("infer_backbone",            BackboneInferenceEntryConfig),
     ("infer_profile_autoencoder", ProfileAeInferenceEntryConfig),
     ("infer_image_autoencoder",   ImageAeInferenceEntryConfig),
-    ("infer_dual",                DualInferenceEntryConfig),
 ]
 
 
@@ -98,7 +93,7 @@ def test_secondary_labels_pick_secondaries_from_the_page_dataset(key, flow_confi
     assert widget["datasetFrom"] in paths
 
 
-@pytest.mark.parametrize("key, flow_config", [("infer_backbone", BackboneInferenceEntryConfig), ("infer_dual", DualInferenceEntryConfig)])
+@pytest.mark.parametrize("key, flow_config", [("infer_backbone", BackboneInferenceEntryConfig)])
 def test_the_target_dataset_pickers_read_the_target_scene(key, flow_config):
     paths   = [path for path, _value in ConfigCli._leaves(flow_config())]
     widgets = LaunchLayout().build(key, [{"path": path} for path in paths])["widgets"]
@@ -109,7 +104,7 @@ def test_the_target_dataset_pickers_read_the_target_scene(key, flow_config):
     assert widgets["inference.target.secondary_labels"]["datasetFrom"] == "inference.target.dataset_path"
 
 
-@pytest.mark.parametrize("key, flow_config", [("train_backbone", BackboneEntryConfig), ("train_jepa", JepaEntryConfig), ("train_dual", DualEntryConfig)])
+@pytest.mark.parametrize("key, flow_config", [("train_backbone", BackboneEntryConfig), ("train_jepa", JepaEntryConfig)])
 def test_the_training_pages_hide_the_target_dataset_block(key, flow_config):
     paths  = [path for path, _value in ConfigCli._leaves(flow_config())]
     layout = LaunchLayout().build(key, [{"path": path} for path in paths])
@@ -167,9 +162,6 @@ def test_sweep_loss_choices_match_the_component_catalog():
 
 
 
-def test_dual_trunk_choices_match_the_backbone_registry():
-    assert set(LaunchLayout.CH_TRUNK["options"]) == set(BACKBONE_MODEL_REGISTRY)
-
 
 def test_pair_components_in_experiment_builder_match_the_catalog():
     js    = (WEBUI_ROOT / "static" / "js" / "experiment_builder.js").read_text()
@@ -221,7 +213,6 @@ def test_experiment_builder_offers_every_scheduler_mode(scheduler, trials):
     (ProfileAeEntryConfig, LaunchLayout.PROFILE_AE_EXPERIMENT_TRIALS),
     (JepaEntryConfig,      LaunchLayout.JEPA_EXPERIMENT_TRIALS),
     (BackboneEntryConfig,  LaunchLayout.EXPERIMENT_TRIALS),
-    (DualEntryConfig,      LaunchLayout.DUAL_EXPERIMENT_TRIALS),
 ))
 def test_experiment_panel_claims_every_trial_field_of_its_entry(entry_config, trials):
     leaves = [path for path, _ in ConfigCli._leaves(entry_config())]
@@ -413,10 +404,6 @@ def test_the_cross_validation_page_switches_its_arch_panel_on_the_training_type(
     assert switch["models"] == {"backbone": "backbone_name", "jepa": "backbone_name", "profile_autoencoder": "autoencoder.ae_model_name", "image_autoencoder": "image_autoencoder.ae_model_name"}
     assert "modelFrom" not in by_field["model_overrides"]
 
-    assert by_field["dual.params_overrides"]["modelFrom"]    == "dual.params_backbone"
-    assert by_field["dual.existence_overrides"]["modelFrom"] == "dual.existence_backbone"
-    assert by_field["dual.params_overrides"]["exclude"] == LaunchLayout.DUAL_TRUNK_EXCLUDE
-
 
 def test_the_jepa_page_carries_an_arch_panel_reading_the_backbone_field():
     panels = _arch_panels("train_jepa", JepaEntryConfig)
@@ -449,49 +436,8 @@ def test_an_arch_panel_with_both_model_sources_is_rejected():
         engine._validate("cross_validate", layout, leaves)
 
 
-def test_the_dual_page_carries_one_arch_panel_per_trunk():
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(DualEntryConfig())]
-    layout = LaunchLayout().build("train_dual", leaves)
-
-    panels = [panel for section in layout["sections"] for panel in section["panels"] if panel.get("panel") == "arch_overrides"]
-
-    assert [panel["fields"]    for panel in panels] == [["params_overrides"], ["existence_overrides"]]
-    assert [panel["modelFrom"] for panel in panels] == ["params_backbone", "existence_backbone"]
-    assert all(panel["exclude"] == LaunchLayout.DUAL_TRUNK_EXCLUDE for panel in panels)
-    assert all(panel["title"] for panel in panels)
 
 
-def test_the_dual_trunk_panels_exclude_the_reserved_and_unused_trunk_fields():
-    reserved = set(DualResUNet.RESERVED_TRUNK_FIELDS) - set(BackboneModelLibrary.ARCH_EXCLUDED)
-    explicit = {name for name in LaunchLayout.DUAL_TRUNK_EXCLUDE if not name.startswith("*")}
-
-    assert reserved <= explicit
-    assert "*_lr" in LaunchLayout.DUAL_TRUNK_EXCLUDE
-    assert "*_wd" in LaunchLayout.DUAL_TRUNK_EXCLUDE
-
-
-def test_an_exclude_list_on_a_non_arch_panel_is_rejected():
-    engine = LaunchLayout()
-    layout = engine._expand("train_backbone")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(BackboneEntryConfig())]
-
-    panel = next(panel for section in layout["sections"] for panel in section["panels"] if panel.get("panel") == "model_card")
-    panel["exclude"] = ["dropout"]
-
-    with pytest.raises(LayoutError):
-        engine._validate("train_backbone", layout, leaves)
-
-
-def test_an_empty_exclude_list_is_rejected():
-    engine = LaunchLayout()
-    layout = engine._expand("train_dual")
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(DualEntryConfig())]
-
-    panel = next(panel for section in layout["sections"] for panel in section["panels"] if panel.get("panel") == "arch_overrides")
-    panel["exclude"] = []
-
-    with pytest.raises(LayoutError):
-        engine._validate("train_dual", layout, leaves)
 
 
 def _model_card(layout):
@@ -521,9 +467,8 @@ def test_the_cross_validation_tabs_cover_every_training_family():
     leaves = [{"path": path} for path, _value in ConfigCli._leaves(CrossValidationConfig())]
     layout = LaunchLayout().build("cross_validate", leaves)
 
-    assert [option[0] for option in layout["type_tab"]["options"]] == ["backbone", "dual", "profile_autoencoder", "image_autoencoder", "jepa"]
+    assert [option[0] for option in layout["type_tab"]["options"]] == ["backbone", "profile_autoencoder", "image_autoencoder", "jepa"]
 
-    assert _section(layout, "dual")["when"]              == {"field": "training_type", "in": ["dual"]}
     assert _section(layout, "image-autoencoder")["when"] == {"field": "training_type", "in": ["image_autoencoder"]}
     assert "when" not in _section(layout, "inference")
 

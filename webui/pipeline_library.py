@@ -35,13 +35,6 @@ class PipelineLibrary:
                 "stages" : ["Curve reconstruction", "Composite loss", "AdamW step", "Schedule and curriculum", "Eval and checkpoint"],
             },
             {
-                "key"    : "dual_train",
-                "name"   : "Dual Trunks (Train)",
-                "script" : "train_dual",
-                "blurb"  : "Split the backbone into two independent trunks: one reads its slice of the input stack to place the Gaussians, the other reads its slice to gate which slots are occupied. The output layout, the loss catalog, the curriculum and the whole inference stack are the backbone's, so dual runs compare directly against backbone runs.",
-                "stages" : ["Trunk input routing", "Two trunks", "Per-slot heads and existence gate", "Shared composite loss", "Three-group AdamW and checkpoint"],
-            },
-            {
                 "key"    : "profile_ae_train",
                 "name"   : "Profile AE (Train)",
                 "script" : "train_profile_autoencoder",

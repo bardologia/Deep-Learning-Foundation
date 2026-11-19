@@ -24,15 +24,6 @@ class AblationCatalog:
     FULL_ARCHITECTURE     = "resunet"
     BASELINE_ARCHITECTURE = "unet"
 
-    DUAL_GROUP_LR_DEFAULTS = (
-        ("params_trunk_lr",    3e-4),
-        ("existence_trunk_lr", 3e-4),
-        ("output_head_lr",     1e-3),
-    )
-
-    DUAL_FULL_ARCHITECTURE     = "unet_skip"
-    DUAL_BASELINE_ARCHITECTURE = "unet"
-
     CHANNEL_NORMS = (
         ("out_amp",       "out_amp",   "robust_iqr_log1p", "zscore"),
         ("out_sigma",     "out_sigma", "robust_iqr_log1p", "zscore"),
@@ -220,44 +211,4 @@ class AblationCatalog:
     @classmethod
     def default_features(cls) -> list[dict]:
         catalog = cls.as_dict()
-        return [catalog[label] for label in cls.DEFAULT_ORDER]
-
-    @classmethod
-    def _dual_lr_feature(cls) -> dict:
-        return {
-            "label"   : "lr_per_group",
-            "group"   : "optimizer",
-            "enable"  : {"model_overrides": {key: lr                  for key, lr in cls.DUAL_GROUP_LR_DEFAULTS}},
-            "degrade" : {"model_overrides": {key: cls.SINGLE_GROUP_LR for key, _  in cls.DUAL_GROUP_LR_DEFAULTS}},
-        }
-
-    @classmethod
-    def _dual_architecture_feature(cls) -> dict:
-        complete = cls.COMPLETE_PREFIX
-
-        return {
-            "label"   : "architecture_param_loss",
-            "group"   : "architecture",
-            "enable"  : {
-                "params_backbone"             : cls.DUAL_FULL_ARCHITECTURE,
-                "existence_backbone"          : cls.DUAL_FULL_ARCHITECTURE,
-                f"{complete}use_param_l1"     : True,
-                f"{complete}weight_param_l1"  : 1.0,
-                f"{complete}use_param_mse"    : False,
-                f"{complete}weight_param_mse" : 0.0,
-            },
-            "degrade" : {
-                "params_backbone"             : cls.DUAL_BASELINE_ARCHITECTURE,
-                "existence_backbone"          : cls.DUAL_BASELINE_ARCHITECTURE,
-                f"{complete}use_param_l1"     : False,
-                f"{complete}weight_param_l1"  : 0.0,
-                f"{complete}use_param_mse"    : True,
-                f"{complete}weight_param_mse" : 1.0,
-            },
-        }
-
-    @classmethod
-    def dual_default_features(cls) -> list[dict]:
-        catalog = cls.as_dict()
-        catalog.update({feature["label"]: feature for feature in (cls._dual_lr_feature(), cls._dual_architecture_feature())})
         return [catalog[label] for label in cls.DEFAULT_ORDER]

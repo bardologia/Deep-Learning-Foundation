@@ -109,17 +109,10 @@ def test_compose_appends_the_suffix():
 def test_extras_slot_in_between_presence_and_loss():
     loss = _loss(use_param_l1=True, weight_param_l1=1.0, use_active_normalization=True)
 
-    assert RunNaming.tag("dual_resunet", "set_pred", loss, 2, _aug(), extras=("full.derived",)) == "dual_resunet-set_pred-hungarian-K_2-hv-A-full.derived-param_l1_1"
-    assert RunNaming.tag("dual_resunet", "set_pred", loss, 2, _aug())                       == "dual_resunet-set_pred-hungarian-K_2-hv-A-param_l1_1"
+    assert RunNaming.tag("resunet", "set_pred", loss, 2, _aug(), extras=("full.derived",)) == "resunet-set_pred-hungarian-K_2-hv-A-full.derived-param_l1_1"
+    assert RunNaming.tag("resunet", "set_pred", loss, 2, _aug())                           == "resunet-set_pred-hungarian-K_2-hv-A-param_l1_1"
 
 
-def test_dual_model_tag_collapses_matching_trunks():
-    assert RunNaming.dual_model_tag("unet_skip", "unet_skip") == "dual_unet_skip"
-    assert RunNaming.dual_model_tag("resunet", "resunet")     == "dual_resunet"
-
-
-def test_dual_model_tag_names_both_trunks_when_they_differ():
-    assert RunNaming.dual_model_tag("unet_skip", "local_cnn") == "dual_unet_skip.local_cnn"
 
 
 def test_embedding_loss_tag_lists_enabled_terms_with_weights():

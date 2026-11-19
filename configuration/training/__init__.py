@@ -43,9 +43,3 @@ from configuration.training.profile_autoencoder import (
     ProfileAeTrainerConfig,
     ProfileAeEntryConfig,
 )
-from configuration.training.dual import (
-    DualEntryConfig,
-    DualRoutingTrialsConfig,
-    DualRatioTrialsConfig,
-    dual_curriculum,
-)

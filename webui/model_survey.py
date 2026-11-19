@@ -11,8 +11,6 @@ from catalog_roots import CatalogRoots, RunScanner
 from model_probe   import ModelProbe
 from web_logger    import WebLogger
 
-from pipelines.shared.inference.run_classifier import RunArtifacts
-
 
 class SurveyCancelled(Exception):
     pass
@@ -46,7 +44,7 @@ class ModelSurvey:
         self.status      = {"state": "idle", "path": "", "progress": 0.0, "stage": "", "error": ""}
 
     def runs(self, base: str) -> dict:
-        scanned = self.scanner.checkpoint_runs(base, ModelProbe.CHECKPOINT, ModelProbe.CONFIG_NAMES)
+        scanned = self.scanner.checkpoint_runs(base, ModelProbe.CHECKPOINT, ModelProbe.CONFIG_NAME)
         if not scanned["ok"]:
             return {"ok": False, "error": scanned["error"], "runs": []}
 
@@ -125,13 +123,13 @@ class ModelSurvey:
 
     def _load(self, run_path: str, split: str, device: str) -> None:
         from pipelines.backbone.inference.analysis.input_attribution import ChannelLabeler
+        from pipelines.backbone.inference.loader            import RunLoader
         from pipelines.backbone.inference.probes            import PredictionCurves
         from tools.monitoring.logger                        import Logger
 
         self._set(0.0, "loading checkpoint and dataset")
 
-        is_dual = (Path(run_path) / "meta" / RunArtifacts.DUAL_CONFIG).is_file()
-        run     = ModelProbe._loader_class(is_dual)(Path(run_path), logger=Logger(log_dir="", name=self.LOADER_NAME)).load(
+        run = RunLoader(Path(run_path), logger=Logger(log_dir="", name=self.LOADER_NAME)).load(
             split           = split,
             batch_size      = 1,
             num_workers     = 0,
@@ -147,7 +145,7 @@ class ModelSurvey:
             "labels"   : ChannelLabeler.build(run),
             "renderer" : PredictionCurves(run.n_gaussians, run.z_axis),
             "patch"    : tuple(run.dataset_config.patch.size),
-            "backbone" : ModelProbe._model_label(run, is_dual),
+            "backbone" : run.backbone_name,
         }
 
     def _tile_origins(self) -> tuple[list, int, int, int]:

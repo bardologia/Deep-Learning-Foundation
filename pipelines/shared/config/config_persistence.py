@@ -6,7 +6,6 @@ from pathlib     import Path
 
 from configuration.dataset.profile_autoencoder import ProfileAugmentationConfig, ProfileDatasetConfig
 from models                                    import BACKBONE_CONFIG_REGISTRY
-from models.dual                               import DUAL_CONFIG_REGISTRY
 from models.image_autoencoder                  import IMAGE_AE_CONFIG_REGISTRY
 from models.profile_autoencoder                import PROFILE_AE_CONFIG_REGISTRY
 from tools.data.io                             import FileIO
@@ -136,17 +135,6 @@ class ImageAutoencoderConfigIO(ConfigIO):
     @classmethod
     def _serialize(cls, config) -> dict:
         return asdict(config)
-
-
-class DualModelConfigIO(ModelConfigIO):
-
-    FILENAME     = RunArtifacts.DUAL_CONFIG
-    MISSING_NOUN = "dual-input"
-    UNKNOWN_NOUN = "dual-input model"
-
-    @classmethod
-    def _registry(cls) -> dict:
-        return DUAL_CONFIG_REGISTRY
 
 
 class ProfileDatasetConfigIO:

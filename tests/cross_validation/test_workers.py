@@ -297,7 +297,6 @@ def test_training_worker_dispatch_routes_by_type(test_data_dir, tmp_path, monkey
     seen = {}
 
     monkeypatch.setattr(FoldTrainingWorker, "_run_backbone",            lambda self, i, seed, sr, run_name: seen.update(kind="backbone"),  raising=True)
-    monkeypatch.setattr(FoldTrainingWorker, "_run_dual",                lambda self, i, seed, sr, run_name: seen.update(kind="dual"),      raising=True)
     monkeypatch.setattr(FoldTrainingWorker, "_run_jepa",                lambda self, i, seed, sr, run_name: seen.update(kind="jepa"),      raising=True)
     monkeypatch.setattr(FoldTrainingWorker, "_run_profile_autoencoder", lambda self, i, seed, sr, run_name: seen.update(kind="ae"),        raising=True)
     monkeypatch.setattr(FoldTrainingWorker, "_run_image_autoencoder",   lambda self, i, seed, sr, run_name: seen.update(kind="image_ae"),  raising=True)
@@ -309,9 +308,6 @@ def test_training_worker_dispatch_routes_by_type(test_data_dir, tmp_path, monkey
 
     FoldTrainingWorker(rooted("backbone"), run_tag="rt").run(0)
     assert seen["kind"] == "backbone"
-
-    FoldTrainingWorker(rooted("dual"), run_tag="rt").run(0)
-    assert seen["kind"] == "dual"
 
     ProfileAutoencoderConfigIO.save(GruAutoencoderConfig(), "gru_ae", tmp_path / "gru_run" / "meta")
     jepa_config                                 = rooted("jepa")
@@ -337,37 +333,7 @@ def test_training_worker_rejects_unknown_type(test_data_dir):
         FoldTrainingWorker(config, run_tag="rt").run(0)
 
 
-@pytest.mark.dataset
-def test_dual_fold_run_name_carries_trunks_and_routing(test_data_dir):
-    worker = FoldTrainingWorker(worker_config(test_data_dir, "dual"), run_tag="rt")
 
-    name = worker.fold_run_name(1, None)
-
-    assert name.startswith("dual_unet_skip-set_pred-")
-    assert "-full.full-" in name
-    assert name.endswith("_fold_1")
-
-
-@pytest.mark.dataset
-def test_dual_model_config_binds_both_trunks(test_data_dir):
-    config                          = worker_config(test_data_dir, "dual")
-    config.dual.existence_backbone  = "unet"
-    config.dual.existence_input     = ["derived"]
-
-    model_config = FoldTrainingWorker(config, run_tag="rt")._dual_model_config()
-
-    assert model_config.params_backbone    == "unet_skip"
-    assert model_config.existence_backbone == "unet"
-    assert model_config.existence_input    == ("derived",)
-
-
-@pytest.mark.dataset
-def test_dual_model_config_rejects_trunk_keys_in_model_overrides(test_data_dir):
-    config                  = worker_config(test_data_dir, "dual")
-    config.model_overrides  = {"params_backbone": "unet"}
-
-    with pytest.raises(ValueError, match="dedicated dual"):
-        FoldTrainingWorker(config, run_tag="rt")._dual_model_config()
 
 
 @pytest.mark.dataset

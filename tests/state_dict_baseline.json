@@ -464,12 +464,5 @@
       "num_keys": 114,
       "num_parameters": 3598105
     }
-  },
-  "dual": {
-    "dual_resunet": {
-      "signature": "808f966531e581a72ae2ad56edb04fd836bd96347b3f0217e941fbf77fc7c6a0",
-      "num_keys": 253,
-      "num_parameters": 31181810
-    }
   }
 }

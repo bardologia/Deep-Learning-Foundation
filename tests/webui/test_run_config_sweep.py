@@ -139,7 +139,7 @@ def test_every_changed_field_survives_the_copy_relaunch_cycle(key, tmp_path):
     assert wrong == {}, f"{key}: {len(wrong)} fields relaunch with a different value: {wrong}"
 
 
-@pytest.mark.parametrize("key", ("train_backbone", "train_dual", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder"))
+@pytest.mark.parametrize("key", ("train_backbone", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder"))
 def test_preflight_fields_are_part_of_the_copy_surface(key):
     config = _entry_config_class(key)()
     leaves = {path: value for path, value in ConfigCli._leaves(config)}

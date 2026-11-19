@@ -244,29 +244,6 @@ def test_diff_directions_follow_the_shared_metric_orientation(tmp_path):
     assert directions["curve_mse_gt"]               == -1
 
 
-def test_diff_includes_the_family_specific_model_config(tmp_path):
-    """A dual run's meta/dual_model_config.json is picked up under the dual. prefix without a missing-config note."""
-    names = ["dual_unet_skip-set_pred-hungarian-K_2-hv-A-full.full-param_l1_1_20260727_120000",
-             "dual_resunet-set_pred-hungarian-K_2-hv-A-full.full-param_l1_1_20260727_130000"]
-    stamps = []
-
-    for name, backbone in zip(names, ("unet_skip", "resunet")):
-        stamp = _make_run(tmp_path, name, metrics={"curve_mse_gt": 0.5})
-        meta  = tmp_path / name / "meta"
-        meta.mkdir(exist_ok=True)
-        (meta / "dual_model_config.json").write_text(json.dumps({"params_backbone": backbone, "existence_backbone": backbone}))
-        stamps.append(stamp)
-
-    board = RunLeaderboard(WebLogger())
-    assert board.table(str(tmp_path))["ok"]
-
-    result = board.diff([str(s) for s in stamps])
-    assert result["ok"]
-
-    assert result["sides"][0]["config"]["dual.params_backbone"] == "unet_skip"
-    assert result["sides"][1]["config"]["dual.params_backbone"] == "resunet"
-    assert not any("model config" in note for note in result["sides"][0]["config_notes"])
-
 
 def test_diff_keeps_each_model_config_under_its_own_prefix(tmp_path):
     """Backbone, profile-autoencoder and image-autoencoder configs stay separated by prefix instead of colliding."""
@@ -541,30 +518,4 @@ def test_table_sorted_by_mtime_desc(tmp_path):
     assert [row["stamp"] for row in result["rows"]] == ["20260702_000000", "20260701_000000"]
 
 
-def test_axes_parse_dual_input_token():
-    """A dual run name exposes its per-trunk input token alongside the model and loss axes."""
-    axes = RunAxes.parse("dual_resunet-set_pred-hungarian-K_2-hv-A-full.derived-param_l1_1_20260726_120000")
 
-    assert axes["model"]  == "dual_resunet"
-    assert axes["inputs"] == "full.derived"
-    assert axes["loss"]   == "param_l1_1"
-    assert axes["losses"] == [{"name": "param_l1", "weight": 1.0}]
-
-
-def test_axes_parse_trunk_aware_dual_model_token():
-    """Dual model tokens keep their trunk backbone names, including a mixed per-trunk pair."""
-    axes = RunAxes.parse("dual_unet_skip-set_pred-hungarian-K_2-hv-A-full.full-param_l1_1_20260727_120000")
-
-    assert axes["model"]  == "dual_unet_skip"
-    assert axes["inputs"] == "full.full"
-
-    mixed = RunAxes.parse("dual_unet_skip.local_cnn-set_pred-hungarian-K_2-hv-A-full.derived-param_l1_1_20260727_120000")
-
-    assert mixed["model"] == "dual_unet_skip.local_cnn"
-
-
-def test_axes_parse_input_token_absent_on_single_trunk_names():
-    """Single-trunk names leave the inputs axis empty."""
-    axes = RunAxes.parse(STANDARD_NAME)
-
-    assert axes["inputs"] == ""

@@ -484,30 +484,6 @@ class ExperimentBuilder {
       summary   : (b, gpus) => `autocast off and on = 2 trials${b._seedsSuffix(2)}${gpus}`,
       names     : (b, model) => ["amp-0-off", "amp-1-on"].map((rung) => `${model}_${rung}`) },
 
-    { group: "arch", key: "routing", label: "trunk routing", hint: "one trial per params/existence channel-group assignment, each in a no-Aux and a with-Aux variant, both trunks fixed at the shared parity feature ladders",
-      at        : 13,
-      el        : "routingEl",
-      available : (b) => b.routingTrials.size > 0,
-      make      : (b) => b._routingPanel(),
-      paint     : (b) => b._paintRouting(),
-      summary   : (b, gpus) => {
-        const n = Object.keys(b._routingTrialsDict()).length;
-        return `${n} routing assignment${n === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
-      },
-      names     : (b, model) => Object.keys(b._routingTrialsDict()).map((label) => `${model}_di-${label}`) },
-
-    { group: "arch", key: "ratio",   label: "arm ratio", hint: "budget-matched params/existence width ladders, one trial per declared split; every model is built and its split verified at launch",
-      at        : 14,
-      el        : "ratioEl",
-      available : (b) => b.ratioTrials.size > 0,
-      make      : (b) => b._ratioPanel(),
-      paint     : (b) => b._paintRatio(),
-      summary   : (b, gpus) => {
-        const n = Object.keys(b._ratioTrialsDict()).length;
-        return `${n} arm split${n === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
-      },
-      names     : (b, model) => Object.keys(b._ratioTrialsDict()).map((label) => `${model}_dr-${label}`) },
-
     { group: "arch", key: "arch", label: "AE family", hint: "one trial per profile-autoencoder family rung on the shared base config; extra rung keys apply as model overrides",
       at        : 17,
       el        : "archEl",
@@ -883,8 +859,6 @@ class ExperimentBuilder {
     this.clampTrials     = new Map();
     this.stabilityTrials = new Map();
     this.emaTrials       = new Map();
-    this.routingTrials   = new Map();
-    this.ratioTrials     = new Map();
     this.embDimTrials    = new Map();
     this.capacityTrials  = new Map();
     this.smoothTrials    = new Map();
@@ -909,8 +883,6 @@ class ExperimentBuilder {
       if (leaf.section === "clamp_trials")         this.clampTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "stability_trials")     this.stabilityTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "ema_trials")           this.emaTrials.set(leaf.path.split(".").pop(), leaf);
-      if (leaf.section === "routing_trials")       this.routingTrials.set(leaf.path.split(".").pop(), leaf);
-      if (leaf.section === "ratio_trials")         this.ratioTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "embedding_trials")     this.embDimTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "capacity_trials")      this.capacityTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "smoothness_trials")    this.smoothTrials.set(leaf.path.split(".").pop(), leaf);
@@ -940,8 +912,6 @@ class ExperimentBuilder {
     this.clampTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.stabilityTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.emaTrials.forEach((leaf) => this.claimed.push(leaf.path));
-    this.routingTrials.forEach((leaf) => this.claimed.push(leaf.path));
-    this.ratioTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.embDimTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.capacityTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.smoothTrials.forEach((leaf) => this.claimed.push(leaf.path));
@@ -1005,10 +975,6 @@ class ExperimentBuilder {
     this.emaEl           = null;
     this.emaDecaysEl     = null;
     this.ampEl           = null;
-    this.routingEl       = null;
-    this.routingCellsEl  = null;
-    this.ratioEl         = null;
-    this.ratioCellsEl    = null;
     this.archEl          = null;
     this.archCellsEl     = null;
     this.embDimEl        = null;
@@ -3419,13 +3385,8 @@ class ExperimentBuilder {
       });
     };
 
-    if (this.headHeadsEl)     paintToggles(this.headHeadsEl,     "heads",     this._headOptions());
+    if (this.headHeadsEl)     paintToggles(this.headHeadsEl,     "heads",     ExperimentBuilder.HEAD_OPTIONS);
     if (this.headMatchingsEl) paintToggles(this.headMatchingsEl, "matchings", ExperimentBuilder.MATCHING_OPTIONS);
-  }
-
-  _headOptions() {
-    if (this.view.key === "train_dual") return ExperimentBuilder.HEAD_OPTIONS.filter((option) => option.key === "set_pred");
-    return ExperimentBuilder.HEAD_OPTIONS;
   }
 
   _repaintHead() {
@@ -3434,145 +3395,12 @@ class ExperimentBuilder {
     this._paintNames();
   }
 
-  _routingTrialsDict() {
-    return this._trialsDict(this.routingTrials.get("trials"));
-  }
-
-  _ratioTrialsDict() {
-    return this._trialsDict(this.ratioTrials.get("trials"));
-  }
-
   _trialsDict(leaf) {
     return leaf ? this._dictFrom(this.view._effective(leaf)) : {};
   }
 
   _defaultsDict(leaf) {
     return leaf ? this._dictFrom(leaf.value) : {};
-  }
-
-  _routingSpecText(spec) {
-    const groups = (key) => (Array.isArray(spec && spec[key]) ? spec[key].join("+") : "?");
-    return `${groups("params")} | ${groups("existence")}`;
-  }
-
-  _ratioSpecText(spec) {
-    const ladder = (key) => (Array.isArray(spec && spec[key]) ? spec[key].join("/") : "?");
-    return `params ${ladder("params")} · existence ${ladder("existence")}`;
-  }
-
-  _routingPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">trunk routing</span>`;
-    const reset    = LaunchWidgetDom.mini("reset assignments", () => this._resetRouting());
-    reset.classList.add("exp-presence__reset");
-    head.appendChild(reset);
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "One training run per params | existence channel-group assignment, each assignment doubled as a no-Aux and a with-Aux variant; the Aux input channel follows the selection, and both trunks stay at the shared feature ladders below. Drop assignments to trim the fan-out; adding assignments lives in code (_default_dual_routing_trials); use reset assignments to restore the default grid.";
-
-    const grid     = document.createElement("div");
-    grid.className = "exp-secondary__grid";
-    ["params_features", "existence_features"].forEach((key) => {
-      const leaf = this.routingTrials.get(key);
-      if (leaf) grid.appendChild(this._trialTextRow(key, leaf, () => this._repaintRouting()));
-    });
-
-    const cellHead       = document.createElement("div");
-    cellHead.className   = "exp-presence__sub";
-    cellHead.textContent = "assignments";
-
-    const cells         = document.createElement("div");
-    cells.className     = "exp-builder__names exp-presence__cells";
-    this.routingCellsEl = cells;
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(grid);
-    panel.appendChild(cellHead);
-    panel.appendChild(cells);
-    this.routingEl = panel;
-
-    const trialsLeaf = this.routingTrials.get("trials");
-    if (trialsLeaf) this.view.controls[trialsLeaf.path] = { leaf: trialsLeaf, reset: () => this._repaintRouting() };
-
-    this._paintRouting();
-    return panel;
-  }
-
-  _ratioPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">arm ratio</span>`;
-    const reset    = LaunchWidgetDom.mini("reset splits", () => this._resetRatio());
-    reset.classList.add("exp-presence__reset");
-    head.appendChild(reset);
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "One training run per declared params/existence split, every trial spending the same parameter budget; the launcher builds each model and refuses ladders whose realized split or total budget drifts beyond the match tolerance. Drop splits to trim the fan-out; retuning ladders lives in code (_default_dual_ratio_trials); use reset splits to restore the default grid.";
-
-    const grid     = document.createElement("div");
-    grid.className = "exp-secondary__grid";
-    const tolerance = this.ratioTrials.get("match_tolerance");
-    if (tolerance) grid.appendChild(this._trialTextRow("match_tolerance", tolerance, () => this._repaintRatio()));
-
-    const cellHead       = document.createElement("div");
-    cellHead.className   = "exp-presence__sub";
-    cellHead.textContent = "splits";
-
-    const cells       = document.createElement("div");
-    cells.className   = "exp-builder__names exp-presence__cells";
-    this.ratioCellsEl = cells;
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(grid);
-    panel.appendChild(cellHead);
-    panel.appendChild(cells);
-    this.ratioEl = panel;
-
-    const trialsLeaf = this.ratioTrials.get("trials");
-    if (trialsLeaf) this.view.controls[trialsLeaf.path] = { leaf: trialsLeaf, reset: () => this._repaintRatio() };
-
-    this._paintRatio();
-    return panel;
-  }
-
-  _trialTextRow(label, leaf, repaint) {
-    const row     = document.createElement("div");
-    row.className = "cfg-edit__row";
-    row.title     = `--${leaf.path}`;
-
-    const name     = document.createElement("div");
-    name.className = "cfg-edit__name";
-    name.innerHTML = `${label}<span>${leaf.type}</span>`;
-
-    const input      = document.createElement("input");
-    input.className  = "cfg-edit__input";
-    input.type       = "text";
-    input.value      = this.view._effective(leaf);
-    input.spellcheck = false;
-    input.addEventListener("input", () => {
-      this.view.applyTypedInput(leaf, input);
-    });
-
-    row.appendChild(name);
-    row.appendChild(input);
-
-    this.view.controls[leaf.path] = { leaf, reset: () => {
-      input.value = this.view._effective(leaf);
-      input.classList.toggle("is-dirty", this.view.dirty[leaf.path] !== undefined);
-      repaint();
-    } };
-    return row;
   }
 
   _trialChip(label, text, remove) {
@@ -3711,48 +3539,6 @@ class ExperimentBuilder {
     delete raw[label];
     this.view._setValue(leaf, PythonLiteral.render(raw));
     repaint();
-  }
-
-  _paintRouting() {
-    if (!this.routingCellsEl) return;
-    this.routingCellsEl.innerHTML = "";
-    const trials = this._routingTrialsDict();
-    Object.keys(trials).forEach((label) => {
-      this.routingCellsEl.appendChild(this._trialChip(label, this._routingSpecText(trials[label]), () => this._removeTrialKey(this.routingTrials.get("trials"), label, () => this._repaintRouting())));
-    });
-  }
-
-  _paintRatio() {
-    if (!this.ratioCellsEl) return;
-    this.ratioCellsEl.innerHTML = "";
-    const trials = this._ratioTrialsDict();
-    Object.keys(trials).forEach((label) => {
-      this.ratioCellsEl.appendChild(this._trialChip(label, this._ratioSpecText(trials[label]), () => this._removeTrialKey(this.ratioTrials.get("trials"), label, () => this._repaintRatio())));
-    });
-  }
-
-  _resetRouting() {
-    const leaf = this.routingTrials.get("trials");
-    if (leaf) this.view._setValue(leaf, leaf.value);
-    this._repaintRouting();
-  }
-
-  _resetRatio() {
-    const leaf = this.ratioTrials.get("trials");
-    if (leaf) this.view._setValue(leaf, leaf.value);
-    this._repaintRatio();
-  }
-
-  _repaintRouting() {
-    this._paintRouting();
-    this._paintSummary();
-    this._paintNames();
-  }
-
-  _repaintRatio() {
-    this._paintRatio();
-    this._paintSummary();
-    this._paintNames();
   }
 
   _paintMode() {

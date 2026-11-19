@@ -38,11 +38,6 @@ class ScriptCatalog:
             "category"  : "Training",
             "purpose"   : "Train the JEPA predictor in latent space. Operates in three modes depending on which autoencoder runs are selected: backbone + profile autoencoder, image autoencoder + backbone, or image autoencoder + backbone + profile autoencoder. Each autoencoder is imported pretrained and either frozen or fine-tuned.",
         },
-        "train_dual": {
-            "title"     : "Train Dual",
-            "category"  : "Training",
-            "purpose"   : "Train the dual-trunk set-prediction model: the standard build routes the full reduced stack to both unet_skip trunks at a 90/10 parameter split, the large trunk feeding the per-gaussian parameter heads and the small trunk feeding the existence gate; each trunk is any backbone-zoo architecture with routable channel groups. Shares the backbone dataset, loss curriculum, and trainer. Optionally fans out trials across GPUs: every backbone experiment ladder (loss-curriculum combinations, single-stage losses, slot-presence matrices, loss-pair searches, secondary-channel selections, patch-shape grids, input-channel ablations, context ladders, size-matched reach comparisons, matching grids, augmentation pairs, weight-EMA ladders, mixed-precision pairs, normalization ladders, cumulative ablations) plus the dual-specific trunk-routing assignments and budget-matched arm-ratio splits.",
-        },
         "infer_backbone": {
             "title"     : "Infer Backbone",
             "category"  : "Inference",
@@ -57,11 +52,6 @@ class ScriptCatalog:
             "title"     : "Infer Image AE",
             "category"  : "Inference",
             "purpose"   : "Image-autoencoder inference: reconstruction scoring over every standalone image-autoencoder run found under the path given, leaving alone the runs already scored on the split.",
-        },
-        "infer_dual": {
-            "title"     : "Infer Dual",
-            "category"  : "Inference",
-            "purpose"   : "Dual-trunk model inference: sliding-window prediction, stitched cubes, and reports through the shared backbone inference pipeline. Scores every dual run found under the path given, leaving alone the runs already scored on the split.",
         },
         "benchmark": {
             "title"     : "Benchmark",
@@ -226,24 +216,22 @@ class ScriptCatalog:
         "train": {
             "title"    : "Train",
             "category" : "Training",
-            "purpose"  : "Train one model end to end. Pick the stage to train: the supervised backbone, the profile autoencoder, the image autoencoder, the JEPA predictor, or the dual-trunk model.",
+            "purpose"  : "Train one model end to end. Pick the stage to train: the supervised backbone, the profile autoencoder, the image autoencoder or the JEPA predictor.",
             "members"  : [
                 ("train_backbone",            "Backbone"),
                 ("train_profile_autoencoder", "Profile AE"),
                 ("train_image_autoencoder",   "Image AE"),
                 ("train_jepa",                "JEPA"),
-                ("train_dual",                "Dual"),
             ],
         },
         "infer": {
             "title"    : "Infer",
             "category" : "Inference",
-            "purpose"  : "Run inference end to end. Pick the stage to infer: the supervised backbone (and JEPA), the profile autoencoder, the image autoencoder, or the dual-trunk model.",
+            "purpose"  : "Run inference end to end. Pick the stage to infer: the supervised backbone (and JEPA), the profile autoencoder or the image autoencoder.",
             "members"  : [
                 ("infer_backbone",            "Backbone"),
                 ("infer_profile_autoencoder", "Profile AE"),
                 ("infer_image_autoencoder",   "Image AE"),
-                ("infer_dual",                "Dual"),
             ],
         },
         "analyze": {

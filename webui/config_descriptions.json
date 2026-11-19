@@ -756,34 +756,6 @@
         "shape_logger_types": "Module types the shape logger hooks into when tracing tensor shapes through the network; excluded from config persistence"
       }
     },
-    "architectures/dual::DualResUNetConfig": {
-      "summary": "Dual-trunk set-prediction model: a parameter trunk feeds the per-gaussian heads while a second trunk feeds the sigmoid existence gate; the standard build routes the full stack to both trunks (full-full) on unet_skip at a 90/10 parameter split, and each trunk is any headless encode-decode architecture from the backbone zoo, configured through its own config class",
-      "fields": {
-        "in_channels": "Number of input feature-map channels fed to the parameter trunk, overridden at build time by the dataset's assembled channel count (primary + secondaries + derived + Aux)",
-        "out_channels": "Number of output channels, equal to n_gaussians x params_per_gaussian and required to be divisible by params_per_gaussian",
-        "params_per_gaussian": "Number of predicted parameters per Gaussian component (amplitude, mean, sigma = 3); out_channels must be an exact multiple of it",
-        "head": "Fixed to set_pred: the model exists to split the set-prediction head across two trunks and rejects any other head",
-        "params_backbone": "Trunk architecture of the parameter branch, defaults to unet_skip (the standard); any key of the backbone model registry (unet, resunet, unet_skip, attention_unet, unetplusplus, linknet, swin_unet, transunet, unetr, deeplabv3plus, segformer, convnext_unet, dense_unet, hrnet, multires_unet, fpn, u2net, pixel_mlp, local_cnn, nafnet); the trunk is built headless (head none) from that architecture's own config class",
-        "existence_backbone": "Trunk architecture of the existence branch, defaults to unet_skip (the standard); any key of the backbone model registry, built headless from that architecture's own config class, so the presence gate can use a different architecture family than the parameter branch",
-        "params_input": "Channel groups fed to the parameter trunk (chan, derived, aux), matched against the dataset's channel labels; a selected group absent from the stack contributes nothing, and the combined selection must resolve to at least one channel",
-        "existence_input": "Channel groups fed to the existence trunk (chan, derived, aux); defaults to the full stack (the standard full-full routing), narrowable so the presence gate judges from a channel subset alone",
-        "params_channels": "Resolved input-tensor channel indices feeding the parameter trunk; overridden at build time from params_input and the dataset's input configuration, and persisted with the model config",
-        "existence_channels": "Resolved input-tensor channel indices feeding the existence trunk; overridden at build time from existence_input and the dataset's input configuration, and persisted with the model config",
-        "params_features": "Per-level channel widths forced onto the parameter trunk's features ladder, one entry per resolution stage; default [64, 128, 248, 472] (four levels, the 90 % arm of the standard 90-10 split). An empty list keeps the trunk architecture's own default widths, and is required for trunks whose config has no features ladder (segformer, dense_unet, hrnet, nafnet, swin_unet, transunet, unetr)",
-        "existence_features": "Per-level channel widths forced onto the existence trunk's features ladder; default [24, 48, 84, 156] (four levels, the 10 % arm of the standard 90-10 split); the existence head is sized from this trunk's own embedding width. An empty list keeps the trunk architecture's own default widths",
-        "params_overrides": "Dict of config-field overrides applied to the parameter trunk's own architecture config class (e.g. dropout, normalization, or transformer depths); structural fields the dual model forces (in_channels, out_channels, params_per_gaussian, head, init_mode, features) are rejected here",
-        "existence_overrides": "Dict of config-field overrides applied to the existence trunk's own architecture config class; structural fields the dual model forces are rejected here",
-        "head_activation": "Nonlinearity of the dual model's own PixelMLP heads (per-gaussian parameter heads and existence gate): relu, leaky_relu, gelu, silu, or elu",
-        "init_mode": "Weight initialization scheme for conv/linear layers: default (framework default, no override), kaiming, or xavier",
-        "params_trunk_lr": "Learning rate for the full-stack parameter trunk (encoder, bottleneck, and decoder), tuned log-uniform over 1e-5..1e-2",
-        "existence_trunk_lr": "Learning rate for the existence trunk (encoder, bottleneck, and decoder), tuned log-uniform over 1e-5..1e-2",
-        "output_head_lr": "Learning rate for the set-prediction head group (per-gaussian PixelMLPs, existence head, and amp_off)",
-        "params_trunk_wd": "Weight decay for the parameter trunk group",
-        "existence_trunk_wd": "Weight decay for the existence trunk group",
-        "output_head_wd": "Weight decay for the set-prediction head group",
-        "shape_logger_types": "Module types the shape logger hooks into when tracing tensor shapes through the network; excluded from config persistence"
-      }
-    },
     "architectures/image_autoencoder::ImageAutoencoderBaseConfig": {
       "summary": "Shared architecture and optimizer settings for the 2D image-space autoencoder family reconstructing the multi-channel input stack",
       "fields": {
@@ -1895,18 +1867,6 @@
         "skip_completed": "Whether runs already holding a completed inference stamp for profile_inference.split are left alone, so relaunching over an experiment scores only the runs still missing it; off re-scores every selected run into a fresh timestamped stamp"
       }
     },
-    "inference/dual::DualInferenceEntryConfig": {
-      "summary": "Entry config for the scheduler that runs sliding-window dual-trunk model inference over multiple runs, queuing one worker process per run across a fixed pool of GPUs",
-      "fields": {
-        "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every dual run at any depth below it (a directory holding a meta/ subdir) is discovered and runs of other families are skipped by type. A missing directory is an error",
-        "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run raises FileNotFoundError listing the runs found",
-        "gpus": "GPU device indices the GpuQueue cycles jobs across, default [0]; one run is launched per free GPU concurrently until the queue drains",
-        "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
-        "poll_interval_s": "seconds GpuQueue sleeps between reap/launch cycles while jobs are running or queued, default 5.0",
-        "inference": "InferenceConfig used for every worker run, with run_directory replaced per-run, save_cubes=True, cpu_workers=16 and gif_axes=['z','col','row']; all other InferenceConfig fields keep their normal defaults",
-        "skip_completed": "Whether runs already holding a completed inference stamp for inference.split are left alone, so relaunching over an experiment scores only the runs still missing it; off re-scores every selected run into a fresh timestamped stamp"
-      }
-    },
     "benchmark/dataloader_tuning::TrainingProfileEntryConfig": {
       "summary": "Entry config that records full training steps of one model family under torch.profiler and writes a chrome trace, an operator table and a top-operator summary",
       "fields": {
@@ -2091,7 +2051,7 @@
     "cross_validation/general::CrossValidationConfig": {
       "summary": "Top-level config orchestrating k-fold training, inference, and comparison across row folds",
       "fields": {
-        "training_type": "Model family trained per fold: backbone, dual, jepa, profile_autoencoder, or image_autoencoder, dispatched in FoldTrainingWorker.run",
+        "training_type": "Model family trained per fold: backbone, jepa, profile_autoencoder, or image_autoencoder, dispatched in FoldTrainingWorker.run",
         "stage": "portion of the pipeline to run: full does everything, prepare stops after validating the fold plan and writing the resolved config, compare runs the cross-fold reports only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
         "backbone_name": "Backbone architecture identifier resolved via ModelBuilder's registry, e.g. resunet",
         "backbone_head": "Output head built on the selected backbone (conv, multihead, per_gaussian, or set_pred); stored in the model config and restored at inference",
@@ -2108,7 +2068,6 @@
         "probe": "LossScaleProbeConfig sub-config for the pre-training loss-scale probe that averages every loss term over a few batches and reports balanced weight suggestions, disabled by default",
         "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before each fold's full training and aborts on failure",
         "prior_bias_init": "Start each backbone fold's conv output head biases at the prior of that fold's training labels instead of PyTorch's random U(-1/sqrt(fan_in), 1/sqrt(fan_in)) draw: per output channel, the mean label in the model's normalized output space over the fold's training pixels where that slot is active (slots in sorted_gt order, activity at the label run's threshold); every other weight keeps its default init and the values land in each fold run's meta/head_prior_bias.json. Backbone family only, needs backbone_head conv and raises otherwise; default off",
-        "dual": "DualCvConfig sub-config selecting the dual model, its two trunk backbones, and the input channel groups each trunk reads, used only when training_type is dual",
         "jepa": "JepaCouplingConfig sub-config bundling the pretrained profile-autoencoder location, its frozen/fine-tuned mode and finetune rates, target-encoder provider, and embedding-loss weights, used only when training_type is jepa",
         "autoencoder": "AeCvConfig sub-config setting the profile-autoencoder model name, reconstruction-loss weights, pixel subsample fraction, and empty-profile retention fraction, used only when training_type is profile_autoencoder",
         "image_autoencoder": "ImageAeCvConfig sub-config setting the image-autoencoder model name and its reconstruction loss, used only when training_type is image_autoencoder",
@@ -2121,18 +2080,6 @@
         "seeds": "List of seeds for a multi-seed sweep, one run per fold and seed nested as seed<N> inside each fold directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "poll_interval_s": "Seconds between successive polls of the fold job queue while waiting for GPUs or completed jobs",
         "resume_from": "Path at or inside an existing cross-validation run to finish (the run directory, its pipeline, folds or one fold run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every fold x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference splits run. Empty starts a fresh run"
-      }
-    },
-    "cross_validation/dual::DualCvConfig": {
-      "summary": "Cross-validation setup for the dual-trunk model: the two trunk backbones and the input channel groups each one reads",
-      "fields": {
-        "model_name": "Registry key selecting the dual model assembled from the two trunks, default dual_resunet",
-        "params_backbone": "Backbone-zoo architecture used for the parameter trunk that feeds the gaussian heads",
-        "params_input": "Input channel groups routed into the parameter trunk: pass (amplitudes), derived (derived) and aux (z, present only when input.use_aux is on)",
-        "params_overrides": "Dict of architecture-config field overrides applied to the parameter trunk before instantiation",
-        "existence_backbone": "Backbone-zoo architecture used for the existence trunk that feeds the presence gate",
-        "existence_input": "Input channel groups routed into the existence trunk: pass (amplitudes), derived (derived) and aux (z, present only when input.use_aux is on)",
-        "existence_overrides": "Dict of architecture-config field overrides applied to the existence trunk before instantiation"
       }
     },
     "cross_validation/image_autoencoder::ImageAeCvConfig": {
@@ -2416,78 +2363,6 @@
         "password_env": "name of the environment variable holding the SMTP password (for Gmail, an app password); the password itself is never stored in the config, and an unset variable aborts a real send",
         "subject_prefix": "prefix of every message subject, followed by a colon and the source label, and by the part number when a bundle is split across several messages",
         "dry_run": "stage and log every message without opening an SMTP connection; needs no password and is the way to preview what would be sent"
-      }
-    },
-    "training/dual::DualEntryConfig": {
-      "summary": "Top-level entry config launching one dual-trunk training run through the shared backbone dataset, curriculum, and trainer machinery",
-      "fields": {
-        "run_name": "Optional suffix appended to the canonical run name; every run directory is named model_head_matching_loss with this label (or a timestamp) appended",
-        "resume": "Reuse this run directory when it already holds a completed run (complete.json marker stamped only at successful completion), rerunning inference only if it is missing; an unfinished run directory is deleted and restarted from scratch. Lets interrupted trials sweeps and seed sweeps continue without retraining finished units (distinct from training.resume, which continues one run mid-training from its last.pt and suppresses the delete)",
-        "resume_from": "Path of a run directory, a seed sweep root or a trial sweep root to resume, or any run inside them. The configuration the run or sweep recorded (docs/resolved_entry_config.json of a run, batch_train_logs/resolved_config.json of a sweep) is loaded as the base, the overrides typed on this launch are applied on top and the hardware fields follow this launch; complete units are reused, unfinished units continue from their trainer state or restart in their own directory, and missing units are created, each job handed its exact directory so the naming scheme never has to be reproduced. A sweep launched before recordings existed resumes from the settings typed here, with a warning. Empty starts a fresh run",
-        "model_name": "Dual-family model key looked up in the dual registry; the registry holds only dual_resunet, so the field stays at its default and is not shown on the launch page (the trunk backbones are the architecture selection)",
-        "gpu": "Primary GPU device index on which a single run executes",
-        "seed": "Base random seed for a single training run, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
-        "logdir": "Base directory under which this run's output subdirectory and TensorBoard logs are written",
-        "model_overrides": "Dict of architecture-config field overrides applied to the dual model config before instantiation",
-        "params_backbone": "Trunk architecture of the full-input parameter branch, any backbone-zoo model key, applied to the model config before instantiation",
-        "existence_backbone": "Trunk architecture of the existence branch, any backbone-zoo model key, applied to the model config before instantiation",
-        "params_input": "Channel groups (chan, derived, aux) the parameter trunk receives, resolved to concrete channel indices against the assembled dataset stack at build time; the aux group only carries a channel when input.use_aux is on",
-        "existence_input": "Channel groups (chan, derived, aux) the existence trunk receives; defaults to the full stack (the standard full-full routing)",
-        "params_overrides": "Dict of config-field overrides applied to the parameter trunk's own architecture config class (structural fields forced by the dual model are rejected); trunk widths stay on model_overrides params_features",
-        "existence_overrides": "Dict of config-field overrides applied to the existence trunk's own architecture config class (structural fields forced by the dual model are rejected)",
-        "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-channel labels",
-        "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
-        "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
-        "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch; defaults to the physics-loss curriculum with hungarian param matching in both stages, the recommended pairing for the set-prediction existence gate",
-        "input": "InputConfig sub-config selecting which channel groups feed the network, defaults to the full stack; use_derived must stay enabled because the existence trunk consumes exactly those channels",
-        "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
-        "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
-        "probe": "LossScaleProbeConfig sub-config for the pre-training loss-scale probe that averages every loss term over a few batches and reports balanced weight suggestions, disabled by default",
-        "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before full training and aborts if the model cannot overfit them",
-        "infer_after": "Run the shared inference pipeline with the dual components automatically on the trained checkpoint once training completes",
-        "infer_at_end": "Hold all inference until every training job of the fan-out has finished, then run one inference job per completed run through the same GPU queue; keeps the GPUs saturated with training first, mutually exclusive with infer_after",
-        "inference": "InferenceConfig sub-config used to run inference automatically after training when infer_after or infer_at_end is set",
-        "trials_enabled": "Enable the multi-trial GPU sweep (DualTrainScheduler) that fans one training run per trial out across GPUs instead of launching a single run",
-        "trials_mode": "Sweep dimension the dual trial scheduler varies: the full backbone catalog (curriculum, warmup, presence, physics, pair, log_energy, secondary, patch, input, context, reach, head, augmentation, clamp, stability, ema, amp, ablation) plus the dual-specific routing mode (one run per trunk channel-group assignment under logdir/routing) and ratio mode (one run per arm-capacity split under logdir/ratio)",
-        "warmup_losses": "Named loss-term override presets: in trials_mode=curriculum applied to the curriculum warmup stage and crossed against every complete_losses preset (one run per pair); in trials_mode=warmup applied instead to the complete stage with curriculum disabled, one run per preset",
-        "complete_losses": "Named loss-term override presets applied to the curriculum complete stage, used only by trials_mode=curriculum where each preset is crossed against every warmup_losses preset (one run per pair)",
-        "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, swept with curriculum disabled and every trial repeated across the seeds list",
-        "pair_trials": "PairTrialsConfig sub-config for the loss-pair sweep pairing one fixed base component with each candidate second component and weight, curriculum disabled",
-        "log_energy_trials": "LogEnergyTrialsConfig sub-config for the log-energy weight sweep adding the term to the standard loss in both curriculum stages, one run per weight",
-        "secondary_trials": "SecondaryTrialsConfig sub-config for the secondary-channel selection sweep (strategy, count, sampling seed)",
-        "patch_trials": "PatchTrialsConfig sub-config for the rectangular patch-shape grid sweep under a constant pixel budget",
-        "input_trials": "Named input-channel presets (use_primary/use_secondaries/use_derived/use_aux) each scoped by a mandatory tracks key: all expands the secondary list to every channel of the dataset, reduced keeps the configured secondary selection; defaults cover the full grid of channel-amplitude-only, derived-phase-only and the combined stack on both scopes, every base variant duplicated as an explicit no-aux (-noaux) and with-aux (-aux) version",
-        "context_trials": "Rungs trained one run each, walking the spatial-context ladder at constant depth with the rung architecture and overrides applied to both trunks; every rung is a dict of label, backbone and model overrides (default a pixel_mlp rung of twenty 1x1 layers at width 1277 plus four local_cnn rungs of ten blocks, RF 1/9/29/41 via block_kernels mixes of 3x3 and 1x1, widths 1277/848/502/426), and every backbone must exist in the registry",
-        "reach_trials": "ReachTrialsConfig sub-config for the size-matched architecture comparison at fixed reach with the rung architecture applied to both trunks, pairing a 33x33 local_cnn against a unet on a shared 32x32 patch at equal whole-model parameter count (both models built and counted at launch)",
-        "head_trials": "HeadMatchingTrialsConfig sub-config for the head-and-matching grid on one fixed trunk architecture applied to both trunks; the dual model only supports the set_pred head, so the sweep varies the parameter-matching strategy",
-        "augmentation_trials": "AugmentationTrialsConfig sub-config for the cumulative augmentation ladder: no augmentation, then + horizontal flip, then + vertical flip, then + input noise at each configured strength",
-        "clamp_trials": "ClampTrialsConfig sub-config for the output-clamp ladder: no clamp, hard clamp, leaky clamp",
-        "stability_trials": "StabilityTrialsConfig sub-config for the training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction, then gradient clipping alone per norm, then the first fraction paired with each norm",
-        "ema_trials": "EmaTrialsConfig sub-config for the weight-EMA arms: EMA off, then per configured decay one rung with the plain decay and one with the decay warmup ramp; the amp mode reuses the base config unchanged and needs no sub-config",
-        "routing_trials": "DualRoutingTrialsConfig sub-config defining the trunk-routing experiment: the fixed trunk feature ladders shared by every trial and the named params/existence channel-group assignments",
-        "ratio_trials": "DualRatioTrialsConfig sub-config defining the arm-ratio experiment: per-trial params/existence feature ladders that redistribute one fixed parameter budget between the two trunks, verified by building each model at launch",
-        "ablation_features": "Ordered list of feature-toggle dicts (label, enable, degrade overrides) forming the cumulative ablation ladder from the full model down to the baseline; the dual catalog swaps the per-group learning rates to the trunk/head split and the architecture rung to unet_skip versus unet trunks",
-        "ablation_include_full": "Include the full-model variant (all ablation features enabled) as an extra run alongside the ablation ladder",
-        "gpus": "List of GPU device indices across which queued runs are distributed and launched in parallel; feeds the trials fan-out when trials are enabled and the per-seed fan-out of a plain multi-seed run otherwise",
-        "ddp": "Train the single resolved seed data-parallel across the gpus devices: one synchronised rank process per GPU sharing the configured global batch (batch_size must divide by the rank count, so the LR batch rule is preserved). Rank 0 starts alone and owns the canonical run directory, and the other ranks join once its resume gate has settled that directory, mirroring their artifacts into the ddp/rank<N> subtree. Gradients are averaged every optimizer window and evaluation losses reduced across ranks, so checkpointing and early stopping decide identically everywhere. Greyed out while a multi-seed sweep is configured, since it trains exactly the one seed pinned in the seed field; also rejects the pre-training probes. Local-only for now: the ranks are subprocesses on this machine's own GPUs, so a cluster launch refuses it, as does a trial sweep, whose units already take one GPU each",
-        "gpus_file": "Path of the live GPU pool control file for this fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the experiment while it runs (added devices pick up queued jobs, removed devices retire once the job in flight ends). Empty places gpu_pool.json inside the trials directory for trials, or the base run directory for a multi-seed fan-out",
-        "poll_interval_s": "Seconds between successive polls of the run queue while waiting for GPUs or completed jobs"
-      }
-    },
-    "training/dual::DualRoutingTrialsConfig": {
-      "summary": "Trunk-input trial catalog for the dual model: a fixed pair of trunk feature ladders applied to every trial, and named trials assigning input channel groups to the parameter and existence trunks",
-      "fields": {
-        "params_features": "Encoder feature widths of the parameter trunk used for every trial; defaults to the four-level parity ladder 48-96-184-352, sized so the two symmetric trunks together match the benchmark's size-matched single-trunk resunet budget",
-        "existence_features": "Encoder feature widths of the existence trunk used for every trial; defaults to the same four-level parity ladder 48-96-184-352",
-        "trials": "Named trunk-input assignments, each mapping a label to the channel groups (chan, derived, aux) fed to the params and existence trunks; both keys are required in every spec, and the Aux input channel is switched on exactly when a trunk selects the aux group. Defaults cover the seven ordered pairs over full (chan+derived), chan (amplitudes only) and derived (derived only), each doubled as a -nodem variant and a -aux variant that appends the aux group to both trunks, run as di-<label> with the params trunk named first"
-      }
-    },
-    "training/dual::DualRatioTrialsConfig": {
-      "summary": "Arm-ratio trial catalog for the dual model: named '<params>-<existence>' percentage splits, each carrying the params and existence feature ladders that realize the split while the two arms together keep the 50/50 parity budget",
-      "fields": {
-        "trials": "Named arm splits, each label a '<params>-<existence>' percentage pair summing to 100 with the detection (existence) arm never larger, mapped to the params/existence feature ladders realizing it; every ladder keeps the same four-level depth so only width moves. Defaults cover 50-50 (the parity twins 48-96-184-352), 60-40, 70-30, 80-20 and 90-10, all tuned to the 31.19M parity total, run as dr-<label>",
-        "match_tolerance": "Maximum accepted deviation, both of each trial's realized params share from its declared split (in share points) and of the total parameter spread across trials (relative); the scheduler builds every model at launch and refuses the sweep beyond it"
       }
     },
     "diagnostics::ReceptiveFieldConfig": {

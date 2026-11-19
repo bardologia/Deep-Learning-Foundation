@@ -278,7 +278,6 @@ class ArchOverridesPanel {
     this.modelLeaf = modelLeaf;
     this.modelBy   = (panel && panel.modelBy) || null;
     this.title     = (panel && panel.title) || "Architecture";
-    this.exclude   = (panel && panel.exclude) || [];
     this.bodyEl    = null;
     this.countEl   = null;
     this.hintEl    = null;
@@ -362,13 +361,8 @@ class ArchOverridesPanel {
     return window.PythonLiteral.render(value) === window.PythonLiteral.render(defaultValue);
   }
 
-  _excluded(name) {
-    return this.exclude.some((pattern) => pattern.startsWith("*") ? name.endsWith(pattern.slice(1)) : name === pattern);
-  }
-
   _fields(model) {
-    const arch = Array.isArray(model.arch) ? model.arch : [];
-    return arch.filter((field) => !this._excluded(field.name));
+    return Array.isArray(model.arch) ? model.arch : [];
   }
 
   _label(value) {

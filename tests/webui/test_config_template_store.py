@@ -16,7 +16,7 @@ from tests.webui.conftest import FakeHandler
 
 class TemplatePaths:
 
-    def __init__(self, root: Path, scripts: tuple = ("train_backbone", "train_dual")) -> None:
+    def __init__(self, root: Path, scripts: tuple = ("train_backbone", "benchmark")) -> None:
         self.templates_dir = root / "logs" / "config_templates"
         self.scripts       = scripts
 
@@ -84,7 +84,7 @@ def test_a_repeated_name_on_the_same_entry_point_is_refused(store):
 
 def test_the_same_name_on_another_entry_point_is_a_separate_template(store):
     first  = store.save(_payload())["entry"]
-    second = store.save(_payload(script_key="train_dual"))["entry"]
+    second = store.save(_payload(script_key="benchmark"))["entry"]
 
     assert first["template_id"] != second["template_id"]
     assert len(store.list()["templates"]) == 2

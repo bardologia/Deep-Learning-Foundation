@@ -381,8 +381,8 @@ python main/inference/infer_backbone.py --runs_dir runs/sequences/plan/augmentat
 
 A run is skipped only when a stamp on the requested split records the requested
 `checkpoint_name`; a stamp scored with another checkpoint does not count. The backbone
-and dual entries score a split stored as several disjoint regions region by region, one
-stamp per region named `<stamp>_region<i>`, and count the split as scored only when
+entry scores a split stored as several disjoint regions region by region, one
+stamp per region named `<stamp>_region<i>`, and counts the split as scored only when
 every region has its stamp. The scheduler names the stamps itself, so leave
 `output_subdir` unset and `run_directory` at `.` in the family block; it refuses either
 when set. A cross-validation fold is scored over the row block its manifest records. To

@@ -41,8 +41,8 @@ class SurveyView {
   _build() {
     this.root.innerHTML = `
       <div class="cube-pick">
-        <div class="run-strip" id="survey-strip" aria-label="Trained backbone and dual runs"></div>
-        <p class="cube-hint" id="survey-hint">${ThinkingOrb.busy("searching", "Scanning the runs directory for loadable backbone and dual runs…")}</p>
+        <div class="run-strip" id="survey-strip" aria-label="Trained backbone runs"></div>
+        <p class="cube-hint" id="survey-hint">${ThinkingOrb.busy("searching", "Scanning the runs directory for loadable backbone runs…")}</p>
         <div class="cube-progress sv-progress" id="survey-progress" hidden>
           <thinking-orb class="cube-progress__orb" state="weaving" size="64"></thinking-orb>
           <div class="cube-progress__track"><i class="cube-progress__fill" id="survey-progress-fill"></i></div>
@@ -295,7 +295,7 @@ class SurveyView {
     this._renderStrip();
 
     if (!this.runs.length) {
-      this.refs.hint.textContent = `No loadable runs under ${data.root}. Train a backbone or dual run, or point the runs directory in the Results tab at the right place.`;
+      this.refs.hint.textContent = `No loadable runs under ${data.root}. Train a backbone run, or point the runs directory in the Results tab at the right place.`;
       return;
     }
 

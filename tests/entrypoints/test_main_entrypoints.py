@@ -31,11 +31,9 @@ DEFER_HEAVY_IMPORTS = (
     "train_jepa",
     "train_profile_autoencoder",
     "train_image_autoencoder",
-    "train_dual",
     "infer_backbone",
     "infer_profile_autoencoder",
     "infer_image_autoencoder",
-    "infer_dual",
     "tune",
     "benchmark",
     "cross_validate",
@@ -51,7 +49,6 @@ CLI_MODULES = (
     "infer_backbone",
     "infer_profile_autoencoder",
     "infer_image_autoencoder",
-    "infer_dual",
     "analyze_param_extraction",
     "generate_dataset",
     "extract_params",
@@ -71,7 +68,6 @@ ENTRY_CONFIGS = {
     "infer_backbone"                  : ("configuration.inference",          "BackboneInferenceEntryConfig"),
     "infer_profile_autoencoder"       : ("configuration.inference",          "ProfileAeInferenceEntryConfig"),
     "infer_image_autoencoder"         : ("configuration.inference",          "ImageAeInferenceEntryConfig"),
-    "infer_dual"                      : ("configuration.inference",          "DualInferenceEntryConfig"),
     "extract_params"                  : ("configuration.param_extraction", "ExtractParamsEntryConfig"),
     "generate_dataset"                : ("configuration.synthesis",       "GenerateDatasetEntryConfig"),
     "analyze_param_extraction"        : ("configuration.param_extraction",      "ParamExtractionInferenceConfig"),
@@ -208,7 +204,7 @@ def test_trials_entries_hand_their_script_to_their_launcher(name, module_path, c
     assert captured["entry_script"] == _script_path(name)
 
 
-@pytest.mark.parametrize("name", ("train_backbone", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder", "train_dual"))
+@pytest.mark.parametrize("name", ("train_backbone", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder"))
 def test_train_main_defers_heavy_imports(name, tmp_path):
     script = _script_path(name)
     code   = f"import sys; sys.path.insert(0, {str(script.parent)!r}); import {name}; print(sorted(module for module in sys.modules if module.split('.')[0] in {{'pipelines', 'models', 'torch', 'pysr', 'juliacall'}}))"

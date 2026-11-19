@@ -27,20 +27,6 @@ BACKBONE_LEAVES = [
     {"path": "training.epochs",        "value": "60"},
 ]
 
-DUAL_LEAVES = [
-    {"path": "model_name",          "value": "dual_resunet"},
-    {"path": "params_backbone",     "value": "unet_skip"},
-    {"path": "existence_backbone",  "value": "unet_skip"},
-    {"path": "params_input",        "value": "['chan', 'derived']"},
-    {"path": "existence_input",     "value": "['chan', 'derived']"},
-    {"path": "trials_enabled",      "value": "False"},
-    {"path": "trials_mode",         "value": "curriculum"},
-    {"path": "run_name",            "value": "None"},
-    {"path": "infer_after",         "value": "False"},
-    {"path": "paths.dataset_path",  "value": "/data/base_dataset_w20_10"},
-    {"path": "training.epochs",     "value": "60"},
-]
-
 EXTRACT_LEAVES = [
     {"path": "dataset_filter",    "value": "[]"},
     {"path": "fit_k_values",      "value": "[5]"},
@@ -101,19 +87,6 @@ def test_overrides_win_over_defaults():
     assert "inference after" in text
 
 
-def test_dual_lead_names_the_selected_trunks():
-    text = _describer({"train_dual": DUAL_LEAVES}).describe("train_dual", "python", {})
-
-    assert text.startswith("single training · dual unet_skip")
-    assert "dual_resunet" not in text
-
-
-def test_dual_lead_names_both_trunks_when_they_differ():
-    overrides = {"existence_backbone": "local_cnn"}
-    text      = _describer({"train_dual": DUAL_LEAVES}).describe("train_dual", "python", overrides)
-
-    assert "dual unet_skip.local_cnn" in text
-    assert "existence_backbone=" not in text
 
 
 def test_generate_dataset_shows_scene_shape_and_seed():

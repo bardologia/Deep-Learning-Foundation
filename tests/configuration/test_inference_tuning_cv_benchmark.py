@@ -8,7 +8,6 @@ import pytest
 
 from configuration.inference.general             import InferencePaths, InferenceConfig
 from configuration.inference.backbone            import BackboneInferenceEntryConfig
-from configuration.inference.dual                import DualInferenceEntryConfig
 from configuration.inference.image_autoencoder   import ImageAeInferenceEntryConfig
 from configuration.inference.profile_autoencoder import ProfileAeInferenceEntryConfig
 from configuration.inference.image_autoencoder   import ImageAeInferenceConfig
@@ -94,11 +93,10 @@ def test_backbone_inference_entry_config_holds_inference():
 
 def test_run_directory_inference_defaults_come_from_one_factory():
     from configuration.training.backbone import BackboneEntryConfig
-    from configuration.training.dual     import DualEntryConfig
     from configuration.training.jepa     import JepaEntryConfig
 
-    standalone = [BackboneInferenceEntryConfig().inference, DualInferenceEntryConfig().inference]
-    training   = [BackboneEntryConfig().inference, DualEntryConfig().inference, JepaEntryConfig().inference]
+    standalone = [BackboneInferenceEntryConfig().inference]
+    training   = [BackboneEntryConfig().inference, JepaEntryConfig().inference]
 
     for cfg in standalone + training:
         assert cfg.run_directory == Path(".")

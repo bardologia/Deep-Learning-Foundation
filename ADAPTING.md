@@ -138,8 +138,7 @@ The head that emits the parameters is chosen with `--backbone_head`, and
 - `per_gaussian`, one pixel MLP per slot emitting that slot's parameters.
 - `set_pred`, `per_gaussian` plus a sigmoid existence gate per slot that blends the
   slot's amplitude toward a learned off value, so a slot can be switched off rather than
-  regressed to zero. This is the default, and the dual model
-  (`models/dual/dual_resunet.py`) accepts nothing else.
+  regressed to zero. This is the default.
 
 Slot order is a convention, not a fact, so the loss aligns the two sides before comparing
 them. `ParamMatcher.match` in `tools/loss/param_loss.py` runs on every backward pass of
@@ -353,7 +352,7 @@ Backbones are registered in `models/backbone/__init__.py`. A new one needs, in o
 `test_config_classes_cover_the_backbone_registry`, `test_note_files_cover_the_backbone_registry`,
 `test_families_cover_the_backbone_registry_exactly_once` and `test_every_model_resolves_a_note`.
 `tests/models_backbone/test_backbone_architectures.py` puts the model itself through every
-head. The autoencoder, JEPA and dual families follow the same pattern in their own
+head. The autoencoder and JEPA families follow the same pattern in their own
 `models/<family>/__init__.py` and model library.
 
 ## 6. Add an entry point

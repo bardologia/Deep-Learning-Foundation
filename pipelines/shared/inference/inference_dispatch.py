@@ -109,15 +109,3 @@ class ImageAeInferenceRunner:
         config = replace(self.entry.image_inference, run_directory=Path(run_directory), output_subdir=None)
 
         ImageAeInferencePipeline(config).run()
-
-
-class DualInferenceRunner:
-
-    def __init__(self, entry_config) -> None:
-        self.entry = entry_config
-
-    def run(self, run_directory: Path) -> None:
-        from pipelines.backbone.inference.pipeline import InferencePipeline
-        from pipelines.dual.inference.pipeline     import DUAL_INFERENCE_COMPONENTS
-
-        SpatialScoring.run(self.entry.inference, run_directory, InferencePipeline, DUAL_INFERENCE_COMPONENTS)

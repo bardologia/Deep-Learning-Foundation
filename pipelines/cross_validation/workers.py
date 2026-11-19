@@ -246,45 +246,6 @@ class FoldTrainingWorker(CrossValidationWorker):
 
         pipeline.run(probe_config=self.config.probe)
 
-    def _run_dual(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
-        from pipelines.dual.training.pipeline import DualTrainingPipeline
-
-        model_config                   = self._dual_model_config()
-        trainer_config, dataset_config = self._spatial_configs(split_regions)
-
-        pipeline = DualTrainingPipeline(
-            trainer_config = trainer_config,
-            dataset_config = dataset_config,
-            backbone_name  = self.config.dual.model_name,
-            model_config   = model_config,
-            seed           = self.config.seed if seed is None else seed,
-            run_name       = run_name,
-            overfit_check  = self.config.overfit_check,
-        )
-
-        pipeline.run(probe_config=self.config.probe)
-
-    def _dual_model_config(self):
-        from models.dual                          import DUAL_CONFIG_REGISTRY
-        from pipelines.shared.model.model_builder import ModelBuilder
-
-        dual = self.config.dual
-
-        trunk_overrides = {
-            "params_backbone"     : dual.params_backbone,
-            "existence_backbone"  : dual.existence_backbone,
-            "params_input"        : tuple(dual.params_input),
-            "existence_input"     : tuple(dual.existence_input),
-            "params_overrides"    : dict(dual.params_overrides),
-            "existence_overrides" : dict(dual.existence_overrides),
-        }
-
-        duplicated = [key for key in trunk_overrides if key in self.config.model_overrides]
-        if duplicated:
-            raise ValueError(f"Select {duplicated} via the dedicated dual.* entry fields, not model_overrides")
-
-        return ModelBuilder.config_from_registry(dual.model_name, {**trunk_overrides, **self.config.model_overrides}, registry=DUAL_CONFIG_REGISTRY)
-
     def _run_jepa(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
         from pipelines.jepa.training.pipeline import TrainingPipeline
 
@@ -370,7 +331,6 @@ class FoldTrainingWorker(CrossValidationWorker):
     def run(self, fold_index: int, seed: int | None = None, run_name: str | None = None) -> None:
         dispatch = {
             "backbone"            : self._run_backbone,
-            "dual"                : self._run_dual,
             "jepa"                : self._run_jepa,
             "profile_autoencoder" : self._run_profile_autoencoder,
             "image_autoencoder"   : self._run_image_autoencoder,
@@ -416,7 +376,6 @@ class FoldInferenceWorker(CrossValidationWorker):
     def run(self, fold_index: int, seed: int | None = None, run_name: str | None = None) -> None:
         dispatch = {
             "backbone"            : self._run_spatial,
-            "dual"                : self._run_spatial,
             "jepa"                : self._run_spatial,
             "profile_autoencoder" : self._run_profile_autoencoder,
             "image_autoencoder"   : self._run_image_autoencoder,

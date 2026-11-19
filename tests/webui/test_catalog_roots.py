@@ -171,20 +171,9 @@ def test_checkpoint_scan_requires_the_persisted_config(tmp_path):
     good = _fake_checkpoint_run(tmp_path, "backbone", "run_ok")
     _fake_checkpoint_run(tmp_path, "backbone", "run_bare", config_name="")
 
-    out = RunScanner(CatalogRoots()).checkpoint_runs(str(tmp_path), "best_model.pt", ("model_config.json",))
+    out = RunScanner(CatalogRoots()).checkpoint_runs(str(tmp_path), "best_model.pt", "model_config.json")
 
     assert out["ok"] is True
     assert [entry["id"] for entry in out["entries"]] == [str(good)]
     assert out["entries"][0]["group"] == "backbone"
     assert out["entries"][0]["stamp"] == ""
-
-
-def test_checkpoint_scan_accepts_any_of_the_config_names(tmp_path):
-    backbone = _fake_checkpoint_run(tmp_path, "backbone", "run_ok")
-    dual     = _fake_checkpoint_run(tmp_path, "dual", "run_dual", config_name="dual_model_config.json")
-    _fake_checkpoint_run(tmp_path, "profile_ae", "run_ae", config_name="profile_autoencoder_config.json")
-
-    out = RunScanner(CatalogRoots()).checkpoint_runs(str(tmp_path), "best_model.pt", ("model_config.json", "dual_model_config.json"))
-
-    assert out["ok"] is True
-    assert [entry["id"] for entry in out["entries"]] == sorted([str(backbone), str(dual)], reverse=True)

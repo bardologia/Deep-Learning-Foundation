@@ -68,11 +68,6 @@ class LaunchLayout:
 
     CH_AE_MODE      = {"kind": "choice", "options": ["frozen", "finetune"]}
     CH_STAGE        = {"kind": "choice", "options": ["full", "prepare", "compare"]}
-    CH_TRUNK        = {"kind": "choice", "options": [
-        "unet", "unet_skip", "resunet", "attention_unet", "unetplusplus", "linknet",
-        "swin_unet", "transunet", "unetr", "deeplabv3plus", "segformer", "convnext_unet",
-        "dense_unet", "hrnet", "multires_unet", "fpn", "u2net", "pixel_mlp", "local_cnn", "nafnet",
-    ]}
     CH_PROVIDER     = {"kind": "choice", "options": ["stopgrad", "live"]}
     CH_MASK_STRAT   = {"kind": "choice", "options": ["block", "random"]}
     CH_MASK_FILL    = {"kind": "choice", "options": ["zeros", "noise"]}
@@ -107,13 +102,7 @@ class LaunchLayout:
     MULTI_LAMBDA  = {"kind": "multi", "numeric": True, "placeholder": "add lambda, Enter", "empty": "select at least one lambda"}
     MULTI_INT     = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add value, Enter", "empty": "add at least one value"}
 
-    MULTI_TRUNK_INPUT = {"kind": "multi", "empty": "select at least one channel group", "choices": [
-        {"value": "chan",    "label": "Channels (amplitudes)"},
-        {"value": "derived", "label": "Derived"},
-        {"value": "aux",     "label": "Aux"},
-    ]}
 
-    DUAL_TRUNK_EXCLUDE = ["features", "init_mode", "*_lr", "*_wd"]
 
     CV_MODEL_BY_TYPE = {"field": "training_type", "models": {
         "backbone"            : "backbone_name",
@@ -493,10 +482,6 @@ class LaunchLayout:
         "reach_trials.rungs", "reach_trials.patch_size", "reach_trials.patch_stride", "reach_trials.in_channels", "reach_trials.match_tolerance",
     ]
 
-    DUAL_EXPERIMENT_TRIALS = EXPERIMENT_TRIALS + [
-        "routing_trials.params_features", "routing_trials.existence_features", "routing_trials.trials",
-        "ratio_trials.trials", "ratio_trials.match_tolerance",
-    ]
 
     PROFILE_AE_EXPERIMENT_TRIALS = [
         "trials_enabled", "trials_mode", "arch_trials", "loss_trials",
@@ -605,17 +590,6 @@ class LaunchLayout:
         ],
     }
 
-    INFER_DUAL_LAYOUT = {
-        "essentials": InferenceEssentials.for_block("inference.split"),
-        "sections": [
-            {"key": "dual", "title": "Dual", "panels": [
-                {"kind": "fields", "title": "Dual-trunk model inference", "template": "inference_full", "at": "inference"},
-                {"kind": "fields", "title": "Target dataset", "note": INFERENCE_TARGET_NOTE, "template": "inference_target", "at": "inference.target"},
-
-                {"kind": "hidden", "fields": ["inference.region_override", "gpus_file"]},
-            ]},
-        ],
-    }
 
     LAYOUTS = {
         "generate_dataset": {
@@ -882,62 +856,9 @@ class LaunchLayout:
                 ]},
             ],
         },
-        "train_dual": {
-            "essentials": TRAIN_ESSENTIALS,
-            "sections": [
-                {"key": "model", "title": "Model", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Parameter trunk (gaussian heads)", "fields": [
-                            {"path": "params_backbone", "widget": CH_TRUNK},
-                            {"path": "params_input",    "widget": MULTI_TRUNK_INPUT},
-                        ]},
-                        {"title": "Existence trunk (presence gate)", "fields": [
-                            {"path": "existence_backbone", "widget": CH_TRUNK},
-                            {"path": "existence_input",    "widget": MULTI_TRUNK_INPUT},
-                        ]},
-                    ]},
-                    {"kind": "special", "panel": "arch_overrides", "title": "Parameter trunk architecture", "modelFrom": "params_backbone",    "exclude": DUAL_TRUNK_EXCLUDE, "fields": ["params_overrides"]},
-                    {"kind": "special", "panel": "arch_overrides", "title": "Existence trunk architecture", "modelFrom": "existence_backbone", "exclude": DUAL_TRUNK_EXCLUDE, "fields": ["existence_overrides"]},
-                    {"kind": "fields", "title": "Dual model overrides", "note": "Fields of the dual wrapper itself: size the trunks with params_features / existence_features, set the head MLP nonlinearity with head_activation, and fan shared rates out with all_groups_lr / all_groups_wd.", "groups": [
-                        {"title": None, "fields": ["model_overrides"]},
-                    ]},
-                    {"kind": "hidden", "fields": ["model_name"]},
-                ]},
-                {"key": "data", "title": "Data", "panels": [
-                    {"kind": "fields", "title": "Paths", "template": "paths_train", "at": "paths"},
-                    {"kind": "fields", "title": "Input channels", "template": "input", "at": "input"},
-                    {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
-                    {"kind": "fields", "title": "Augmentation", "template": "augmentation", "at": "augmentation"},
-                ]},
-                {"key": "training", "title": "Training", "panels": [
-                    {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
-                    {"kind": "fields", "title": "Loss-scale probe", "template": "loss_probe", "at": "probe"},
-                    {"kind": "fields", "title": "Pre-run tuning", "template": "pretrain", "at": "pretrain"},
-                    {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
-                ]},
-                {"key": "loss", "title": "Loss", "panels": [
-                    {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
-                    {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
-                ]},
-                {"key": "experiments", "title": "Experiments", "panels": [
-                    {"kind": "special", "panel": "experiment_builder", "fields": DUAL_EXPERIMENT_TRIALS},
-                    {"kind": "fields", "groups": [
-                        {"title": "Fan-out execution", "fields": ["poll_interval_s"]},
-                    ]},
-                    {"kind": "hidden", "fields": ["ablation_features", "ablation_include_full", "gpus_file"]},
-                ]},
-                {"key": "inference", "title": "Inference", "panels": [
-                    {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after", "infer_at_end"]}]},
-                    {"kind": "fields", "title": "Inference run", "template": "inference_full", "at": "inference"},
-
-                    {"kind": "hidden", "fields": ["inference.region_override", *INFERENCE_TARGET_FIELDS]},
-                ]},
-            ],
-        },
         "infer_backbone":            INFER_BACKBONE_LAYOUT,
         "infer_profile_autoencoder": INFER_PROFILE_AE_LAYOUT,
         "infer_image_autoencoder":   INFER_IMAGE_AE_LAYOUT,
-        "infer_dual":                INFER_DUAL_LAYOUT,
         "benchmark": {
             "type_tab": {"field": "training_type", "options": [["backbone", "Backbone"], ["profile_autoencoder", "Profile AE"], ["jepa", "JEPA"]]},
             "essentials": [
@@ -1007,7 +928,7 @@ class LaunchLayout:
             ],
         },
         "cross_validate": {
-            "type_tab": {"field": "training_type", "options": [["backbone", "Backbone"], ["dual", "Dual"], ["profile_autoencoder", "Profile AE"], ["image_autoencoder", "Image AE"], ["jepa", "JEPA"]]},
+            "type_tab": {"field": "training_type", "options": [["backbone", "Backbone"], ["profile_autoencoder", "Profile AE"], ["image_autoencoder", "Image AE"], ["jepa", "JEPA"]]},
             "essentials": [
                 "run_tag",
                 {"path": "gpus", "widget": GPU_MANY},
@@ -1024,21 +945,6 @@ class LaunchLayout:
                 {"key": "model", "title": "Model", "when": {"field": "training_type", "in": ["backbone", "jepa"]}, "panels": [
                     {"kind": "special", "panel": "model_card", "fields": ["backbone_name", "backbone_head"], "headGate": {"when": [{"field": "training_type", "in": ["jepa"]}, {"field": "jepa.profile_autoencoder_run", "set": True}], "only": ["conv"], "hint": JEPA_HEAD_HINT}},
                 ]},
-                {"key": "dual", "title": "Dual trunks", "when": {"field": "training_type", "in": ["dual"]}, "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Parameter trunk (gaussian heads)", "fields": [
-                            {"path": "dual.params_backbone", "widget": CH_TRUNK},
-                            {"path": "dual.params_input",    "widget": MULTI_TRUNK_INPUT},
-                        ]},
-                        {"title": "Existence trunk (presence gate)", "fields": [
-                            {"path": "dual.existence_backbone", "widget": CH_TRUNK},
-                            {"path": "dual.existence_input",    "widget": MULTI_TRUNK_INPUT},
-                        ]},
-                    ]},
-                    {"kind": "special", "panel": "arch_overrides", "title": "Parameter trunk architecture", "modelFrom": "dual.params_backbone",    "exclude": DUAL_TRUNK_EXCLUDE, "fields": ["dual.params_overrides"]},
-                    {"kind": "special", "panel": "arch_overrides", "title": "Existence trunk architecture", "modelFrom": "dual.existence_backbone", "exclude": DUAL_TRUNK_EXCLUDE, "fields": ["dual.existence_overrides"]},
-                    {"kind": "hidden", "fields": ["dual.model_name"]},
-                ]},
                 {"key": "overrides", "title": "Architecture overrides", "panels": [
                     {"kind": "special", "panel": "arch_overrides", "title": "Architecture overrides", "modelBy": CV_MODEL_BY_TYPE, "fields": ["model_overrides"]},
                 ]},
@@ -1051,10 +957,10 @@ class LaunchLayout:
                 {"key": "data", "title": "Data", "panels": [
                     {"kind": "fields", "title": "Paths", "template": "paths_rest", "at": "paths"},
                 ]},
-                {"key": "input", "title": "Input channels", "when": {"field": "training_type", "in": ["backbone", "dual"]}, "panels": [
+                {"key": "input", "title": "Input channels", "when": {"field": "training_type", "in": ["backbone"]}, "panels": [
                     {"kind": "fields", "title": "Input channels", "template": "input", "at": "input"},
                 ]},
-                {"key": "transforms", "title": "Normalization and augmentation", "when": {"field": "training_type", "in": ["backbone", "dual", "image_autoencoder", "jepa"]}, "panels": [
+                {"key": "transforms", "title": "Normalization and augmentation", "when": {"field": "training_type", "in": ["backbone", "image_autoencoder", "jepa"]}, "panels": [
                     {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
                     {"kind": "fields", "title": "Augmentation", "template": "augmentation", "at": "augmentation"},
                 ]},
@@ -1064,7 +970,7 @@ class LaunchLayout:
                     {"kind": "fields", "title": "Loss-scale probe", "template": "loss_probe", "at": "probe"},
                     {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
                 ]},
-                {"key": "loss", "title": "Loss", "when": {"field": "training_type", "in": ["backbone", "dual"]}, "panels": [
+                {"key": "loss", "title": "Loss", "when": {"field": "training_type", "in": ["backbone"]}, "panels": [
                     {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
                     {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
                 ]},
@@ -1704,8 +1610,6 @@ class LaunchLayout:
                 expanded["modelBy"] = copy.deepcopy(panel["modelBy"])
             if "title" in panel:
                 expanded["title"] = panel["title"]
-            if "exclude" in panel:
-                expanded["exclude"] = list(panel["exclude"])
             if "headGate" in panel:
                 expanded["headGate"] = copy.deepcopy(panel["headGate"])
             return expanded
@@ -1858,11 +1762,6 @@ class LaunchLayout:
                     for value, path in (switch.get("models") or {}).items():
                         if path not in known:
                             problems.append(f"special panel {panel['panel']} reads unknown model field {path} for {switch['field']}={value}")
-                if "exclude" in panel:
-                    if panel["panel"] != "arch_overrides":
-                        problems.append(f"special panel {panel['panel']} carries an exclude list, which only arch_overrides panels support")
-                    if not panel["exclude"] or not all(isinstance(name, str) for name in panel["exclude"]):
-                        problems.append(f"special panel {panel['panel']} needs a non-empty list of field-name strings in exclude")
                 gate = panel.get("headGate")
                 if gate:
                     if not gate.get("only"):

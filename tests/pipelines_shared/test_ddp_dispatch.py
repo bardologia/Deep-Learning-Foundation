@@ -10,8 +10,6 @@ from configuration.training.jepa                 import JepaEntryConfig
 from configuration.training.profile_autoencoder  import ProfileAeEntryConfig
 from pipelines.backbone.training                 import launcher as backbone_mod
 from pipelines.backbone.training.launcher        import BackboneTrainingLauncher
-from pipelines.dual.training                     import launcher as dual_mod
-from pipelines.dual.training.launcher            import DualTrainingLauncher
 from pipelines.image_autoencoder.training.launcher import ImageAeTrainingLauncher
 from pipelines.image_autoencoder.training.pipeline import SingleTrainRunner as ImageAeRunner
 from pipelines.jepa.training.launcher            import JepaTrainingLauncher
@@ -34,7 +32,6 @@ SEED_SWEEP_FAMILIES = [
 
 TRIAL_LAUNCHERS = [
     (BackboneTrainingLauncher, backbone_mod),
-    (DualTrainingLauncher,     dual_mod),
 ]
 
 
@@ -158,7 +155,6 @@ def test_cluster_seed_sweeps_refuse_ddp(launcher_class):
         launcher_class(entry_script=ENTRY).build_scheduler(["--ddp", "true", "--run_name", "base", "--logdir", "/dss/runs/family"])
 
 
-@pytest.mark.parametrize("launcher_class", [BackboneTrainingLauncher, DualTrainingLauncher])
-def test_cluster_trial_sweeps_refuse_ddp(launcher_class, tmp_path):
+def test_cluster_trial_sweeps_refuse_ddp(tmp_path):
     with pytest.raises(ValueError, match="fans its units out one GPU each"):
-        launcher_class(entry_script=ENTRY).build_scheduler(["--ddp", "true", "--run_name", "base", "--logdir", str(tmp_path)])
+        BackboneTrainingLauncher(entry_script=ENTRY).build_scheduler(["--ddp", "true", "--run_name", "base", "--logdir", str(tmp_path)])

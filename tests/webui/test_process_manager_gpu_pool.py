@@ -11,8 +11,8 @@ from process_manager import ProcessManager
 
 from configuration.benchmark.general        import BenchmarkConfig
 from configuration.cross_validation.general import CrossValidationConfig
-from configuration.inference                import BackboneInferenceEntryConfig, DualInferenceEntryConfig, ImageAeInferenceEntryConfig, ProfileAeInferenceEntryConfig
-from configuration.training                 import BackboneEntryConfig, DualEntryConfig, ImageAeEntryConfig, JepaEntryConfig, ProfileAeEntryConfig
+from configuration.inference                import BackboneInferenceEntryConfig, ImageAeInferenceEntryConfig, ProfileAeInferenceEntryConfig
+from configuration.training                 import BackboneEntryConfig, ImageAeEntryConfig, JepaEntryConfig, ProfileAeEntryConfig
 from configuration.tuning.general           import TuningEntryConfig
 from tools.orchestration.gpu_queue          import GpuPoolFile
 
@@ -20,7 +20,6 @@ from tests.webui.conftest import SLEEP_LONG, wait_for_status, wait_until_finishe
 
 _SCHEDULING_PAGES = [
     ("train_backbone",            BackboneEntryConfig),
-    ("train_dual",                DualEntryConfig),
     ("train_jepa",                JepaEntryConfig),
     ("train_profile_autoencoder", ProfileAeEntryConfig),
     ("train_image_autoencoder",   ImageAeEntryConfig),
@@ -30,13 +29,12 @@ _SCHEDULING_PAGES = [
     ("infer_backbone",            BackboneInferenceEntryConfig),
     ("infer_profile_autoencoder", ProfileAeInferenceEntryConfig),
     ("infer_image_autoencoder",   ImageAeInferenceEntryConfig),
-    ("infer_dual",                DualInferenceEntryConfig),
 ]
 
 
 @pytest.fixture
 def manager(make_manager):
-    return make_manager({name: SLEEP_LONG for name in ("train_backbone", "train_dual", "train_jepa", "tune_dataloader")})
+    return make_manager({name: SLEEP_LONG for name in ("train_backbone", "train_jepa", "tune_dataloader")})
 
 
 def _pool_path(manager: ProcessManager, job_id: str) -> Path:

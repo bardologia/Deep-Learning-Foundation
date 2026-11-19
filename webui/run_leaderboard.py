@@ -23,33 +23,15 @@ from web_logger                                import WebLogger
 
 
 class RunAxes:
-    """Parses the experiment axes encoded in a run directory name.
-
-    The name carries model, head, matching, number of Gaussians K, augmentation and
-    presence tags, an optional input-channel and autoencoder prefix, the loss tag with
-    its weights, and the training timestamp.
-    """
 
     TIMESTAMP      = re.compile(r"_(\d{8}_\d{6})")
     K_TAG          = re.compile(r"^K_(\d+)$")
-    INPUT_TAG      = re.compile(r"^([a-z]+\.[a-z]+)-")
     PROFILE_AE_TAG = re.compile(r"^pae_([a-z0-9_]+\.[a-z]+)-")
     IMAGE_AE_TAG   = re.compile(r"^iae_([a-z0-9_]+\.[a-z]+)-")
     LOSS_TAG       = re.compile(r"([a-z0-9_]+?)_(\d+(?:\.\d+)?(?:e-?\d+)?)(?:-|$)")
 
     @classmethod
     def parse(cls, name: str) -> dict | None:
-        """Returns the experiment axes encoded in a run directory name.
-
-        Args:
-            name : Run directory name.
-
-        Returns:
-            Mapping with model, head, matching, k, aug, presence, inputs, profile_ae,
-            image_ae, the raw loss tag, the parsed loss name/weight pairs, the timestamp
-            and any trailing suffix; None when the name does not follow the run-naming
-            convention or carries no parsable loss term.
-        """
         stamp_match = cls.TIMESTAMP.search(name)
         timestamp   = stamp_match.group(1) if stamp_match else ""
         tag         = name[: stamp_match.start()] if stamp_match else name
@@ -63,10 +45,7 @@ class RunAxes:
         if k_match is None:
             return None
 
-        loss_tag    = parts[6]
-        input_match = cls.INPUT_TAG.match(loss_tag)
-        inputs      = input_match.group(1) if input_match else ""
-        loss_tag    = loss_tag[input_match.end():] if input_match else loss_tag
+        loss_tag = parts[6]
 
         profile_match = cls.PROFILE_AE_TAG.match(loss_tag)
         profile_ae    = profile_match.group(1) if profile_match else ""
@@ -95,7 +74,6 @@ class RunAxes:
             "k"          : int(k_match.group(1)),
             "aug"        : parts[4],
             "presence"   : parts[5],
-            "inputs"     : inputs,
             "profile_ae" : profile_ae,
             "image_ae"   : image_ae,
             "loss"       : loss_tag,
@@ -139,7 +117,6 @@ class RunLeaderboard:
         ("model",      RunArtifacts.BACKBONE_CONFIG),
         ("profile_ae", RunArtifacts.PROFILE_AE_CONFIG),
         ("image_ae",   RunArtifacts.IMAGE_AE_CONFIG),
-        ("dual",       RunArtifacts.DUAL_CONFIG),
     )
 
     SEED_DIR = re.compile(r"^seed(\d+)$")

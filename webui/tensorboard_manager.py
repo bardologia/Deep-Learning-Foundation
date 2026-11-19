@@ -24,7 +24,6 @@ class TensorboardManager:
         "train_profile_autoencoder" : ("logdir",),
         "train_image_autoencoder"   : ("logdir",),
         "train_jepa"                : ("logdir",),
-        "train_dual"                : ("logdir",),
         "benchmark"                 : ("paths.log_base_dir",),
         "cross_validate"            : ("paths.log_base_dir",),
         "tune"                      : ("paths.log_base_dir",),

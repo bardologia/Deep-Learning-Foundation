@@ -2,11 +2,6 @@
 
 class AblationView extends ConfigForm {
 
-  static ENTRIES = [
-    ["train_backbone", "Backbone"],
-    ["train_dual",     "Dual"],
-  ];
-
   constructor(runConsole, project) {
     super();
     this.runConsole = runConsole;
@@ -100,31 +95,9 @@ class AblationView extends ConfigForm {
     this._refresh();
   }
 
-  async _switchEntry(key) {
-    if (this.key === key || this.loading) return;
-    this.key     = key;
-    this.loaded  = false;
-    this.loading = true;
-    await this._load();
-    this.loading = false;
-  }
-
   _buildBar() {
     const bar     = document.createElement("div");
     bar.className = "ablation__bar";
-
-    const entry     = document.createElement("div");
-    entry.className = "exp-mode ablation__entry";
-    AblationView.ENTRIES.forEach(([key, label]) => {
-      const btn       = document.createElement("button");
-      btn.type        = "button";
-      btn.className   = "exp-mode__btn" + (key === this.key ? " is-on" : "");
-      btn.textContent = label;
-      btn.title       = `Run the ablation ladder through ${key}`;
-      btn.addEventListener("click", () => this._switchEntry(key));
-      entry.appendChild(btn);
-    });
-    bar.appendChild(entry);
 
     const interp     = document.createElement("select");
     interp.className = "ablation__interp";

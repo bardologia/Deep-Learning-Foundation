@@ -9,7 +9,6 @@ class RunType:
     BACKBONE   = "backbone"
     PROFILE_AE = "profile_ae"
     IMAGE_AE   = "image_ae"
-    DUAL       = "dual"
 
 
 class RunArtifacts:
@@ -17,7 +16,6 @@ class RunArtifacts:
     BACKBONE_CONFIG   = "model_config.json"
     PROFILE_AE_CONFIG = "profile_autoencoder_config.json"
     IMAGE_AE_CONFIG   = "image_autoencoder_config.json"
-    DUAL_CONFIG       = "dual_model_config.json"
 
 
 class InferenceLayout:
@@ -65,7 +63,6 @@ class RunClassifier:
         (RunType.BACKBONE,   RunArtifacts.BACKBONE_CONFIG),
         (RunType.PROFILE_AE, RunArtifacts.PROFILE_AE_CONFIG),
         (RunType.IMAGE_AE,   RunArtifacts.IMAGE_AE_CONFIG),
-        (RunType.DUAL,       RunArtifacts.DUAL_CONFIG),
     )
 
     @classmethod
@@ -76,4 +73,4 @@ class RunClassifier:
             if (meta / filename).is_file():
                 return run_type
 
-        raise ValueError(f"Run '{run_directory}' has no recognized model config under meta/ (no backbone, profile-autoencoder, image-autoencoder, or dual config); cannot infer.")
+        raise ValueError(f"Run '{run_directory}' has no recognized model config under meta/ (no backbone, profile-autoencoder or image-autoencoder config); cannot infer.")

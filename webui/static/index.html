@@ -228,8 +228,8 @@
     <div class="page__head page__head--figure">
       <h2 class="page__title">Ablation study</h2>
       <p class="page__lead">
-        Configure a full ablation of the backbone or dual model: pick the entry, the features
-        to ablate and their order, then launch a cumulative loop that trains the full model
+        Configure a full ablation of the backbone model: pick the features to ablate and
+        their order, then launch a cumulative loop that trains the full model
         and degrades one feature at a time down to the baseline.
       </p>
       <hairline-figure name="ablation" class="page__figure" aria-hidden="true"></hairline-figure>
@@ -987,7 +987,7 @@
     <div class="page__head page__head--figure">
       <h2 class="page__title">Model microscope</h2>
       <p class="page__lead">
-        Load a trained backbone or dual checkpoint, pick a pixel on the scene, and inspect the model
+        Load a trained backbone checkpoint, pick a pixel on the scene, and inspect the model
         from the inside: the predicted profile against ground truth and the raw cube,
         gradient attribution of every output family to every input channel, spatial maps of
         where in the window those gradients concentrate, feature maps along a clickable view
