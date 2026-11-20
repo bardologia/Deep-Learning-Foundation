@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -193,7 +194,7 @@ def test_evaluate_raises_on_nonfinite_loss(tmp_path):
     trainer = _build_trainer(tmp_path)
     loader  = _loader()
 
-    trainer._eval_step = lambda batch: _loss_dict(float("nan"))
+    trainer._compute_loss = lambda batch: _loss_dict(float("nan"))
 
     with pytest.raises(FloatingPointError):
         trainer.evaluate(loader, epoch=0)
@@ -206,7 +207,7 @@ def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
     loader  = _loader()
     batches = iter(range(len(loader)))
 
-    trainer._eval_step = lambda batch: _loss_dict(float("inf") if next(batches) == 0 else 2.0)
+    trainer._compute_loss = lambda batch: _loss_dict(float("inf") if next(batches) == 0 else 2.0)
 
     result = trainer.evaluate(loader, epoch=0)
 
@@ -273,7 +274,7 @@ def test_evaluate_pools_batches_by_their_pixel_weight(tmp_path):
     trainer = _build_trainer(tmp_path)
     loader  = _loader(batch_size=4)
 
-    trainer._eval_step = lambda batch: _loss_dict(1.0, 30.0) if batch[0].shape[0] == 4 else _loss_dict(4.0, 10.0)
+    trainer._compute_loss = lambda batch: _loss_dict(1.0, 30.0) if batch[0].shape[0] == 4 else _loss_dict(4.0, 10.0)
 
     result = trainer.evaluate(loader, epoch=0)
 
@@ -286,7 +287,7 @@ def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
     trainer = _build_trainer(tmp_path)
     trainer.abort_on_nonfinite_loss = False
 
-    trainer._eval_step = lambda batch: _loss_dict(float("nan"))
+    trainer._compute_loss = lambda batch: _loss_dict(float("nan"))
 
     result = trainer.evaluate(_loader(), epoch=0)
 
@@ -321,7 +322,7 @@ def test_evaluate_skip_warning_names_the_nonfinite_term(tmp_path):
     trainer          = Trainer(model, model_cfg, TARGET_CHANNELS, config, tmp_path, logger, emit_docs=False)
 
     trainer.abort_on_nonfinite_loss = False
-    trainer._eval_step              = lambda batch: _diverged_loss_dict("b")
+    trainer._compute_loss           = lambda batch: _diverged_loss_dict("b")
 
     result = trainer.evaluate(_loader(), epoch=0)
     logger.close()
@@ -399,3 +400,147 @@ def test_restore_best_loads_best_parameters(tmp_path):
     for name, param in trainer.model.state_dict().items():
         assert torch.equal(param, saved["params"][name])
 
+
+
+class TrainerShim:
+    pass
+
+
+def _shim(model, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01):
+    shim        = TrainerShim()
+    shim.model  = model
+    shim.config = SimpleNamespace(optimizer=SimpleNamespace(type="adamw", betas=betas, eps=eps, weight_decay=weight_decay))
+    return shim
+
+
+def test_build_optimizer_applies_defaults_and_is_adamw():
+    model = torch.nn.Linear(4, 2)
+    shim  = _shim(model, betas=(0.85, 0.95), eps=1e-7, weight_decay=0.05)
+
+    param_groups = [{"params": list(model.parameters()), "lr": 0.01}]
+    optimizer    = Trainer._build_optimizer(shim, param_groups)
+
+    assert isinstance(optimizer, torch.optim.AdamW)
+    pg = optimizer.param_groups[0]
+    assert pg["betas"]        == (0.85, 0.95)
+    assert pg["eps"]          == 1e-7
+    assert pg["weight_decay"] == 0.05
+    assert pg["lr"]           == 0.01
+
+
+def test_build_optimizer_does_not_override_explicit_group_values():
+    model = torch.nn.Linear(4, 2)
+    shim  = _shim(model, weight_decay=0.99)
+
+    param_groups = [{"params": list(model.parameters()), "lr": 0.01, "weight_decay": 0.0}]
+    optimizer    = Trainer._build_optimizer(shim, param_groups)
+
+    assert optimizer.param_groups[0]["weight_decay"] == 0.0
+
+
+def test_update_optimizer_sets_lrs_and_logs():
+    model  = torch.nn.Linear(4, 2)
+    shim   = _shim(model)
+    logged = []
+
+    param_groups     = [{"params": list(model.parameters()), "lr": 0.01, "name": "main"}]
+    shim.optimizer   = Trainer._build_optimizer(shim, param_groups)
+    shim.tracker     = SimpleNamespace(log_scalar=lambda tag, value, step: logged.append((tag, value)))
+    shim.global_step = 5
+
+    Trainer._update_optimizer(shim, [0.123])
+
+    assert shim.optimizer.param_groups[0]["lr"] == 0.123
+    assert ("optim/lr/main", 0.123) in logged
+
+
+def test_capture_state_contains_the_epoch_and_the_model():
+    model = torch.nn.Linear(3, 1)
+    shim  = TrainerShim()
+    shim.model = model
+
+    state = Trainer.capture_state(shim, epoch=7)
+
+    assert set(state) == {"epoch", "params"}
+    assert state["epoch"] == 7
+    assert set(state["params"].keys()) == set(model.state_dict().keys())
+
+
+def test_clear_cuda_cache_runs_on_cpu():
+    Trainer._clear_cuda_cache(TrainerShim())
+
+
+def test_cpu_device_is_warned_with_the_mask_and_the_amp_consequence(recording_logger, monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+
+    shim        = TrainerShim()
+    shim.device = torch.device("cpu")
+    shim.logger = recording_logger
+    shim.config = SimpleNamespace(training=SimpleNamespace(use_amp=True))
+
+    Trainer._warn_cpu_device(shim)
+
+    [(level, message)] = recording_logger.messages
+
+    assert level == "warning"
+    assert "CUDA_VISIBLE_DEVICES=3" in message
+    assert "bfloat16 on the CPU" in message
+
+
+def test_cuda_device_is_not_warned(recording_logger):
+    shim        = TrainerShim()
+    shim.device = torch.device("cuda")
+    shim.logger = recording_logger
+
+    Trainer._warn_cpu_device(shim)
+
+    assert recording_logger.messages == []
+
+
+def test_param_group_table_separates_the_base_rate_from_the_warmup_start_rate():
+    tables = []
+    model  = torch.nn.Linear(4, 2)
+    shim   = _shim(model)
+
+    shim.base_lrs  = [0.01]
+    shim.optimizer = Trainer._build_optimizer(shim, [{"params": list(model.parameters()), "lr": 0.001, "name": "main"}])
+    shim.logger    = SimpleNamespace(metrics_table=lambda rows, columns, title: tables.append((rows, columns, title)))
+
+    Trainer._log_param_groups(shim)
+
+    [(rows, columns, title)] = tables
+
+    assert columns == ["Group", "Base LR", "Step-0 LR", "Weight decay"]
+    assert rows[0]["Base LR"]   == "0.01"
+    assert rows[0]["Step-0 LR"] == "0.001"
+    assert "warmup start factor" in title
+
+
+def test_evaluate_without_a_finite_batch_warns_that_the_loss_is_nan(recording_logger):
+    shim = TrainerShim()
+
+    shim.model                   = torch.nn.Linear(2, 1)
+    shim.logger                  = recording_logger
+    shim.epochs                  = 4
+    shim.device                  = torch.device("cpu")
+    shim.use_amp                 = False
+    shim.abort_on_nonfinite_loss = False
+    shim._apply_memory_format    = lambda batch: batch
+    shim._compute_loss           = lambda batch: {"total_loss": WeightedMean(torch.tensor(float("nan")), torch.tensor(1.0)), "channels": {"y": WeightedMean(torch.tensor(float("nan")), torch.tensor(1.0))}}
+    shim._log_epoch_metrics      = lambda stage, aggregator, epoch: None
+    shim._nonfinite_detail       = lambda loss_dict, batch: Trainer._nonfinite_detail(shim, loss_dict, batch)
+
+    batch  = (torch.zeros(1, 2), torch.zeros(1, 2))
+    result = Trainer.evaluate(shim, [batch, batch], epoch=2, stage="val")
+
+    assert result["num_batches"] == 0
+    assert result["avg_loss"] != result["avg_loss"]
+    assert ("warning", "Training val epoch 3: no finite batch out of 2; the val loss is NaN") in recording_logger.messages
+    assert any(level == "warning" and "non-finite target channels: ['y']" in message for level, message in recording_logger.messages)
+
+
+def test_nonfinite_detail_says_when_every_channel_loss_is_finite():
+    batch  = (torch.zeros(1, 2), torch.zeros(1, 2))
+    detail = Trainer._nonfinite_detail(TrainerShim(), {"channels": {"y": WeightedMean(torch.tensor(1.0), torch.tensor(1.0))}}, batch)
+
+    assert detail.startswith("; non-finite target channels: none (every channel loss is finite)")
