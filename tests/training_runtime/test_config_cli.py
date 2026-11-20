@@ -178,18 +178,43 @@ def test_unset_options_leave_defaults():
     assert cfg.layers        == [16, 32]
 
 
-def test_stray_values_after_an_override_are_rejected():
+def test_unknown_option_exits_with_the_argparse_error(capsys):
     cfg = _config()
+
+    with pytest.raises(SystemExit) as stop:
+        ConfigCli(cfg).apply(["--does-not-exist", "5"])
+
+    assert stop.value.code == 2
+    assert "unrecognized arguments: --does-not-exist" in capsys.readouterr().err
+
+
+def test_stray_values_after_an_override_exit_with_the_argparse_error(capsys):
+    cfg = _config()
+
+    with pytest.raises(SystemExit) as stop:
+        ConfigCli(cfg).apply(["--layers", "0", "1", "2"])
+
+    assert stop.value.code == 2
+    assert "unrecognized arguments: 1 2" in capsys.readouterr().err
     assert cfg.layers == [16, 32]
 
 
-def test_stray_value_after_a_switch_is_not_taken_as_its_value():
+def test_stray_value_after_a_switch_is_not_taken_as_its_value(capsys):
     cfg = _config()
+
+    with pytest.raises(SystemExit):
+        ConfigCli(cfg).apply(["--trial", "--layers", "0", "1"])
+
+    assert "unrecognized arguments: 1" in capsys.readouterr().err
     assert cfg.layers == [16, 32]
 
 
 def test_stray_value_is_matched_to_the_flag_it_follows():
     cfg = _config()
+
+    with pytest.raises(SystemExit):
+        ConfigCli(cfg).apply(["--gpu", "--layers", "0", "1"])
+
     ConfigCli(cfg).apply(["--worker", "train", "--trial", "--seed", "4"])
     assert cfg.seed == 4
 

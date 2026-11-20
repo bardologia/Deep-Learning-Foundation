@@ -314,6 +314,17 @@ def test_config_cli_apply_no_args_returns_unmodified_config(name):
     assert result is config
 
 
+@pytest.mark.parametrize("name", CLI_MODULES)
+def test_config_cli_refuses_an_unknown_override(name):
+    module_path, class_name = ENTRY_CONFIGS[name]
+    config_class = getattr(importlib.import_module(module_path), class_name)
+
+    with pytest.raises(SystemExit) as excinfo:
+        ConfigCli(config_class()).apply(["--not-a-real-flag", "1"])
+
+    assert excinfo.value.code == 2
+
+
 def test_tune_worker_requires_model(main_on_path, frozen_env, monkeypatch):
     module = _import_main("tune")
     monkeypatch.setattr(sys, "argv", ["tune.py", "--worker"])

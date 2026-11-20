@@ -30,6 +30,13 @@ class ConfigCli:
 
     parsed : "ConfigCli | None" = None
 
+    BOOTSTRAP_SWITCHES = ("--trial",)
+    BOOTSTRAP_OPTIONAL = ("--worker", "--resume")
+    BOOTSTRAP_VALUED   = (
+        "--gpu", "--model", "--n-trials", "--worker-index", "--study-name", "--storage-url",
+        "--run-tag", "--run-dir", "--run-name", "--fold", "--split", "--loss-component", "--config",
+    )
+
     def __init__(self, config, description: str | None = None, profile: MachineProfile | None = None) -> None:
         self.config              = config
         self.overrides : dict    = {}
@@ -43,6 +50,8 @@ class ConfigCli:
         self.parser.add_argument("--help-config", action="store_true", dest="_help_config")
         self.parser.add_argument("--detach", "--nohup", action="store_true", dest="_detach")
 
+        declared = {"-h", "--help", "--help-config", "--detach", "--nohup"}
+
         for path, value in self._leaves(config):
             if not self.is_editable(value):
                 continue
@@ -53,9 +62,26 @@ class ConfigCli:
                 options.append(dashed)
 
             self.parser.add_argument(*options, dest=path, type=str, default=None)
+            declared.update(options)
+
+        self._declare_bootstrap_flags(declared)
+
+    def _declare_bootstrap_flags(self, declared: set) -> None:
+        for flag in self.BOOTSTRAP_SWITCHES + self.BOOTSTRAP_OPTIONAL + self.BOOTSTRAP_VALUED:
+            if flag in declared:
+                continue
+
+            dest = "_bootstrap_" + flag[2:].replace("-", "_")
+
+            if flag in self.BOOTSTRAP_SWITCHES:
+                self.parser.add_argument(flag, action="store_true", dest=dest)
+            elif flag in self.BOOTSTRAP_OPTIONAL:
+                self.parser.add_argument(flag, nargs="?", dest=dest)
+            else:
+                self.parser.add_argument(flag, dest=dest)
 
     def apply(self, argv: list[str] | None = None):
-        args, leftover = self.parser.parse_known_args(argv)
+        args = self.parser.parse_args(argv)
 
         if getattr(args, "_help", False) or getattr(args, "_help_config", False):
             self._print_config_help()
