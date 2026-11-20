@@ -3,24 +3,18 @@ from __future__ import annotations
 
 from fractions import Fraction
 
-from models                               import get_backbone
 from pipelines.shared.model.model_builder import ModelBuilder
 
 
-class ContextTrialPlanner:
+class ArchitectureTrialPlanner:
 
     RESERVED_KEYS = ("label", "backbone")
 
-    def __init__(self, trials: list, registry_names: tuple) -> None:
-        self.raw_trials     = list(trials)
-        self.trials         = [dict(trial) for trial in trials if isinstance(trial, dict)]
-        self.registry_names = tuple(registry_names)
-
-    def _overrides(self, trial: dict) -> dict:
-        return {key: value for key, value in trial.items() if key not in self.RESERVED_KEYS}
+    def __init__(self, trials: list) -> None:
+        self.trials = [dict(trial) for trial in trials]
 
     def _settings(self, trial: dict) -> dict:
-        overrides = self._overrides(trial)
+        overrides = {key: value for key, value in trial.items() if key not in self.RESERVED_KEYS}
         settings  = {"backbone_name": trial["backbone"]}
 
         if overrides:
@@ -30,59 +24,12 @@ class ContextTrialPlanner:
 
     def summary(self) -> dict:
         return {
-            "Rungs"      : [f"{trial['label']}:{trial['backbone']}" for trial in self.trials],
-            "Total runs" : len(self.trials),
+            "Architectures" : [f"{trial['label']}:{trial['backbone']}" for trial in self.trials],
+            "Total runs"    : len(self.trials),
         }
 
     def plan(self) -> list[tuple[str, dict]]:
-        return [(f"ctx-{trial['label']}", self._settings(trial)) for trial in self.trials]
-
-
-class ReachTrialPlanner:
-
-    RESERVED_KEYS = ("label", "backbone")
-
-    def __init__(self, trials, registry_names: tuple, out_channels: int) -> None:
-        self.trials         = trials
-        self.rungs          = [dict(rung) for rung in trials.rungs if isinstance(rung, dict)]
-        self.registry_names = tuple(registry_names)
-        self.out_channels   = out_channels
-
-        self.parameter_counts = {rung["label"]: self._parameters(rung) for rung in self.rungs}
-
-    def _overrides(self, rung: dict) -> dict:
-        return {key: value for key, value in rung.items() if key not in self.RESERVED_KEYS}
-
-    def _parameters(self, rung: dict) -> int:
-        sizing   = ModelBuilder.image_size_override(rung["backbone"], self.trials.patch_size)
-        model, _ = get_backbone(rung["backbone"], in_channels=self.trials.in_channels, out_channels=self.out_channels, **sizing, **self._overrides(rung))
-
-        return sum(parameter.numel() for parameter in model.parameters())
-
-    def _settings(self, rung: dict) -> dict:
-        overrides = self._overrides(rung)
-        settings  = {
-            "backbone_name"         : rung["backbone"],
-            "training.patch_size"   : tuple(self.trials.patch_size),
-            "training.patch_stride" : tuple(self.trials.patch_stride),
-        }
-
-        if overrides:
-            settings["model_overrides"] = overrides
-
-        return settings
-
-    def summary(self) -> dict:
-        return {
-            "Rungs"      : [f"{rung['label']}:{rung['backbone']}" for rung in self.rungs],
-            "Parameters" : {label: f"{count:,}" for label, count in self.parameter_counts.items()},
-            "Counted at" : f"{self.trials.in_channels} in / {self.out_channels} out channels",
-            "Patch"      : f"{tuple(self.trials.patch_size)} stride {tuple(self.trials.patch_stride)}",
-            "Total runs" : len(self.rungs),
-        }
-
-    def plan(self) -> list[tuple[str, dict]]:
-        return [(f"reach-{rung['label']}", self._settings(rung)) for rung in self.rungs]
+        return [(f"arch-{trial['label']}", self._settings(trial)) for trial in self.trials]
 
 
 class AugmentationTrialPlanner:

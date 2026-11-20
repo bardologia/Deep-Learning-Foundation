@@ -12,7 +12,6 @@ from configuration.training.general.loss         import LossConfig
 from configuration.training.general.optimization import EarlyStoppingConfig, GradientClipperConfig, OptimizerConfig, SchedulerConfig, WarmupConfig
 from configuration.resources                     import ResourceConfig
 from configuration.training.general.runtime      import IOConfig, MemoryConfig, TrainingLoopConfig
-from configuration.training.general.trials       import TrialCatalog
 
 
 @dataclass
@@ -23,16 +22,6 @@ class PatchTrialsConfig:
     step                  : int             = 0
     stride_ratio          : float           = 0.5
     constant_pixel_budget : bool            = True
-
-
-@dataclass
-class ReachTrialsConfig:
-
-    rungs           : list            = field(default_factory=TrialCatalog.reach_rungs)
-    patch_size      : tuple[int, int] = (32, 32)
-    patch_stride    : tuple[int, int] = (16, 16)
-    in_channels     : int             = 4
-    match_tolerance : float           = 0.01
 
 
 @dataclass
@@ -99,8 +88,7 @@ class BackboneEntryConfig:
     trials_enabled      : bool                     = False
     trials_mode         : str                      = "augmentation"
     patch_trials        : PatchTrialsConfig        = field(default_factory=PatchTrialsConfig)
-    context_trials      : list                     = field(default_factory=TrialCatalog.context_trials)
-    reach_trials        : ReachTrialsConfig        = field(default_factory=ReachTrialsConfig)
+    architecture_trials : list                     = field(default_factory=lambda: [{"label": "unet", "backbone": "unet"}, {"label": "resunet", "backbone": "resunet"}])
     augmentation_trials : AugmentationTrialsConfig = field(default_factory=AugmentationTrialsConfig)
     stability_trials    : StabilityTrialsConfig    = field(default_factory=StabilityTrialsConfig)
     ema_trials          : EmaTrialsConfig          = field(default_factory=EmaTrialsConfig)

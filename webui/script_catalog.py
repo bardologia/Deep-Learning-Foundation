@@ -16,7 +16,7 @@ class ScriptCatalog:
         "train_backbone": {
             "title"     : "Train Backbone",
             "category"  : "Training",
-            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: rectangular patch-shape grids under a constant pixel budget, backbone context ladders, size-matched reach comparisons, augmentation ladders, training-stability arms, weight-EMA ladders, or mixed-precision on/off pairs.",
+            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: rectangular patch-shape grids under a constant pixel budget, one run per listed architecture, augmentation ladders, training-stability arms, weight-EMA ladders, or mixed-precision on/off pairs.",
         },
         "infer_backbone": {
             "title"     : "Infer Backbone",

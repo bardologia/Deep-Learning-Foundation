@@ -211,12 +211,11 @@ class LaunchLayout:
     ]
 
     EXPERIMENT_TRIALS = [
-        "trials_enabled", "trials_mode", "context_trials",
+        "trials_enabled", "trials_mode", "architecture_trials",
         "augmentation_trials.flip_probability", "augmentation_trials.noise_probability", "augmentation_trials.noise_stds",
         "stability_trials.warmup_fractions", "stability_trials.warmup_mode", "stability_trials.clip_mode", "stability_trials.max_grad_norms",
         "ema_trials.decays",
         "patch_trials.minimum", "patch_trials.maximum", "patch_trials.step", "patch_trials.stride_ratio", "patch_trials.constant_pixel_budget",
-        "reach_trials.rungs", "reach_trials.patch_size", "reach_trials.patch_stride", "reach_trials.in_channels", "reach_trials.match_tolerance",
     ]
 
     INFERENCE_TARGET_NOTE = "Scores every selected run on the test split of a dataset it was never trained on. The run keeps its checkpoint and training normalization, so the target must carry the same input and target channels. Stamps land under <run>/cross_dataset/<dataset>/, apart from the run's own inference, and split must stay test."

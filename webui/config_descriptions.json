@@ -572,16 +572,6 @@
         "constant_pixel_budget": "When true, each trial's batch size and lr_reference_batch_size are rescaled together so batch x row x range matches the reference training.batch_size x training.patch_size pixels, keeping pixels per step and the batch-linear LR scale identical across patch shapes; the max-batch probe is disabled for every patch trial either way so the comparison stays controlled"
       }
     },
-    "training/backbone::ReachTrialsConfig": {
-      "summary": "Size-matched architecture comparison at a fixed spatial reach: every rung trains on the same patch with the same parameter budget, so the only free variable left is the architecture",
-      "fields": {
-        "rungs": "Architectures compared one run each, every rung a dict of label, backbone and optional model-config overrides; defaults pair an eight-block local_cnn (3x3 ConvBlocks give a 4n+1 = 33x33 receptive field, width 478) against a default unet, both about 31.0 M parameters on the 32x32 patch that a 33x33 receptive field fully covers, with dropout and trunk weight decay pinned to the unet regime (0.15 / 1e-4) on both arms so regularization cannot confound the architecture comparison. Every backbone must exist in the backbone registry and the rungs must stay size matched to within match_tolerance",
-        "patch_size": "Patch size (rows, cols) in pixels shared by every rung, deliberately square and no larger than the local rung's receptive field so all arms reach the whole patch and reach cannot confound the architecture comparison",
-        "patch_stride": "Patch stride (rows, cols) in pixels shared by every rung; half of patch_size gives 50% overlap",
-        "in_channels": "Input channel count the planner builds each rung at when it counts parameters; training builds every arm at the dataset's input channel count",
-        "match_tolerance": "Largest fractional spread in parameter count tolerated across the rungs; the planner counts every rung at the configured head before launching and refuses the sweep beyond this, because an unmatched arm turns an architecture result into a capacity result"
-      }
-    },
     "training/backbone::BackboneTrainerConfig": {
       "summary": "Aggregates the resolved component configs the Trainer consumes for one backbone training run",
       "fields": {
@@ -617,10 +607,9 @@
         "infer_at_end": "Hold all inference until every training job of the fan-out has finished, then run one inference job per completed run through the same GPU queue; keeps the GPUs saturated with training first, mutually exclusive with infer_after",
         "inference": "InferenceConfig sub-config used to run inference automatically after training when infer_after or infer_at_end is set",
         "trials_enabled": "Enable the multi-trial GPU sweep (TrainScheduler) instead of a single training run",
-        "trials_mode": "Sweep dimension the trial scheduler varies: patch, context, reach, augmentation, stability, ema or amp",
+        "trials_mode": "Sweep dimension the trial scheduler varies: patch, architecture, augmentation, stability, ema or amp",
         "patch_trials": "PatchTrialsConfig sub-config for the rectangular patch-shape grid sweep under a constant pixel budget",
-        "context_trials": "Rungs trained one run each, walking the spatial-context ladder at constant depth; every rung is a dict of label, backbone and model overrides (default a pixel_mlp rung of twenty 1x1 layers at width 1277 plus four local_cnn rungs of ten blocks, RF 1/9/29/41 via block_kernels mixes of 3x3 and 1x1, widths 1277/848/502/426, each within 0.5% of the default unet's parameters), and every backbone must exist in the registry",
-        "reach_trials": "ReachTrialsConfig sub-config for the size-matched architecture comparison at fixed reach, pairing a 33x33 local_cnn against a unet on a shared 32x32 patch at equal parameter count",
+        "architecture_trials": "Architectures trained one run each on the shared base config; every entry is a dict of label, backbone and optional model-config overrides, and every backbone must exist in the registry (default unet and resunet at their registry settings)",
         "augmentation_trials": "AugmentationTrialsConfig sub-config for the cumulative augmentation ladder: no augmentation, then + horizontal flip, then + vertical flip, then + input noise at each configured strength",
         "stability_trials": "StabilityTrialsConfig sub-config for the training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction, then gradient clipping alone per norm, then the first fraction paired with each norm",
         "ema_trials": "EmaTrialsConfig sub-config for the weight-EMA arms: EMA off, then per configured decay one rung with the plain decay and one with the decay warmup ramp; the amp mode reuses the base config unchanged and needs no sub-config",

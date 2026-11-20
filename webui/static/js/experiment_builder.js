@@ -54,29 +54,17 @@ class ExperimentBuilder {
         return grid.row.flatMap((row) => grid.range.map((col) => `${model}_p-${pad(row)}x${pad(col)}`));
       } },
 
-    { group: "arch", key: "context",    label: "context ladder", hint: "one trial per backbone architecture on the shared base config, walking the spatial-context ladder",
+    { group: "arch", key: "architecture", label: "architecture", hint: "one trial per listed backbone architecture on the shared base config",
       at        : 6,
-      el        : "contextEl",
-      available : (b) => Boolean(b.contextTrialsLeaf),
-      make      : (b) => b._contextPanel(),
-      paint     : (b) => b._paintContext(),
+      el        : "architectureEl",
+      available : (b) => Boolean(b.architectureTrialsLeaf),
+      make      : (b) => b._architecturePanel(),
+      paint     : (b) => b._paintArchitecture(),
       summary   : (b, gpus) => {
-        const n = b._contextTrials().length;
+        const n = b._architectureTrials().length;
         return `${n} backbone${n === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
       },
-      names     : (b) => b._contextTrials().map((rung) => `${rung.backbone}_ctx-${rung.label}`) },
-
-    { group: "arch", key: "reach",      label: "reach", hint: "size-matched architecture comparison at fixed reach: a 33x33 local CNN against a UNet, same 32x32 patch and same parameter count, one trial per arm",
-      at        : 7,
-      el        : "reachEl",
-      available : (b) => b.reach.size > 0,
-      make      : (b) => b._reachPanel(),
-      paint     : (b) => b._paintReach(),
-      summary   : (b, gpus) => {
-        const n = b._reachRungs().length;
-        return `${n} size-matched arm${n === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"} on a shared ${b._reachPatch()} patch${b._seedsSuffix(n)}${gpus}`;
-      },
-      names     : (b) => b._reachRungs().map((rung) => `${rung.backbone}_reach-${rung.label}`) },
+      names     : (b) => b._architectureTrials().map((entry) => `${entry.backbone}_arch-${entry.label}`) },
 
     { group: "data", key: "augmentation", label: "augmentation", hint: "cumulative augmentation ladder on the shared base config: no augmentation, then one rung per added augmentation, then + input noise at each configured strength",
       at        : 9,
@@ -142,16 +130,14 @@ class ExperimentBuilder {
     this.gpusLeaf     = byPath.get("gpus");
     this.seedsLeaf    = byPath.get("seeds");
 
-    this.contextTrialsLeaf = byPath.get("context_trials");
+    this.architectureTrialsLeaf = byPath.get("architecture_trials");
 
     this.patch           = new Map();
-    this.reach           = new Map();
     this.augTrials       = new Map();
     this.stabilityTrials = new Map();
     this.emaTrials       = new Map();
     byPath.forEach((leaf) => {
       if (leaf.section === "patch_trials")         this.patch.set(leaf.path.split(".").pop(), leaf);
-      if (leaf.section === "reach_trials")         this.reach.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "augmentation_trials")  this.augTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "stability_trials")     this.stabilityTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "ema_trials")           this.emaTrials.set(leaf.path.split(".").pop(), leaf);
@@ -160,11 +146,10 @@ class ExperimentBuilder {
     this.claimed = ["trials_enabled"];
     if (this.modeLeaf) this.claimed.push("trials_mode");
     this.patch.forEach((leaf) => this.claimed.push(leaf.path));
-    this.reach.forEach((leaf) => this.claimed.push(leaf.path));
     this.augTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.stabilityTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.emaTrials.forEach((leaf) => this.claimed.push(leaf.path));
-    if (this.contextTrialsLeaf)    this.claimed.push(this.contextTrialsLeaf.path);
+    if (this.architectureTrialsLeaf) this.claimed.push(this.architectureTrialsLeaf.path);
 
     this.summaryEl      = null;
     this.namesEl        = null;
@@ -174,8 +159,8 @@ class ExperimentBuilder {
     this.patchFlagPaints = [];
     this.warmupCustomEl      = null;
     this.warmupCustomHeadEl  = null;
-    this.contextEl      = null;
-    this.contextCellsEl = null;
+    this.architectureEl      = null;
+    this.architectureCellsEl = null;
     this.augEl           = null;
     this.augStdsEl       = null;
     this.stabilityEl     = null;
@@ -481,191 +466,65 @@ class ExperimentBuilder {
     this.patchFlagPaints.forEach((paint) => paint());
   }
 
-  _contextTrials() {
-    return this._listOf(this.contextTrialsLeaf, () => true);
+  _architectureTrials() {
+    return this._listOf(this.architectureTrialsLeaf, () => true);
   }
 
-  _reachRungs() {
-    return this._listOf(this.reach.get("rungs"), (rung) => rung && rung.label && rung.backbone);
-  }
-
-  _reachPatch() {
-    const leaf = this.reach.get("patch_size");
-    if (!leaf) return "";
-    try {
-      const raw = PythonLiteral.parse(this.view._effective(leaf));
-      return Array.isArray(raw) ? `${raw[0]}x${raw[1]}` : "";
-    } catch (e) {
-      return "";
-    }
-  }
-
-  _contextPanel() {
+  _architecturePanel() {
     const panel     = document.createElement("div");
     panel.className = "exp-secondary exp-presence";
 
     const head     = document.createElement("div");
     head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">context ladder</span>`;
-    const reset    = LaunchWidgetDom.mini("reset backbones", () => this._resetContext());
+    head.innerHTML = `<span class="exp-col__name">architectures</span>`;
+    const reset    = LaunchWidgetDom.mini("reset backbones", () => this._resetArchitecture());
     reset.classList.add("exp-presence__reset");
     head.appendChild(reset);
 
     const note       = document.createElement("p");
     note.className   = "exp-secondary__note";
-    note.textContent = "One training run per rung on the shared base config, walking the spatial-context ladder at constant depth: ten-block local CNNs whose 3x3 / 1x1 block mix sets the receptive field (RF 1, 9, 29, 41 by default), every rung size matched to the default UNet. Every rung is a label plus a backbone from the registry and model overrides; add rungs by editing context_trials, use reset backbones to restore the default.";
+    note.textContent = "One training run per listed architecture on the shared base config. Every entry is a label plus a backbone from the registry and optional model overrides; add entries by editing architecture_trials, use reset backbones to restore the default.";
 
     const cellHead       = document.createElement("div");
     cellHead.className    = "exp-presence__sub";
     cellHead.textContent  = "backbones";
 
-    const cells         = document.createElement("div");
-    cells.className     = "exp-builder__names exp-presence__cells";
-    this.contextCellsEl = cells;
+    const cells              = document.createElement("div");
+    cells.className          = "exp-builder__names exp-presence__cells";
+    this.architectureCellsEl = cells;
 
     panel.appendChild(head);
     panel.appendChild(note);
     panel.appendChild(cellHead);
     panel.appendChild(cells);
-    this.contextEl = panel;
+    this.architectureEl = panel;
 
-    if (this.contextTrialsLeaf) this.view.controls[this.contextTrialsLeaf.path] = { leaf: this.contextTrialsLeaf, reset: () => this._repaintContext() };
+    if (this.architectureTrialsLeaf) this.view.controls[this.architectureTrialsLeaf.path] = { leaf: this.architectureTrialsLeaf, reset: () => this._repaintArchitecture() };
 
-    this._paintContext();
+    this._paintArchitecture();
     return panel;
   }
 
-  _paintContext() {
-    if (!this.contextCellsEl) return;
-    this.contextCellsEl.innerHTML = "";
-    this._contextTrials().forEach((rung) => this.contextCellsEl.appendChild(this._contextChip(rung)));
+  _paintArchitecture() {
+    if (!this.architectureCellsEl) return;
+    this.architectureCellsEl.innerHTML = "";
+    this._architectureTrials().forEach((entry) => this.architectureCellsEl.appendChild(this._cellChip(`${entry.label} · ${entry.backbone}`, null, "Remove architecture", () => this._removeArchitecture(entry.label))));
   }
 
-  _contextChip(rung) {
-    return this._cellChip(`${rung.label} · ${rung.backbone}`, null, "Remove rung", () => this._removeContextCell(rung.label));
-  }
-
-  _removeContextCell(label) {
-    if (!this.contextTrialsLeaf) return;
-    const raw = this._contextTrials();
+  _removeArchitecture(label) {
+    const raw = this._architectureTrials();
     if (raw.length <= 1) return;
-    this.view._setValue(this.contextTrialsLeaf, PythonLiteral.render(raw.filter((entry) => entry.label !== label)));
-    this._repaintContext();
+    this.view._setValue(this.architectureTrialsLeaf, PythonLiteral.render(raw.filter((entry) => entry.label !== label)));
+    this._repaintArchitecture();
   }
 
-  _resetContext() {
-    if (this.contextTrialsLeaf) this.view._setValue(this.contextTrialsLeaf, this.contextTrialsLeaf.value);
-    this._repaintContext();
+  _resetArchitecture() {
+    this.view._setValue(this.architectureTrialsLeaf, this.architectureTrialsLeaf.value);
+    this._repaintArchitecture();
   }
 
-  _repaintContext() {
-    this._paintContext();
-    this._paintSummary();
-    this._paintNames();
-  }
-
-  _reachPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">reach comparison</span>`;
-    const reset    = LaunchWidgetDom.mini("reset arms", () => this._resetReach());
-    reset.classList.add("exp-presence__reset");
-    head.appendChild(reset);
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "Size-matched architecture comparison at fixed reach: every arm trains on the same square patch with the same parameter budget (default a 33x33 local CNN against a UNet, both about 31.0 M), so the architecture is the only free variable. The scheduler counts every arm before launching and refuses the sweep when they drift beyond the match tolerance.";
-
-    const cellHead      = document.createElement("div");
-    cellHead.className  = "exp-presence__sub";
-    cellHead.textContent = "arms";
-
-    const cells       = document.createElement("div");
-    cells.className   = "exp-builder__names exp-presence__cells";
-    this.reachCellsEl = cells;
-
-    const grid     = document.createElement("div");
-    grid.className = "exp-secondary__grid";
-    ["patch_size", "patch_stride", "in_channels", "match_tolerance"].forEach((key) => {
-      const leaf = this.reach.get(key);
-      if (leaf) grid.appendChild(this._reachRow(key, leaf));
-    });
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(cellHead);
-    panel.appendChild(cells);
-    panel.appendChild(grid);
-    this.reachEl = panel;
-
-    const rungsLeaf = this.reach.get("rungs");
-    if (rungsLeaf) this.view.controls[rungsLeaf.path] = { leaf: rungsLeaf, reset: () => this._repaintReach() };
-
-    this._paintReach();
-    return panel;
-  }
-
-  _reachRow(key, leaf) {
-    const row     = document.createElement("div");
-    row.className = "cfg-edit__row";
-    row.title     = `--${leaf.path}`;
-
-    const name     = document.createElement("div");
-    name.className = "cfg-edit__name";
-    name.innerHTML = `${key}<span>${leaf.type}</span>`;
-
-    const numeric    = key === "in_channels" || key === "match_tolerance";
-    const input      = document.createElement("input");
-    input.className  = "cfg-edit__input";
-    input.type       = numeric ? "number" : "text";
-    if (numeric) input.step = key === "in_channels" ? "1" : "any";
-    input.value      = this.view._effective(leaf);
-    input.spellcheck = false;
-    input.addEventListener("input", () => {
-      this.view.applyTypedInput(leaf, input);
-      this._paintSummary();
-    });
-
-    row.appendChild(name);
-    row.appendChild(input);
-
-    this.view.controls[leaf.path] = { leaf, reset: () => {
-      input.value = this.view._effective(leaf);
-      input.classList.toggle("is-dirty", this.view.dirty[leaf.path] !== undefined);
-    } };
-    return row;
-  }
-
-  _paintReach() {
-    if (!this.reachCellsEl) return;
-    this.reachCellsEl.innerHTML = "";
-    this._reachRungs().forEach((rung) => this.reachCellsEl.appendChild(this._reachChip(rung)));
-  }
-
-  _reachChip(rung) {
-    return this._cellChip(`${rung.label} · ${rung.backbone}`, null, "Remove arm", () => this._removeReachCell(rung.label));
-  }
-
-  _removeReachCell(label) {
-    const leaf = this.reach.get("rungs");
-    if (!leaf) return;
-    const raw = this._reachRungs();
-    if (raw.length <= 2) return;
-    this.view._setValue(leaf, PythonLiteral.render(raw.filter((entry) => entry.label !== label)));
-    this._repaintReach();
-  }
-
-  _resetReach() {
-    const leaf = this.reach.get("rungs");
-    if (leaf) this.view._setValue(leaf, leaf.value);
-    this._repaintReach();
-  }
-
-  _repaintReach() {
-    this._paintReach();
+  _repaintArchitecture() {
+    this._paintArchitecture();
     this._paintSummary();
     this._paintNames();
   }

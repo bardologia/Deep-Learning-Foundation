@@ -11,13 +11,11 @@ import torch
 
 from configuration.training                       import BackboneEntryConfig
 from configuration.training.general.optimization  import ClipMode, WarmupMode
-from models                                       import BACKBONE_CONFIG_REGISTRY
 from pipelines.backbone.inference.pipeline        import InferencePipeline
-from pipelines.backbone.training.experiments      import AugmentationTrialPlanner, ContextTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner
+from pipelines.backbone.training.experiments      import ArchitectureTrialPlanner, AugmentationTrialPlanner, PatchSizeTrialPlanner
 from pipelines.backbone.training.patch_report     import PatchTrialsReport
 from pipelines.backbone.training.pipeline         import TrainingPipeline
 from pipelines.shared.config.config_factory       import ConfigFactory
-from pipelines.shared.dataset.dataset_files       import DatasetFiles
 from pipelines.shared.model.model_builder         import ModelBuilder
 from pipelines.shared.training.resume_source      import ResumeLauncher
 from pipelines.shared.training.run_naming         import RunNaming
@@ -108,12 +106,11 @@ class SingleTrainRunner:
 
 class TrainScheduler(TrialSweepScheduler):
 
-    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "patch_trials", "context_trials", "reach_trials", "augmentation_trials", "stability_trials", "ema_trials", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
+    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "patch_trials", "architecture_trials", "augmentation_trials", "stability_trials", "ema_trials", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
 
     MODE_SUBDIRS = {
         "patch"        : "patch",
-        "context"      : "context",
-        "reach"        : "reach",
+        "architecture" : "architecture",
         "augmentation" : "augmentation",
         "stability"    : "stability",
         "ema"          : "ema",
@@ -134,17 +131,12 @@ class TrainScheduler(TrialSweepScheduler):
             "Infer at end" : self.config.infer_at_end,
         }
 
-    def _out_channels(self) -> int:
-        return len(DatasetFiles.read(self.config.paths.dataset_path).target_channels)
-
     def _build_planner(self):
         mode = self.config.trials_mode
         if mode == "patch":
             return PatchSizeTrialPlanner(self.config.patch_trials, self.config.backbone_name, self.config.model_overrides, self.config.training)
-        if mode == "context":
-            return ContextTrialPlanner(self.config.context_trials, tuple(BACKBONE_CONFIG_REGISTRY))
-        if mode == "reach":
-            return ReachTrialPlanner(self.config.reach_trials, tuple(BACKBONE_CONFIG_REGISTRY), self._out_channels())
+        if mode == "architecture":
+            return ArchitectureTrialPlanner(self.config.architecture_trials)
         if mode == "augmentation":
             return AugmentationTrialPlanner(self.config.augmentation_trials)
         if mode == "stability":

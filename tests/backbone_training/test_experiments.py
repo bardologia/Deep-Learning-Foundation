@@ -4,15 +4,9 @@ from __future__ import annotations
 import pytest
 
 from configuration.training                  import BackboneEntryConfig
-from configuration.training.backbone         import AugmentationTrialsConfig, PatchTrialsConfig, ReachTrialsConfig
+from configuration.training.backbone         import AugmentationTrialsConfig, PatchTrialsConfig
 from configuration.training.general.run      import TrainingQueueConfig
-from configuration.training.general.trials   import TrialCatalog
-from pipelines.backbone.training.experiments import (
-    AugmentationTrialPlanner,
-    ContextTrialPlanner,
-    PatchSizeTrialPlanner,
-    ReachTrialPlanner,
-)
+from pipelines.backbone.training.experiments import ArchitectureTrialPlanner, AugmentationTrialPlanner, PatchSizeTrialPlanner
 
 
 def make_patch_planner(training: TrainingQueueConfig | None = None, **overrides) -> PatchSizeTrialPlanner:
@@ -92,123 +86,21 @@ def test_patch_planner_summary_reports_one_batch_without_the_budget():
     assert planner.summary()["Batch size / LR reference"] == "32 / 64 in every trial (constant pixel budget off)"
 
 
-REGISTRY_NAMES = ("pixel_mlp", "local_cnn", "unet", "resunet")
+def test_architecture_planner_trains_one_run_per_listed_backbone():
+    planner = ArchitectureTrialPlanner([{"label": "unet", "backbone": "unet"}, {"label": "wide", "backbone": "local_cnn", "features": [64] * 4}])
 
-
-def test_context_planner_default_walks_the_context_ladder():
-    planner = ContextTrialPlanner(TrialCatalog.context_trials(), REGISTRY_NAMES)
-
-    plans = planner.plan()
-
-    assert plans == [
-        ("ctx-mlp",   {"backbone_name": "pixel_mlp", "model_overrides": {"features": [1277] * 20}}),
-        ("ctx-cnn01", {"backbone_name": "local_cnn", "model_overrides": {"features": [1277] * 10, "block_kernels": [1] * 10}}),
-        ("ctx-cnn09", {"backbone_name": "local_cnn", "model_overrides": {"features": [848]  * 10, "block_kernels": [3] * 2 + [1] * 8}}),
-        ("ctx-cnn29", {"backbone_name": "local_cnn", "model_overrides": {"features": [502]  * 10, "block_kernels": [3] * 7 + [1] * 3}}),
-        ("ctx-cnn41", {"backbone_name": "local_cnn", "model_overrides": {"features": [426]  * 10, "block_kernels": [3] * 10}}),
+    assert planner.plan() == [
+        ("arch-unet", {"backbone_name": "unet"}),
+        ("arch-wide", {"backbone_name": "local_cnn", "model_overrides": {"features": [64] * 4}}),
     ]
-    assert planner.summary() == {
-        "Rungs"      : ["mlp:pixel_mlp", "cnn01:local_cnn", "cnn09:local_cnn", "cnn29:local_cnn", "cnn41:local_cnn"],
-        "Total runs" : 5,
-    }
+    assert planner.summary() == {"Architectures": ["unet:unet", "wide:local_cnn"], "Total runs": 2}
 
 
-def test_context_ladder_receptive_fields_bracket_the_label_window():
-    trials = [trial for trial in TrialCatalog.context_trials() if trial["backbone"] == "local_cnn"]
-
-    fields = [1 + sum(2 * (kernel - 1) for kernel in trial["block_kernels"]) for trial in trials]
-    depths = [len(trial["features"]) for trial in trials]
-    labels = [trial["label"] for trial in trials]
-
-    assert fields == [1, 9, 29, 41]
-    assert depths == [10] * 4
-    assert labels == [f"cnn{field:02d}" for field in fields]
-
-
-def test_context_mlp_rung_mirrors_the_kernel_one_cnn_stack():
-    trials = TrialCatalog.context_trials()
-    mlp    = next(trial for trial in trials if trial["backbone"] == "pixel_mlp")
-    cnn01  = next(trial for trial in trials if trial["label"] == "cnn01")
-
-    assert mlp["label"] == "mlp"
-    assert mlp["features"] == [cnn01["features"][0]] * 20
-    assert "block_kernels" not in mlp
-
-
-def test_context_default_rungs_are_size_matched_at_constant_depth():
-    import torch.nn as nn
-
-    from models import get_backbone
-
-    unet, _ = get_backbone("unet", in_channels=4, out_channels=2)
-    target  = sum(p.numel() for p in unet.parameters())
-
-    for trial in TrialCatalog.context_trials():
-        overrides = {key: value for key, value in trial.items() if key not in ("label", "backbone")}
-        model, _  = get_backbone(trial["backbone"], in_channels=4, out_channels=2, **overrides)
-
-        params = sum(p.numel() for p in model.parameters())
-        convs  = sum(1 for m in model.trunk.modules() if isinstance(m, nn.Conv2d))
-
-        assert abs(params - target) / target < 0.005, trial["label"]
-        assert convs == 20, trial["label"]
-
-
-def test_context_default_backbones_are_registered():
+def test_architecture_default_backbones_are_registered():
     from models import BACKBONE_CONFIG_REGISTRY
 
-    ContextTrialPlanner(TrialCatalog.context_trials(), tuple(BACKBONE_CONFIG_REGISTRY))
-
-
-def _reach_config(**overrides) -> ReachTrialsConfig:
-    rungs = [
-        {"label" : "a", "backbone" : "local_cnn", "features" : [8] * 2},
-        {"label" : "b", "backbone" : "local_cnn", "features" : [8] * 2},
-    ]
-
-    return ReachTrialsConfig(rungs=overrides.pop("rungs", rungs), **overrides)
-
-
-def test_reach_planner_pins_every_arm_to_the_same_patch():
-    planner = ReachTrialPlanner(_reach_config(), REGISTRY_NAMES, 2)
-
-    plans = planner.plan()
-
-    assert plans == [
-        ("reach-a", {"backbone_name": "local_cnn", "training.patch_size": (32, 32), "training.patch_stride": (16, 16), "model_overrides": {"features": [8] * 2}}),
-        ("reach-b", {"backbone_name": "local_cnn", "training.patch_size": (32, 32), "training.patch_stride": (16, 16), "model_overrides": {"features": [8] * 2}}),
-    ]
-
-
-def test_reach_default_arms_are_size_matched_and_reach_the_whole_patch():
-    from models import BACKBONE_CONFIG_REGISTRY
-
-    trials  = ReachTrialsConfig()
-    planner = ReachTrialPlanner(trials, tuple(BACKBONE_CONFIG_REGISTRY), 2)
-
-    counts    = planner.parameter_counts
-    deviation = (max(counts.values()) - min(counts.values())) / min(counts.values())
-
-    assert set(counts) == {"cnn33", "unet"}
-    assert deviation <= trials.match_tolerance
-
-    local = next(rung for rung in trials.rungs if rung["backbone"] == "local_cnn")
-    field = 1 + 4 * len(local["features"])
-
-    assert field == 33
-    assert all(field >= size for size in trials.patch_size)
-
-
-def test_reach_planner_counts_the_arms_at_the_dataset_target_channel_count():
-    rungs = [
-        {"label" : "a", "backbone" : "local_cnn", "features" : [8] * 2},
-        {"label" : "b", "backbone" : "local_cnn", "features" : [8] * 2},
-    ]
-
-    two_targets  = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, 2)
-    five_targets = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, 5)
-
-    assert five_targets.parameter_counts["a"] > two_targets.parameter_counts["a"]
+    for trial in BackboneEntryConfig().architecture_trials:
+        assert trial["backbone"] in BACKBONE_CONFIG_REGISTRY
 
 
 def test_augmentation_planner_default_walks_the_ladder():
