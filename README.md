@@ -500,10 +500,9 @@ works, with plain text where the architecture notes' equations would be.
 
 ## 8. Experiments and analysis
 
-Four experiment entries under `main/experiments/` wrap the training loop:
+Three experiment entries under `main/experiments/` wrap the training loop:
 `benchmark.py` sweeps models, heads and losses; `cross_validate.py` runs k-fold over the
-scene; `tune.py` drives an Optuna study; `tune_dataloader.py` searches batch size,
-worker count and prefetch depth for throughput. Patch-shape sweeps run through the
+scene; `tune.py` drives an Optuna study. Patch-shape sweeps run through the
 training entries themselves as `trials_mode=patch`, alongside the other fan-out modes
 (curriculum, warmup, presence, pair, log-energy, secondary, input, context, reach, head,
 augmentation, clamp, stability, EMA, AMP and ablation ladders). The patch sweep report
@@ -535,11 +534,6 @@ objective is read unless `keep_trial_checkpoints` is on. `tuning_results.json` h
 each model's status (`DONE`, `PARTIAL` or `FAILED`) and stop reason, and the entry exits
 non-zero when a reported model is not `DONE`. The `prepare` and `full` stages refuse an
 existing study without `--resume` or `resume_from`.
-
-`tune_dataloader.py` writes each sweep into its own
-`<output_dir>/<model>_<timestamp>/` with its logs, figures, `resolved_config.json`
-and a `results.json` that carries the status, the settings, the provenance and the GPU it
-measured, found by its NVML UUID. `<output_dir>/work/` is scratch space the sweeps share.
 
 `main/processing/extract_params.py` fits parameter runs onto a dataset. It refuses a
 permutation whose `params/<run>` already exists unless `overwrite` is on, which deletes

@@ -120,7 +120,6 @@ class LaunchView extends ConfigForm {
     [/^benchmark$/, "podium"],
     [/^cross_validate$/, "folds"],
     [/^tune$/, "dial"],
-    [/^tune_dataloader$/, "sampler"],
     [/^profile_training$/, "feed"],
     [/^analyze_param_extraction$/, "transect"],
     [/^map_loss_landscape$/, "landscape"],

@@ -7,7 +7,7 @@
     "training": "The stage that optimizes the backbone. It binds architecture, loss, optimization, scheduling, and runtime sub-configs into one resolved run and manages queuing and sweeps. The configs here control loss term weighting and curricula, optimizer, scheduler, warmup, early-stopping and gradient-clipping policy, filesystem layout, VRAM reservation and resource monitoring, and the trainer and entry configs.",
     "resources": "Host and device sampling settings shared by every training family: whether the resource monitor runs, how often it samples CPU, RAM, shared memory and GPU memory, whether samples go to TensorBoard, and the utilisation levels that raise a warning in the run log. They live outside the training package so that a long-running processing entry can carry them without importing torch.",
     "inference": "The stage that runs trained checkpoints over data splits to produce predictions, evaluations, and reports. It drives sliding-window prediction for backbone runs, scheduling one worker per run across a GPU pool. The configs here control the per-run inference driver, its output subdirectory and filename layout, and the batch entry point that queues inference across all discovered runs.",
-    "benchmark": "The stage that compares multiple model architectures under matched conditions on the same data. It size-matches each backbone to a reference parameter count, then trains, runs inference, and assembles a cross-model comparison report. The configs here control the max-batch and dataloader-tuning probes, width-matching bisection search, batched inference and its diagnostic artifacts, the comparison report assembly, and the top-level sweep orchestration.",
+    "benchmark": "The stage that compares multiple model architectures on the same data. It trains each backbone at its own configured size, runs inference, and assembles a cross-model comparison report. The configs here control batched inference and its diagnostic artifacts, the comparison report assembly, and the top-level sweep orchestration.",
     "cross_validation": "The stage that estimates generalization by partitioning the stack along row into k folds and training and evaluating on each. It orchestrates per-fold training, inference, and comparison for the backbone. The configs here control the row-range fold partitioning and the top-level k-fold orchestration.",
     "tuning": "The stage that searches hyperparameter spaces with Optuna to improve a chosen backbone. It wires the search budget, pruning, and resources to a nested training configuration and swaps in per-trial hyperparameter samples. The configs here control the Optuna search controls and artifact emission, and the entry point binding resources and data to the search.",
     "comparison": "The stage that rebuilds side-by-side comparisons across completed runs and trials without re-running training or inference. It aggregates existing inference or preprocessing outputs into a single report grouped by the varied factor. The configs here control comparison of backbone inference runs, of preprocessing trials differing by multilook window, of Gaussian-fit extraction trials grouped by component count, and the standalone rebuild of an existing benchmark comparison report.",
@@ -1187,46 +1187,6 @@
         "target": "Foreign dataset the run is scored on instead of its own split (off by default); the stamps land under <run>/cross_dataset/<dataset name>/, apart from the run's own inference"
       }
     },
-    "benchmark/dataloader_tuning::TrainingProfileEntryConfig": {
-      "summary": "Entry config that records full training steps of one backbone under torch.profiler and writes a chrome trace, an operator table and a top-operator summary",
-      "fields": {
-        "model_name": "backbone registry key building the profiled workload; empty picks resunet",
-        "gpu": "index of the GPU the profiled steps execute on",
-        "seed": "random seed for sampling and model initialisation",
-        "use_amp": "whether the profiled forward runs under bfloat16 autocast, matching a mixed-precision training run",
-        "batch_size": "samples per profiled step",
-        "num_workers": "data loader worker processes during profiling",
-        "prefetch_factor": "batches each worker prefetches",
-        "warmup_steps": "steps the profiler observes without recording, letting allocator and autotune effects settle",
-        "active_steps": "steps recorded into the trace and the operator statistics",
-        "record_shapes": "record operator input shapes, enabling shape-grouped views in the trace viewer",
-        "profile_memory": "record allocator events so the trace shows per-operator memory traffic",
-        "with_stack": "record Python stacks per operator; the trace grows considerably",
-        "paths": "dataset and run path configuration the feed adapter reads",
-        "output_dir": "directory receiving one timestamped profile directory per run"
-      }
-    },
-    "benchmark/dataloader_tuning::DataLoaderTuningEntryConfig": {
-      "summary": "Entry point sweeping DataLoader batch size, worker count and prefetch to find the fastest configuration that keeps the GPU fed",
-      "fields": {
-        "model_name": "backbone registry key built for the benchmark, resunet when empty",
-        "gpu": "physical CUDA device index pinned via CUDA_VISIBLE_DEVICES by the entry script before the pipeline is built; the NVML utilization/VRAM sampler finds that device by the UUID of the CUDA device torch computes on, and results.json records the requested index next to the NVML index, name and UUID",
-        "seed": "random seed for reproducible dataset construction and DataLoader shuffling",
-        "use_amp": "enable bfloat16 autocast around the model forward pass in every warmup and timed train step across all three measurement phases",
-        "batch_sizes": "candidate batch sizes swept in the main phase, one DataLoader spec per batch size x worker count combination",
-        "worker_counts": "candidate DataLoader worker-process counts swept in the main phase, entries above the machine's CPU core count are dropped",
-        "prefetch_factors": "candidate per-worker prefetch factors swept only in the refine phase around the best main-phase configuration",
-        "reference_prefetch": "prefetch factor used for every main-phase sweep spec before refinement narrows it down",
-        "warmup_batches": "batches run unmeasured before each of the three timing phases (loader-only, compute-ceiling, end-to-end) to warm caches, CUDA kernels and DataLoader workers",
-        "timed_batches": "batches measured after warmup in each of the three timing phases (loader-only, compute-ceiling, end-to-end) to compute throughput",
-        "cpu_threads": "torch.set_num_threads value set once when GpuFeedBenchmark is constructed, capping CPU-side compute-thread contention during the sweep",
-        "data_wait_target": "target data_wait_fraction (GPU idle time waiting on the DataLoader) a configuration must stay under, or reach feed_ratio>=1.0, to be considered feasible",
-        "refine": "run a second sweep over prefetch_factors x pin_memory around the best main-phase batch_size/num_workers before finalizing",
-        "save_figures": "export the four sweep plots (throughput vs batch size, data-wait vs workers, gpu utilization vs throughput, feed ratio vs workers) to the figures subdirectory of the sweep's own directory",
-        "paths": "RunPathsConfig sub-config supplying the dataset/parameters paths consumed when mode requires a real dataset",
-        "output_dir": "base directory; every sweep writes into its own <model>_<launch time> subdirectory holding logs/, figures/, resolved_config.json and results.json (with the sweep's settings, code version, device and status), while work/ is the scratch directory the sweeps share"
-      }
-    },
     "benchmark/general::InferenceQueueConfig": {
       "summary": "Configures batched inference execution and which diagnostic artifacts it writes for each benchmarked model",
       "fields": {
@@ -1792,6 +1752,25 @@
         "figures_subdir": "Name of the figures directory inside each inference stamp the patterns are matched against",
         "patterns": "Glob patterns relative to the figures directory selecting which figures enter the pack",
         "output_dir": "Publication figures directory the stable-named copies and the manifest are written into"
+      }
+    },
+    "diagnostics::TrainingProfileEntryConfig": {
+      "summary": "Entry config that records full training steps of one backbone under torch.profiler and writes a chrome trace, an operator table and a top-operator summary",
+      "fields": {
+        "model_name": "backbone registry key building the profiled workload; empty picks resunet",
+        "gpu": "index of the GPU the profiled steps execute on",
+        "seed": "random seed for sampling and model initialisation",
+        "use_amp": "whether the profiled forward runs under bfloat16 autocast, matching a mixed-precision training run",
+        "batch_size": "samples per profiled step",
+        "num_workers": "data loader worker processes during profiling",
+        "prefetch_factor": "batches each worker prefetches",
+        "warmup_steps": "steps the profiler observes without recording, letting allocator and autotune effects settle",
+        "active_steps": "steps recorded into the trace and the operator statistics",
+        "record_shapes": "record operator input shapes, enabling shape-grouped views in the trace viewer",
+        "profile_memory": "record allocator events so the trace shows per-operator memory traffic",
+        "with_stack": "record Python stacks per operator; the trace grows considerably",
+        "paths": "dataset and run path configuration the feed adapter reads",
+        "output_dir": "directory receiving one timestamped profile directory per run"
       }
     },
     "synthesis::SynthesisConfig": {

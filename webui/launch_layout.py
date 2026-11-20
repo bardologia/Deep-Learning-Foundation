@@ -661,29 +661,6 @@ class LaunchLayout:
                 ]},
             ],
         },
-        "tune_dataloader": {
-            "sections": [
-                {"key": "config", "title": "Configuration", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Run", "fields": ["model_name", {"path": "gpu", "widget": GPU_ONE}, {"path": "seed", "widget": NUM_SEED}, "use_amp"]},
-                        {"title": "Sweep grid", "fields": [
-                            {"path": "batch_sizes", "widget": MULTI_INT},
-                            {"path": "worker_counts", "widget": MULTI_INT},
-                            {"path": "prefetch_factors", "widget": MULTI_INT},
-                        ]},
-                        {"title": "Measurement", "fields": ["reference_prefetch", "warmup_batches", "timed_batches", "cpu_threads", "data_wait_target"]},
-                        {"title": "Outputs", "fields": ["refine", "save_figures", "output_dir"]},
-                        {"title": "Paths", "fields": [
-                            {"path": "paths.dataset_path", "widget": PICK_DATASET},
-                            {"path": "paths.parameters_path", "widget": PICK_PARAMS},
-                            "paths.log_base_dir",
-                            "paths.fingerprint_dataset",
-                        ]},
-                        {"title": "Secondary channels", "fields": [{"path": "paths.secondary_labels", "widget": PICK_CHANNELS}]},
-                    ]},
-                ]},
-            ],
-        },
         "analyze_param_extraction": {
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [

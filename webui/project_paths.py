@@ -78,7 +78,6 @@ class ProjectPaths:
         "benchmark"                       : "experiments",
         "cross_validate"                  : "experiments",
         "tune"                            : "experiments",
-        "tune_dataloader"                 : "experiments",
         "analyze_param_extraction"        : "analysis",
         "compare_trials"                  : "analysis",
         "compare_param_extraction_trials" : "analysis",

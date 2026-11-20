@@ -34,8 +34,7 @@ def test_shared_helpers_load_before_their_users():
 
     assert loaded.index("api.js") < loaded.index("stream_hub.js")
 
-    for user in ("console.js", "feed_tuner.js"):
-        assert loaded.index("stream_hub.js") < loaded.index(user)
+    assert loaded.index("stream_hub.js") < loaded.index("console.js")
 
 
 def test_static_assets_carry_no_hand_written_cache_tags():

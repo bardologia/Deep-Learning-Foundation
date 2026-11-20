@@ -18,7 +18,6 @@ from configuration.benchmark.general import (
     ComparisonReportConfig,
     BenchmarkConfig,
 )
-from configuration.benchmark.dataloader_tuning import DataLoaderTuningEntryConfig
 from configuration.training.general.run        import RunPathsConfig, TrainingQueueConfig
 
 from configuration.dataset                  import AugmentationConfig, InputConfig
@@ -37,7 +36,6 @@ DEFAULT_CONFIGS = [
     InferenceQueueConfig,
     ComparisonReportConfig,
     BenchmarkConfig,
-    DataLoaderTuningEntryConfig,
 ]
 
 IDS = [c.__name__ for c in DEFAULT_CONFIGS]
@@ -196,11 +194,3 @@ def test_benchmark_config_exposes_training_recipe_sections():
     assert isinstance(cfg.input, InputConfig)
     assert isinstance(cfg.normalization, NormalizationConfig)
     assert isinstance(cfg.augmentation, AugmentationConfig)
-
-
-def test_dataloader_tuning_entry_lists_independent():
-    a = DataLoaderTuningEntryConfig()
-    b = DataLoaderTuningEntryConfig()
-    a.batch_sizes.append(99999)
-    assert 99999 not in b.batch_sizes
-    assert isinstance(a.output_dir, Path)

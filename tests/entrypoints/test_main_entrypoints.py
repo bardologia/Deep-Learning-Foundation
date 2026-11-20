@@ -30,7 +30,7 @@ DEFER_HEAVY_IMPORTS = (
     "tune",
     "benchmark",
     "cross_validate",
-    "tune_dataloader",
+    "profile_training",
     "extract_params",
     "analyze_param_extraction",
     "export_tensorboard_plots",
@@ -44,7 +44,7 @@ CLI_MODULES = (
     "generate_dataset",
     "extract_params",
     "tune",
-    "tune_dataloader",
+    "profile_training",
     "benchmark",
     "cross_validate",
     "compare_runs",
@@ -61,7 +61,7 @@ ENTRY_CONFIGS = {
     "generate_dataset"                : ("configuration.synthesis",       "GenerateDatasetEntryConfig"),
     "analyze_param_extraction"        : ("configuration.param_extraction",      "ParamExtractionInferenceConfig"),
     "tune"                            : ("configuration.tuning",                       "TuningEntryConfig"),
-    "tune_dataloader"                 : ("configuration.benchmark.dataloader_tuning",  "DataLoaderTuningEntryConfig"),
+    "profile_training"                : ("configuration.diagnostics",                  "TrainingProfileEntryConfig"),
     "benchmark"                       : ("configuration.benchmark",                    "BenchmarkConfig"),
     "cross_validate"                  : ("configuration.cross_validation",             "CrossValidationConfig"),
     "compare_runs"                    : ("configuration.comparison",                   "ComparisonEntryConfig"),
@@ -183,7 +183,7 @@ def test_processing_pipeline_loads_no_torch(module_path, tmp_path):
     assert result.stdout.strip() == "[]"
 
 
-@pytest.mark.parametrize("name", ("generate_dataset", "tune_dataloader", "extract_params"))
+@pytest.mark.parametrize("name", ("generate_dataset", "profile_training", "extract_params"))
 def test_entry_pins_the_environment_before_the_numeric_stack_loads(name, tmp_path):
     script = _script_path(name)
     code   = (

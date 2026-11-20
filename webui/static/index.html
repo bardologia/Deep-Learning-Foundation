@@ -45,7 +45,6 @@
         <a href="#/templates" data-route="templates">Templates</a>
         <a href="#/sequences" data-route="sequences">Sequences</a>
         <a href="#/configuration" data-route="configuration">Configuration</a>
-        <a href="#/feedtuner" data-route="feedtuner">Feed Tuner</a>
       </div>
     </div>
     <div class="nav__group" data-group="monitor">
@@ -1075,139 +1074,6 @@
     </div>
   </section>
 
-  <!-- FEED TUNER -->
-  <section class="page page--pad page--feedtuner" data-page="feedtuner">
-    <div class="page__head page__head--figure">
-      <h2 class="page__title">Feed Tuner</h2>
-      <p class="page__lead">
-        Sweep DataLoader settings against the real data path and find the configuration that keeps
-        the GPU saturated. Each candidate is measured three ways &mdash; pure loader throughput, the
-        GPU compute ceiling, and end-to-end with the data-wait fraction &mdash; so starvation is
-        quantified, not guessed.
-      </p>
-      <hairline-figure name="gpus" class="page__figure" aria-hidden="true"></hairline-figure>
-    </div>
-    <div class="ft">
-      <aside class="ft__deck">
-        <h3 class="ft-deck__title">Target</h3>
-
-        <div class="ft-paths" id="ft-paths">
-          <div class="ft-field">
-            <span class="ft-field__label">Dataset</span>
-            <select class="ft-input ft-select" id="ft-dataset-select" aria-label="Dataset"></select>
-            <input class="ft-input ft-custom" id="ft-dataset-custom" type="text" spellcheck="false" placeholder="absolute path" hidden aria-label="Custom dataset absolute path" />
-            <span class="ft-note" id="ft-dataset-note"></span>
-          </div>
-          <div class="ft-field">
-            <span class="ft-field__label">Parameters</span>
-            <select class="ft-input ft-select" id="ft-params-select" aria-label="Parameters"></select>
-            <input class="ft-input ft-custom" id="ft-params-custom" type="text" spellcheck="false" placeholder="absolute path" hidden aria-label="Custom parameters absolute path" />
-            <span class="ft-note" id="ft-params-note"></span>
-          </div>
-        </div>
-
-        <div class="ft-field">
-          <span class="ft-field__label">GPU</span>
-          <div class="ft-gpu-board" id="ft-gpu" aria-label="GPU device"></div>
-        </div>
-
-        <h3 class="ft-deck__title">Sweep grid</h3>
-        <label class="ft-field">
-          <span class="ft-field__label">Batch sizes</span>
-          <input class="ft-input" id="ft-batch" type="text" spellcheck="false" />
-        </label>
-        <label class="ft-field">
-          <span class="ft-field__label">Worker counts</span>
-          <input class="ft-input" id="ft-workers" type="text" spellcheck="false" />
-        </label>
-        <label class="ft-field">
-          <span class="ft-field__label">Prefetch factors</span>
-          <input class="ft-input" id="ft-prefetch" type="text" spellcheck="false" />
-        </label>
-
-        <div class="ft-grid2">
-          <label class="ft-field">
-            <span class="ft-field__label">Timed batches</span>
-            <input class="ft-input" id="ft-timed" type="number" min="4" step="1" value="60" />
-          </label>
-          <label class="ft-field">
-            <span class="ft-field__label">Warmup</span>
-            <input class="ft-input" id="ft-warmup" type="number" min="0" step="1" value="8" />
-          </label>
-        </div>
-
-        <label class="ft-toggle">
-          <input type="checkbox" id="ft-amp" />
-          <span class="ft-toggle__track"><span class="ft-toggle__thumb"></span></span>
-          <span class="ft-toggle__label">Mixed precision (AMP)</span>
-        </label>
-
-        <div class="ft-actions">
-          <button class="ft-run" id="ft-run">
-            <span class="ft-run__pulse" aria-hidden="true"></span>
-            <span class="ft-run__label">Run sweep</span>
-          </button>
-          <button class="ft-stop" id="ft-stop" hidden>Stop</button>
-        </div>
-        <p class="ft-deck__hint" id="ft-hint">Pick a dataset and parameters detected on this machine, then run the sweep.</p>
-      </aside>
-
-      <div class="ft__stage">
-        <div class="ft-card ft-readout" id="ft-readout">
-          <div class="ft-readout__idle" id="ft-readout-idle">Configure a target and run a sweep to populate live telemetry.</div>
-          <div class="ft-chips" id="ft-chips" hidden></div>
-          <div class="ft-progress" id="ft-progress" hidden>
-            <div class="ft-progress__track"><i class="ft-progress__fill" id="ft-progress-fill"></i></div>
-            <span class="ft-progress__label" id="ft-progress-label"></span>
-          </div>
-        </div>
-
-        <div class="ft-dials" id="ft-dials" hidden>
-          <div class="ft-dials__grid">
-            <figure class="ft-dial"><div class="ft-dial__media"><canvas id="ft-dial-util"></canvas></div><figcaption>GPU utilization</figcaption></figure>
-            <figure class="ft-dial"><div class="ft-dial__media"><canvas id="ft-dial-eff"></canvas></div><figcaption>GPU efficiency</figcaption></figure>
-            <figure class="ft-dial"><div class="ft-dial__media"><canvas id="ft-dial-wait"></canvas></div><figcaption>Data wait</figcaption></figure>
-          </div>
-          <span class="ft-dials__at" id="ft-dials-at"><span class="orb-busy"><thinking-orb state="listening" size="20"></thinking-orb><span>waiting for the first measurement&hellip;</span></span></span>
-        </div>
-
-        <div class="ft-reco" id="ft-reco" hidden></div>
-
-        <div class="ft-charts">
-          <figure class="ft-chart">
-            <figcaption class="ft-chart__cap">Throughput vs batch size <span>samples / s</span></figcaption>
-            <div class="ft-chart__legend" id="ft-legend-throughput"></div>
-            <div class="ft-chart__media"><canvas id="ft-chart-throughput"></canvas></div>
-          </figure>
-          <figure class="ft-chart">
-            <figcaption class="ft-chart__cap">GPU utilization &amp; data wait <span>percent</span></figcaption>
-            <div class="ft-chart__legend" id="ft-legend-util"></div>
-            <div class="ft-chart__media"><canvas id="ft-chart-util"></canvas></div>
-          </figure>
-        </div>
-
-        <div class="ft-table-wrap">
-          <table class="ft-table" id="ft-table">
-            <thead>
-              <tr>
-                <th>phase</th><th>batch</th><th>workers</th><th>pf</th><th>pin</th>
-                <th>loader/s</th><th>ceiling/s</th><th>end&ndash;to&ndash;end/s</th>
-                <th>feed</th><th>data&nbsp;wait</th><th>GPU&nbsp;util</th>
-              </tr>
-            </thead>
-            <tbody id="ft-table-body"></tbody>
-          </table>
-        </div>
-
-        <div class="ft-feed">
-          <hairline-figure name="feed" id="ft-feed-figure" class="ft-feed__figure" aria-hidden="true"></hairline-figure>
-        </div>
-
-        <pre class="ft-log" id="ft-log" aria-label="Run log"></pre>
-      </div>
-    </div>
-  </section>
-
   <!-- TENSORBOARD -->
   <section class="page page--pad page--tb" data-page="tensorboard">
     <div class="page__head page__head--row">
@@ -1316,7 +1182,6 @@
 <script src="/static/js/triage.js"></script>
 <script src="/static/js/autopsy.js"></script>
 <script src="/static/js/tensorboard.js"></script>
-<script src="/static/js/feed_tuner.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

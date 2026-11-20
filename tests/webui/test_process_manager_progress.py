@@ -15,7 +15,7 @@ from tests.webui.conftest import SLEEP_LONG, wait_for_status, wait_until_finishe
 
 @pytest.fixture
 def manager(make_manager):
-    return make_manager({name: SLEEP_LONG for name in ("train_backbone", "tune_dataloader")})
+    return make_manager({name: SLEEP_LONG for name in ("train_backbone", "profile_training")})
 
 
 def _progress_path(manager: ProcessManager, job_id: str) -> Path:
@@ -43,7 +43,7 @@ def _snapshot(done: int = 12, failed: int = 1, total: int = 30) -> dict:
 
 
 def test_progress_reports_unsupported_for_non_pool_scripts(manager):
-    result = manager.launch("tune_dataloader", sys.executable)
+    result = manager.launch("profile_training", sys.executable)
 
     assert manager.progress(result["job_id"]) == {"ok": True, "supported": False, "live": False}
 
@@ -104,7 +104,7 @@ def test_list_jobs_embeds_the_progress_of_running_fan_outs(manager):
 
 
 def test_list_jobs_leaves_other_jobs_without_progress(manager):
-    result = manager.launch("tune_dataloader", sys.executable)
+    result = manager.launch("profile_training", sys.executable)
     job_id = result["job_id"]
 
     assert wait_for_status(manager, job_id, "running")

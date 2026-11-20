@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib     import Path
 from typing      import List
 
+from configuration.training.general.run import RunPathsConfig
+
 
 @dataclass
 class WeightXrayThresholds:
@@ -590,3 +592,25 @@ class OnnxExportEntryConfig:
 
     opset         : int  = 18
     dynamic_batch : bool = True
+
+
+@dataclass
+class TrainingProfileEntryConfig:
+
+    model_name : str  = ""
+    gpu        : int  = 0
+    seed       : int  = 0
+    use_amp    : bool = False
+
+    batch_size      : int = 64
+    num_workers     : int = 4
+    prefetch_factor : int = 4
+
+    warmup_steps   : int  = 8
+    active_steps   : int  = 24
+    record_shapes  : bool = True
+    profile_memory : bool = True
+    with_stack     : bool = False
+
+    paths      : RunPathsConfig = field(default_factory=RunPathsConfig)
+    output_dir : Path           = Path("runs/profiles")

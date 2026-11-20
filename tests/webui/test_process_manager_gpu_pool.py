@@ -30,7 +30,7 @@ _SCHEDULING_PAGES = [
 
 @pytest.fixture
 def manager(make_manager):
-    return make_manager({name: SLEEP_LONG for name in ("train_backbone", "tune_dataloader")})
+    return make_manager({name: SLEEP_LONG for name in ("train_backbone", "profile_training")})
 
 
 def _pool_path(manager: ProcessManager, job_id: str) -> Path:
@@ -58,7 +58,7 @@ def test_launch_injects_a_per_job_pool_file_for_fan_out_scripts(manager):
 
 
 def test_launch_leaves_other_scripts_without_a_pool_file(manager):
-    result = manager.launch("tune_dataloader", sys.executable)
+    result = manager.launch("profile_training", sys.executable)
 
     with manager.lock:
         record = dict(manager.jobs[result["job_id"]])
@@ -83,12 +83,12 @@ def test_launch_keeps_an_explicit_pool_file_override(manager, tmp_path):
 
 
 def test_the_stored_request_omits_the_per_job_pool_file(manager):
-    result = manager.launch("train_backbone", sys.executable, {"epochs": "3"}, "tune_dataloader", False)
+    result = manager.launch("train_backbone", sys.executable, {"epochs": "3"}, "profile_training", False)
 
     with manager.lock:
         record = dict(manager.jobs[result["job_id"]])
 
-    assert record["request"] == {"overrides": {"epochs": "3"}, "follow_up": "tune_dataloader", "finalize": {}}
+    assert record["request"] == {"overrides": {"epochs": "3"}, "follow_up": "profile_training", "finalize": {}}
     assert "gpus_file" in record["overrides"]
 
     manager.stop(result["job_id"])
@@ -220,6 +220,25 @@ def test_set_gpus_writes_the_preempt_list_beside_the_pool(manager):
     manager.stop(job_id)
 
 
+def test_set_gpus_rejects_a_device_kept_and_preempted_at_once(manager):
+    result = manager.launch("train_backbone", sys.executable)
+    job_id = result["job_id"]
+
+    assert wait_for_status(manager, job_id, "running")
+
+    pool = _pool_path(manager, job_id)
+    pool.parent.mkdir(parents=True, exist_ok=True)
+    pool.write_text(json.dumps({"gpus": [0, 1]}))
+
+    applied = manager.set_gpus(job_id, [0, 1], preempt=[1])
+
+    assert applied["ok"] is False
+    assert "listed in both" in applied["error"]
+    assert json.loads(pool.read_text()) == {"gpus": [0, 1]}
+
+    manager.stop(job_id)
+
+
 def test_set_gpus_parks_now_when_every_device_is_preempted(manager):
     result = manager.launch("train_backbone", sys.executable)
     job_id = result["job_id"]
@@ -234,6 +253,31 @@ def test_set_gpus_parks_now_when_every_device_is_preempted(manager):
 
     assert parked == {"ok": True, "gpus": [], "parked": True, "preempted": [0, 1]}
     assert json.loads(pool.read_text()) == {"gpus": [], "preempt": [0, 1]}
+
+    manager.stop(job_id)
+
+
+@pytest.mark.parametrize("gpus, reason", [
+    ([0, 0],       "repeat"),
+    ([-1],         "non-negative"),
+    (["0"],        "non-negative"),
+    ("0,1",        "list"),
+])
+def test_set_gpus_rejects_an_invalid_selection(manager, gpus, reason):
+    result = manager.launch("train_backbone", sys.executable)
+    job_id = result["job_id"]
+
+    assert wait_for_status(manager, job_id, "running")
+
+    pool = _pool_path(manager, job_id)
+    pool.parent.mkdir(parents=True, exist_ok=True)
+    pool.write_text(json.dumps({"gpus": [0]}))
+
+    applied = manager.set_gpus(job_id, gpus)
+
+    assert applied["ok"] is False
+    assert reason in applied["error"]
+    assert json.loads(pool.read_text()) == {"gpus": [0]}
 
     manager.stop(job_id)
 

@@ -43,11 +43,6 @@ class ScriptCatalog:
             "category"  : "Experiments",
             "purpose"   : "Run the Optuna hyperparameter search in chunks. Point resume_from at an existing tuning run to top its studies up with the configuration it recorded.",
         },
-        "tune_dataloader": {
-            "title"     : "Feed Tuner",
-            "category"  : "Experiments",
-            "purpose"   : "Sweep DataLoader settings (batch size, workers, prefetch, pin-memory) for one backbone and recommend the configuration that keeps the GPU fed, ending data starvation.",
-        },
         "analyze_param_extraction": {
             "title"     : "Analyze Param Extraction",
             "category"  : "Analysis",

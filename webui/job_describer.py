@@ -18,7 +18,6 @@ class JobDescriber:
         "benchmark"                 : "_lead_benchmark",
         "cross_validate"            : "_lead_cross_validate",
         "tune"                      : "_lead_tune",
-        "tune_dataloader"           : "_lead_tune_dataloader",
         "mail_experiment_reports"   : "_lead_mail_experiment_reports",
     }
 
@@ -78,10 +77,6 @@ class JobDescriber:
             ("resuming",     "resume_from",     "opt_tail"),
             ("stage",        "stage",           "unless", "full"),
             ("workers",      "n_workers",       "unless", "0"),
-        ],
-        "tune_dataloader": [
-            ("model",       "model_name",  "opt"),
-            ("batch sizes", "batch_sizes", "list"),
         ],
         "analyze_param_extraction": [
             ("trials", "run_tags",   "list", "all trials"),
@@ -225,9 +220,6 @@ class JobDescriber:
 
     def _lead_tune(self, values: dict, used: set) -> list[str]:
         return ["Optuna search"]
-
-    def _lead_tune_dataloader(self, values: dict, used: set) -> list[str]:
-        return ["feed tuner"]
 
     def _lead_mail_experiment_reports(self, values: dict, used: set) -> list[str]:
         used.add("target")
