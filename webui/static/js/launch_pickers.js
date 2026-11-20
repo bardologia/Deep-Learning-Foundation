@@ -111,10 +111,6 @@ class DatasetPicker {
   async _loadSingle() {
     const seq = (this.singleLoadSeq = (this.singleLoadSeq || 0) + 1);
 
-    if (this.spec.mode === "runs") {
-      await this._fetchRuns(this._base(), seq);
-      return;
-    }
     if (this.spec.mode === "resume_runs") {
       await this._fetchResumeRuns(this._base(), seq);
       return;
@@ -124,26 +120,6 @@ class DatasetPicker {
 
   _singleStale(seq) {
     return seq !== this.singleLoadSeq;
-  }
-
-  async _fetchRuns(base, seq) {
-    if (!base) {
-      this.note.textContent = "set a runs directory first";
-      this._renderSingleOptions([]);
-      return;
-    }
-    this.note.innerHTML = SharedCharts.waitLine("listing…");
-    const res = await Api.get(`/api/fs/runs?base=${encodeURIComponent(base)}`);
-    if (this._singleStale(seq)) return;
-    if (!res.ok) {
-      this.note.textContent = res.error || "could not list runs";
-      this._renderSingleOptions([]);
-      return;
-    }
-    let items = res.runs || [];
-    if (this.spec.checkpointOnly) items = items.filter((r) => r.has_checkpoint);
-    this.note.textContent = items.length ? `${items.length} run${items.length > 1 ? "s" : ""} in ${res.base}` : `no completed runs in ${res.base}`;
-    this._renderSingleOptions(items.map((r) => ({ value: r.name, label: r.name + (r.has_checkpoint ? "" : "  (no checkpoint)") })));
   }
 
   async _fetchResumeRuns(base, seq) {
@@ -326,7 +302,7 @@ class DatasetPicker {
 
     this.baseLabel = res.base || bases.join(", ");
 
-    this.items = (res[mode.key] || []).filter((d) => (this.spec.validOnly ? d.is_dataset : true));
+    this.items = (res[mode.key] || []).filter((d) => (this.spec.validOnly ? d.is_dataset : true) && (this.spec.checkpointOnly ? d.has_checkpoint : true));
 
     this._syncSelection();
     this._renderItems();
