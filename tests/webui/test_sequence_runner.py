@@ -52,12 +52,6 @@ class FakeLauncher:
         return {"ok": True, "job_id": job_id}
 
 
-
-
-
-
-
-
 class FakeNotifier:
 
     def __init__(self) -> None:
@@ -424,8 +418,6 @@ def test_a_dataset_rooted_runs_dir_is_not_redirected(rig):
     assert "runs_dir" not in launcher.calls[0]["overrides"]
 
 
-
-
 def test_a_training_logdir_is_redirected_into_the_workspace(rig):
     store, processes, launcher, runner = rig
     sequence_id = _saved(store, [_block("a1", script="train_backbone")], isolate=True)
@@ -720,40 +712,6 @@ def test_a_sequence_without_isolation_leaves_the_run_roots_alone(rig):
 
     assert runner.state(sequence_id)["run_dir"] == ""
     assert "paths.log_base_dir" not in launcher.calls[0]["overrides"]
-
-
-
-
-
-
-
-
-
-
-def _workspace_rel(runner: SequenceRunner, sequence_id: str) -> str:
-    return Path(runner.state(sequence_id)["run_dir"]).relative_to(runner.store.paths.runs_dir).as_posix()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_start_refuses_an_empty_or_running_sequence(rig):
@@ -1237,8 +1195,6 @@ def test_a_finished_sequence_alerts_at_default_priority(rig):
     runner.scan()
 
     assert runner.notifier.alerts == [("sequence finished: seq", "all 2 block(s) completed", "default")]
-
-
 
 
 def test_a_stopped_sequence_does_not_alert(rig):

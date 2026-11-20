@@ -28,11 +28,6 @@ def _input_window(in_channels):
     return torch.randn(BATCH, in_channels, WINDOW, WINDOW, generator=generator, dtype=torch.float32).to(DEVICE)
 
 
-def _synthetic_window(in_channels):
-    generator = torch.Generator().manual_seed(0)
-    return torch.randn(BATCH, in_channels, WINDOW, WINDOW, generator=generator).to(DEVICE)
-
-
 @pytest.fixture
 def make_input():
     def _factory(config):
@@ -214,5 +209,3 @@ def test_swin_block_reuses_the_shifted_attention_mask_per_spatial_size():
     assert block._attention_mask(8, 8, x.device) is mask
     assert block._attention_mask(12, 12, x.device) is not mask
     assert torch.allclose(first, second, atol=0.0, rtol=0.0)
-
-

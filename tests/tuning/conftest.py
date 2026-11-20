@@ -5,7 +5,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-import optuna
 import pytest
 
 
@@ -68,14 +67,3 @@ def fake_logger():
 @pytest.fixture
 def tune_cfg():
     return TuneCfg()
-
-
-@pytest.fixture
-def seeded_sampler():
-    return optuna.samplers.TPESampler(seed=0, n_startup_trials=4, multivariate=True)
-
-
-@pytest.fixture
-def quiet_optuna():
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
-    return True

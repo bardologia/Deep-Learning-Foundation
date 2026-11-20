@@ -28,11 +28,6 @@ class _ConvModel(torch.nn.Module):
         return self.conv(x)
 
 
-class _DeadModel(torch.nn.Module):
-    def forward(self, x):
-        return x * 0.0
-
-
 class _FirstChannelOnlyModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
