@@ -160,7 +160,7 @@ class ReceptiveFieldPlots(PlotBase):
             display,
             x_label        = "Col offset [px]",
             y_label        = "Row offset [px]",
-            title          = "Effective receptive field (combined output families)",
+            title          = "Effective receptive field (all target channels)",
             cmap           = self._cmap_with_bad("inferno"),
             vmin           = -6.0,
             vmax           = 0.0,
