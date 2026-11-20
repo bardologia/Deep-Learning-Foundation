@@ -32,14 +32,6 @@ class TuningRunLocator(StagedRunLocator):
     def config_path(cls, run_dir: Path) -> Path:
         return Path(run_dir) / cls.CONFIG_FILENAME
 
-    @classmethod
-    def root(cls, resume_from: str) -> Path:
-        target = Path(resume_from).expanduser()
-
-        for candidate in (target, *target.parents):
-            if cls.config_path(candidate).is_file():
-                return candidate
-
 
 class ResumedRun:
 
