@@ -56,7 +56,7 @@ The implementation (`UNetPlusPlus.__init__`) fixes the depth to exactly four enc
 | $F_i$ | `features[i]`, the level-$i$ channel width |
 | $F_0$ | Level-0 channel width, `features[0]` (default: `56`) |
 | $r$ | `bottleneck_factor`, bottleneck width multiplier for `encoder_4_0` |
-| $C_{\text{out}}$ | `out_channels`, output channel count (default: `6`) |
+| $C_{\text{out}}$ | `out_channels`, output channel count (default: `2`) |
 | $\text{Up}(\cdot), \mathcal{U}$ | Bilinear or transposed-convolution upsampling |
 | $\text{cat}, [\,\cdot\,]$ | Channel-wise concatenation |
 | $\text{ConvBlock}, \mathcal{H}$ | Dense convolution block |
@@ -99,8 +99,8 @@ See [[Configuration Layer]] → `UNetPlusPlusConfig`. Parameters shared with [[U
 | `activation` | `"relu"` | Activation function |
 | `normalization` | `"batch"` | Normalisation layer |
 | `upsample_mode` | `"convtranspose"` | Upsampling mode |
-| `in_channels` | `1` | Input channel count |
-| `out_channels` | `6` | Output channel count ($3K$ for $K=2$ Gaussians) |
+| `in_channels` | `4` | Input channel count, set to the dataset's input channels at build time |
+| `out_channels` | `2` | Output channel count, set to the dataset's target channels at build time |
 
 ---
 
@@ -142,7 +142,7 @@ The concatenation channel counts ($j\cdot F_i + F_{i+1}$, where $F_4 = F_3\cdot 
 ### Accepted adaptations
 
 - **Conv block $\mathcal{H}$ (#3).** The paper defines $\mathcal{H}(\cdot)$ loosely as "a convolution operation followed by an activation function." The implementation uses the standard two-conv block with normalisation: Conv–Norm–Act–Conv–Norm–Act (`models/blocks.py:124-146`), matching the authors' own reference implementation and Fig. 1b (which shows each node as one dense conv block on the pathway). BatchNorm and the optional `Dropout2d` are modernisations not present in the 2018 text but consistent with its intent. Justified.
-- **Output head (#7).** The paper appends a $1\times1$ conv followed by a **sigmoid** to each target node for binary segmentation (§4). The task here is regression of Gaussian-mixture parameters ($C_{\text{out}}=3K$), so the sigmoid is correctly dropped and a bare $1\times1$ conv is used (`:57-61, 103`). Domain-justified adaptation.
+- **Output head (#7).** The paper appends a $1\times1$ conv followed by a **sigmoid** to each target node for binary segmentation (§4). The task here is unbounded per-pixel regression ($C_{\text{out}}$ target channels), so the sigmoid is correctly dropped and a bare $1\times1$ conv is used (`:57-61, 103`). Domain-justified adaptation.
 - **Bottleneck width (#10).** Fig. 1a / Table 2 use a strict power-of-two pyramid ($F_4 = 2 F_3$). The code parameterises this as $F_4 = F_3\cdot r$ with `bottleneck_factor` $r$ (default $2$), recovering the paper's ratio at the default while remaining configurable. Justified.
 
 ### Deviations

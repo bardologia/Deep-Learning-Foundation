@@ -41,7 +41,6 @@ The parameterised submodules are `encoder_blocks`, `bottleneck`, `upsample_layer
 | $\text{Act}$ | activation function (`activation`; default `"relu"`) |
 | $\text{Proj}$ | identity or learned $1\times1$ projection (defined below) |
 | $\text{ResBlock}$ | residual block (stride 1, `first_unit = False`) |
-| $K$ | number of Gaussian components |
 
 ---
 
@@ -96,7 +95,7 @@ The state-dict keys and shapes follow directly from the submodule structure:
 - Top-level state-dict module prefixes: `encoder_blocks`, `bottleneck`, `upsample_layers`, `decoder_blocks`, `output_head` — i.e. every parameterised submodule. `downsample_layers` (`MaxPool2d`) holds no parameters and therefore appears with zero keys.
 - Encoder block indices `0–3`, decoder block indices `0–3`, upsample indices `0–3`, plus a single `bottleneck`, consistent with the default four-level `features = [64, 128, 256, 512]`.
 - The first encoder convolution weight is `encoder_blocks.0.layers.2.weight` of shape $(64, C_{\text{in}}, 3, 3)$ and the output head is `output_head.weight` of shape $(C_{\text{out}}, 64, 1, 1)$, reflecting the leading $\text{Norm}\to\text{Act}$ pre-activation order (the `BatchNorm` at `layers.0` precedes the first conv at `layers.2`) and the $1\times1$ output projection.
-- With the default `in_channels = 1` and `out_channels = 6` these resolve to $C_{\text{in}} = 1$ and $C_{\text{out}} = 6$ (two Gaussians at three parameters each, `params_per_gaussian = 3`); both are overridable via config so that, for example, a three-pass `mag_real_imag` input gives $C_{\text{in}} = 9$ and five Gaussians give $C_{\text{out}} = 15$.
+- With the default `in_channels = 4` and `out_channels = 2` these resolve to $C_{\text{in}} = 4$ and $C_{\text{out}} = 2$, the channel counts of the example dataset; training sets both from the dataset it reads, so a dataset with nine input channels and three target channels gives $C_{\text{in}} = 9$ and $C_{\text{out}} = 3$.
 
 ---
 
@@ -112,8 +111,8 @@ See [[Configuration Layer]] → `UNetSkipConfig`. The configurable fields and th
 | `activation` | `"relu"` | Activation function |
 | `normalization` | `"batch"` | Normalisation layer |
 | `upsample_mode` | `"convtranspose"` | Upsampling mode |
-| `in_channels` | `1` | Input channel count |
-| `out_channels` | `6` | Output channel count ($3K$ for $K=2$ Gaussians) |
+| `in_channels` | `4` | Input channel count, set to the dataset's input channels at build time |
+| `out_channels` | `2` | Output channel count, set to the dataset's target channels at build time |
 
 `UNetSkipConfig.get_param_groups` partitions parameters into `encoder` (encoder blocks **and** the `MaxPool` `downsample_layers`), `bottleneck`, `decoder` (upsample layers and decoder blocks), and `output_head`; empty groups are dropped. The `downsample_layers` are included for completeness even though `MaxPool2d` exposes no trainable parameters.
 

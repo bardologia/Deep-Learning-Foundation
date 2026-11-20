@@ -22,7 +22,7 @@ summary: Maintains a full-resolution branch throughout and repeatedly fuses prog
 
 ## Summary
 
-A `ResidualConvBlock` stem maps the single-channel input (`in_channels = 1`) to the full-resolution branch at `base_channels` $C$. Each stage adds one branch (stride-2 transition from the previous branch, channels doubling: $C, 2C, 4C, \dots$ for `n_branches`), applies `blocks_per_stage` residual blocks per branch, and ends with a `BranchFusion` that makes every branch the sum of all branches resampled to its resolution (strided 3×3 convolutions downward, 1×1 convolution + bilinear upsampling upward). The head upsamples all branches to full resolution, concatenates, fuses with a 3×3 convolution to $2C$ channels, and applies a $1\times1$ output head producing `out_channels` per pixel. The head is a plain `nn.Conv2d(base*2, out_channels, 1)`, with `out_channels` the number of target channels of the dataset.
+A `ResidualConvBlock` stem maps the input channels (`in_channels`, default $4$) to the full-resolution branch at `base_channels` $C$. Each stage adds one branch (stride-2 transition from the previous branch, channels doubling: $C, 2C, 4C, \dots$ for `n_branches`), applies `blocks_per_stage` residual blocks per branch, and ends with a `BranchFusion` that makes every branch the sum of all branches resampled to its resolution (strided 3×3 convolutions downward, 1×1 convolution + bilinear upsampling upward). The head upsamples all branches to full resolution, concatenates, fuses with a 3×3 convolution to $2C$ channels, and applies a $1\times1$ output head producing `out_channels` per pixel. The head is a plain `nn.Conv2d(base*2, out_channels, 1)`, with `out_channels` the number of target channels of the dataset.
 
 ---
 
@@ -87,7 +87,7 @@ so high-resolution detail and low-resolution context are mixed at every stage ra
 
 ## Design Rationale
 
-**No resolution bottleneck.** Every other CNN in the zoo compresses to $P/8$ or $P/16$ and reconstructs; position-sensitive information (exact component position along z per pixel) must survive that round trip through skip connections. HRNet never discards the full-resolution stream, which is precisely the property dense per-pixel regression rewards in human-pose and segmentation benchmarks.
+**No resolution bottleneck.** Every other CNN in the zoo compresses to $P/8$ or $P/16$ and reconstructs; position-sensitive information (the exact per-pixel target values) must survive that round trip through skip connections. HRNet never discards the full-resolution stream, which is precisely the property dense per-pixel regression rewards in human-pose and segmentation benchmarks.
 
 > The hypothesis: per-pixel $\mu$ estimation is position-critical, so a permanently high-resolution representation should reduce peak-location error relative to hourglass designs at equal capacity.
 

@@ -129,8 +129,8 @@ See [[Configuration Layer]] → `UNETRConfig`.
 | `activation` | — | `"relu"` | CNN activation |
 | `ffn_activation` | — | `"gelu"` | Transformer FFN activation |
 | `normalization` | — | `"batch"` | CNN normalisation layer |
-| `in_channels` | — | `1` | Input channel count |
-| `out_channels` | — | `6` | Output channel count ($3K$ for $K=2$ Gaussians) |
+| `in_channels` | — | `4` | Input channel count, set to the dataset's input channels at build time |
+| `out_channels` | — | `2` | Output channel count, set to the dataset's target channels at build time |
 
 The default `embedding_dim = 544` is divisible by `transformer_heads = 8`. Every field above (except `shape_logger_types`) is persisted per run by `ModelConfigIO` and reloaded verbatim at inference; see [[Model Zoo]] → Configuration Persistence.
 

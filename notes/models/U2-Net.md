@@ -24,7 +24,7 @@ summary: Two-level nested U-structure using Residual U-blocks (RSU) as the outer
 
 The outer network has three encoder stages (RSU heights `rsu_heights`, default $(5, 4, 3)$, matched to the $64 \to 32 \to 16 \to 8$ resolution ladder), a dilated bridge block at the coarsest resolution, and three mirrored decoder stages with skip concatenation. Unlike the original U2-Net, no side outputs or deep supervision are used — a single 1×1 head at full resolution keeps the loss interface identical to every other model in the zoo.
 
-The network ingests `in_channels` feature maps (default $1$) and the linear 1×1 `output_head` emits `out_channels` channels (default $6$). With `params_per_gaussian` $= 3$ this is a $3K$ Gaussian-mixture parameter map for $K = 2$ Gaussians (three per-Gaussian parameters $\times$ $K$ mixture components), produced after a `Dropout2d(dropout)` layer (default $0.15$).
+The network ingests `in_channels` feature maps (default $4$) and the linear 1×1 `output_head` emits `out_channels` channels (default $2$), one per target channel, produced after a `Dropout2d(dropout)` layer (default $0.15$).
 
 ---
 
@@ -70,7 +70,7 @@ At $8 \times 8$ further pooling is useless, so the bridge replaces pooling with 
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `U2NetLiteConfig`: `in_channels` (default $1$), `out_channels` (default $6$) with `params_per_gaussian` $= 3$ (so $K = 2$ Gaussians), `features` (exactly four entries, default $[64, 128, 256, 512]$), `rsu_heights` (default $(5,4,3)$), `dropout` (default $0.15$), `activation` (`relu`), `normalization` (`batch`), `conv_bias` (`False`).
+See [[Configuration Layer]] → `U2NetLiteConfig`: `in_channels` (default $4$), `out_channels` (default $2$), `features` (exactly four entries, default $[64, 128, 256, 512]$), `rsu_heights` (default $(5,4,3)$), `dropout` (default $0.15$), `activation` (`relu`), `normalization` (`batch`), `conv_bias` (`False`).
 
 ---
 
@@ -113,7 +113,7 @@ The outer network is a two-level nested U: three RSU encoder stages with maxpool
 
 The implementation omits the saliency fusion module of §3.3: it does not emit six side outputs $\mathcal{S}_{side}^{(m)}$ via per-stage $3\times3$+sigmoid convolutions, upsample-and-concatenate them, and fuse with a $1\times1$ convolution (Fig. 5, Eq. 1 $\mathcal{L} = \sum_m w_{side}^{(m)} \ell_{side}^{(m)} + w_{fuse}\ell_{fuse}$). Instead a `Dropout2d` followed by a single linear $1\times1$ head at full resolution produces the output (`U2NetLite.py:134,151-152`).
 
-This is classified as an **ACCEPTED ADAPTATION**, not a deviation, on two grounds. (a) Deep supervision in U$^2$-Net is a *training/loss* device: every side output is regressed against the same binary saliency mask with per-map BCE. The mechanism presupposes a single shared target map that is meaningful at every scale — appropriate for binary saliency, not for the multi-channel continuous regression target here (`out_channels=6`, the $3K$ Gaussian-mixture parameters for $K=2$ Gaussians), where a downsampled side output has no well-defined ground truth and a per-map sigmoid would clamp an unbounded regression range. (b) Removing it does not touch the nested-U feature extractor, which is the architectural contribution under test; it only changes the head and loss interface, deliberately aligning U2NetLite with the single-head convention of the rest of the model zoo. The same reasoning justifies the absence of the sigmoid activation (item 16): a linear head is the correct choice for unbounded regression.
+This is classified as an **ACCEPTED ADAPTATION**, not a deviation, on two grounds. (a) Deep supervision in U$^2$-Net is a *training/loss* device: every side output is regressed against the same binary saliency mask with per-map BCE. The mechanism presupposes a single shared target map that is meaningful at every scale — appropriate for binary saliency, not for the multi-channel continuous regression target here (`out_channels` target channels), where a downsampled side output has no well-defined ground truth and a per-map sigmoid would clamp an unbounded regression range. (b) Removing it does not touch the nested-U feature extractor, which is the architectural contribution under test; it only changes the head and loss interface, deliberately aligning U2NetLite with the single-head convention of the rest of the model zoo. The same reasoning justifies the absence of the sigmoid activation (item 16): a linear head is the correct choice for unbounded regression.
 
 If a future task reverts to a bounded/segmentation target, restoring fidelity is mechanical: add a $3\times3$ side-output convolution to each decoder stage and the bridge, `interpolate` each to input size, `cat` and fuse with a $1\times1$ convolution, and supervise each with the loss of Eq. 1.
 

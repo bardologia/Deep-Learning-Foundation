@@ -92,9 +92,8 @@ See [[Configuration Layer]] → `LinkNetConfig`.
 | `normalization` | — | `"batch"` | Normalisation layer |
 | `conv_bias` | — | `False` | Bias flag for all conv / transposed-conv layers |
 | `init_mode` | — | `"default"` | Weight-initialisation mode passed to `initialize_weights` |
-| `in_channels` | — | `1` | Input channel count |
-| `out_channels` | — | `6` | Output channel count ($3K$ for $K=2$ Gaussians) |
-| `params_per_gaussian` | — | `3` | Parameters per Gaussian component; $\text{out\_channels} = K \cdot \text{params\_per\_gaussian}$ |
+| `in_channels` | — | `4` | Input channel count, set to the dataset's input channels at build time |
+| `out_channels` | — | `2` | Output channel count, set to the dataset's target channels at build time |
 
 `LinkNetConfig` has no `bottleneck_factor` or `upsample_mode` field; upsampling is always via `nn.ConvTranspose2d` inside the decoder blocks. The config also carries per-group optimiser hyperparameters (`encoder_lr`/`decoder_lr`/`output_head_lr`, `encoder_wd`/`decoder_wd`/`output_head_wd`) consumed by `get_param_groups`, which assigns distinct learning rates and weight decays to the `initial_conv`, `encoder_stages`, `decoder_stages`, and `output_head` parameter groups.
 

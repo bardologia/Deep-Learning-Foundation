@@ -115,8 +115,8 @@ See [[Configuration Layer]] → `SwinUNetConfig`. Per-stage embedding dimensions
 | `attention_dropout` | — | `0.10` | Dropout on attention weights |
 | `ffn_activation` | — | `"gelu"` | FFN activation |
 | `stochastic_depth_rate` | — | `0.10` | Maximum DropPath rate (linearly scaled across blocks) |
-| `in_channels` | — | `1` | Input channel count |
-| `out_channels` | — | `6` | Output channel count ($3K$ for $K=2$ Gaussians) |
+| `in_channels` | — | `4` | Input channel count, set to the dataset's input channels at build time |
+| `out_channels` | — | `2` | Output channel count, set to the dataset's target channels at build time |
 
 With `embedding_dim = 80` and four stages, the per-stage dimensions are $[80, 160, 320, 640]$. The number of stages equals `len(depths)`, which must equal `len(num_heads)`. Every field above (except `shape_logger_types`) is persisted per run by `ModelConfigIO` and reloaded verbatim at inference; see [[Model Zoo]] → Configuration Persistence.
 

@@ -75,7 +75,7 @@ Computational efficiency is a priority. LinkNet's additive (rather than concaten
 Long-range spatial dependencies are important (e.g., large homogeneous structures spanning many pixels). Transformer-based architectures attend globally, unlike CNN-only designs that are limited by receptive field.
 
 ### Use DeepLabV3+ when
-Multi-scale context at fixed dilation rates is suspected to matter (e.g., characteristic facade/layover scales). ASPP aggregates several receptive fields in parallel without extra downsampling.
+Multi-scale context at fixed dilation rates is suspected to matter (structures with a characteristic spatial scale). ASPP aggregates several receptive fields in parallel without extra downsampling.
 
 ### Use SegFormer when
 Testing whether a strong hierarchical attention encoder with a near-trivial MLP decoder suffices — the complementary hypothesis to the heavy-decoder transformer designs.
@@ -99,7 +99,7 @@ Probing how much decoder capacity the task actually needs: the FPN decoder is de
 Intra-stage multi-scale mixing is desired: every stage is itself a small U-Net, so even full-resolution layers integrate wide context.
 
 ### Use PixelMLP when
-Establishing the no-spatial-context control. Classical profile inversion is strictly per-pixel; PixelMLP is its learned analogue, and the margin any spatial backbone holds over it is the measured value of spatial context. Every benchmark sweep should carry it.
+Establishing the no-spatial-context control. A per-pixel regressor sees one pixel's channel vector at a time; PixelMLP is that regime in learned form, and the margin any spatial backbone holds over it is the measured value of spatial context. Every benchmark sweep should carry it.
 
 ### Use Local CNN when
 Measuring how far local context alone goes. A fixed $(4B+1)\times(4B+1)$ receptive field with no downsampling completes the context ladder PixelMLP → Local CNN → encode-decode backbones, decomposing performance into per-pixel mapping, local smoothing, and long-range aggregation.
@@ -118,7 +118,7 @@ Testing the restoration hypothesis: the task is dense continuous regression, clo
 
 All architectures share:
 - Input: $(C_{\text{in}}, P_H, P_W)$ patch tensor
-- Output: $(3K, P_H, P_W)$ parameter tensor
+- Output: $(C_{\text{out}}, P_H, P_W)$ target tensor, one channel per target channel
 - Optimised with AdamW (see [[Training Pipeline]])
 - Per-layer learning rate groups defined in each `*Config.get_param_groups()`
 

@@ -14,7 +14,7 @@ summary: Nonlinearity-free restoration backbone of gated blocks with simplified 
 
 # NAFNet
 
-`NAFNet` (`models/backbone/nafnet.py`) is a Nonlinear Activation Free Network (Chen et al., *Simple Baselines for Image Restoration*, ECCV 2022, arXiv:2204.04676) adapted for dense regression. It is the zoo's representative of the image-restoration family: architectures built for high-fidelity per-pixel output rather than semantic abstraction, which is the closer match to Gaussian-parameter regression than the segmentation-derived designs.
+`NAFNet` (`models/backbone/nafnet.py`) is a Nonlinear Activation Free Network (Chen et al., *Simple Baselines for Image Restoration*, ECCV 2022, arXiv:2204.04676) adapted for dense regression. It is the zoo's representative of the image-restoration family: architectures built for high-fidelity per-pixel output rather than semantic abstraction, which is the closer match to dense per-pixel regression than the segmentation-derived designs.
 
 ---
 
@@ -61,13 +61,13 @@ The $1\times1$ expansions widen channels by `dw_expand` and `ffn_expand` respect
 
 ### Encoder-Decoder
 
-Stage $i$ of the encoder stacks `enc_blocks[i]` NAFBlocks at width $c_i = \texttt{width}\cdot 2^i$, then downsamples with a stride-2 $2\times2$ convolution to $2c_i$ channels. The bottleneck runs `middle_blocks` blocks at the coarsest width. Each decoder stage upsamples with $1\times1$ conv + `PixelShuffle(2)` (halving channels), **adds** the matching encoder skip, and stacks `dec_blocks[i]` blocks. A $3\times3$ `output_head` maps the full-resolution feature map to the $3K$ parameter channels; the global input-to-output residual of the restoration setting is omitted because input and output live in different spaces here.
+Stage $i$ of the encoder stacks `enc_blocks[i]` NAFBlocks at width $c_i = \texttt{width}\cdot 2^i$, then downsamples with a stride-2 $2\times2$ convolution to $2c_i$ channels. The bottleneck runs `middle_blocks` blocks at the coarsest width. Each decoder stage upsamples with $1\times1$ conv + `PixelShuffle(2)` (halving channels), **adds** the matching encoder skip, and stacks `dec_blocks[i]` blocks. A $3\times3$ `output_head` maps the full-resolution feature map to the target channels; the global input-to-output residual of the restoration setting is omitted because input and output live in different spaces here.
 
 ---
 
 ## Design Rationale
 
-**The restoration hypothesis.** Every other encode-decode model in the [[Model Zoo]] descends from semantic segmentation, which trades spatial fidelity for abstraction. Restoration architectures make the opposite trade — shallow semantic depth, high per-pixel fidelity, cheap global mixing through channel statistics — and NAFNet is the strongest simple representative of that family. If the segmentation prior is wrong for Gaussian-parameter regression, this is the model that shows it.
+**The restoration hypothesis.** Every other encode-decode model in the [[Model Zoo]] descends from semantic segmentation, which trades spatial fidelity for abstraction. Restoration architectures make the opposite trade — shallow semantic depth, high per-pixel fidelity, cheap global mixing through channel statistics — and NAFNet is the strongest simple representative of that family. If the segmentation prior is wrong for dense per-pixel regression, this is the model that shows it.
 
 **Simplicity as control.** NAFNet reached state of the art on GoPro and SIDD while removing activations, self-attention, and multi-stage refinement; its performance is attributable to block topology and normalisation, not to any exotic component. That makes it a clean single hypothesis to test.
 
@@ -91,7 +91,7 @@ Ground truth: Chen, Chu, Zhang, Sun, *Simple Baselines for Image Restoration*, E
 | 4 | SimpleGate as the only nonlinearity | MATCH | Paper Sec. 3.2; no `build_activation` anywhere in the module |
 | 5 | Stride-2 2×2 conv down, 1×1 conv + PixelShuffle up, additive skips | MATCH | Official implementation; `downsample_layers`, `upsample_layers`, `x = x + skip` |
 | 6 | LayerNorm over channels | MATCH | Paper Sec. 3.1; shared `ChannelLayerNorm` (`models/blocks.py`) |
-| 7 | Global input residual and image-space 3×3 ending conv | ACCEPTED ADAPTATION | Restoration maps image→image; here the head maps features → $3K$ parameter channels, so the global residual is dropped |
+| 7 | Global input residual and image-space 3×3 ending conv | ACCEPTED ADAPTATION | Restoration maps image→image; here the head maps features → target channels that differ from the input channels, so the global residual is dropped |
 | 8 | Default size (width 32, [2,2,4,8]/12/[2,2,2,2], 29.2M) | MATCH | Official SIDD configuration; verified 29,160,006 parameters at $C_{\text{in}}=1$, $C_{\text{out}}=6$ |
 | 9 | `match_spatial_size` before skip addition | ACCEPTED ADAPTATION | Guards odd input sizes; identity for the power-of-two patches used in training |
 

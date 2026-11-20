@@ -17,7 +17,7 @@ summary: Hierarchical transformer encoder with efficient attention and an all-ML
 
 `SegFormerLite` (`models/backbone/segformer_lite.py`, registry name `"segformer"`) is a hierarchical transformer encoder with an all-MLP decoder ([[SegFormer_Xie2021_2105.15203.pdf|Xie et al., 2021]]): four stages of overlapping patch embeddings and efficient self-attention produce a feature pyramid, and a lightweight decoder projects, upsamples, and fuses all four scales before the output head.
 
-The model is a dense per-pixel regressor for the Gaussian-mixture target. It ingests `in_channels` (default $1$) co-registered input channels and the `output_head` 1×1 convolution emits `out_channels` (default $6$) maps, which decode as $3K$ Gaussian-mixture parameters with $K = $ `out_channels` $/3$ Gaussians at $3$ parameters each (`params_per_gaussian = 3`); the default $6$ channels are $K = 2$ Gaussians.
+The model is a dense per-pixel regressor. It ingests `in_channels` (default $4$) co-registered input channels and the `output_head` 1×1 convolution emits `out_channels` (default $2$) maps, one per target channel.
 
 ---
 
@@ -83,7 +83,7 @@ The depthwise convolution leaks local positional information into the token stre
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `SegFormerLiteConfig` (`in_channels`, `out_channels`, `params_per_gaussian`, `embedding_dims`, `depths`, `num_heads`, `sr_ratios`, `mlp_ratio`, `decoder_channels`, `dropout`, `attention_dropout`, `ffn_activation`, `stochastic_depth_rate`, `init_mode`). The loader sets `in_channels` from the representation channel count and `out_channels = 3K` from the requested Gaussian count.
+See [[Configuration Layer]] → `SegFormerLiteConfig` (`in_channels`, `out_channels`, `embedding_dims`, `depths`, `num_heads`, `sr_ratios`, `mlp_ratio`, `decoder_channels`, `dropout`, `attention_dropout`, `ffn_activation`, `stochastic_depth_rate`, `init_mode`). Training sets `in_channels` and `out_channels` from the input and target channel counts of the dataset.
 
 ---
 
@@ -122,7 +122,7 @@ See [[Configuration Layer]] → `SegFormerLiteConfig` (`in_channels`, `out_chann
 
 **Transformer block (point 5).** Pre-norm is explicit: `x + drop_path(attention(norm1(x)))` then `x + drop_path(ffn(norm2(x)))` (`SegFormerBlock:83-86`), i.e. [[LayerNorm]] precedes both attention and FFN, both with residuals. Stochastic depth is a linearly-spaced schedule over all blocks (`drop_path_rates`, `:119-120`) via the shared `DropPath` module (`models/blocks.py:9-21`), matching the standard SegFormer training recipe and Fig. 2's repeated block. MATCH.
 
-**All-MLP decoder (point 6).** Eq. 4's four steps map cleanly: (1) $\hat F_i=\mathrm{Linear}(C_i,C)$ → `decode_projections` are 1×1 convs (`:146`), channel-wise linear; (2) $\mathrm{Upsample}$ to stage-1 resolution → `functional.interpolate(..., target_size, mode="bilinear")` where `target_size = stage_outputs[0].shape[2:]` (the 1/4 map) (`:168,173-174`); (3) $F=\mathrm{Linear}(4C,C)(\mathrm{Concat})$ → `fuse` first layer is a 1×1 conv $n\_stages{\cdot}C\to C$ (`:149`); (4) $M=\mathrm{Linear}(C,N_{cls})$ → `output_head` 1×1 conv $C\to$ `out_channels` $=3K$ (`:155`). Every operator is a 1×1 conv (channel-wise linear), never a 3×3 — the defining property of the All-MLP decoder is preserved. ACCEPTED ADAPTATION: `fuse` appends BatchNorm + activation + Dropout2d after the fusion linear (`:150-152`); the paper's Eq. 4 fuse is a bare Linear, but the official mmsegmentation `SegformerHead` likewise wraps fusion in a Conv-BN-ReLU `ConvModule`, so this matches the reference implementation rather than the bare equation.
+**All-MLP decoder (point 6).** Eq. 4's four steps map cleanly: (1) $\hat F_i=\mathrm{Linear}(C_i,C)$ → `decode_projections` are 1×1 convs (`:146`), channel-wise linear; (2) $\mathrm{Upsample}$ to stage-1 resolution → `functional.interpolate(..., target_size, mode="bilinear")` where `target_size = stage_outputs[0].shape[2:]` (the 1/4 map) (`:168,173-174`); (3) $F=\mathrm{Linear}(4C,C)(\mathrm{Concat})$ → `fuse` first layer is a 1×1 conv $n\_stages{\cdot}C\to C$ (`:149`); (4) $M=\mathrm{Linear}(C,N_{cls})$ → `output_head` 1×1 conv $C\to$ `out_channels` (`:155`). Every operator is a 1×1 conv (channel-wise linear), never a 3×3 — the defining property of the All-MLP decoder is preserved. ACCEPTED ADAPTATION: `fuse` appends BatchNorm + activation + Dropout2d after the fusion linear (`:150-152`); the paper's Eq. 4 fuse is a bare Linear, but the official mmsegmentation `SegformerHead` likewise wraps fusion in a Conv-BN-ReLU `ConvModule`, so this matches the reference implementation rather than the bare equation.
 
 **Final upsampling (point 7).** The paper's decoder emits the mask at $H/4\times W/4$ and the training/eval pipeline upsamples to full resolution. Here the model upsamples internally: after `fuse`, `functional.interpolate(x, size=input_size, ...)` restores full input resolution before `output_head` (`:177-178`). ACCEPTED ADAPTATION — same prediction, the ×4 restoration is simply folded into the module instead of the loss pipeline (sensible for the dense regression head). Note the head is applied *after* the upsample, whereas Eq. 4 applies the class linear at $1/4$ then upsamples; both produce a full-resolution per-pixel linear map, so this is functionally equivalent.
 

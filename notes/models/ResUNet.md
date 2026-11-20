@@ -39,7 +39,6 @@ Each encoder stage, the bottleneck, and each decoder stage use a residual block 
 | $\text{Act}$ | activation function (`activation`; default `"relu"`) |
 | $\text{Proj}_s$ | identity or learned $1\times1$ projection carrying stride $s$ (defined below) |
 | $\text{ResBlock}_s$ | residual block at stride $s$ |
-| $K$ | number of Gaussian components |
 
 The stride superscript $s$ denotes the spatial stride applied to a convolution; the leading $\text{Norm}\to\text{Act}$ is omitted for the first encoding unit (the `first_unit` exception), as described below.
 
@@ -111,8 +110,8 @@ See [[Configuration Layer]] → `ResUNetConfig`. The configurable fields and the
 | `activation` | `"relu"` | Activation function |
 | `normalization` | `"batch"` | Normalisation layer |
 | `upsample_mode` | `"convtranspose"` | Upsampling mode |
-| `in_channels` | `1` | Input channel count |
-| `out_channels` | `6` | Output channel count ($3K$ for $K=2$ Gaussians) |
+| `in_channels` | `4` | Input channel count, set to the dataset's input channels at build time |
+| `out_channels` | `2` | Output channel count, set to the dataset's target channels at build time |
 
 ---
 
@@ -152,7 +151,7 @@ See [[Configuration Layer]] → `ResUNetConfig`. The configurable fields and the
 
 **Decoder residual units (MATCH).** Table I Conv 9–14 are three residual units at 256/128/64 channels, all stride 1, restoring resolution via the preceding up-sampling. Code's decoder blocks are stride-1 residual units at the mirrored widths — structurally identical.
 
-**Output head (ACCEPTED ADAPTATION).** Paper: Conv 15 is a $1\times1$ convolution followed by a **sigmoid** activation (Fig. 2 "Conv → Sigmod → Output"; Sec. II-A3 "a $1\times1$ convolution and a sigmoid activation layer is used to project the multi-channel feature maps to the desired segmentation"). The paper's task is **binary road segmentation** trained with MSE (Eq. 2). This project is a **regression** task ($3K$ Gaussian-mixture parameters, `out_channels=6`), for which an output-saturating sigmoid would be inappropriate. The code therefore uses a bare $1\times1$ conv with no activation (`models/backbone/resunet.py:114-118`). The $1\times1$ projection itself matches; the omission of sigmoid is a justified task-driven adaptation, not a fidelity error.
+**Output head (ACCEPTED ADAPTATION).** Paper: Conv 15 is a $1\times1$ convolution followed by a **sigmoid** activation (Fig. 2 "Conv → Sigmod → Output"; Sec. II-A3 "a $1\times1$ convolution and a sigmoid activation layer is used to project the multi-channel feature maps to the desired segmentation"). The paper's task is **binary road segmentation** trained with MSE (Eq. 2). This project is a **regression** task (unbounded per-pixel targets, `out_channels` target channels), for which an output-saturating sigmoid would be inappropriate. The code therefore uses a bare $1\times1$ conv with no activation (`models/backbone/resunet.py:114-118`). The $1\times1$ projection itself matches; the omission of sigmoid is a justified task-driven adaptation, not a fidelity error.
 
 **Level-1 / stem handling (MATCH).** Fig. 2 draws the very first encoding unit *without* the leading BN-ReLU: it begins directly `Conv → BN → ReLU → Conv → Addition` on the raw input (consistent with the standard observation that BN-ReLU on a raw input is undesirable). All subsequent units use the full `BN → ReLU → Conv → BN → ReLU → Conv` pre-activation. `ResidualConvBlock` takes a `first_unit` flag (`models/blocks.py:189`, default `False`) that drops the leading `Norm`/`Act` when set; in `stride` mode the `ResUNetBackbone` constructor passes `first_unit = (index == 0)` for the encoder blocks only (`models/backbone/resunet.py:31`, bottleneck and decoder retain full pre-activation). Encoder block 0 therefore begins directly with the $3\times3$ convolution, matching Fig. 2. In `maxpool` mode (the [[UNet Skip]] family) `first_unit` is `False` for every block (`models/backbone/resunet.py:34`), so all units carry the leading `Norm → Act`.
 

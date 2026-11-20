@@ -39,13 +39,13 @@ UNet employs a symmetric encoder-decoder structure with skip connections that by
 | $\mathbf{b}$ | Bottleneck feature map, shape $(B, F_L \cdot r, H/2^L, W/2^L)$ |
 | $\mathbf{u}_l$ | Upsampled decoder feature at level $l$ |
 | $\mathbf{d}_l$ | Refined decoder feature at level $l$ ($\mathbf{d}_{L+1} = \mathbf{b}$, the bottleneck) |
-| $\hat{\boldsymbol{\theta}}$ | Output parameter map, shape $(B, C_{\text{out}}, P_H, P_W)$ |
+| $\hat{\boldsymbol{\theta}}$ | Output target map, shape $(B, C_{\text{out}}, P_H, P_W)$ |
 | $B, H, W$ | Batch size and input spatial dimensions |
 | $P_H, P_W$ | Patch height and width |
 | $L$ | Number of encoder levels (`len(features)`) |
-| $F_l$ | Feature channels at level $l$ (from `features`; default `[64, 128, 256, 512]`); $F_0$ = `in_channels` (default `1`) |
+| $F_l$ | Feature channels at level $l$ (from `features`; default `[64, 128, 256, 512]`); $F_0$ = `in_channels` (default `4`) |
 | $r$ | Bottleneck channel multiplier (`bottleneck_factor`; default `2`) |
-| $C_{\text{out}}$ | Output channels (`out_channels`; default `6`), equal to $\texttt{params\_per\_gaussian} \cdot K = 3K$ |
+| $C_{\text{out}}$ | Output channels (`out_channels`; default `2`), the number of target channels |
 | $\text{Conv}_{3\times3}$ | 3×3 convolution with padding 1 (no spatial size change); the first conv in a block maps input to output channels, the second preserves them |
 | $\text{Conv}_{1\times1}$ | Pointwise (1×1) convolution |
 | $\text{Norm}$ | Normalisation layer (`normalization`; batch, instance, group, or none; default `"batch"`) |
@@ -54,7 +54,6 @@ UNet employs a symmetric encoder-decoder structure with skip connections that by
 | $\text{Upsample}$ | Transposed convolution ($2\times$, default) or bilinear + 1×1 conv, selected by `upsample_mode` |
 | $\text{ConvBlock}$ | Double 3×3 convolution block (see below) |
 | $\text{cat}$ | Channel concatenation, after `match_spatial_size` aligns the upsampled feature to the skip |
-| $K$ | Number of Gaussian components ($K = 2$ by default) |
 
 ---
 
@@ -113,7 +112,7 @@ The finest decoder feature $\mathbf{d}_1$ has $F_1$ = `features[0]` (default `64
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `UNetConfig`. At default `in_channels = 1`, `out_channels = 6` the model has approximately 31.0M parameters. The blocks composing the encoder, bottleneck, decoder, and head (`ConvBlock`, `Encoder`, `Decoder`) are the shared definitions in `models/blocks.py`; see [[Model Zoo]] → Shared Building Blocks.
+See [[Configuration Layer]] → `UNetConfig`. At default `in_channels = 4`, `out_channels = 2` the model has approximately 31.0M parameters. The blocks composing the encoder, bottleneck, decoder, and head (`ConvBlock`, `Encoder`, `Decoder`) are the shared definitions in `models/blocks.py`; see [[Model Zoo]] → Shared Building Blocks.
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -195,14 +194,14 @@ The paper's expansive step is "an upsampling of the feature map followed by a $2
 
 ### Output head (MATCH)
 
-The paper: "At the final layer a $1\times1$ convolution is used to map each 64-component feature vector to the desired number of classes" (Sec. 2). The code's `output_head` is `nn.Conv2d(features[0], out_channels, kernel_size=1)` (`unet.py:63-67`); with the default `features[0] = 64`, the 64-channel finest decoder feature is mapped by a $1\times1$ conv to `out_channels`. Exact structural match. (The task here is dense regression of Gaussian-mixture parameters rather than class soft-max, but the head *layer* is identical; the soft-max is part of the loss, not the architecture.)
+The paper: "At the final layer a $1\times1$ convolution is used to map each 64-component feature vector to the desired number of classes" (Sec. 2). The code's `output_head` is `nn.Conv2d(features[0], out_channels, kernel_size=1)` (`unet.py:63-67`); with the default `features[0] = 64`, the 64-channel finest decoder feature is mapped by a $1\times1$ conv to `out_channels`. Exact structural match. (The task here is dense per-pixel regression rather than class soft-max, but the head *layer* is identical; the soft-max is part of the loss, not the architecture.)
 
 ### Weight initialization (DEVIATION — minor)
 
 Paper Section 3 is explicit: for a network of alternating convolution and ReLU layers, the initial weights should be drawn "from a Gaussian distribution with a standard deviation of $\sqrt{2/N}$, where $N$ denotes the number of incoming nodes of one neuron" (e.g. $N = 9 \cdot 64 = 576$ for a $3\times3$ conv with 64 input channels). This is precisely He/Kaiming normal initialization with `fan_in` (ref [5] is He et al. 2015), and the paper frames it as "extremely important".
 
 The code *can* express this — `initialize_weights` (`blocks.py:104-126`) supports a `"kaiming"` mode — but two issues stand:
-1. The default `init_mode` is `"default"` (`configuration/architectures/backbone.py:21`), which returns immediately (`blocks.py:105-106`) and leaves PyTorch's built-in initialization in place. PyTorch's default for `Conv2d` is Kaiming-*uniform* with `a=sqrt(5)`, which is **not** the paper's Gaussian $\sqrt{2/N}$ scheme.
+1. The default `init_mode` is `"default"` (`configuration/architectures/backbone.py:21`), which returns immediately (`blocks.py:105-106`) and leaves PyTorch's built-in initialization in place. PyTorch's default for `Conv2d` is Kaiming-*uniform* with `a=sqrt(5)`, which is **not** the paper's normal $\sqrt{2/N}$ scheme.
 2. Even when `"kaiming"` is selected, the conv branch uses `mode="fan_out"` (`blocks.py:110`), whereas the paper defines $N$ as the number of *incoming* nodes — i.e. `fan_in`. The code does use `fan_in` for `nn.Linear` (`blocks.py:117`) but not for convolutions.
 
 Severity: minor (initialization affects optimization dynamics, not the network function or parameter count, and BatchNorm substantially reduces sensitivity to it). **Proposed fix:** set the UNet default to `init_mode="kaiming"` (`configuration/architectures/backbone.py:21`) and change the conv/conv-transpose branch to `nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="relu")` (`blocks.py:110`) so it reproduces the paper's $\sqrt{2/N}$ with $N$ = incoming nodes. For exact fidelity the nonlinearity should track `config.activation`.

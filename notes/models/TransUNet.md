@@ -104,8 +104,8 @@ See [[Configuration Layer]] → `TransUNetConfig`. The transformer embedding dim
 | `ffn_activation` | — | `"gelu"` | Transformer FFN activation |
 | `normalization` | — | `"batch"` | CNN normalisation layer |
 | `upsample_mode` | — | `"convtranspose"` | Decoder upsampling mode |
-| `in_channels` | — | `1` | Input channel count |
-| `out_channels` | — | `6` | Output channel count ($3K$ for $K=2$ Gaussians) |
+| `in_channels` | — | `4` | Input channel count, set to the dataset's input channels at build time |
+| `out_channels` | — | `2` | Output channel count, set to the dataset's target channels at build time |
 
 With the defaults, $d = C_b = 272 \cdot 2 = 544$, and `transformer_heads = 4` divides $544$.
 

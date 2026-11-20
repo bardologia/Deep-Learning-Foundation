@@ -77,7 +77,7 @@ The ASPP output is upsampled ×4 to the stride-2 resolution, concatenated with t
 
 ## Design Rationale
 
-**Context without resolution loss.** Each cube pixel's Gaussian parameters depend on neighbourhood context (building facades and layover patterns extend over many pixels), but the output must stay dense. Dilated convolutions grow the receptive field without further downsampling, which is the regime where U-Net decoders spend most of their capacity recovering resolution.
+**Context without resolution loss.** A pixel's targets can depend on neighbourhood context that extends over many pixels, but the output must stay dense. Dilated convolutions grow the receptive field without further downsampling, which is the regime where U-Net decoders spend most of their capacity recovering resolution.
 
 > ASPP is the only architecture in the zoo that aggregates context at multiple explicit dilation rates simultaneously; if component structure has a characteristic spatial scale, one of the parallel branches can lock onto it directly.
 

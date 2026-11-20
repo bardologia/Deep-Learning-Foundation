@@ -163,7 +163,7 @@ with $\sigma_1 = \text{ReLU}$ and $\sigma_2 = \text{sigmoid}$. The code realises
 
 ### Accepted adaptations
 
-- **$3D \rightarrow 2D$.** All convolutions and the resampler are 2D; the paper's trilinear coefficient resampling becomes bilinear (`models/backbone/attention_unet.py:65`). This is the intended adaptation for 2D cube inputs and changes no architectural semantics.
+- **$3D \rightarrow 2D$.** All convolutions and the resampler are 2D; the paper's trilinear coefficient resampling becomes bilinear (`models/backbone/attention_unet.py:65`). This is the intended adaptation for 2D grid inputs and changes no architectural semantics.
 - **$W_x$ as a strided convolution.** The paper performs the linear transforms with $1\times1$ convolutions and *separately* downsamples the input feature-maps to the gating resolution (Sec. 3.2, "without any spatial support ... input feature-maps are downsampled to the resolution of gating signal"). The code fuses these two steps into a single kernel-2 stride-2 convolution (`models/backbone/attention_unet.py:28-37`), which matches the official `Attention-Gated-Networks` reference implementation. The resulting attention grid is identical ($H_g \times W_g$); accepted.
 - **Intermediate-channel count $F_{int}$.** Driven by `attention_intermediate_ratio` ($D = \max(1, \lfloor S \cdot r \rfloor)$, default $r = 0.5$). The paper does not fix $F_{int}$ analytically, so this is a free design choice, not a deviation.
 

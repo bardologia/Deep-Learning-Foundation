@@ -32,7 +32,7 @@ The trunk chains $B$ `ConvBlock`s — the same double-conv block used by the [[U
 | $\mathbf{h}^{(b)}$ | Feature map after block $b$ (channels `features[b]`, full resolution) |
 | $B$ | Number of `ConvBlock`s, $B = \lvert\texttt{features}\rvert$ |
 | $R$ | Receptive field side length, $R = 4B + 1$ |
-| $\mathbf{y}$ | Output parameter map (channels $3K$) |
+| $\mathbf{y}$ | Output target map (one channel per target channel) |
 
 ---
 
