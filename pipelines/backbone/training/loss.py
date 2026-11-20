@@ -25,14 +25,19 @@ class Loss:
             "Pooling"         : "sum(weight * value) / sum(weight), over each batch and over a whole split",
         })
 
-    def elementwise(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        if self.config.kind is LossKind.MSE:
-            return (predictions - targets) ** 2
+    def mse(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        return (predictions - targets) ** 2
 
-        if self.config.kind is LossKind.L1:
-            return (predictions - targets).abs()
+    def l1(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        return (predictions - targets).abs()
 
+    def huber(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         return F.huber_loss(predictions, targets, reduction="none", delta=self.config.huber_delta)
+
+    ELEMENTWISE = {LossKind.MSE: mse, LossKind.L1: l1, LossKind.HUBER: huber}
+
+    def elementwise(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        return self.ELEMENTWISE[self.config.kind](self, predictions, targets)
 
     def __call__(self, predictions: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor) -> dict:
         values   = self.elementwise(predictions.float(), targets.float())
