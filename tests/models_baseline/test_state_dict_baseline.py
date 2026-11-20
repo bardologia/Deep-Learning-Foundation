@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import hashlib
@@ -11,22 +10,6 @@ import torch
 from models import BACKBONE_MODEL_REGISTRY, get_backbone
 
 BASELINE_PATH = Path(__file__).resolve().parents[1] / "state_dict_baseline.json"
-
-
-def _backbone_cases() -> dict:
-    return {name: (name, {}) for name in BACKBONE_MODEL_REGISTRY}
-
-
-def _build_case(factory, case: tuple):
-    name, overrides = case
-    return factory(name, **overrides)
-
-
-MODEL_FAMILIES = {
-    "backbone" : (_backbone_cases(), get_backbone),
-}
-
-FAMILY_MODEL_CASES = [(family, key) for family, (cases, _factory) in MODEL_FAMILIES.items() for key in sorted(cases)]
 
 
 class StateDictSignature:
@@ -46,25 +29,17 @@ class StateDictSignature:
 class TestStateDictCompatibility:
     @pytest.fixture(scope="class")
     def baseline(self) -> dict:
-        if not BASELINE_PATH.exists():
-            pytest.fail(f"Missing baseline {BASELINE_PATH}. Generate it with scripts/generate_state_dict_baseline.py")
         return json.loads(BASELINE_PATH.read_text())
 
-    @pytest.mark.parametrize("family, key", FAMILY_MODEL_CASES)
-    def test_state_dict_matches_baseline(self, family: str, key: str, baseline: dict):
-        if key not in baseline.get(family, {}):
-            pytest.fail(f"Model '{family}/{key}' missing from baseline. Regenerate with scripts/generate_state_dict_baseline.py")
-
-        cases, factory = MODEL_FAMILIES[family]
-        model, _config = _build_case(factory, cases[key])
+    @pytest.mark.parametrize("key", sorted(BACKBONE_MODEL_REGISTRY))
+    def test_state_dict_matches_baseline(self, key: str, baseline: dict):
+        model, _config = get_backbone(key)
         signature      = StateDictSignature.compute(model)
-        expected       = baseline[family][key]
+        expected       = baseline[key]
 
-        assert signature["num_keys"] == expected["num_keys"], f"state_dict key count changed for '{family}/{key}'"
-        assert signature["num_parameters"] == expected["num_parameters"], f"parameter count changed for '{family}/{key}'"
-        assert signature["signature"] == expected["signature"], f"state_dict keys or shapes changed for '{family}/{key}': checkpoints trained before this change will not load"
+        assert signature["num_keys"] == expected["num_keys"], f"state_dict key count changed for '{key}'"
+        assert signature["num_parameters"] == expected["num_parameters"], f"parameter count changed for '{key}'"
+        assert signature["signature"] == expected["signature"], f"state_dict keys or shapes changed for '{key}': checkpoints trained before this change will not load"
 
-    def test_baseline_covers_full_registries(self, baseline: dict):
-        expected = {family: set(cases) for family, (cases, _factory) in MODEL_FAMILIES.items()}
-        actual   = {family: set(models) for family, models in baseline.items()}
-        assert actual == expected
+    def test_baseline_covers_the_registry(self, baseline: dict):
+        assert set(baseline) == set(BACKBONE_MODEL_REGISTRY)
