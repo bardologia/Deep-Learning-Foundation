@@ -287,20 +287,6 @@ class FigureExport {
     return true;
   }
 
-  static async saveCanvas(canvas, name) {
-    const blob = await FigureExport.fromCanvas(canvas);
-    if (blob) FigureExport.download(name, blob);
-  }
-
-  static async saveBitmap(bitmap, name) {
-    const canvas = document.createElement("canvas");
-    canvas.width  = bitmap.width;
-    canvas.height = bitmap.height;
-    canvas.getContext("2d").drawImage(bitmap, 0, 0);
-
-    await FigureExport.saveCanvas(canvas, name);
-  }
-
   static async saveZip(name, jobs) {
     const archive = new ZipArchive();
     let saved = 0;

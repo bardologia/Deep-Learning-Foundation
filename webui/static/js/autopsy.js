@@ -33,7 +33,7 @@ class AutopsyView {
     this.root.innerHTML = `
       <div class="view-pick">
         <div class="run-strip" id="autopsy-strip" aria-label="Saved inferences"></div>
-        <div class="fl-src" role="group" aria-label="Chosen pair">
+        <div class="view-src" role="group" aria-label="Chosen pair">
           <span class="autopsy-pick" id="autopsy-pick-a"><b>A</b> <span>none</span></span>
           <span class="autopsy-pick" id="autopsy-pick-b"><b>B</b> <span>none</span></span>
           <button type="button" class="btn btn--mini" id="autopsy-go" disabled>Compare</button>
@@ -141,7 +141,7 @@ class AutopsyView {
   }
 
   _render(data) {
-    let html = `<div class="fl-card"><h3 class="view-panel-title">Largest metric gaps</h3>`;
+    let html = `<div class="view-card"><h3 class="view-panel-title">Largest metric gaps</h3>`;
     html += `<div class="tbl-scroll"><table class="tbl tbl--diff"><thead><tr>` +
       `<th class="tbl-th">metric</th><th class="tbl-th">A</th><th class="tbl-th">B</th><th class="tbl-th">Δ rel</th><th class="tbl-th">winner</th></tr></thead><tbody>`;
 
@@ -158,7 +158,7 @@ class AutopsyView {
       html += `<div class="script-grid">`;
       data.hotspots.forEach((spot, index) => {
         html += `
-          <article class="fl-card">
+          <article class="view-card">
             <h3 class="view-panel-title">${spot.winner} wins · row ${spot.row}, col ${spot.col}</h3>
             <p class="view-hint">block Δ standardized squared error (A−B): ${spot.mean_delta.toExponential(2)}</p>
             <div class="tbl-scroll" id="autopsy-spot-${index}"></div>

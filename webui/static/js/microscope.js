@@ -72,11 +72,11 @@ class MicroscopeView {
       <div class="ms-stage" id="probe-stage" hidden>
         <section class="ms-card ms-scene">
           <div class="ms-scene__map">
-            <div class="fl-map__frame">
+            <div class="view-map__frame">
               <span class="view-axis view-axis--y">row &darr;</span>
-              <div class="fl-map__wrap" id="probe-map-wrap">
+              <div class="view-map__wrap" id="probe-map-wrap">
                 <img id="probe-map-img" alt="First target channel of the split" />
-                <div class="fl-marks" id="probe-marks"></div>
+                <div class="view-marks" id="probe-marks"></div>
               </div>
               <span class="view-axis view-axis--x">col &rarr;</span>
             </div>
@@ -88,7 +88,7 @@ class MicroscopeView {
             </div>
             <div class="ms-meta" id="probe-meta"></div>
             <p class="view-coords" id="probe-coords">Click the map to probe a pixel.</p>
-            <div class="fl-pixrow" role="group" aria-label="Probe a pixel by index">
+            <div class="view-pixrow" role="group" aria-label="Probe a pixel by index">
               <span class="view-jump__cell">
                 <label for="probe-row">row</label>
                 <input type="number" id="probe-row" class="view-jump__input" min="0" step="1" inputmode="numeric" />
@@ -567,7 +567,7 @@ class MicroscopeView {
   _renderMark(row, col) {
     const x                   = (col / (this.info.col_size - 1)) * 100;
     const y                   = (row / (this.info.row_size - 1)) * 100;
-    this.refs.marks.innerHTML = `<i class="fl-mark" style="left:${x}%;top:${y}%;background:#e11d48"></i>`;
+    this.refs.marks.innerHTML = `<i class="view-mark" style="left:${x}%;top:${y}%;background:#e11d48"></i>`;
   }
 
   _renderPrediction(out) {

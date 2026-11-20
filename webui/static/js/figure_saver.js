@@ -4,8 +4,8 @@ class FigureScanner {
   static SELECTOR    = "canvas, img, svg";
   static MIN_WIDTH   = 56;
   static MIN_HEIGHT  = 40;
-  static HEADINGS    = ".view-panel-title, .fl-card__head b, .sc-row__title, .res-section__cap, .ms-card__head h3, h3, h4";
-  static CARDS       = ".ms-card, .fl-card, .sc-row, .res-section, article, section";
+  static HEADINGS    = ".view-panel-title, .view-card__head b, .sc-row__title, .res-section__cap, .ms-card__head h3, h3, h4";
+  static CARDS       = ".ms-card, .view-card, .sc-row, .res-section, article, section";
   static CARD_CAP    = 32;
   static LABEL_CAP   = 48;
   static SUFFIX      = /\.(png|jpe?g|gif|svg|webp)$/i;
