@@ -277,8 +277,8 @@ points every other machine at a directory it does not have.
 ### Every metric key has an orientation
 
 `MetricOrientation` in `tools/metrics/scoring.py` decides from a metric key whether a
-larger value is better, worse or neither, and the comparison reports, the leaderboard and
-the A/B autopsy rank by it. A key that matches no declared rule raises `KeyError`
+larger value is better, worse or neither, and the comparison reports and the A/B autopsy
+rank by it. A key that matches no declared rule raises `KeyError`
 instead of being ranked as an error by default.
 
 - Fails in: `tests/backbone_inference/test_pipeline_e2e.py::test_inference_pipeline_end_to_end`,
@@ -455,8 +455,7 @@ Replace or add catalog entries for your own subject, then point the pages at the
 
 - `LaunchView.FIGURES` in `webui/static/js/launch.js` maps script keys to figures by
   pattern, and an unmatched key shows `surface`.
-- `LeaderboardView.FIGURES` in `leaderboard.js` and `ResultsView.FIGURES` in
-  `results.js` pick a figure per view mode.
+- `ResultsView.FIGURES` in `results.js` picks a figure per view mode.
 - The Home board names its figures in `home.js`, and static pages name theirs in
   `index.html`.
 

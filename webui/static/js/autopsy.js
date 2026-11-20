@@ -11,20 +11,10 @@ class AutopsyView {
     this.cmpToken   = 0;
   }
 
-  async enter() {
+  enter() {
     if (!this.built) {
       this._build();
       this.built = true;
-    }
-
-    const pending = window.abAutopsyPair;
-    if (pending) {
-      window.abAutopsyPair = null;
-      this.sideA = pending.a;
-      this.sideB = pending.b;
-      await this._refreshRuns();
-      this._compare();
-      return;
     }
 
     this._refreshRuns();
@@ -48,7 +38,7 @@ class AutopsyView {
           <span class="autopsy-slot" id="autopsy-slot-b"><b>B</b> <span>none</span></span>
           <button type="button" class="btn btn--mini" id="autopsy-go" disabled>Compare</button>
         </div>
-        <p class="cube-hint" id="autopsy-hint">Assign one saved inference to A and one to B (same region), or send a pair over from the leaderboard diff.</p>
+        <p class="cube-hint" id="autopsy-hint">Assign one saved inference to A and one to B (same region).</p>
       </div>
       <div id="autopsy-out"></div>`;
 
@@ -152,12 +142,12 @@ class AutopsyView {
 
   _render(data) {
     let html = `<div class="fl-card"><h3 class="cube-panel-title">Largest metric gaps</h3>`;
-    html += `<div class="lb-scroll"><table class="lb-table lb-table--diff"><thead><tr>` +
-      `<th class="lb-th">metric</th><th class="lb-th">A</th><th class="lb-th">B</th><th class="lb-th">Δ rel</th><th class="lb-th">winner</th></tr></thead><tbody>`;
+    html += `<div class="tbl-scroll"><table class="tbl tbl--diff"><thead><tr>` +
+      `<th class="tbl-th">metric</th><th class="tbl-th">A</th><th class="tbl-th">B</th><th class="tbl-th">Δ rel</th><th class="tbl-th">winner</th></tr></thead><tbody>`;
 
     data.metrics.slice(0, 25).forEach((row) => {
       const tone = row.winner === "A" ? "#2dd4bf" : row.winner === "B" ? "#f87171" : "inherit";
-      html += `<tr><td class="lb-key">${SharedCharts.esc(row.key)}</td>` +
+      html += `<tr><td class="tbl-key">${SharedCharts.esc(row.key)}</td>` +
         `<td>${this._fmt(row.a)}</td><td>${this._fmt(row.b)}</td>` +
         `<td>${(row.rel * 100).toFixed(1)}%</td>` +
         `<td style="color:${tone};font-weight:700">${row.winner}</td></tr>`;

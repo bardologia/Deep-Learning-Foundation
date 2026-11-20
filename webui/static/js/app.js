@@ -169,8 +169,6 @@ class App {
       document.getElementById("results-detail")
     );
 
-    this.leaderboardView = new window.LeaderboardView(document.getElementById("leaderboard-root"));
-
     this.microscopeView    = new window.MicroscopeView(document.getElementById("probe-root"));
     this.surveyView        = new window.SurveyView(document.getElementById("survey-root"));
     this.triageView        = new window.TriageView(document.getElementById("triage-root"));
@@ -450,7 +448,6 @@ class App {
       cube        : this.cubeView,
       slices      : this.sliceCollectorView,
       results     : this.resultsView,
-      leaderboard : this.leaderboardView,
     };
   }
 
@@ -490,7 +487,6 @@ class App {
     if (route === "tensorboard") this.tensorboardView.enter();
     else this.tensorboardView.leave();
     if (route === "results") this.resultsView.enter();
-    if (route === "leaderboard") this.leaderboardView.enter();
     if (route === "feedtuner") this.feedTuner.enter();
     if (route === "cube") this.cubeView.enter(param);
     else this.cubeView.leave();

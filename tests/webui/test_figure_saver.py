@@ -86,7 +86,7 @@ def test_every_registered_figure_tab_supplies_a_filename_context():
     binds   = dict(VIEW_BIND.findall((JS_DIR / "app.js").read_text(encoding="utf-8")))
     tabs    = _figure_tabs()
 
-    assert set(tabs) == {"microscope", "survey", "triage", "autopsy", "fitlab", "cube", "slices", "results", "leaderboard"}
+    assert set(tabs) == {"microscope", "survey", "triage", "autopsy", "fitlab", "cube", "slices", "results"}
 
     for route, prop in tabs.items():
         assert prop in binds, f"{route} points at an unbound view property"

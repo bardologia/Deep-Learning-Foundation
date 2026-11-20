@@ -4,8 +4,6 @@ from __future__ import annotations
 from dataset_browser  import DatasetBrowser
 from results_browser  import ResultsBrowser
 from routers.dispatch import HttpExchange, RouteTable, SubRouter
-from run_leaderboard  import RunLeaderboard
-from training_curves  import TrainingCurves
 
 
 class ResultsRouter(SubRouter):
@@ -70,43 +68,3 @@ class DatasetRouter(SubRouter):
 
     def secondaries(self, exchange: HttpExchange) -> None:
         exchange.send_result(self.datasets.secondaries(exchange.text("dataset")))
-
-
-class LeaderboardRouter(SubRouter):
-
-    def __init__(self, leaderboard: RunLeaderboard) -> None:
-        self.leaderboard = leaderboard
-
-        super().__init__(("/api/leaderboard",))
-
-    def declare(self, table: RouteTable) -> None:
-        table.add("GET", "/api/leaderboard",        self.table_view)
-        table.add("GET", "/api/leaderboard/trials", self.trials)
-        table.add("GET", "/api/leaderboard/diff",   self.diff)
-
-    def table_view(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.leaderboard.table(exchange.text("base")))
-
-    def trials(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.leaderboard.trials(exchange.text("base")))
-
-    def diff(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.leaderboard.diff(exchange.texts("run")), 404)
-
-
-class CurvesRouter(SubRouter):
-
-    def __init__(self, curves: TrainingCurves) -> None:
-        self.curves = curves
-
-        super().__init__(("/api/curves",))
-
-    def declare(self, table: RouteTable) -> None:
-        table.add("GET", "/api/curves",      self.curves_view)
-        table.add("GET", "/api/curves/runs", self.runs)
-
-    def curves_view(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.curves.curves(exchange.texts("run"), exchange.text("tag")))
-
-    def runs(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.curves.runs(exchange.text("base")))

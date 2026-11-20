@@ -432,7 +432,7 @@ prediction cubes under `cubes/`, plus figures, animations and its own `complete.
 which records the scored checkpoint (name, epoch, best epoch and best validation loss).
 `metrics.json` carries the checkpoint name, its one-based epoch, the code commit and the
 activity threshold it scored with. Those directories are what the console's results,
-leaderboard, cube, triage and autopsy tabs read.
+cube, triage and autopsy tabs read.
 
 `--inference.device` defaults to `cuda` and is used as given, so without a GPU the job
 fails with `No CUDA GPUs are available`. Pass `--inference.device cpu` on a machine
@@ -481,7 +481,7 @@ typed controls with the profile's values already in place, shows the exact comma
 will run, and streams the output back live. A launch page stores its configuration as a
 saved run to launch later, or as a named config template under `logs/config_templates/`
 whose overrides import into the form of any entry point from the Templates tab or the
-launch rail. It also carries the run leaderboard, the results and cube browsers, the fit
+launch rail. It also carries the results and cube browsers, the fit
 lab, the model microscope and server telemetry; the browse roots of the results tabs
 start at the profile's data and runs roots. `webui/README.md` documents every tab.
 

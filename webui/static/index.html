@@ -59,7 +59,6 @@
       <button type="button" class="nav__grouphead"><i class="nav__chev" aria-hidden="true"></i>Results</button>
       <div class="nav__sub">
         <a href="#/results" data-route="results">Results</a>
-        <a href="#/leaderboard" data-route="leaderboard">Leaderboard</a>
         <a href="#/cube" data-route="cube">Cube</a>
         <a href="#/slices" data-route="slices">Slices</a>
       </div>
@@ -416,7 +415,7 @@
               <button type="button" class="cube-space is-active" data-mode="raw">Raw</button>
               <button type="button" class="cube-space" data-mode="unit">Unit area</button>
             </div>
-            <label class="lb-check" id="cube-prof-mix-wrap" hidden title="Overlay the Gaussian mixture reconstructed from the extracted parameters, with one stem per active slot at its mu"><input type="checkbox" id="cube-prof-mix" /> mixture</label>
+            <label class="check-label" id="cube-prof-mix-wrap" hidden title="Overlay the Gaussian mixture reconstructed from the extracted parameters, with one stem per active slot at its mu"><input type="checkbox" id="cube-prof-mix" /> mixture</label>
           </div>
           <p class="cube-coords" id="cube-prof-at">Hover a slice to read the profiles at that position.</p>
           <div class="cube-profiles__grid">
@@ -569,8 +568,8 @@
               </select>
               <input type="range" id="cube-cloud-cut-pos" min="0" max="100" value="50" title="Position of the cutting plane along the chosen axis" />
             </div>
-            <label class="lb-check" title="Animate the cutting plane back and forth through the volume"><input type="checkbox" id="cube-cloud-cut-sweep" /> sweep</label>
-            <label class="lb-check" id="cube-cloud-aux-wrap" title="Drape the cloud on the auxiliary field: point height = aux + z"><input type="checkbox" id="cube-cloud-aux" /> Aux drape</label>
+            <label class="check-label" title="Animate the cutting plane back and forth through the volume"><input type="checkbox" id="cube-cloud-cut-sweep" /> sweep</label>
+            <label class="check-label" id="cube-cloud-aux-wrap" title="Drape the cloud on the auxiliary field: point height = aux + z"><input type="checkbox" id="cube-cloud-aux" /> Aux drape</label>
             <span class="cube-z__at" id="cube-cloud-at">Drag to orbit &middot; wheel to zoom &middot; double-click to reset.</span>
           </div>
           <div class="cube-cloud__stage">
@@ -729,7 +728,7 @@
                 <label for="cube-selective-cov">coverage</label>
                 <input type="range" id="cube-selective-cov" min="5" max="100" value="100" />
                 <span class="cube-mctl__val" id="cube-selective-val">100%</span>
-                <label class="lb-check" title="Paint only the pixels the current coverage keeps, so the scene erodes from least to most confident"><input type="checkbox" id="cube-selective-mask" /> mask</label>
+                <label class="check-label" title="Paint only the pixels the current coverage keeps, so the scene erodes from least to most confident"><input type="checkbox" id="cube-selective-mask" /> mask</label>
                 <button type="button" class="btn btn--mini" id="cube-selective-play" title="Sweep the coverage down to 5% and back">Play</button>
               </div>
               <div class="cube-pside__table" id="cube-selective-table"></div>
@@ -1076,20 +1075,6 @@
     </div>
   </section>
 
-  <!-- LEADERBOARD -->
-  <section class="page page--pad" data-page="leaderboard">
-    <div class="page__head page__head--figure">
-      <h2 class="page__title">Leaderboard</h2>
-      <p class="page__lead">
-        Every saved inference result in the runs directory as one sortable table &mdash; run-name
-        axes parsed into filters, headline metrics side by side. Select two rows to read a full
-        metric-by-metric comparison plus the resolved-config differences between the runs.
-      </p>
-      <hairline-figure name="podium" class="page__figure" aria-hidden="true"></hairline-figure>
-    </div>
-    <div class="lb" id="leaderboard-root"></div>
-  </section>
-
   <!-- FEED TUNER -->
   <section class="page page--pad page--feedtuner" data-page="feedtuner">
     <div class="page__head page__head--figure">
@@ -1322,7 +1307,6 @@
 <script src="/static/js/sequences.js"></script>
 <script src="/static/js/console.js"></script>
 <script src="/static/js/results.js"></script>
-<script src="/static/js/leaderboard.js"></script>
 <script src="/static/js/run_strip.js"></script>
 <script src="/static/js/cube_view.js"></script>
 <script src="/static/js/slice_collector.js"></script>

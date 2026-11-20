@@ -30,7 +30,6 @@ from politeness                        import JobPoliteness, JobThrottle
 from results_browser                   import ResultsBrowser
 from run_config_reader                 import RunConfigReader
 from run_launcher                      import RunLauncher
-from run_leaderboard                   import RunLeaderboard
 from saved_run_store                   import SavedRunStore
 from sequence_decisions                import SequenceDecisions
 from sequence_runner                   import SequenceRunner
@@ -40,7 +39,6 @@ from script_config_resolver            import ScriptConfigResolver
 from stream_hub                        import StreamHub
 from system_monitor                    import SystemMonitor
 from tensorboard_manager               import TensorboardManager
-from training_curves                   import TrainingCurves
 from web_logger                        import WebLogger
 
 from routers.analysis_routers   import AutopsyRouter, FitLabRouter, ProbeRouter, SurveyRouter, TriageRouter
@@ -48,7 +46,7 @@ from routers.cube_routers       import CubeRouter, SliceRouter
 from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
 from routers.sequence_router    import SequenceRouter
 from routers.library_routers    import BackboneRouter, ContentLibraryRouter
-from routers.results_routers    import CurvesRouter, DatasetRouter, LeaderboardRouter, ResultsRouter
+from routers.results_routers    import DatasetRouter, ResultsRouter
 from routers.static_router      import StaticRouter
 from routers.system_router      import SystemRouter
 from routers.tensorboard_router import TensorboardRouter
@@ -117,8 +115,6 @@ class WebUIServer:
         self.slices            = SliceCollector(self.cubes, self.logger)
         self.slice_mail        = SliceCollectionMailer(self.slices, self.logger)
         self.datasets          = DatasetBrowser(self.logger)
-        self.leaderboard       = RunLeaderboard(self.logger)
-        self.curves            = TrainingCurves(self.logger)
         self.fitlab            = FitLab(self.logger)
         self.probe             = ModelProbe(self.logger)
         self.survey            = ModelSurvey(self.logger)
@@ -134,8 +130,6 @@ class WebUIServer:
             StaticRouter(self.paths, self.results),
             ResultsRouter(self.results),
             DatasetRouter(self.datasets),
-            LeaderboardRouter(self.leaderboard),
-            CurvesRouter(self.curves),
             CubeRouter(self.cubes),
             SliceRouter(self.slices, self.slice_mail),
             FitLabRouter(self.fitlab),

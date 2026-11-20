@@ -11,7 +11,7 @@ from routers.cube_routers       import CubeRouter, SliceRouter
 from routers.dispatch           import HttpExchange, RouteConflict, RouteTable, SubRouter
 from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
 from routers.library_routers    import BackboneRouter, ContentLibraryRouter
-from routers.results_routers    import CurvesRouter, DatasetRouter, LeaderboardRouter, ResultsRouter
+from routers.results_routers    import DatasetRouter, ResultsRouter
 from routers.sequence_router    import SequenceRouter
 from routers.static_router      import StaticRouter
 from routers.system_router      import SystemRouter
@@ -19,8 +19,8 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 147
-SECTION_COUNT = 35
+ROUTE_COUNT   = 142
+SECTION_COUNT = 33
 
 RESOLUTIONS = [
     ("GET",  "/",                                  StaticRouter),
@@ -29,8 +29,6 @@ RESOLUTIONS = [
     ("GET",  "/resultsmedia",                      StaticRouter),
     ("GET",  "/api/results/tree",                  ResultsRouter),
     ("GET",  "/api/fs/runs",                       DatasetRouter),
-    ("GET",  "/api/leaderboard/diff",              LeaderboardRouter),
-    ("GET",  "/api/curves",                        CurvesRouter),
     ("GET",  "/api/cubes/plane",                   CubeRouter),
     ("GET",  "/api/cubes/metric_hist",             CubeRouter),
     ("GET",  "/api/cubes/timeline",                CubeRouter),
@@ -142,8 +140,6 @@ def build_routers() -> list:
         StaticRouter(None, None),
         ResultsRouter(None),
         DatasetRouter(None),
-        LeaderboardRouter(None),
-        CurvesRouter(None),
         CubeRouter(None),
         SliceRouter(None, None),
         FitLabRouter(None),
