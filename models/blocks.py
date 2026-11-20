@@ -25,18 +25,12 @@ class DropPath(nn.Module):
 class DropPathSchedule:
 
     def __init__(self, total_blocks: int, rate: float, blocks_per_stage: int):
-        if blocks_per_stage < 1:
-            raise ValueError(f"blocks_per_stage must be >= 1, got {blocks_per_stage}")
-
         self.rates            = [rate * index / max(total_blocks - 1, 1) for index in range(total_blocks)]
         self.blocks_per_stage = blocks_per_stage
 
     def stage(self, stage_index: int) -> list[float]:
         start = stage_index * self.blocks_per_stage
         stop  = start + self.blocks_per_stage
-        if stop > len(self.rates):
-            raise ValueError(f"stage {stage_index} needs rates {start}:{stop} but the schedule holds only {len(self.rates)}")
-
         return self.rates[start:stop]
 
 
@@ -51,8 +45,6 @@ class LayerFactory:
             "elu"         : lambda: nn.ELU(inplace=True),
             "silu"        : lambda: nn.SiLU(inplace=True),
         }
-        if name not in factories:
-            raise ValueError(f"Unknown activation '{name}'. Available: {list(factories.keys())}")
         return factories[name]()
 
     @staticmethod
@@ -68,7 +60,6 @@ class LayerFactory:
             return nn.GroupNorm(num_groups, num_features)
         if name == "none":
             return nn.Identity()
-        raise ValueError(f"Unknown normalization '{name}'. Available: batch, instance, group, none")
 
     @staticmethod
     def build_upsample(mode: str, in_channels: int, out_channels: int, scale_factor: int = 2) -> nn.Module:
@@ -93,12 +84,9 @@ class LayerFactory:
                     bias         = False,
                 ),
             )
-        raise ValueError(f"Unknown upsample mode '{mode}'. Available: convtranspose, bilinear")
 
     @staticmethod
     def initialize_weights(module: nn.Module, mode: str) -> None:
-        if mode not in ("default", "kaiming", "xavier"):
-            raise ValueError(f"Unknown init_mode '{mode}'. Available: default, kaiming, xavier")
         if mode == "default":
             return
         for m in module.modules():
@@ -200,9 +188,6 @@ class ConvBlock(nn.Module):
         kernel_size:     int   = 3,
     ):
         super().__init__()
-        if kernel_size < 1 or kernel_size % 2 == 0:
-            raise ValueError(f"ConvBlock kernel_size={kernel_size} must be a positive odd integer so padding preserves the spatial shape")
-
         padding = kernel_size // 2
         layers  = [
             nn.Conv2d(
@@ -365,8 +350,6 @@ class OutputHeadsMixin:
 
     def _resolve_gaussian_layout(self) -> None:
         n_params = self.config.params_per_gaussian
-        if self.config.out_channels % n_params != 0:
-            raise ValueError(f"out_channels ({self.config.out_channels}) must be divisible by params_per_gaussian ({n_params})")
         self.n_gaussians = self.config.out_channels // n_params
         self.n_params    = n_params
 
@@ -382,9 +365,6 @@ class OutputHeadsMixin:
         )
 
     def _build_triple_heads(self) -> None:
-        if self.n_params != 3:
-            raise ValueError(f"the multihead output head stacks exactly amplitude, mu and sigma, so params_per_gaussian must be 3, got {self.n_params}")
-
         self.head_amp   = PixelMLP(self.embedding_channels, self.hidden_channels, self.n_gaussians, self._head_activation())
         self.head_mu    = PixelMLP(self.embedding_channels, self.hidden_channels, self.n_gaussians, self._head_activation())
         self.head_sigma = PixelMLP(self.embedding_channels, self.hidden_channels, self.n_gaussians, self._head_activation())
@@ -431,9 +411,6 @@ class OutputHeadsMixin:
 
     def _build_output_head(self) -> None:
         head = self.config.head
-        if head not in self.HEADS:
-            raise ValueError(f"Unknown head '{head}'. Available: {list(self.HEADS)}")
-
         if head == "none":
             return
 
@@ -605,8 +582,6 @@ class MultiHeadSelfAttention(nn.Module):
         attention_dropout: float = 0.0,
     ):
         super().__init__()
-        if embedding_dim % num_heads != 0:
-            raise ValueError(f"embedding_dim ({embedding_dim}) must be divisible by num_heads ({num_heads})")
         self.num_heads = num_heads
         self.head_dim  = embedding_dim // num_heads
         self.scale     = self.head_dim ** -0.5

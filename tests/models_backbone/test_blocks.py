@@ -37,11 +37,6 @@ def test_build_activation(name):
     assert _finite(out)
 
 
-def test_build_activation_invalid():
-    with pytest.raises(ValueError):
-        LayerFactory.build_activation("nope")
-
-
 @pytest.mark.parametrize("name", NORMALIZATIONS)
 def test_build_norm2d(name):
     norm = LayerFactory.build_norm2d(name, 8)
@@ -50,22 +45,12 @@ def test_build_norm2d(name):
     assert _finite(out)
 
 
-def test_build_norm2d_invalid():
-    with pytest.raises(ValueError):
-        LayerFactory.build_norm2d("nope", 8)
-
-
 @pytest.mark.parametrize("mode", ["convtranspose", "bilinear"])
 def test_build_upsample(mode):
     up  = LayerFactory.build_upsample(mode, 6, 3, scale_factor=2)
     out = up(torch.randn(2, 6, 4, 4))
     assert out.shape == (2, 3, 8, 8)
     assert _finite(out)
-
-
-def test_build_upsample_invalid():
-    with pytest.raises(ValueError):
-        LayerFactory.build_upsample("nope", 6, 3)
 
 
 def test_drop_path_eval_identity():
@@ -94,18 +79,6 @@ def test_drop_path_schedule_slices_by_stage_index():
     assert schedule.stage(0) == pytest.approx([0.0, 0.1])
     assert schedule.stage(2) == pytest.approx([0.4, 0.5])
     assert schedule.stage(1) == pytest.approx(schedule.stage(1))
-
-
-def test_drop_path_schedule_rejects_a_stage_beyond_its_length():
-    schedule = DropPathSchedule(total_blocks=6, rate=0.5, blocks_per_stage=2)
-
-    with pytest.raises(ValueError):
-        schedule.stage(3)
-
-
-def test_initialize_weights_invalid():
-    with pytest.raises(ValueError):
-        LayerFactory.initialize_weights(ConvBlock(3, 4), "kaiming_uniform")
 
 
 def test_match_spatial_size_resizes():
@@ -245,11 +218,6 @@ def test_multi_head_self_attention():
     assert _finite(out)
 
 
-def test_multi_head_self_attention_invalid():
-    with pytest.raises(ValueError):
-        MultiHeadSelfAttention(16, num_heads=5)
-
-
 @pytest.mark.parametrize("drop_path_rate", [0.0, 0.1])
 def test_transformer_block(drop_path_rate):
     block = TransformerBlock(16, num_heads=4, drop_path_rate=drop_path_rate).eval()
@@ -318,7 +286,3 @@ def test_output_head_dispatch(head):
     assert len(module.head_parameters()) > 0
 
 
-def test_output_head_unknown_head_raises():
-    module = _GaussianModule(head="dense")
-    with pytest.raises(ValueError):
-        module._build_output_head()

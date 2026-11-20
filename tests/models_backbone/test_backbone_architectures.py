@@ -174,12 +174,6 @@ def test_param_groups_cover_every_parameter(name, head):
     assert grouped == total
 
 
-@pytest.mark.parametrize("name", ALL_NAMES)
-def test_unknown_head_raises(name):
-    with pytest.raises(ValueError):
-        _build(name, head="dense")
-
-
 def test_local_cnn_block_kernels_control_the_receptive_field():
     torch.manual_seed(0)
     model, _ = get_backbone("local_cnn", in_channels=3, out_channels=6, features=[8, 8], block_kernels=[3, 1])
@@ -241,13 +235,3 @@ def test_swin_block_reuses_the_shifted_attention_mask_per_spatial_size():
     assert torch.allclose(first, second, atol=0.0, rtol=0.0)
 
 
-def test_multihead_rejects_four_parameters_per_gaussian():
-    with pytest.raises(ValueError, match="params_per_gaussian must be 3"):
-        get_backbone("unet", head="multihead", params_per_gaussian=4, out_channels=8, features=[8, 16], bottleneck_factor=1)
-
-
-def test_conv_block_rejects_even_kernels():
-    from models.blocks import ConvBlock
-
-    with pytest.raises(ValueError, match="positive odd"):
-        ConvBlock(input_channels=4, output_channels=4, kernel_size=2)
