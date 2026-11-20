@@ -34,10 +34,7 @@
     <div class="nav__group" data-group="reference">
       <button type="button" class="nav__grouphead"><i class="nav__chev" aria-hidden="true"></i>Reference</button>
       <div class="nav__sub">
-        <a href="#/model" data-route="model">Model</a>
-        <a href="#/pipelines" data-route="pipelines">Pipelines</a>
         <a href="#/architectures" data-route="architectures">Architectures</a>
-        <a href="#/repomap" data-route="repomap">Repo Map</a>
       </div>
     </div>
     <div class="nav__group" data-group="launch">
@@ -107,42 +104,6 @@
         <div class="status__board" id="status-board"><div class="orb-panel"><thinking-orb state="working" size="64"></thinking-orb><span class="orb-panel__text">reading the machine&hellip;</span></div></div>
       </div>
     </div>
-  </section>
-
-  <!-- MODEL -->
-  <section class="page page--pad" data-page="model">
-    <div class="page__head page__head--figure">
-      <h2 class="page__title">The mathematics, end to end</h2>
-      <p class="page__lead">
-        Every equation from every pipeline stage, parameter extraction to hyperparameter
-        search, exactly as implemented in the codebase.
-      </p>
-      <div class="model-mode" id="model-mode">
-        <button class="model-mode__btn" data-mode="reference" data-figure="slots">Reference grid</button>
-        <button class="model-mode__btn is-active" data-mode="walkthrough" data-figure="surface">Animated walkthrough</button>
-      </div>
-      <hairline-figure name="surface" class="page__figure" aria-hidden="true"></hairline-figure>
-    </div>
-    <div class="model-view is-hidden" data-view="reference">
-      <div class="eq-tabs" id="eq-tabs"></div>
-      <div class="eq-grid" id="eq-grid"><div class="orb-panel"><thinking-orb state="composing" size="64"></thinking-orb><span class="orb-panel__text">loading the equations&hellip;</span></div></div>
-    </div>
-    <div class="model-view" data-view="walkthrough">
-      <div class="flowx" id="flowx"><div class="orb-panel"><thinking-orb state="connecting" size="64"></thinking-orb><span class="orb-panel__text">loading the walkthrough&hellip;</span></div></div>
-    </div>
-  </section>
-
-  <!-- PIPELINES -->
-  <section class="page page--pad" data-page="pipelines">
-    <div class="page__head page__head--figure">
-      <h2 class="page__title">Pipelines</h2>
-      <p class="page__lead">
-        Fifteen orchestrated pipelines take a dataset to trained, evaluated models.
-        Each pipeline maps to an entry point you can launch.
-      </p>
-      <hairline-figure name="slow" class="page__figure" aria-hidden="true"></hairline-figure>
-    </div>
-    <div class="flow" id="flow"><div class="orb-panel"><thinking-orb state="connecting" size="64"></thinking-orb><span class="orb-panel__text">loading the pipelines&hellip;</span></div></div>
   </section>
 
   <!-- ARCHITECTURES -->
@@ -288,7 +249,7 @@
         <hairline-figure name="terminal" class="console__figure" aria-hidden="true"></hairline-figure>
       </aside>
       <div class="console__tiles" id="console-tiles">
-        <div class="console__hint" id="console-hint"><hairline-figure name="surface" class="console__hint-figure" aria-hidden="true"></hairline-figure><span>Launch a script to see live output.</span></div>
+        <div class="console__hint" id="console-hint"><hairline-figure name="slow" class="console__hint-figure" aria-hidden="true"></hairline-figure><span>Launch a script to see live output.</span></div>
       </div>
     </div>
   </section>
@@ -1301,19 +1262,6 @@
     </div>
   </section>
 
-  <section class="page page--pad page--repomap" data-page="repomap">
-    <div class="page__head page__head--figure">
-      <h2 class="page__title">Repo map</h2>
-      <p class="page__lead">
-        Every pipeline as a wiring schematic &mdash; the classes that do the work, the data they
-        hand to each other, and the artifacts that cross the boundary. Open a subsystem folder,
-        pick a stage, and watch the flow.
-      </p>
-      <hairline-figure name="repo" class="page__figure" aria-hidden="true"></hairline-figure>
-    </div>
-    <div class="repomap" id="repomap"><div class="orb-panel"><thinking-orb state="connecting" size="64"></thinking-orb><span class="orb-panel__text">mapping the repository&hellip;</span></div></div>
-  </section>
-
 </main>
 
 <footer class="footer">
@@ -1327,38 +1275,6 @@
   <button class="lightbox__nav lightbox__nav--next" id="lightbox-next" type="button" aria-label="Next image">&rarr;</button>
   <p class="lightbox__cap" id="lightbox-cap"></p>
   <p class="lightbox__count" id="lightbox-count"></p>
-</div>
-
-<div class="proc-modal" id="proc-modal" aria-hidden="true">
-  <div class="proc-modal__scrim" id="proc-scrim"></div>
-  <div class="proc-modal__panel" role="dialog" aria-modal="true" aria-labelledby="proc-title">
-    <div class="proc-modal__head">
-      <div>
-        <span class="proc-modal__kicker" id="proc-kicker"></span>
-        <h3 class="proc-modal__title" id="proc-title"></h3>
-      </div>
-      <button class="proc-modal__close" id="proc-close" aria-label="Close">&times;</button>
-    </div>
-    <div class="proc-modal__stage"><canvas id="proc-canvas"></canvas></div>
-    <div class="proc-transport" id="proc-transport">
-      <button class="proc-transport__btn" id="proc-prev" type="button" aria-label="Previous chapter">
-        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5v9M10.5 1.5L4.5 6l6 4.5z"/></svg>
-      </button>
-      <button class="proc-transport__btn" id="proc-play" type="button" aria-label="Pause">
-        <svg class="proc-transport__ic-play" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 1.5l8 4.5-8 4.5z"/></svg>
-        <svg class="proc-transport__ic-pause" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 1.5h2.4v9H2.5zM7.1 1.5h2.4v9H7.1z"/></svg>
-      </button>
-      <button class="proc-transport__btn" id="proc-next" type="button" aria-label="Next chapter">
-        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M9 1.5v9M1.5 1.5L7.5 6l-6 4.5z"/></svg>
-      </button>
-      <div class="proc-timeline" id="proc-timeline"></div>
-      <span class="proc-transport__chapter" id="proc-chapter"></span>
-      <span class="proc-transport__time" id="proc-time"></span>
-      <button class="proc-transport__btn proc-transport__btn--speed" id="proc-speed" type="button" aria-label="Playback speed">1x</button>
-    </div>
-    <div class="proc-modal__caption" id="proc-caption"></div>
-    <div class="proc-modal__stages" id="proc-stages"></div>
-  </div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -1384,18 +1300,11 @@
 <script src="/static/js/hairline_figure.js"></script>
 <script src="/static/js/figure_export.js"></script>
 <script src="/static/js/figure_saver.js"></script>
-<script src="/static/js/mathjax.js"></script>
 <script src="/static/js/training_anim.js"></script>
 <script src="/static/js/gauges.js"></script>
 <script src="/static/js/home.js"></script>
-<script src="/static/js/process_anim.js"></script>
 <script src="/static/js/diagram.js"></script>
 <script src="/static/js/router.js"></script>
-<script src="/static/js/equations.js"></script>
-<script src="/static/js/flow_sketches.js"></script>
-<script src="/static/js/flow_view.js"></script>
-<script src="/static/js/pipelines.js"></script>
-<script src="/static/js/repomap.js"></script>
 <script src="/static/js/models.js"></script>
 <script src="/static/js/configs.js"></script>
 <script src="/static/js/scripts.js"></script>

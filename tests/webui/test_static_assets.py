@@ -32,18 +32,10 @@ def test_shared_helpers_load_before_their_users():
     assert loaded.index("shared_charts.js") < loaded.index("home.js")
     assert loaded.index("canvas_base.js") < loaded.index("gauges.js")
 
-    for user in ("equations.js", "flow_view.js"):
-        assert loaded.index("mathjax.js") < loaded.index(user)
-
     assert loaded.index("api.js") < loaded.index("stream_hub.js")
 
     for user in ("console.js", "feed_tuner.js"):
         assert loaded.index("stream_hub.js") < loaded.index(user)
-
-
-def test_mathjax_bootstrap_lives_in_one_module():
-    holders = [path.name for path in JS_DIR.glob("*.js") if "tex2svgPromise" in path.read_text()]
-    assert holders == ["mathjax.js"]
 
 
 def test_static_assets_carry_no_hand_written_cache_tags():

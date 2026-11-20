@@ -2,7 +2,7 @@
   "name": "ml-template-visual-harness",
   "private": true,
   "version": "1.0.0",
-  "description": "Headless rendering harness for the pipeline process animations",
+  "description": "Headless screenshot and check harnesses for the console",
   "dependencies": {
     "playwright-core": "1.60.0"
   }

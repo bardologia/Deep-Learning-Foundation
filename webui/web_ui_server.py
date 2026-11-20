@@ -9,20 +9,16 @@ from config_registry                   import ConfigRegistry
 from cube_explorer                     import CubeExplorer, SliceCollectionMailer, SliceCollector
 from dataset_browser                   import DatasetBrowser
 from energy_meter                      import JobEnergyMeter
-from equation_library                  import EquationLibrary
 from ab_autopsy                        import AbAutopsy
 from fit_lab                           import FitLab
 from model_probe                       import ModelProbe
 from model_survey                      import ModelSurvey
 from triage_board                      import TriageBoard
-from flow_library                      import FlowLibrary
 from gpu_schedule                      import GpuSchedule
 from gpu_watchdog                      import GpuWatchdog
 from job_describer                     import JobDescriber
 from launch_layout                     import LaunchLayout
 from backbone_model_library            import BackboneModelLibrary
-from pipeline_library                  import PipelineLibrary
-from repomap_library                   import RepoMapLibrary
 from notifier                          import ExperimentProgressWatcher, JobNotifier
 from process_manager                   import ProcessManager, ProcessNuke, ServerDetacher
 from project_paths                     import ProjectPaths
@@ -97,11 +93,7 @@ class WebUIServer:
         self.catalog           = ScriptCatalog(self.paths, self.resolver)
         self.layout            = LaunchLayout()
         self.configs           = ConfigRegistry(self.paths)
-        self.equations         = EquationLibrary()
-        self.flows             = FlowLibrary()
         self.models            = BackboneModelLibrary()
-        self.pipelines         = PipelineLibrary()
-        self.repomap           = RepoMapLibrary()
         self.notifier          = JobNotifier(self.paths, self.logger)
         self.describer         = JobDescriber(self.paths, self.resolver)
         self.politeness        = JobPoliteness(self.paths, self.logger)
@@ -151,10 +143,6 @@ class WebUIServer:
             SurveyRouter(self.survey),
             TriageRouter(self.triage),
             AutopsyRouter(self.autopsy),
-            ContentLibraryRouter("/api/equations",    self.equations,    "groups"),
-            ContentLibraryRouter("/api/flows",        self.flows,        "flows"),
-            ContentLibraryRouter("/api/pipelines",    self.pipelines,    "pipelines"),
-            ContentLibraryRouter("/api/repomap",      self.repomap,      "folders"),
             ContentLibraryRouter("/api/configs",      self.configs,      "groups"),
             BackboneRouter("/api/backbones", self.models),
             CatalogRouter(self.paths, self.catalog, self.resolver, self.layout, self.models, self.launcher),

@@ -5,7 +5,7 @@ const { ChromiumResolver } = require("./chromium");
 
 class UiSnapper {
 
-  DEFAULT_ROUTES = ["home", "model", "pipelines", "architectures", "scripts", "configuration", "console"];
+  DEFAULT_ROUTES = ["home", "architectures", "scripts", "configuration", "console"];
 
   constructor(argv) {
     this.port    = 8772;

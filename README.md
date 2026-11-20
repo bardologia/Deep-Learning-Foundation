@@ -508,7 +508,7 @@ collector puts cuts in a basket that is saved as one folder and can be mailed
 (`REPORT_MAIL_PASSWORD`).
 
 The frontend pulls MathJax, GSAP, highlight.js and xterm.js from a CDN. Offline it still
-works, with plain text where the equations would be.
+works, with plain text where the architecture notes' equations would be.
 
 ## 8. Experiments and analysis
 

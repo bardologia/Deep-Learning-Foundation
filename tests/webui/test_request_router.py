@@ -19,8 +19,8 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 151
-SECTION_COUNT = 39
+ROUTE_COUNT   = 147
+SECTION_COUNT = 35
 
 RESOLUTIONS = [
     ("GET",  "/",                                  StaticRouter),
@@ -151,10 +151,6 @@ def build_routers() -> list:
         SurveyRouter(None),
         TriageRouter(None),
         AutopsyRouter(None),
-        ContentLibraryRouter("/api/equations",    None, "groups"),
-        ContentLibraryRouter("/api/flows",        None, "flows"),
-        ContentLibraryRouter("/api/pipelines",    None, "pipelines"),
-        ContentLibraryRouter("/api/repomap",      None, "folders"),
         ContentLibraryRouter("/api/configs",      None, "groups"),
         BackboneRouter("/api/backbones", None),
         CatalogRouter(None, None, None, None, None, None),

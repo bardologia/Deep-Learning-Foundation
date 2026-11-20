@@ -13,10 +13,6 @@ from tests.webui.conftest import FakeHandler
 
 
 FRONTEND_PATHS = [
-    "/api/equations",
-    "/api/flows",
-    "/api/pipelines",
-    "/api/repomap",
     "/api/configs",
     "/api/backbones",
 ]
@@ -62,11 +58,7 @@ def test_every_library_endpoint_answers_with_content(server, path):
 
 
 def test_the_library_envelopes_match_what_the_frontend_reads(server):
-    assert list(_get(server, "/api/flows")[1])     == ["flows"]
-    assert list(_get(server, "/api/pipelines")[1]) == ["pipelines"]
-    assert list(_get(server, "/api/equations")[1]) == ["groups"]
-    assert list(_get(server, "/api/repomap")[1])   == ["folders"]
-    assert list(_get(server, "/api/configs")[1])   == ["groups"]
+    assert list(_get(server, "/api/configs")[1]) == ["groups"]
 
 
 def test_the_model_endpoint_answers_with_families_and_heads(server):
@@ -86,7 +78,7 @@ def test_a_model_note_is_served_and_an_unknown_key_is_a_404(server):
 def test_every_library_router_is_bound_to_a_real_library(server):
     routers = [sub for sub in server.router.routers if isinstance(sub, (ContentLibraryRouter, BackboneRouter))]
 
-    assert len(routers) == 6
+    assert len(routers) == 2
     assert all(sub.library is not None for sub in routers)
     assert all(callable(getattr(sub.library, "collect")) for sub in routers)
 

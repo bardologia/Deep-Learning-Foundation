@@ -242,26 +242,6 @@ by `webui/config_registry.py`, in both directions.
 - Fix: edit `config_descriptions.json`. Section keys live under `sections`, class keys are
   `<module>::<ClassName>` under `configs`.
 
-### The flow catalog and the pipeline catalog describe the same pipelines
-
-`webui/flow_library.py` and `webui/pipeline_library.py` are hand-written, and their keys
-have to match one for one, in order.
-
-- Fails in: `tests/webui/test_content_libraries.py::test_the_flow_catalog_and_the_pipeline_catalog_agree`.
-  `::test_pipeline_scripts_point_at_real_entry_points` catches a pipeline card naming a
-  script the console cannot launch.
-- Fix: add or remove the entry in both files.
-
-### The curated repo map points at files that exist
-
-`webui/repomap_data.json` names modules by path, and `webui/repomap_derive.py` walks the
-real import graph and reports drift.
-
-- Fails in: `tests/webui/test_repomap_derive.py::test_curated_repomap_references_only_existing_files`.
-  `tests/webui/test_repomap_library.py` separately checks that node ids are unique, grid
-  cells do not collide, edges point at declared nodes and artifacts are well formed.
-- Fix: update the folder entry, or delete it with the subsystem it described.
-
 ### Old checkpoints still load
 
 `tests/state_dict_baseline.json` records the key set, shape signature and parameter count
@@ -401,10 +381,7 @@ tests in section 4. Step 5 is the one nothing enforces: without a `SPECS` entry 
 still launches, it is just described by its raw overrides.
 `tests/webui/test_job_describer.py` covers the rendering itself.
 
-The curated content is optional but goes stale silently if you skip it: a pipeline needs
-its pair of entries in `flow_library.py` and `pipeline_library.py`, and a new subsystem
-deserves a folder in `repomap_data.json`. Nothing per entry is needed for saved runs,
-config templates or the machine profile: they work from the layout and the config
+Nothing per entry is needed for saved runs, config templates or the machine profile: they work from the layout and the config
 dataclass alone. A new console tab that shows images registers with the figure saver
 instead, through a `figureTag()` method and `data-fig` labels, as `webui/README.md`
 describes under "Saving figures".
@@ -465,7 +442,7 @@ Nothing derives the name at runtime, so it is spelled out in a handful of places
   (`mlt.config.open`, `mlt.config.active`). Changing it resets which config sections a
   returning user had open, which is the point if two consoles share a host.
 - Scratch paths in the visual harness: `webui/tools/visual/refresh.sh`,
-  `snap_ui.js`, `snap_repomap.js`, `dump_frames.js` and `package.json`.
+  `snap_ui.js` and `package.json`.
 
 ## 8. The console's figures and palette
 
@@ -483,9 +460,7 @@ Replace or add catalog entries for your own subject, then point the pages at the
 - The Home board names its figures in `home.js`, and static pages name theirs in
   `index.html`.
 
-`RepoCityFigure.SIZES` in `hairline_project.js` is a static snapshot of six top-level
-folder sizes that nothing recomputes; update it by hand when the tree changes. The
-figure gate in section 4 catches a name nothing draws and a figure nothing shows.
+The figure gate in section 4 catches a name nothing draws and a figure nothing shows.
 
 The palette is the `:root` block at the top of `webui/static/css/styles.css`: `--bg`
 and `--surface` for the page and its panels, the `--ink*` tokens for text, the

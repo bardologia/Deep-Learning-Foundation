@@ -1,8 +1,8 @@
 # ML Template control console
 
-A single-page web console for the ML Template project. It documents the model and the
-pipelines, launches and supervises the `main/` entry points, and browses everything those
-runs produce: metrics, reports, figures, prediction cubes and TensorBoard curves.
+A single-page web console for the ML Template project. It documents the model zoo,
+launches and supervises the `main/` entry points, and browses everything those runs
+produce: metrics, reports, figures, prediction cubes and TensorBoard curves.
 
 ## Run
 
@@ -45,9 +45,6 @@ talking to one group of JSON endpoints.
 | Tab | Route | Backed by | What it does |
 |---|---|---|---|
 | Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/gpu-activity`, `/api/host-history`, `/api/server-log`, `/api/notify/*`, `/api/impact/*` | Live host and GPU telemetry as a board of cards: the watchdog, notify and GPU week control cards (a kill switches card stacked under notify), the CUDA devices beside the processor, storage and memory, the day/week/month GPU activity timeline with intrusion markers, the neighbour-impact card, the persistent host history (CPU, RAM and network on a scaled time axis with a hover readout), the jobs card, the GPU guard history, the server's own log, the 30-day GPU heatmap calendar, and the active users and processes at the end. Alerts show for 90 s after they first appear and then hide; the watchdog status reopens them and the dismiss button hides them at once. The watchdog card also holds the launch politeness select and the auto-throttle toggle (`/api/impact/politeness`), and keep-alive, which detaches the server from the terminal and the login session into its own `ml-template-webui-<pid>.scope` systemd scope; the kill switches card pairs the nuke, which kills every process of this user on this machine but the console, with kill front end, which stops every console server on the same project root (`/api/system/shutdown` force-kills the siblings, then stops itself and returns their pids); running and detached jobs survive and are adopted again on the next start. |
-| Model | `#/model` | `/api/equations`, `/api/flows` | The curated equation catalog, 6 groups and 111 items, rendered with MathJax, plus the flow walkthroughs: 9 animated step-by-step derivations from dataset synthesis and parameter extraction through training, inference, benchmarking and tuning. |
-| Pipelines | `#/pipelines` | `/api/pipelines` | The 9 pipelines as staged flows; each maps to the entry point that runs it. The animated ones open a process walkthrough whose stage chips light up the stage being played, mark the earlier ones done and seek the animation to a stage when clicked. |
-| Repo Map | `#/repomap` | `/api/repomap` | Curated module-level schematics, 9 folders and 19 diagrams, each with nodes, edges and the artifacts a stage reads and writes. |
 | Architectures | `#/architectures` | `/api/backbones` | The 20 backbones across 5 families plus their 4 output heads, with selection guidance and per-model defaults. |
 | Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes 30 of them and folds the variants into 2 groups (analyze, compare). |
 | Launch | `#/launch/<key>` | `/api/scripts/<key>/config` | Full-screen launch control per script: config sections grouped by dataclass, typed controls, the override manifest, the command preview and the interpreter. Launch now, queue after the current job, or save for later. Entries that write a sweep (the training entries with their trial modes, cross-validation and the benchmark) also carry a Finalize section: the seed comparison, the trial comparison and the report mail are chained onto the finished run one at a time, each starting only once the previous one exited cleanly. The chain is derived before the run starts, so a run tag left to the timestamp default or a missing SMTP password is refused at the button instead of failing hours later. |
@@ -178,9 +175,7 @@ and `web_logger.py` handles console logging.
 `proc_stats.py`, `tensorboard_manager.py`.
 
 **Curated content.** Hand-written project documentation served as JSON and kept honest by
-tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
-`pipeline_library.py`, `repomap_data.json` with `repomap_library.py` and its drift checker
-`repomap_derive.py`, `config_descriptions.json`, and the model library
+tests under `tests/webui/`: `config_descriptions.json` and the model library
 `backbone_model_library.py`, which reads the per-model notes from `notes/models/`.
 
 **Analysis surfaces.** `results_browser.py`, `dataset_browser.py`, `run_leaderboard.py`,
@@ -189,16 +184,15 @@ tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`,
 `static/vendor/thinking-orbs-engine.js`, `static/vendor/hairline-kernel.js`,
-`static/vendor/hairline-figures.js` and 51 modules under `static/js/`. `app.js` and
-`router.js` wire the views; one module per tab (`home`, `equations`, `flow_view` with
-`flow_sketches`, `pipelines`, `repomap`, `models`, `scripts`, `launch` with its widget
+`static/vendor/hairline-figures.js` and 44 modules under `static/js/`. `app.js` and
+`router.js` wire the views; one module per tab (`home`, `models`, `scripts`, `launch` with its widget
 modules (`python_literal`, `form_widgets`, `model_panels`, `gpu_pickers`,
 `experiment_builder`, `config_form`) and `launch_pickers`, `ablation`, `saved_runs`,
 `templates`, `sequences`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`,
 `cube_view`, `slice_collector`, `fit_lab`, `microscope`, `survey`, `triage`, `autopsy`,
-`feed_tuner`); the rest are shared helpers (`api`, `stream_hub` with the page's single live-output channel, `mathjax`, `shared_charts`,
+`feed_tuner`); the rest are shared helpers (`api`, `stream_hub` with the page's single live-output channel, `shared_charts`,
 `results_sources`, `run_strip`, `canvas_base`, `figure_export`, `figure_saver`, `diagram`,
-`gauges`, `process_anim`, `training_anim`, `thinking_orb`, `hairline_figure` with
+`gauges`, `training_anim`, `thinking_orb`, `hairline_figure` with
 `hairline_project`).
 
 The console wears one dark monitor theme: the root tokens give a near-black page, dark
@@ -242,7 +236,7 @@ The stock `drawer`, `terminal` (turned to face right), `plug`, `riffle`, `loupe`
 `elevator`, `slow`, `cabinet`, `router`, `patch` and `phosphor` come from the package;
 `hairline_project` draws the project's own on a shared `HairlineFigureBase`: `voxels`,
 `folds`, `ablation`, `slices`, `slots`, `gpus`, `guard`, `backbone` (the backbone zoo as a
-bench of swappable cartridges), `repo` (folder sizes as a static snapshot), `landscape`,
+bench of swappable cartridges), `landscape`,
 `surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
 `balance`, `podium`, `tiles`, `transect`, `film`, `tray`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,
 `watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `guillotine`, `chips`, `calendar` and
@@ -261,8 +255,7 @@ others}]}]}`, six 4-hour slots a day, shares averaged over the GPUs) and `hourgl
 is given.
 
 Every page shows at least one figure, and the element remounts when its `name` changes,
-so a page can swap it with what is on screen: Model by its
-reference/walkthrough toggle (`data-figure` on each button), the leaderboard through
+so a page can swap it with what is on screen: the leaderboard through
 `LeaderboardView.FIGURES` (runs `podium`, trials `folds`, curves `landscape`, diff
 `balance`), Results through `ResultsView.FIGURES` (folder `tray`, all plots `film`,
 compare `tiles`) and Launch through `LaunchView.FIGURES`, a pattern table over script
@@ -272,7 +265,7 @@ keys (for example `infer_*` `shelf`, `generate_dataset` `slots`, `extract_params
 carry the figure in a `page__head--figure` header, Launch puts it at the end of its top
 bar, and Configuration (`sampler`) and TensorBoard (`landscape`) at the end of their row
 headers. The cube explorer hides its header while a cube is open, figure included. The
-console shows `terminal` under the job list and `surface` in the main pane while no job
+console shows `terminal` under the job list and `slow` in the main pane while no job
 is open, and `HairlineFigure.empty` shows `plug` on a failed load.
 
 Home flanks the centred server name in the deck mast with `landscape` on the left and

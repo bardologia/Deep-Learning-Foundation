@@ -146,21 +146,6 @@ class App {
 
     this.sequencesView = new window.SequencesView(this.runConsole, this.project || {});
 
-    this.equationView = new window.EquationView(
-      document.getElementById("eq-tabs"),
-      document.getElementById("eq-grid")
-    );
-    this.equationView.load();
-
-    this.flowView = new window.FlowView(document.getElementById("flowx"));
-    this._initModelMode();
-
-
-    this.pipelineFlow = new window.PipelineFlow(document.getElementById("flow"));
-    this.pipelineFlow.load();
-
-    this.repoMap = new window.RepoMapView(document.getElementById("repomap"));
-
     this.modelGallery = new window.ModelGallery(
       document.getElementById("model-list"),
       document.getElementById("model-detail")
@@ -481,21 +466,6 @@ class App {
     this.figureDock.mount(route, page, () => view.figureTag());
   }
 
-  _initModelMode() {
-    const wrap  = document.getElementById("model-mode");
-    const views = [...document.querySelectorAll(".model-view")];
-    if (!wrap) return;
-    wrap.querySelectorAll(".model-mode__btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        wrap.querySelectorAll(".model-mode__btn").forEach((b) => b.classList.toggle("is-active", b === btn));
-        wrap.closest(".page__head").querySelector(".page__figure").setAttribute("name", btn.dataset.figure);
-        const mode = btn.dataset.mode;
-        views.forEach((v) => v.classList.toggle("is-hidden", v.dataset.view !== mode));
-        if (mode === "walkthrough") this.flowView.load();
-      });
-    });
-  }
-
   _initRouter() {
     this.router = new window.Router((route, param) => this._onRoute(route, param));
     window.router = this.router;
@@ -517,9 +487,6 @@ class App {
     if (route === "templates") this.templatesView.enter();
     if (route === "sequences") this.sequencesView.enter();
     else this.sequencesView.leave();
-    if (route === "physics") this.physicsLossView.load();
-    if (route === "model" && document.querySelector("#model-mode .model-mode__btn.is-active")?.dataset.mode === "walkthrough") this.flowView.load();
-    if (route === "repomap") this.repoMap.enter();
     if (route === "tensorboard") this.tensorboardView.enter();
     else this.tensorboardView.leave();
     if (route === "results") this.resultsView.enter();

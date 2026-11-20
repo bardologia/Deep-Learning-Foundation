@@ -1095,93 +1095,6 @@ class BackboneBenchFigure extends HairlineFigureBase {
   }
 }
 
-class RepoCityFigure extends HairlineFigureBase {
-  static RANGE     = [4, 8, 14];
-  static SIZES     = [83, 69, 49, 17, 9, 8];
-  static PITCH     = 7;
-  static BLOCK     = 5.4;
-  static GAP       = 6;
-  static STAGGER   = 40;
-  static REST      = 1;
-
-  constructor({ stage, svg }, value) {
-    super(svg, value, 2.75);
-    this.block  = 3 * RepoCityFigure.PITCH + RepoCityFigure.GAP;
-    this.blocks = this._layout();
-    this._camera(this._extent(), 168);
-    this._plinth(-5, -5, 3 * this.block - RepoCityFigure.GAP + 4, 2 * this.block - RepoCityFigure.GAP + 4, 7, 4);
-    this._buildBlocks();
-    this._start(stage, svg);
-  }
-
-  _layout() {
-    const largest = Math.sqrt(RepoCityFigure.SIZES[0]);
-    const blocks  = [];
-    RepoCityFigure.SIZES.forEach((lines, d) => {
-      const ox    = (d % 3) * this.block;
-      const oy    = Math.floor(d / 3) * this.block;
-      const scale = Math.sqrt(lines) / largest;
-      for (let a = 0; a < 3; a++) {
-        for (let b = 0; b < 3; b++) {
-          const seed = 0.5 + 0.5 * Math.sin(d * 7.1 + a * 3.3 + b * 5.7);
-          if (0.5 + 0.5 * Math.sin(d * 2.9 + a * 6.1 + b * 1.3) < 0.12) continue;
-          blocks.push({ d, a, b, x: ox + a * RepoCityFigure.PITCH, y: oy + b * RepoCityFigure.PITCH, h: 3 + 24 * scale * (0.35 + 0.65 * seed) });
-        }
-      }
-    });
-    return blocks;
-  }
-
-  _extent() {
-    const w   = 3 * this.block - RepoCityFigure.GAP + 4;
-    const dep = 2 * this.block - RepoCityFigure.GAP + 4;
-    return [[-5, -5, -4], [w, dep, -4], [w, -5, -4], [-5, dep, -4], [0, 0, 27 + RepoCityFigure.RANGE[2]], [w * 0.4, 0, 27 + RepoCityFigure.RANGE[2]]];
-  }
-
-  _buildBlocks() {
-    const half = RepoCityFigure.BLOCK / 2;
-    this.blocks.sort((a, b) => a.x + a.y - (b.x + b.y));
-    for (const block of this.blocks) {
-      const [ring, inner] = HL.rings(block.x - half, block.y - half, block.x + half, block.y + half, 1.3, 0.55);
-      block.ring  = ring;
-      block.inner = inner;
-      block.el    = HL.solid(this.g);
-      block.tw    = HL.tween(0);
-      block.drawn = NaN;
-      block.hull  = HL.hull(HL.ringAt(this.P, ring, 0).concat(HL.ringAt(this.P, ring, block.h)));
-      block.el.sil.classList.toggle("hi", block.d === RepoCityFigure.REST);
-    }
-  }
-
-  _tick(dt, now) {
-    return this._advance(this.blocks, now);
-  }
-
-  _draw(block, lift) {
-    HL.put(block.el, HL.prism(this.P, this.front, block.ring, block.inner, 0, block.h + lift));
-  }
-
-  _move(p) {
-    for (let i = this.blocks.length - 1; i >= 0; i--) {
-      if (HairlineGeometry.inside(this.blocks[i].hull, p)) return this._choose(this.blocks[i].d);
-    }
-    const [x, y] = HL.unproj(this.C, p[0], p[1], 0);
-    const col    = Math.floor((x + RepoCityFigure.PITCH / 2) / this.block);
-    const row    = Math.floor((y + RepoCityFigure.PITCH / 2) / this.block);
-    this._choose(col >= 0 && col < 3 && row >= 0 && row < 2 ? row * 3 + col : null);
-  }
-
-  _retarget(now) {
-    const lit = this.chosen === null ? RepoCityFigure.REST : this.chosen;
-    for (const block of this.blocks) {
-      const chosen = block.d === this.chosen;
-      HL.tset(block.tw, chosen ? this.amount : 0, now, chosen ? (Math.abs(block.a - 1) + Math.abs(block.b - 1)) * RepoCityFigure.STAGGER : 0);
-      block.el.sil.classList.toggle("hi", block.d === lit);
-    }
-    this.loop.wake();
-  }
-}
-
 class LossLandscapeFigure extends HairlineFigureBase {
   static RANGE = [30, 60, 120];
   static GRID  = 9;
@@ -4911,7 +4824,6 @@ class ProjectFigures {
     gpus:       ProjectFigures.entry(GpuShelfFigure, "Six GPU cards standing in a chassis, each with two fans and a status light. The pointer picks a card and it rises out of its slot."),
     guard:      ProjectFigures.entry(GpuGuardFigure, "A fenced yard of GPU card slots with a gate in the front fence. Another user's process, a puck, patrols the path outside and bumps the shut gate; during an intrusion the gate swings open and the puck rolls in to the card it invaded. The pointer picks a card and it rises."),
     backbone:   ProjectFigures.entry(BackboneBenchFigure, "A test bench for the backbone zoo: an input patch, a socket and an output dish of Gaussian-slot pins on the front lane, and one cartridge per family on the shelf behind (a U block, a grid of tokens, a pyramid, a ridged slab, a single column). The pointer picks a cartridge, it hops into the socket, and the output pins settle to what it predicts."),
-    repo:       ProjectFigures.entry(RepoCityFigure, "The repository as a city: one district per top-level folder, block heights following its size in lines. The pointer picks a district and its blocks rise."),
     landscape:  ProjectFigures.entry(LossLandscapeFigure, "A loss surface of pillars with a ball resting in its minimum. The ball follows the pointer across the surface and rolls back down to the minimum when it leaves."),
     surface:    ProjectFigures.entry(GaussianSurfaceFigure, "A surface drawn as ridgelines with two Gaussian bumps, one tall and narrow, one low and wide, riding a dashed straight track across it. The pointer pulls the nearer bump along the track and the other keeps its distance."),
     balance:    ProjectFigures.entry(BalanceFigure, "A balance weighing run A against run B, its pans numbered with dots. The pointer's side tips the beam, and the heavier pan lights."),
