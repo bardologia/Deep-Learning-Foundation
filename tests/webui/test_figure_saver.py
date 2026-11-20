@@ -82,13 +82,6 @@ def test_every_registered_figure_tab_supplies_a_filename_context():
         assert _defines(classes, binds[prop], "figureTag"), f"{binds[prop]} defines no figureTag"
 
 
-def test_the_analysis_picker_carries_the_shared_tag():
-    classes = _classes()
-
-    assert _defines(classes, "AnalysisPickerView", "figureDetail")
-    assert _defines(classes, "AnalysisPickerView", "figureTag")
-
-
 def test_the_inspect_views_label_their_bare_canvases():
     labelled = {
         "microscope.js" : ("probe-erf",),

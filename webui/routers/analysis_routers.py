@@ -134,23 +134,3 @@ class AutopsyRouter(SubRouter):
             col = exchange.integer("col"),
         )
         exchange.send_result(result)
-
-
-class AnalysisPayloadRouter(SubRouter):
-
-    PREFIX: str
-
-    def __init__(self, browser) -> None:
-        self.browser = browser
-
-        super().__init__((self.PREFIX,))
-
-    def declare(self, table: RouteTable) -> None:
-        table.add("GET", f"{self.PREFIX}/analyses", self.analyses)
-        table.add("GET", f"{self.PREFIX}/report",   self.report)
-
-    def analyses(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.browser.analyses(exchange.text("base")))
-
-    def report(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.browser.report(exchange.text("id")))
