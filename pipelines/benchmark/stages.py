@@ -12,7 +12,8 @@ from pipelines.shared.comparison.comparison_report import ComparisonReport
 from pipelines.shared.orchestration.unit_manifest  import UnidentifiedRuns, UnitLedger, UnitManifest
 from pipelines.shared.training.run_naming          import RunNaming
 from pipelines.shared.training.seed_sweep          import SeedSet
-from tools.orchestration                           import ExperimentStage, GpuJob, QueuedInferenceStage, QueuedTrainingStage
+from tools.orchestration.gpu_queue                 import GpuJob
+from tools.orchestration.stages                    import ExperimentStage, QueuedInferenceStage, QueuedTrainingStage
 from tools.monitoring.logger                       import Logger
 from tools.runtime.run_tag                         import RunTag
 

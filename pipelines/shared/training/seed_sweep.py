@@ -9,10 +9,11 @@ from typing  import Callable
 
 from pipelines.shared.inference.metadata    import CompletedInference
 from pipelines.shared.training.sweep_resume import SweepResults, SweepResumePlan
-from tools.orchestration      import ExperimentStage, GpuJob
-from tools.monitoring.logger  import Logger
-from tools.runtime.config_cli import ConfigCli
-from tools.runtime.run_tag    import RunTag
+from tools.orchestration.gpu_queue          import GpuJob
+from tools.orchestration.stages             import ExperimentStage
+from tools.monitoring.logger                import Logger
+from tools.runtime.config_cli               import ConfigCli
+from tools.runtime.run_tag                  import RunTag
 
 
 class SeedSet:

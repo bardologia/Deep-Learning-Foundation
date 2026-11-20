@@ -7,7 +7,8 @@ from pathlib import Path
 from pipelines.shared.inference.metadata       import CompletedInference
 from pipelines.shared.training.seed_sweep      import SeedSet
 from pipelines.shared.training.sweep_resume    import SweepResults, SweepResumePlan, SweepResumeRoot
-from tools.orchestration                       import ExperimentStage, GpuJob
+from tools.orchestration.gpu_queue             import GpuJob
+from tools.orchestration.stages                import ExperimentStage
 from tools.monitoring.logger                   import Logger
 from tools.runtime.config_cli                  import ConfigCli
 

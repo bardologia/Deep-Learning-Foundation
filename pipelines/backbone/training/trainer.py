@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 
 from pipelines.backbone.training.docs import TrainingDocs
 from pipelines.backbone.training.loss import Loss
-from tools.training                   import BaseTrainer
+from tools.training.trainer           import BaseTrainer
 
 
 class Trainer(BaseTrainer):

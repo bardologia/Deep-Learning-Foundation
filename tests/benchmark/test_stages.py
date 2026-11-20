@@ -13,7 +13,7 @@ from pipelines.benchmark.stages import (
 )
 from configuration.benchmark                      import BenchmarkConfig
 from pipelines.shared.comparison.trial_collection import TrialRecord
-from tools.orchestration                          import QueuedInferenceStage, QueuedTrainingStage
+from tools.orchestration.stages                   import QueuedInferenceStage, QueuedTrainingStage
 
 
 @pytest.fixture
