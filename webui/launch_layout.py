@@ -30,8 +30,7 @@ class InferenceEssentials:
 
 class LaunchLayout:
 
-    NORM_PRESETS_INPUT = ["min_max", "min_max_log1p", "robust_iqr", "robust_iqr_log1p", "fixed_div_pi", "zscore", "zscore_log1p", "fixed_log1p", "fixed_angle_01"]
-    NORM_PRESETS       = NORM_PRESETS_INPUT + ["fixed_bounds"]
+    NORM_PRESETS = ["min_max", "min_max_log1p", "robust_iqr", "robust_iqr_log1p", "fixed_div_pi", "zscore", "zscore_log1p"]
 
     GPU_ONE  = GpuWidgets.ONE
     GPU_MANY = GpuWidgets.MANY
@@ -66,8 +65,7 @@ class LaunchLayout:
     CH_STAGE        = {"kind": "choice", "options": ["full", "prepare", "compare"]}
     CH_FIGSTYLE     = {"kind": "choice", "options": ["report", "paper"]}
     CH_PARALLELISM  = {"kind": "choice", "options": ["multithreading", "multiprocessing", "serial"]}
-    CH_NORM_GLOBAL_IN  = {"kind": "choice", "options": ["per_slot"] + NORM_PRESETS_INPUT}
-    CH_NORM_GLOBAL_OUT = {"kind": "choice", "options": ["per_slot"] + NORM_PRESETS}
+    CH_NORM_GLOBAL = {"kind": "choice", "options": ["per_slot"] + NORM_PRESETS}
 
     PICK_DATASET  = {"kind": "dataset", "mode": "datasets", "baseFromParent": True, "validOnly": True}
     PICK_PARAMS   = {"kind": "dataset", "mode": "params", "datasetFrom": "paths.dataset_path"}
@@ -255,20 +253,18 @@ class LaunchLayout:
         ],
         "normalization": [
             {"title": "Strategy", "fields": [
-                {"path": "input_strategy", "widget": CH_NORM_GLOBAL_IN},
-                {"path": "output_strategy", "widget": CH_NORM_GLOBAL_OUT},
+                {"path": "input_strategy", "widget": CH_NORM_GLOBAL},
+                {"path": "output_strategy", "widget": CH_NORM_GLOBAL},
             ]},
             {"title": "Per-channel overrides", "fields": [
-                {"path": "chan_mag",      "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS_INPUT, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "channel_phase", "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS_INPUT, "default_label": "zscore, per-slot"}},
-                {"path": "derived_mag",   "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS_INPUT, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "derived_phase", "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS_INPUT, "default_label": "fixed_div_pi, per-slot"}},
+                {"path": "chan_mag",      "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
+                {"path": "channel_phase", "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
+                {"path": "derived_mag",   "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
+                {"path": "derived_phase", "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "fixed_div_pi, per-slot"}},
                 {"path": "out_amp",    "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
                 {"path": "out_mu",     "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
                 {"path": "out_sigma",  "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "aux",        "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS_INPUT, "default_label": "zscore, per-slot"}},
-                "fixed_out_bounds_min",
-                "fixed_out_bounds_max",
+                {"path": "aux",        "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
             ]},
             {"title": "Clamp", "fields": [
                 {"gate": "clamp_output", "fields": ["clamp_floor", "clamp_ceil"]},

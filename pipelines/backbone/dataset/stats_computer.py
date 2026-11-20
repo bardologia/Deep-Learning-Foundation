@@ -6,7 +6,7 @@ from typing import Optional
 import numpy as np
 
 from configuration.dataset       import InputConfig, OutputConfig
-from configuration.normalization import ChannelStats, ChannelStrategy, NormalizationConfig, NormMethod
+from configuration.normalization import ChannelStats, ChannelStrategy, NormalizationConfig
 from tools.data.gaussians        import GaussianActivity
 from tools.monitoring.logger     import Logger
 from tools.reporting.ranges      import RangeFormatter
@@ -205,7 +205,7 @@ class StatsComputer:
         n_gaussians   : int,
     ) -> ChannelStats:
         role_strat : dict[str, ChannelStrategy]     = {key: output_config.strategy_for(key) for key in role_pools}
-        role_fit   : dict[str, tuple[float, float]] = {key: strat.fit(role_pools[key]) for key, strat in role_strat.items() if strat.norm_method is not NormMethod.FIXED_BOUNDS}
+        role_fit   : dict[str, tuple[float, float]] = {key: strat.fit(role_pools[key]) for key, strat in role_strat.items()}
 
         selected        = output_config.selected_indices(n_gaussians)
         _local_to_role  = {0: "out/amp", 1: "out/mu", 2: "out/sigma"}
@@ -221,10 +221,7 @@ class StatsComputer:
             g        = full_ch // 3
             role_key = _local_to_role[full_ch % 3]
 
-            if role_strat[role_key].norm_method is NormMethod.FIXED_BOUNDS:
-                m, s = StatsComputer._fixed_bound(role_strat[role_key], full_ch, n_gaussians)
-            else:
-                m, s = role_fit[role_key]
+            m, s = role_fit[role_key]
 
             locs.append(m)
             scales.append(s)
@@ -236,12 +233,12 @@ class StatsComputer:
             logger.section("[Output stats from params]")
             rows = []
             for key, strat in role_strat.items():
-                fitted = role_fit.get(key)
+                fitted = role_fit[key]
                 rows.append({
                     "Channel"   : key,
                     "Samples"   : f"{role_pools[key].size:,}",
-                    "loc"       : "per-slot bounds" if fitted is None else f"{fitted[0]:.5f}",
-                    "scale"     : "per-slot bounds" if fitted is None else f"{fitted[1]:.5f}",
+                    "loc"       : f"{fitted[0]:.5f}",
+                    "scale"     : f"{fitted[1]:.5f}",
                     "Method"    : strat.norm_method.value,
                     "log1p"     : str(strat.apply_log1p),
                     "clampable" : str(_role_clampable[key]),
@@ -259,14 +256,6 @@ class StatsComputer:
             strategies = strategies,
             clampable  = clampable,
         )
-
-    @staticmethod
-    def _fixed_bound(strategy: ChannelStrategy, full_ch: int, n_gaussians: int) -> tuple[float, float]:
-        lo_all, hi_all = strategy.bounds
-
-        lo, hi = float(lo_all[full_ch]), float(hi_all[full_ch])
-
-        return lo, hi - lo
 
     @staticmethod
     def compute_output_stats(

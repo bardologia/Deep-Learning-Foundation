@@ -113,24 +113,6 @@ def test_normalization_config_per_channel_override_wins_over_global():
     assert cfg.strategy("input", "chan/mag")             == _SLOT_STRATEGIES["chan/mag"]
 
 
-def test_normalization_config_attaches_bounds_to_fixed_bounds_strategy():
-    cfg   = NormalizationConfig(out_mu="fixed_bounds")
-    strat = cfg.strategy("output", "out/mu")
-
-    assert strat.norm_method is NormMethod.FIXED_BOUNDS
-    assert strat.bounds == (tuple(cfg.fixed_out_bounds_min), tuple(cfg.fixed_out_bounds_max))
-
-    plain = cfg.strategy("output", "out/amp")
-    assert plain.bounds is None
-
-
-def test_fixed_out_bounds_defaults_are_ordered_pairs():
-    norm = NormalizationConfig()
-
-    assert len(norm.fixed_out_bounds_min) == len(norm.fixed_out_bounds_max)
-    assert all(hi > lo for lo, hi in zip(norm.fixed_out_bounds_min, norm.fixed_out_bounds_max))
-
-
 def test_normalization_clamp_round_trips_through_dict():
     cfg   = NormalizationConfig(clamp_output=False, clamp_floor=0.0, clamp_ceil=50.0, clamp_leaky_slope=0.2, param_clamp_leaky_slope=0.4, amp_max=500.0)
     clamp = cfg.clamp()
@@ -185,14 +167,12 @@ def test_dataset_config_secondary_labels_default():
 def test_norm_method_enum_values():
     assert {m.value for m in NormMethod} == {
         "min_max_p999", "robust_iqr", "fixed_div_pi", "zscore",
-        "fixed_log1p", "fixed_angle_01", "fixed_bounds",
     }
 
 
 @pytest.mark.parametrize("preset_name", [
     "MIN_MAX", "MIN_MAX_LOG1P", "ROBUST_IQR", "ROBUST_IQR_LOG1P",
     "FIXED_DIV_PI", "ZSCORE", "ZSCORE_LOG1P",
-    "FIXED_LOG1P", "FIXED_ANGLE_01", "FIXED_BOUNDS",
 ])
 def test_presets_are_channel_strategies(preset_name):
     preset = getattr(Presets, preset_name)
@@ -204,15 +184,6 @@ def test_channel_strategy_round_trips_through_dict():
     strat   = ChannelStrategy(NormMethod.ROBUST_IQR, apply_log1p=True)
     rebuilt = ChannelStrategy.from_dict(strat.as_dict())
     assert rebuilt == strat
-
-
-def test_channel_strategy_round_trip_preserves_bounds():
-    cfg     = NormalizationConfig(out_mu="fixed_bounds")
-    strat   = cfg.strategy("output", "out/mu")
-    rebuilt = ChannelStrategy.from_dict(strat.as_dict())
-
-    assert rebuilt.bounds == strat.bounds
-    assert rebuilt        == strat
 
 
 def test_channel_strategy_from_slot_known_keys():
@@ -240,7 +211,7 @@ def test_channel_stats_serialization_requires_clampable():
     import pytest
 
     with pytest.raises(KeyError, match="clampable"):
-        ChannelStats.from_dict({"channels": [{"name": "c0", "loc": 0.0, "scale": 1.0, "norm_method": "zscore", "apply_log1p": False, "bounds": None}]})
+        ChannelStats.from_dict({"channels": [{"name": "c0", "loc": 0.0, "scale": 1.0, "norm_method": "zscore", "apply_log1p": False}]})
 
 
 def test_factory_output_config_honors_out_slot_overrides():

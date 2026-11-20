@@ -189,8 +189,7 @@ produces `aux/value`. The output keys are fixed at `out/amp`, `out/mu` and `out/
 to use the table. The per-slot fields (`chan_mag`, `channel_phase`, `derived_mag`,
 `derived_phase`, `out_amp`, `out_mu`, `out_sigma`, `aux`) override one slot each and take
 precedence; `SLOT_FIELDS` maps a slot key to its field. The presets are listed in
-`Presets.names()`. `fixed_bounds` is a special case: it cannot be fitted, and it reads its
-range from `fixed_out_bounds_min`/`fixed_out_bounds_max`, one entry per output channel.
+`Presets.names()`.
 
 The fitted statistics land in `meta/normalization_stats.json` in the run directory, as
 `ChannelStats`: a location, a scale, a name, the strategy and a clampable flag per
