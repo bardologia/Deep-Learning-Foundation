@@ -211,13 +211,13 @@ class ResourceMonitor:
                     try:
                         temp = pynvml.nvmlDeviceGetTemperature(h, pynvml.NVML_TEMPERATURE_GPU)
                         metrics[f"gpu{i}_temp_c"] = float(temp)
-                    except Exception:
+                    except pynvml.NVMLError_NotSupported:
                         pass
                     
                     try:
                         power = pynvml.nvmlDeviceGetPowerUsage(h) / 1000.0
                         metrics[f"gpu{i}_power_w"] = float(power)
-                    except Exception:
+                    except pynvml.NVMLError_NotSupported:
                         pass
                     
                     gpu_total += total_gb
@@ -383,10 +383,7 @@ class ResourceMonitor:
 
     def _shutdown_nvml(self):
         if self._nvml_ok:
-            try:
-                pynvml.nvmlShutdown()
-            except Exception:
-                pass
+            pynvml.nvmlShutdown()
             self._nvml_ok = False
 
     def __enter__(self):
