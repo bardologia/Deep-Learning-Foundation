@@ -162,16 +162,15 @@ class MetricOrientation:
 
     @classmethod
     def direction(cls, key: str) -> str | None:
-        if key in cls._HIGHER_OVERRIDES or cls._HIGHER_PATTERN.search(key):
-            return "higher"
-        if cls._NEUTRAL_PATTERN.search(key):
-            return None
-        if cls._LOWER_PATTERN.search(key):
-            return "lower"
-        if any(token in key for token in cls._LOWER_TOKENS):
-            return "lower"
-        if any(token in key for token in cls._HIGHER_TOKENS):
-            return "higher"
+        rules = (
+            ("higher", key in cls._HIGHER_OVERRIDES or bool(cls._HIGHER_PATTERN.search(key))),
+            (None,     bool(cls._NEUTRAL_PATTERN.search(key))),
+            ("lower",  bool(cls._LOWER_PATTERN.search(key))),
+            ("lower",  any(token in key for token in cls._LOWER_TOKENS)),
+            ("higher", any(token in key for token in cls._HIGHER_TOKENS)),
+        )
+
+        return next(direction for direction, matched in rules if matched)
 
     @classmethod
     def higher_is_better(cls, key: str) -> bool | None:

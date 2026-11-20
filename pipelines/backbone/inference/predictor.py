@@ -55,8 +55,7 @@ class CubeStitcher:
             wh = 0.5 - 0.5 * np.cos(2.0 * np.pi * (np.arange(pw) + 0.5) / pw)
 
         else:
-            wv = 1.0 - np.abs((np.arange(ph) + 0.5) / ph * 2.0 - 1.0)
-            wh = 1.0 - np.abs((np.arange(pw) + 0.5) / pw * 2.0 - 1.0)
+            wv, wh = {"triangular": lambda: (1.0 - np.abs((np.arange(ph) + 0.5) / ph * 2.0 - 1.0), 1.0 - np.abs((np.arange(pw) + 0.5) / pw * 2.0 - 1.0))}[kind]()
 
         wv = np.clip(wv, 1e-3, None).astype(np.float32)
         wh = np.clip(wh, 1e-3, None).astype(np.float32)

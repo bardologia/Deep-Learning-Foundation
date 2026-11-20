@@ -219,3 +219,8 @@ def test_seed_aggregation_counts_contributors_and_names_the_shortfall():
 
     assert SeedAggregation.contributors(seeds, ["f1", "mae", "absent"]) == {"f1": 1, "mae": 3, "absent": 0}
     assert SeedAggregation.shortfall(seeds, ["f1", "mae"], names) == {"f1": ["seed1", "seed2"]}
+
+
+def test_unknown_metric_has_no_orientation():
+    with pytest.raises(StopIteration):
+        MetricOrientation.direction("zzz_unclassified_metric")

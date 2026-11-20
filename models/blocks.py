@@ -58,8 +58,7 @@ class LayerFactory:
             while num_features % num_groups != 0:
                 num_groups -= 1
             return nn.GroupNorm(num_groups, num_features)
-        if name == "none":
-            return nn.Identity()
+        return {"none": nn.Identity}[name]()
 
     @staticmethod
     def build_upsample(mode: str, in_channels: int, out_channels: int, scale_factor: int = 2) -> nn.Module:
@@ -70,20 +69,19 @@ class LayerFactory:
                 kernel_size  = scale_factor,
                 stride       = scale_factor,
             )
-        if mode == "bilinear":
-            return nn.Sequential(
-                nn.Upsample(
-                    scale_factor  = scale_factor,
-                    mode          = "bilinear",
-                    align_corners = False,
-                ),
-                nn.Conv2d(
-                    in_channels  = in_channels,
-                    out_channels = out_channels,
-                    kernel_size  = 1,
-                    bias         = False,
-                ),
-            )
+        return {"bilinear": lambda: nn.Sequential(
+            nn.Upsample(
+                scale_factor  = scale_factor,
+                mode          = "bilinear",
+                align_corners = False,
+            ),
+            nn.Conv2d(
+                in_channels  = in_channels,
+                out_channels = out_channels,
+                kernel_size  = 1,
+                bias         = False,
+            ),
+        )}[mode]()
 
     @staticmethod
     def initialize_weights(module: nn.Module, mode: str) -> None:
@@ -421,12 +419,7 @@ class OutputHeadsMixin:
             return
 
         self._resolve_gaussian_layout()
-        if head == "multihead":
-            self._build_triple_heads()
-        elif head == "per_gaussian":
-            self._build_per_gaussian_heads()
-        else:
-            self._build_set_prediction_heads()
+        {"multihead": self._build_triple_heads, "per_gaussian": self._build_per_gaussian_heads, "set_pred": self._build_set_prediction_heads}[head]()
 
     def _head_forward(self, embedding: torch.Tensor) -> torch.Tensor:
         head = self.config.head

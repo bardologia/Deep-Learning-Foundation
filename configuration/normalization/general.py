@@ -31,14 +31,14 @@ class ChannelStrategy:
         return self.norm_method in (NormMethod.FIXED_DIV_PI, NormMethod.FIXED_LOG1P, NormMethod.FIXED_ANGLE_01)
 
     def fit(self, flat: np.ndarray) -> tuple[float, float]:
-        if self.norm_method is NormMethod.FIXED_DIV_PI:
-            return 0.0, float(np.pi)
+        fixed = {
+            NormMethod.FIXED_DIV_PI   : (0.0, float(np.pi)),
+            NormMethod.FIXED_LOG1P    : (0.0, 1.0),
+            NormMethod.FIXED_ANGLE_01 : (-float(np.pi), 2.0 * float(np.pi)),
+        }
 
-        if self.norm_method is NormMethod.FIXED_LOG1P:
-            return 0.0, 1.0
-
-        if self.norm_method is NormMethod.FIXED_ANGLE_01:
-            return -float(np.pi), 2.0 * float(np.pi)
+        if self.norm_method in fixed:
+            return fixed[self.norm_method]
 
         data = (
             np.log1p(np.maximum(flat.astype(np.float64), 0.0))
@@ -46,21 +46,14 @@ class ChannelStrategy:
             else flat.astype(np.float64)
         )
 
-        if self.norm_method is NormMethod.MIN_MAX_P999:
-            lo = float(np.percentile(data, 0.1))
-            hi = float(np.percentile(data, 99.9))
-            return lo, max(hi - lo, 1e-8)
+        percentile = lambda q: float(np.percentile(data, q))
+        fits       = {
+            NormMethod.MIN_MAX_P999 : lambda: (percentile(0.1), max(percentile(99.9) - percentile(0.1), 1e-8)),
+            NormMethod.ROBUST_IQR   : lambda: (percentile(50), max(percentile(75) - percentile(25), 1e-8)),
+            NormMethod.ZSCORE       : lambda: (float(data.mean()), max(float(data.std()), 1e-8)),
+        }
 
-        if self.norm_method is NormMethod.ROBUST_IQR:
-            med = float(np.percentile(data, 50))
-            iqr = float(np.percentile(data, 75)) - float(np.percentile(data, 25))
-            return med, max(iqr, 1e-8)
-
-        if self.norm_method is NormMethod.ZSCORE:
-            m = float(data.mean())
-            s = float(data.std())
-            return m, max(s, 1e-8)
-
+        return fits[self.norm_method]()
 
     def as_dict(self) -> dict:
         bounds = [list(side) for side in self.bounds] if self.bounds is not None else None

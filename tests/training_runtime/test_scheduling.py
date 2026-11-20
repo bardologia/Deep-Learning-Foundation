@@ -229,6 +229,14 @@ def test_scheduler_step_floors_at_eta_min(logger):
     assert sched.step(50)[0] == pytest.approx(0.05)
 
 
+def test_scheduler_unknown_type_fails_at_the_lookup(logger):
+    config = _scheduler_config("nonexistent", epochs=10)
+    sched  = Scheduler([0.05], warmup=None, config=config, logger=logger)
+
+    with pytest.raises(KeyError, match="nonexistent"):
+        sched.step(0)
+
+
 def test_scheduler_reset_applies_epoch_offset(logger):
     config = _scheduler_config("cosine_annealing", epochs=10, eta_min=0.0)
     sched  = Scheduler([0.02], warmup=None, config=config, logger=logger)
