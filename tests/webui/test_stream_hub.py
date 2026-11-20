@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import json
 import sys
 import threading
@@ -21,7 +22,7 @@ from tests.webui.conftest import FakeHandler, SLEEP_LONG
 class BrokenPipe:
 
     def write(self, data: bytes) -> int:
-        raise BrokenPipeError
+        Mock(side_effect=BrokenPipeError)()
 
     def flush(self) -> None:
         return

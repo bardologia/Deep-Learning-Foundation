@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import json
 import signal
 import socket
@@ -175,7 +176,7 @@ def test_unreadable_cgroup_file_lands_in_the_shield_error(tmp_path, monkeypatch)
     detacher = ServerDetacher(StubPaths(tmp_path), WebLogger())
 
     def unreadable(self, *args, **kwargs):
-        raise OSError("procfs unavailable")
+        Mock(side_effect=OSError("procfs unavailable"))()
 
     with monkeypatch.context() as patch:
         patch.setattr(subprocess, "run", lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, "", ""))

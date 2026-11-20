@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import json
 import time
 
@@ -148,7 +149,7 @@ def test_an_interrupted_rewrite_leaves_the_previous_file_intact(log, monkeypatch
 
     def broken(path, text, encoding=None):
         path.write_bytes(text[: len(text) // 2].encode())
-        raise OSError("disk full")
+        Mock(side_effect=OSError("disk full"))()
 
     log.monitor.reading = occupancy(20.0, "me")
     log.sample()

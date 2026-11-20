@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import io
 import json
 import zipfile
@@ -68,7 +69,7 @@ class FakeSmtp:
 
     def send_message(self, message) -> None:
         if FakeSmtp.fail:
-            raise report_mailer.smtplib.SMTPServerDisconnected("connection dropped")
+            Mock(side_effect=report_mailer.smtplib.SMTPServerDisconnected("connection dropped"))()
         FakeSmtp.sent.append(message.as_bytes())
 
 

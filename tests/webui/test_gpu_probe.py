@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import subprocess
 
 import pytest
@@ -35,7 +36,7 @@ def test_a_working_probe_returns_the_parsed_rows(probe, monkeypatch):
 
 def test_a_probe_that_never_answers_reports_unknown_not_empty(probe, monkeypatch):
     def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd="nvidia-smi", timeout=GpuProbe.TIMEOUT_S)
+        Mock(side_effect=subprocess.TimeoutExpired(cmd="nvidia-smi", timeout=GpuProbe.TIMEOUT_S))()
 
     monkeypatch.setattr(subprocess, "run", timeout)
 

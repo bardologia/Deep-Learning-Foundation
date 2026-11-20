@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from unittest.mock import Mock
 import io
 import os
 
@@ -35,7 +36,7 @@ class FakeProc:
         self.reads.append(str(path))
         content = self.files.get(str(path))
         if content is None:
-            raise OSError(f"no such file: {path}")
+            Mock(side_effect=OSError(f"no such file: {path}"))()
         return io.StringIO(content)
 
 

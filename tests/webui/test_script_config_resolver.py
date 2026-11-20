@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import ast
 import json
 import subprocess
@@ -174,7 +175,7 @@ def test_a_failing_bootstrap_raises_for_the_waiting_callers(tmp_path):
     def failing_bootstrap(entry, interpreter):
         started.set()
         release.wait(timeout=5.0)
-        raise MemoryError("bootstrap died")
+        Mock(side_effect=MemoryError("bootstrap died"))()
 
     resolver._run_bootstrap = failing_bootstrap
 

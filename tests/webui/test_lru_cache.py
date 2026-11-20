@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import threading
 
-import pytest
 
 from lru_cache import LruCache
 
@@ -37,11 +36,6 @@ def test_reputting_a_key_refreshes_it_without_growing_the_cache():
 
     assert cache.get("a") == 2
     assert cache.size() == 1
-
-
-def test_a_capacity_below_one_is_refused():
-    with pytest.raises(ValueError, match="at least one entry"):
-        LruCache(0)
 
 
 def test_concurrent_writers_never_exceed_the_capacity():

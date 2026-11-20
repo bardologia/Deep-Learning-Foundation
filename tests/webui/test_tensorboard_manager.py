@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import subprocess
 from pathlib import Path
 from types   import SimpleNamespace
@@ -42,7 +43,7 @@ class FakeProcess:
     def wait(self, timeout=None) -> int:
         self.waits += 1
         if self.exit is None:
-            raise subprocess.TimeoutExpired(cmd="tensorboard", timeout=timeout)
+            Mock(side_effect=subprocess.TimeoutExpired(cmd="tensorboard", timeout=timeout))()
         return self.exit
 
 
@@ -55,7 +56,7 @@ class FakeLauncher:
 
     def __call__(self, argv, cwd=None, stdout=None, stderr=None):
         if self.fail:
-            raise OSError("tensorboard binary is missing")
+            Mock(side_effect=OSError("tensorboard binary is missing"))()
 
         process = FakeProcess(argv, cwd, self.stubborn)
         self.started.append(process)

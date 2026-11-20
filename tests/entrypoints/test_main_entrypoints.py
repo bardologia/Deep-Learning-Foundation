@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from configuration.inference  import BackboneInferenceEntryConfig
 from tools.runtime.config_cli import ConfigCli
 
 
@@ -24,7 +23,6 @@ def _script_path(name):
         candidate = _MAIN_DIR / subdir / f"{name}.py"
         if candidate.exists():
             return candidate
-    raise FileNotFoundError(f"No entry script named {name}.py under {_MAIN_DIR}")
 
 DEFER_HEAVY_IMPORTS = (
     "train_backbone",

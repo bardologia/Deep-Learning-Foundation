@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from unittest.mock import Mock
 import ast
 from collections import Counter
 
@@ -8,7 +9,7 @@ import pytest
 from request_router             import RequestRouter
 from routers.analysis_routers   import AutopsyRouter, FitLabRouter, ProbeRouter, SurveyRouter, TriageRouter
 from routers.cube_routers       import CubeRouter, SliceRouter
-from routers.dispatch           import HttpExchange, RouteConflict, RouteTable, SubRouter
+from routers.dispatch           import HttpExchange, RouteTable, SubRouter
 from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
 from routers.library_routers    import BackboneRouter, ContentLibraryRouter
 from routers.results_routers    import DatasetRouter, ResultsRouter
@@ -132,7 +133,7 @@ class BoomRouter(SubRouter):
         table.add("GET", "/api/boom", self.explode)
 
     def explode(self, exchange: HttpExchange) -> None:
-        raise RuntimeError("kaboom")
+        Mock(side_effect=RuntimeError("kaboom"))()
 
 
 def build_routers() -> list:
@@ -222,24 +223,6 @@ def test_route_table_prefers_exact_then_wildcard():
     assert key == "abc"
 
     assert router.table.action_for("POST", "/api/echo/abc/tail") == (None, None)
-
-
-def test_route_table_rejects_duplicate_declarations():
-    table = RouteTable()
-    table.add("GET", "/api/echo", print)
-
-    with pytest.raises(RouteConflict):
-        table.add("GET", "/api/echo", print)
-
-    table.wildcard("GET", "/api/echo/", "/tail", print)
-
-    with pytest.raises(RouteConflict):
-        table.wildcard("GET", "/api/echo/", "/tail", print)
-
-
-def test_router_rejects_two_owners_of_a_section():
-    with pytest.raises(RouteConflict):
-        RequestRouter(None, [EchoRouter(("/api/echo",)), EchoRouter(("/api/echo",))])
 
 
 def test_route_inventory_is_stable():

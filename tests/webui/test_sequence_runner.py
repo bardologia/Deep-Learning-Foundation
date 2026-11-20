@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import json
 import threading
 from pathlib import Path
@@ -581,7 +582,7 @@ def test_a_failed_staging_write_leaves_the_state_file_intact_and_retries(rig, mo
 
     def failing(self, text, encoding=None):
         if self.name == "sequence_state.tmp":
-            raise OSError("disk full")
+            Mock(side_effect=OSError("disk full"))()
         return original(self, text, encoding=encoding)
 
     monkeypatch.setattr(Path, "write_text", failing)

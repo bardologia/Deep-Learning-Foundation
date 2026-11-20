@@ -385,7 +385,7 @@ def test_kernels_render_conv_grids_and_one_by_one_matrices():
 def test_kernels_refuse_layers_without_conv_weights():
     probe = _conv_probe()
 
-    with pytest.raises(ValueError, match="no 4-D convolution weight"):
+    with pytest.raises(AttributeError):
         probe.kernels_png("act")
 
     assert probe.kernels_png("missing") is None

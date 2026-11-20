@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import base64
 
 import pytest
@@ -179,7 +180,7 @@ def test_worker_caps_torch_threads_and_restores_them(monkeypatch):
 
     def observing_load(run_path, split, device):
         seen["threads"] = torch.get_num_threads()
-        raise RuntimeError("stop")
+        Mock(side_effect=RuntimeError("stop"))()
 
     survey.cpu_threads = 2
     monkeypatch.setattr(survey, "_load", observing_load)

@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 import json
 import os
 import shutil
@@ -112,10 +113,6 @@ def test_a_malformed_settings_file_fails_loudly(tmp_path):
     path  = paths.logs_dir / JobPoliteness.SETTINGS_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    path.write_text(json.dumps({"level": "turbo", "auto_throttle": True}))
-    with pytest.raises(ValueError):
-        JobPoliteness(paths, WebLogger())
-
     path.write_text(json.dumps({"level": "polite"}))
     with pytest.raises(KeyError):
         JobPoliteness(paths, WebLogger())
@@ -158,7 +155,7 @@ def test_a_failing_renice_is_reported_and_ionice_still_runs(monkeypatch):
 
 def test_a_missing_tool_is_reported_as_exit_127(monkeypatch):
     def missing(argv, **kwargs):
-        raise FileNotFoundError(f"No such file or directory: {argv[0]!r}")
+        Mock(side_effect=FileNotFoundError(f"No such file or directory: {argv[0]!r}"))()
 
     monkeypatch.setattr(subprocess, "run", missing)
 

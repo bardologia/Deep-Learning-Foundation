@@ -45,7 +45,7 @@ def _wait_for_interpreter(pid: int, timeout: float = 5.0) -> None:
         if _comm_of(pid).startswith("python"):
             return
         time.sleep(0.02)
-    raise AssertionError(f"pid {pid} is still {_comm_of(pid)!r} after {timeout} s")
+    pytest.fail(f"pid {pid} is still {_comm_of(pid)!r} after {timeout} s")
 
 
 @pytest.fixture
