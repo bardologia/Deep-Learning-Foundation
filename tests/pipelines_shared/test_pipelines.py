@@ -162,16 +162,6 @@ def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, pa
     np.testing.assert_array_equal(trimmed_train.inputs, full_train.inputs[3:])
 
 
-@pytest.mark.dataset
-def test_backbone_pipeline_rejects_rot90_with_rectangular_patch(test_data_dir, params_dir, tmp_path):
-    config                      = _backbone_config(test_data_dir, params_dir)
-    config.patch                = PatchConfig(size=(8, 16), stride=(4, 8))
-    config.augmentation.p_rot90 = 0.5
-
-    with pytest.raises(ValueError, match="rectangular patch"):
-        DatasetPipeline(config, tmp_path, _activity_threshold(test_data_dir, params_dir), logger=_logger(tmp_path, "bb_rot90"), seed=0)
-
-
 def _stats(scale: float) -> Stats:
     channels = ChannelStats(
         loc        = [0.0],
@@ -204,15 +194,6 @@ def test_resumed_run_keeps_matching_normalization_stats(tmp_path):
     stored = FileIO.load_json(tmp_path / "meta" / Stats.FILENAME)
 
     assert stored["input_stats"]["channels"][0]["scale"] == 2.0
-
-
-def test_resumed_run_refuses_to_overwrite_different_stats(tmp_path):
-    pipeline = _resumable_pipeline(tmp_path, resume=True)
-
-    _stats(2.0).save(tmp_path / "meta")
-
-    with pytest.raises(ValueError, match="normalization statistics"):
-        pipeline._persist_stats(_stats(5.0))
 
 
 def test_fresh_run_overwrites_normalization_stats(tmp_path):

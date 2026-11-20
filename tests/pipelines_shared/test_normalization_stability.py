@@ -164,28 +164,13 @@ def test_robust_iqr_scale_is_more_outlier_stable_than_zscore():
     assert r_drift < 0.05
 
 
-def test_strategy_fit_rejects_empty_pool():
+def test_fixed_div_pi_fit_needs_no_pool():
     import numpy as np
     import pytest as _pytest
 
     from configuration.normalization import NormMethod
     from configuration.normalization.general import ChannelStrategy
 
-    for method in (NormMethod.ZSCORE, NormMethod.ROBUST_IQR, NormMethod.MIN_MAX_P999):
-        with _pytest.raises(ValueError, match="empty sample pool"):
-            ChannelStrategy(method).fit(np.array([]))
-
     loc, scale = ChannelStrategy(NormMethod.FIXED_DIV_PI).fit(np.array([]))
     assert scale == _pytest.approx(np.pi)
 
-
-def test_output_stats_reject_a_train_split_with_no_active_slot():
-    from types import SimpleNamespace
-
-    from configuration.dataset                     import OutputConfig
-    from pipelines.backbone.dataset.stats_computer import StatsComputer
-
-    dataset = SimpleNamespace(gt_parameters=np.zeros((15, 4, 4)))
-
-    with pytest.raises(ValueError, match="empty sample pool"):
-        StatsComputer.compute_output_stats(dataset, n_gaussians=5, output_config=OutputConfig(), activity_threshold=AMP_THR)

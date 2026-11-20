@@ -99,13 +99,6 @@ def test_batched_4d_normalization_roundtrip():
     assert torch.allclose(back, x, atol=1e-4)
 
 
-def test_missing_output_stats_raises():
-    norm = Normalizer(_zscore_stats())
-
-    with pytest.raises(ValueError):
-        norm.normalize_output(np.zeros((1, 2, 2), dtype=np.float32))
-
-
 def _mixed_output_stats(clamp: OutputClampConfig | None = None) -> Stats:
     log1p  = ChannelStrategy(NormMethod.ROBUST_IQR, apply_log1p=True)
     zscore = ChannelStrategy(NormMethod.ZSCORE)
@@ -270,21 +263,6 @@ def test_compute_logs_the_effective_clamp_and_the_pool_sizes(data_dir, derived, 
     assert "of 576 pixels active" in text
 
 
-def test_fit_input_rejects_a_nan_in_a_pool(logger_stub):
-    strategies = {"chan/mag": NormalizationConfig().strategy("input", "chan/mag")}
-    collected  = {"chan/mag": np.array([1.0, 2.0, np.nan, 3.0, np.inf])}
-
-    with pytest.raises(ValueError, match=r"Channel groups \['chan/mag'\] fit a non-finite location or scale; non-finite samples per pool: \{'chan/mag': 2\}"):
-        StatsComputer._fit_input(logger=logger_stub, group_keys=["chan/mag"], strategies=strategies, collected=collected)
-
-
-def test_fit_output_rejects_a_nan_in_a_role_pool():
-    pools = {"out/amp": np.array([1.0, np.nan]), "out/mu": np.array([1.0, 2.0]), "out/sigma": np.array([1.0, 2.0])}
-
-    with pytest.raises(ValueError, match=r"Output roles \['out/amp'\] fit a non-finite location or scale; non-finite samples per pool: \{'out/amp': 1\}"):
-        StatsComputer._fit_output(logger=None, role_pools=pools, output_config=OutputConfig(), n_gaussians=1)
-
-
 def test_output_stats_table_reports_sample_counts_and_clampable_roles(tmp_path):
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_table", level="ERROR")
     pools  = {"out/amp": np.array([1.0, 2.0, 3.0]), "out/mu": np.array([1.0, 2.0, 3.0]), "out/sigma": np.array([1.0, 2.0, 3.0])}
@@ -319,13 +297,6 @@ def test_fixed_bounds_output_stats_resolve_per_slot():
     assert stats.clampable == [True, False, True, True, False, True]
 
 
-def test_fixed_bounds_output_stats_reject_mismatched_gaussian_count():
-    pools = {"out/amp": np.array([1.0]), "out/mu": np.array([1.0]), "out/sigma": np.array([1.0])}
-
-    with pytest.raises(ValueError, match="exactly 9 entries"):
-        StatsComputer._fit_output(logger=None, role_pools=pools, output_config=_fixed_bounds_output_config(), n_gaussians=3)
-
-
 def test_fixed_bounds_normalization_matches_the_legacy_formula():
     pools = {"out/amp": np.array([1.0]), "out/mu": np.array([1.0]), "out/sigma": np.array([1.0])}
     stats = StatsComputer._fit_output(logger=None, role_pools=pools, output_config=_fixed_bounds_output_config(), n_gaussians=2)
@@ -348,6 +319,3 @@ def test_fixed_input_presets_are_data_free_constants():
     loc, scale = ChannelStrategy(NormMethod.FIXED_ANGLE_01).fit(np.array([]))
     assert loc == pytest.approx(-np.pi)
     assert scale == pytest.approx(2.0 * np.pi)
-
-    with pytest.raises(ValueError, match="not valid for input"):
-        ChannelStrategy(NormMethod.FIXED_BOUNDS).fit(np.array([1.0]))

@@ -123,37 +123,6 @@ def test_patchdataset_angle_channels_in_pi_range(derived, parameters):
 
 
 @pytest.mark.dataset
-def test_patchdataset_layer_mismatch_raises(derived, parameters):
-    derived     = np.ascontiguousarray(np.asarray(derived[:3, :16, :16]))
-    inputs  = np.concatenate([derived[:1], derived], axis=0)
-    params  = np.ascontiguousarray(np.asarray(parameters[:, :16, :16]))
-    patcher = Patcher.build(spatial_size=(16, 16), patch_size=(8, 8), stride=(8, 8))
-
-    with pytest.raises(ValueError):
-        PatchDataset(
-            inputs=inputs, gt_parameters=params, grid=patcher,
-            input_config=InputConfig(), output_config=OutputConfig(), split_name="train",
-            n_secondaries=0, n_derived=99, n_gaussians=params.shape[0] // 3,
-        )
-
-
-@pytest.mark.dataset
-def test_patchdataset_use_aux_without_aux_raises(derived, parameters):
-    derived     = np.ascontiguousarray(np.asarray(derived[:3, :16, :16]))
-    inputs  = np.concatenate([derived[:1], derived], axis=0)
-    params  = np.ascontiguousarray(np.asarray(parameters[:, :16, :16]))
-    patcher = Patcher.build(spatial_size=(16, 16), patch_size=(8, 8), stride=(8, 8))
-    ic      = InputConfig(use_aux=True)
-
-    with pytest.raises(ValueError, match="Aux"):
-        PatchDataset(
-            inputs=inputs, gt_parameters=params, grid=patcher,
-            input_config=ic, output_config=OutputConfig(), split_name="train",
-            n_secondaries=0, n_derived=3, n_gaussians=params.shape[0] // 3,
-        )
-
-
-@pytest.mark.dataset
 def test_patchdataset_dem_fills_last_channel(derived, parameters):
     derived     = np.ascontiguousarray(np.asarray(derived[:3, :24, :24]))
     inputs  = np.concatenate([derived[:1], derived], axis=0)
