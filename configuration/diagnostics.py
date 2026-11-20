@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib     import Path
 from typing      import List
 
+from configuration.reference_layout     import ReferenceLayout
 from configuration.training.general.run import RunPathsConfig
 
 
@@ -206,7 +207,7 @@ class ExperimentReportMailConfig:
 @dataclass
 class ArtifactMailConfig:
 
-    source_dir  : Path = Path("datasets/synthetic")
+    source_dir  : Path = ReferenceLayout.DATASET_DIR
     staging_dir : Path = Path("results/mailed_reports")
 
     label : str = ""
