@@ -1171,10 +1171,10 @@
         "device": "Torch device the model and probe windows run on; cpu is enough since only a handful of windows are evaluated",
         "checkpoint_name": "Checkpoint filename loaded from each run directory and used as the run-discovery marker",
         "output_subdir": "Name of the output directory created inside each run directory for the gradient maps, summary JSON, figures and markdown report",
-        "window": "Side length in pixels of the square probe window cut around each probe pixel; must fit inside the split region and bound all mass_windows",
+        "window": "Side length in pixels of the square probe window cut around each probe pixel; it has to fit inside the split region (the example test split is 38 rows high) and bound all mass_windows",
         "n_row_probes": "Number of probe pixels along row, spread evenly across the split region with a window/2 margin",
         "n_col_probes": "Number of probe pixels along cols, spread evenly across the split region with a window/2 margin",
-        "mass_windows": "Side lengths of the centred sub-windows the cumulative gradient-mass ladder is reported for; each must not exceed window",
+        "mass_windows": "Side lengths of the centred sub-windows the cumulative gradient-mass ladder is reported for, each no larger than window",
         "figure_style": "PlotBase figure style the ERF heatmap and mass curve are rendered with (report or paper)"
       }
     },
@@ -1209,7 +1209,7 @@
         "device": "Torch device the model runs on; cpu is enough for the handful of probe windows and batches",
         "checkpoint_name": "Checkpoint filename loaded from each run directory and used as the run-discovery marker",
         "output_subdir": "Name of the output directory created inside each run directory for the JSON, figures and markdown report",
-        "window": "Side length in pixels of the square probe window the gradients are computed over",
+        "window": "Side length in pixels of the square probe window the gradients are computed over; it has to fit inside the split region",
         "n_row_probes": "Number of probe pixels along row, spread evenly across the split region with a window/2 margin",
         "n_col_probes": "Number of probe pixels along cols, spread evenly across the split region with a window/2 margin",
         "occlude": "Also run the occlusion pass: zero one normalized input channel at a time over a few batches and measure the mean squared shift of the normalized prediction against the unoccluded prediction",

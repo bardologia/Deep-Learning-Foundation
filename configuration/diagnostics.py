@@ -340,10 +340,10 @@ class ReceptiveFieldConfig:
     checkpoint_name : str = "best_model.pt"
     output_subdir   : str = "receptive_field"
 
-    window       : int       = 160
+    window       : int       = 32
     n_row_probes : int       = 4
     n_col_probes : int       = 3
-    mass_windows : List[int] = field(default_factory=lambda: [8, 16, 24, 32, 40, 48, 56, 64, 96, 128])
+    mass_windows : List[int] = field(default_factory=lambda: [8, 16, 24, 32])
 
     figure_style : str = "report"
 
@@ -385,7 +385,7 @@ class InputAttributionConfig:
     checkpoint_name : str = "best_model.pt"
     output_subdir   : str = "input_attribution"
 
-    window       : int = 64
+    window       : int = 32
     n_row_probes : int = 4
     n_col_probes : int = 3
 
