@@ -13,10 +13,6 @@ class ProjectPaths:
     CONDA_BASES   = ("miniconda3", "anaconda3", ".conda")
 
     ENTRY_OVERRIDES = {
-        "generate_dataset": {
-            "config_module" : "configuration.generation",
-            "config_class"  : "GenerateDatasetEntryConfig",
-        },
         "train_backbone": {
             "config_module" : "configuration.training.backbone",
             "config_class"  : "BackboneEntryConfig",
@@ -24,10 +20,6 @@ class ProjectPaths:
         "infer_backbone": {
             "config_module" : "configuration.inference",
             "config_class"  : "BackboneInferenceEntryConfig",
-        },
-        "cross_validate": {
-            "config_module" : "configuration.cross_validation.general",
-            "config_class"  : "CrossValidationConfig",
         },
     }
 

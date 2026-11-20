@@ -124,7 +124,7 @@ class WebUIServer:
             ProbeRouter(self.probe),
             SurveyRouter(self.survey),
             AutopsyRouter(self.autopsy),
-            ContentLibraryRouter("/api/configs",      self.configs,      "groups"),
+            ContentLibraryRouter("/api/configs",      self.configs),
             BackboneRouter("/api/backbones", self.models),
             CatalogRouter(self.paths, self.catalog, self.resolver, self.layout, self.launcher),
             JobRouter(self.paths, self.processes, self.launcher, self.stream_hub),

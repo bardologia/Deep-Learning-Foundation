@@ -117,15 +117,12 @@ class JobRouter(SubRouter):
         self.processes.adopt_orphans()
 
         chains = {chain["job_id"]: chain["steps"][chain["index"]:] for chain in self.launcher.finalizer.pending()}
-        local  = self.processes.list_jobs()
-        for record in local:
+        jobs   = self.processes.list_jobs()
+        for record in jobs:
             record["tensorboard"] = self.launcher.tensorboard_capable(record["script"])
             record["finalize"]    = chains.get(record["job_id"], [])
 
-        merged = list(local)
-        merged.sort(key=lambda record: record["started"], reverse=True)
-
-        exchange.send_json({"jobs": merged})
+        exchange.send_json({"jobs": jobs})
 
     def run(self, exchange: HttpExchange) -> None:
         body = exchange.body
@@ -140,17 +137,17 @@ class JobRouter(SubRouter):
         exchange.send_result(result)
 
     def gpu_pool(self, exchange: HttpExchange, job_id: str) -> None:
-        exchange.send_result(self._backend(job_id).gpu_pool(job_id))
+        exchange.send_result(self.processes.gpu_pool(job_id))
 
     def progress(self, exchange: HttpExchange, job_id: str) -> None:
-        exchange.send_result(self._backend(job_id).progress(job_id))
+        exchange.send_result(self.processes.progress(job_id))
 
     def log(self, exchange: HttpExchange, job_id: str) -> None:
         unit = self._unit_index(exchange)
         if unit == "invalid":
             return
 
-        exchange.send_result(self._backend(job_id).job_log(job_id, unit))
+        exchange.send_result(self.processes.job_log(job_id, unit))
 
     def _unit_index(self, exchange: HttpExchange) -> int | str | None:
         raw = exchange.text("unit")
@@ -219,7 +216,7 @@ class JobRouter(SubRouter):
             exchange.send_json({"ok": False, "error": f"after must be a non-negative integer event id, got {after!r}"}, 400)
             return
 
-        exchange.send_result(self.hub.subscribe(channel_id, self._backend(job_id), job_id, unit, after), 404)
+        exchange.send_result(self.hub.subscribe(channel_id, self.processes, job_id, unit, after), 404)
 
     def unsubscribe(self, exchange: HttpExchange, channel_id: str) -> None:
         request = self._channel_request(exchange)
@@ -248,13 +245,10 @@ class JobRouter(SubRouter):
         return job_id, unit
 
     def stop(self, exchange: HttpExchange, job_id: str) -> None:
-        exchange.send_result(self._backend(job_id).stop(job_id))
+        exchange.send_result(self.processes.stop(job_id))
 
     def set_gpus(self, exchange: HttpExchange, job_id: str) -> None:
-        exchange.send_result(self._backend(job_id).set_gpus(job_id, exchange.body.get("gpus"), park=bool(exchange.body.get("park")), preempt=exchange.body.get("preempt")))
-
-    def _backend(self, job_id: str):
-        return self.processes
+        exchange.send_result(self.processes.set_gpus(job_id, exchange.body.get("gpus"), park=bool(exchange.body.get("park")), preempt=exchange.body.get("preempt")))
 
     def tensorboard_bridge(self, exchange: HttpExchange, job_id: str) -> None:
         record = self.processes.job_record(job_id)

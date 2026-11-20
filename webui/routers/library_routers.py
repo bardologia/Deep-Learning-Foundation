@@ -6,10 +6,9 @@ from routers.dispatch import HttpExchange, RouteTable, SubRouter
 
 class ContentLibraryRouter(SubRouter):
 
-    def __init__(self, section: str, library, envelope: str = "") -> None:
-        self.section  = section
-        self.library  = library
-        self.envelope = envelope
+    def __init__(self, section: str, library) -> None:
+        self.section = section
+        self.library = library
 
         super().__init__((section,))
 
@@ -17,8 +16,7 @@ class ContentLibraryRouter(SubRouter):
         table.add("GET", self.section, self.content)
 
     def content(self, exchange: HttpExchange) -> None:
-        collected = self.library.collect()
-        exchange.send_json({self.envelope: collected} if self.envelope else collected)
+        exchange.send_json({"groups": self.library.collect()})
 
 
 class BackboneRouter(SubRouter):

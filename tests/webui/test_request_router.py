@@ -127,7 +127,7 @@ def build_routers() -> list:
         ProbeRouter(None),
         SurveyRouter(None),
         AutopsyRouter(None),
-        ContentLibraryRouter("/api/configs",      None, "groups"),
+        ContentLibraryRouter("/api/configs",      None),
         BackboneRouter("/api/backbones", None),
         CatalogRouter(None, None, None, None, None),
         JobRouter(None, None, None, None),
