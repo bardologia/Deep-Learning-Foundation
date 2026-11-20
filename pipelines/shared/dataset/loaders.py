@@ -25,6 +25,8 @@ class Loader:
         prefetch_factor : int  = 8,
         section_label   : str  = "[Loaders]",
     ) -> Tuple[DataLoader, DataLoader, DataLoader]:
+        drop_last = len(train_dataset) > batch_size
+
         logger.section(section_label)
         logger.kv_table({
             "Batch size"         : batch_size,
@@ -34,7 +36,7 @@ class Loader:
             "Persistent workers" : num_workers > 0,
             "Worker seeding"     : f"base seed {seed} + worker id (augmenter RNG reseeded per worker)" if num_workers > 0 else "main process",
             "Shuffle train"      : shuffle_train,
-            "Drop last"          : "train only",
+            "Drop last"          : f"train only, {drop_last} (a train split of one batch or less keeps its partial batch)",
             "Seed"               : seed,
         })
 
@@ -49,15 +51,15 @@ class Loader:
             worker_init_fn     = worker_init,
         )
 
-        train_loader = DataLoader(train_dataset, shuffle = shuffle_train, drop_last = True,  generator = Reproducibility.generator(seed), **_base)
-        val_loader   = DataLoader(val_dataset,   shuffle = False,         drop_last = False, **_base)
-        test_loader  = DataLoader(test_dataset,  shuffle = False,         drop_last = False, **_base)
+        train_loader = DataLoader(train_dataset, shuffle = shuffle_train, drop_last = drop_last, generator = Reproducibility.generator(seed), **_base)
+        val_loader   = DataLoader(val_dataset,   shuffle = False,         drop_last = False,     **_base)
+        test_loader  = DataLoader(test_dataset,  shuffle = False,         drop_last = False,     **_base)
 
         logger.kv_table({
             "Train samples" : len(train_dataset),
             "Val samples"   : len(val_dataset),
             "Test samples"  : len(test_dataset),
-            "Train batches" : f"{len(train_loader)} (drop_last floors a partial final batch)",
+            "Train batches" : len(train_loader),
             "Val batches"   : len(val_loader),
             "Test batches"  : len(test_loader),
         })

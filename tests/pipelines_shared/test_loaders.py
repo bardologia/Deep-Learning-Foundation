@@ -58,6 +58,16 @@ def test_train_drops_last_partial_batch_val_test_keep_it(tmp_path):
     assert len(_drain_indices(test))  == 10
 
 
+def test_a_train_split_smaller_than_one_batch_keeps_its_partial_batch(tmp_path):
+    train, _, _ = Loader.build(
+        _CountingDataset(3), _CountingDataset(4), _CountingDataset(4),
+        batch_size=4, num_workers=0, logger=_logger(tmp_path), seed=0,
+    )
+
+    assert len(train)                 == 1
+    assert len(_drain_indices(train)) == 3
+
+
 def test_train_shuffle_true_changes_order(tmp_path):
     train, _, _ = Loader.build(
         _CountingDataset(32), _CountingDataset(4), _CountingDataset(4),
