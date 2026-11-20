@@ -12,7 +12,6 @@ from configuration.training.general import (
     LossConfig,
     LossCurriculumConfig,
     ParamMatching,
-    PretrainConfig,
 )
 from configuration.training.backbone import (
     default_curriculum,

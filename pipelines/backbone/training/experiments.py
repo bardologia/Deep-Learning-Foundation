@@ -542,7 +542,6 @@ class PatchSizeTrialPlanner:
             "Col sizes"                 : col_sizes,
             "Stride ratio"              : self.trials.stride_ratio,
             "Constant pixel budget"     : self.trials.constant_pixel_budget,
-            "Batch-size probe"          : "off in every trial (pretrain.find_batch_size pinned to false)",
             "Batch size / LR reference" : self._batch_label(),
         }
 
@@ -556,9 +555,8 @@ class PatchSizeTrialPlanner:
                 stride = tuple(max(1, int(round(edge * self.trials.stride_ratio))) for edge in size)
 
                 overrides = {
-                    "training.patch_size"      : size,
-                    "training.patch_stride"    : stride,
-                    "pretrain.find_batch_size" : False,
+                    "training.patch_size"   : size,
+                    "training.patch_stride" : stride,
                 }
 
                 if self.trials.constant_pixel_budget:

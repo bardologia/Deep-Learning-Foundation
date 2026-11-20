@@ -66,8 +66,8 @@ def test_collector_reads_the_checkpoint_at_the_run_root_only(tmp_path, logger_st
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
     trial_dir = tmp_path / "training" / "unet"
-    (trial_dir / "pretrain" / "context").mkdir(parents=True)
-    torch.save({"epoch": 1, "best_val_loss": 9.0, "best_epoch": 1}, trial_dir / "pretrain" / "context" / "best_model.pt")
+    (trial_dir / "snapshots").mkdir(parents=True)
+    torch.save({"epoch": 1, "best_val_loss": 9.0, "best_epoch": 1}, trial_dir / "snapshots" / "best_model.pt")
     torch.save({"epoch": 9, "best_val_loss": 0.5, "best_epoch": 7}, trial_dir / "best_model.pt")
 
     records = TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()

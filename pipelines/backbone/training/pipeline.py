@@ -11,7 +11,6 @@ from configuration.training                        import BackboneTrainerConfig
 from models                                        import get_backbone
 from pipelines.backbone.dataset.datasets           import MultiRegionDataset
 from pipelines.backbone.dataset.pipeline           import DatasetPipeline
-from pipelines.backbone.training.loss_terms        import LossComponentCatalog
 from pipelines.backbone.training.trainer           import Trainer
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
 from pipelines.shared.config.run_metadata          import TrainingRunMetadata
@@ -228,25 +227,6 @@ class TrainingPipeline:
             emit_docs  = emit_docs,
             writer     = writer,
         )
-
-    def build_pretrain_trainer(self, work_dir: Path, logger):
-        work_dir         = Path(work_dir)
-        dataset_pipeline = self._build_dataset_pipeline(work_dir, logger)
-
-        _train_loader, _val_loader, _test_loader, datasets = dataset_pipeline.run()
-
-        gaussian_cfg = self.trainer_config.gaussian
-        dataset      = datasets["train"]
-        in_channels  = dataset.input_channels
-        out_channels = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, gaussian_cfg.n_default_gaussians)
-        z_axis       = np.asarray(self.dataset_config.z_axis, dtype=np.float32)
-
-        model, model_cfg = get_backbone(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
-
-        trainer = self._make_trainer(model, model_cfg, z_axis, dataset.normalizer, work_dir, logger, emit_docs=False)
-        trainer.criterion.set_curriculum(LossComponentCatalog.probe_union(self.trainer_config.curriculum), context="probe union of all curriculum stages")
-
-        return trainer, dataset, model
 
     def run(self, resolved_entry_config=None):
         self.run_metadata = TrainingRunMetadata(

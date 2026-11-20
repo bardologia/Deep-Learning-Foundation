@@ -20,7 +20,6 @@ from pipelines.backbone.training.pipeline         import TrainingPipeline
 from pipelines.shared.config.config_factory       import ConfigFactory
 from pipelines.shared.model.model_builder         import ModelBuilder
 from pipelines.shared.training.ddp_fanout         import DdpDispatch
-from pipelines.shared.training.pretrain_preflight import PretrainPreflight
 from pipelines.shared.training.resume_source      import ResumeLauncher
 from pipelines.shared.training.run_naming         import RunNaming
 from pipelines.shared.training.seed_sweep         import SeedFanoutScheduler, SeedSet, SeedSweepRunner
@@ -102,20 +101,6 @@ class SingleTrainRunner:
             prior_bias_init = self.prior_bias_init,
         )
 
-    def _build_pretrain_trainer(self, logger):
-        work_dir = self.run_directory / "pretrain" / "context"
-
-        return self._pipeline(work_dir).build_pretrain_trainer(work_dir, logger)
-
-    def _pretrain_preflight(self) -> None:
-        PretrainPreflight(
-            pretrain_config = self.config.pretrain,
-            training_config = self.config.training,
-            build_trainer   = self._build_pretrain_trainer,
-            run_directory   = self.run_directory,
-            label           = self.label,
-        ).run()
-
     def _run_inference(self, run_directory: Path):
         gc.collect()
         if torch.cuda.is_available():
@@ -133,7 +118,6 @@ class SingleTrainRunner:
         else:
             RunDirectorySettledMarker.write(self.run_directory)
 
-            self._pretrain_preflight()
             pipeline = self._pipeline(self.config.logdir)
             results  = pipeline.run(resolved_entry_config=self.config)
 

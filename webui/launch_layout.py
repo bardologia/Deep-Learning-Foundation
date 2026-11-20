@@ -39,8 +39,6 @@ class LaunchLayout:
     NUM_EPOCHS   = {"kind": "number", "int": True, "min": 1, "max": 1000, "presets": [10, 50, 60, 100, 200, 500]}
     NUM_STEPS    = {"kind": "number", "int": True, "min": 0, "max": 1000, "presets": [0, 50, 100, 200, 500]}
     NUM_BATCH    = {"kind": "number", "int": True, "min": 1, "max": 4096, "presets": [32, 64, 128, 256, 512, 1024]}
-    NUM_RUNGS    = {"kind": "number", "int": True, "min": 10, "max": 400, "presets": [20, 40, 60, 120]}
-    NUM_BURN     = {"kind": "number", "int": True, "min": 1, "max": 64, "presets": [4, 8, 16, 32]}
     NUM_WORKERS  = {"kind": "number", "int": True, "min": 0, "max": 64, "presets": [0, 2, 4, 8, 16, 32]}
     NUM_PREFETCH = {"kind": "number", "int": True, "min": 1, "max": 32, "presets": [2, 4, 8, 16]}
     NUM_ACCUM    = {"kind": "number", "int": True, "min": 1, "max": 64, "presets": [1, 2, 4, 8, 16]}
@@ -52,7 +50,6 @@ class LaunchLayout:
     NUM_HOURS    = {"kind": "number", "min": 0, "max": 240, "step": 0.5, "presets": [0, 12, 24, 48, 72]}
     NUM_K_MAX    = {"kind": "number", "int": True, "min": 1, "max": 10, "presets": [1, 2, 3, 5]}
     NUM_FREQ     = {"kind": "number", "int": True, "min": 1, "max": 50, "presets": [1, 2, 5, 10]}
-    NUM_PROBE    = {"kind": "number", "int": True, "min": 1, "max": 50, "presets": [1, 3, 5, 10]}
     NUM_ETA_MIN  = {"kind": "number", "log": True, "min": 1e-9, "max": 1e-2, "presets": [0, 1e-7, 1e-6, 1e-5]}
     NUM_LR       = {"kind": "number", "log": True, "min": 1e-5, "max": 1e-2, "presets": [1e-5, 1e-4, 3e-4, 1e-3, 1e-2]}
     NUM_WD       = {"kind": "number", "log": True, "min": 1e-6, "max": 1e-1, "presets": [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]}
@@ -295,12 +292,6 @@ class LaunchLayout:
                 {"path": "p_rot90", "widget": NUM_PROB},
             ]},
         ],
-        "pretrain": [
-            {"title": "Auto-tuning", "fields": ["find_batch_size", "tune_loader", "find_lr", {"path": "seed", "widget": NUM_SEED}]},
-            {"title": "Batch probe", "fields": ["vram_budget_gb", {"path": "max_batch", "widget": NUM_BATCH}, {"path": "measure_steps", "widget": NUM_PROBE}]},
-            {"title": "Loader sweep", "fields": ["worker_counts", "prefetch_factors", "warmup_batches", "timed_batches", "data_wait_target"]},
-            {"title": "LR range test", "fields": ["lr_scale_min", "lr_scale_max", {"path": "lr_rungs", "widget": NUM_RUNGS}, {"path": "lr_rung_steps", "widget": NUM_BURN}, {"path": "lr_probe_batches", "widget": NUM_PROBE}, "lr_divergence_factor", "lr_safety_factor", "lr_min_improvement", "lr_noise_sigmas"]},
-        ],
         "inference_full": [
             {"title": "Run", "fields": ["run_directory", "output_subdir", "device", "log_level", {"path": "seed", "widget": NUM_SEED}]},
             {"title": "Execution", "fields": [
@@ -516,7 +507,6 @@ class LaunchLayout:
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
                     {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
-                    {"kind": "fields", "title": "Pre-run tuning", "template": "pretrain", "at": "pretrain"},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},

@@ -295,15 +295,6 @@ or from a state saved before the geometry was recorded, is refused. A state that
 already stopped early goes straight to the final checkpoint, the best-weight restore and
 the test evaluation.
 
-The pre-run probes `pretrain.find_batch_size`, `pretrain.tune_loader` and
-`pretrain.find_lr` each switch their own flag off once they have run, so the resolved
-entry config records the measured batch size, loader settings and learning-rate
-multiplier instead of the request to measure them. They are refused on a run that
-resumes from `last.pt`. The evidence stays in the run under `pretrain/`:
-`lr_range_test.json` with the settings, every rung and the selection statistics, and
-`loader_sweep.csv`. The preflight warns when the GPU is already occupied (a CUDA context
-above 1.5 GB) or when the dataset size lowers the batch ceiling.
-
 The loss refuses a curriculum stage with no enabled term or with weights summing to zero,
 warns about enabled terms of weight zero, and refuses a z axis with fewer than two
 samples. The normalization fit refuses a non-finite location or scale. `prior_bias_init`

@@ -22,14 +22,6 @@ class _TrainingStub:
 
 
 @dataclass
-class _PretrainStub:
-
-    find_batch_size : bool = False
-    tune_loader     : bool = False
-    find_lr         : bool = False
-
-
-@dataclass
 class _EntryStub:
 
     run_name     : str           = "unit"
@@ -39,7 +31,6 @@ class _EntryStub:
     infer_after  : bool          = False
     infer_at_end : bool          = False
     training     : _TrainingStub = field(default_factory=_TrainingStub)
-    pretrain     : _PretrainStub = field(default_factory=_PretrainStub)
 
 
 def _entry_config(tmp_path: Path, resume: bool = True, resume_from: str = "") -> _EntryStub:
@@ -171,18 +162,6 @@ def test_reuse_of_a_matching_run_reports_the_match(tmp_path):
     assert "was produced at commit" not in written
 
 
-def test_reuse_ignores_the_leaves_an_enabled_probe_rewrites(tmp_path):
-    launch          = _entry_config(tmp_path)
-    launch.pretrain = _PretrainStub(find_batch_size=True)
-    resume          = unit(tmp_path, config=launch)
-
-    mark_complete(resume.run_directory)
-    record(resume.run_directory, _EntryStub(logdir=tmp_path, training=_TrainingStub(batch_size=128)), commit=GitState.commit())
-
-    assert resume.skip_training()
-    assert "Reused run vs this launch" not in resume_log(resume.run_directory)
-
-
 def test_reuse_without_a_recording_warns_that_nothing_can_be_compared(tmp_path):
     resume = unit(tmp_path)
     mark_complete(resume.run_directory)
@@ -303,9 +282,6 @@ class _StubRunner(SingleTrainRunner):
 
     label = "stub"
 
-    def _pretrain_preflight(self) -> None:
-        self.config.training.batch_size = 128
-
     def _pipeline(self, logdir) -> _StubPipeline:
         return _StubPipeline(self.config)
 
@@ -413,19 +389,3 @@ def test_resume_from_skips_a_completed_target(tmp_path):
 
     assert result is None
     assert _StubPipeline.launched == []
-
-
-def test_settling_marker_is_written_before_the_preflight_runs(tmp_path):
-    _StubPipeline.launched = []
-
-    seen = {}
-
-    class _OrderRunner(_StubRunner):
-
-        def _pretrain_preflight(self) -> None:
-            seen["marker"] = (self.run_directory / "docs" / "run_directory_settled.marker").is_file()
-            super()._pretrain_preflight()
-
-    _OrderRunner(_entry_config(tmp_path)).run()
-
-    assert seen == {"marker": True}

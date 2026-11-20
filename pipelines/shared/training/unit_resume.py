@@ -14,7 +14,6 @@ from tools.runtime.completion                      import CompletionMarker
 from tools.runtime.config_cli                      import ConfigCli
 from tools.runtime.git_state                       import GitState
 from tools.training.checkpoint                     import TrainerState
-from tools.training.pretraining                    import PretrainOrchestrator
 
 
 class UnitResume:
@@ -36,11 +35,10 @@ class UnitResume:
 
         recorded = FileIO.load_json(path)
         current  = ConfigCli.to_mapping(self.config)
-        tuned    = PretrainOrchestrator.tuned_leaves(current)
 
         differences = {}
         for leaf in sorted(set(recorded) | set(current)):
-            if leaf.split(".")[0] in self.EXCLUDED_FIELDS or leaf in tuned:
+            if leaf.split(".")[0] in self.EXCLUDED_FIELDS:
                 continue
 
             before = recorded[leaf] if leaf in recorded else self.ABSENT
@@ -76,7 +74,7 @@ class UnitResume:
         elif differences:
             rows = [{"Field": leaf, "Recorded": repr(before), "Now": repr(after)} for leaf, (before, after) in differences.items()]
             logger.warning(f"{name}: the reused run was trained under a different configuration on {len(rows)} leaf(s); its results enter this launch with those settings, not the current ones")
-            logger.metrics_table(rows, columns=["Field", "Recorded", "Now"], title="Reused run vs this launch (launch, unit and probe-tuned fields excluded)")
+            logger.metrics_table(rows, columns=["Field", "Recorded", "Now"], title="Reused run vs this launch (launch and unit fields excluded)")
         else:
             logger.ok(f"{name}: the reused run recorded the configuration of this launch")
 

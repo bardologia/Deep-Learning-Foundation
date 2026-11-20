@@ -14,7 +14,6 @@ from configuration.training.general.loss         import LossConfig, LossCurricul
 from configuration.training.general.optimization import EarlyStoppingConfig, GradientClipperConfig, OptimizerConfig, SchedulerConfig, WarmupConfig
 from configuration.resources                     import ResourceConfig
 from configuration.training.general.runtime      import IOConfig, MemoryConfig, TrainingLoopConfig
-from configuration.training.general.pretraining  import PretrainConfig
 from configuration.training.general.trials       import TrialCatalog
 
 
@@ -168,7 +167,6 @@ class BackboneEntryConfig:
 
     paths         : TrainingPathsConfig  = field(default_factory=TrainingPathsConfig)
     training      : TrainingQueueConfig  = field(default_factory=TrainingQueueConfig)
-    pretrain      : PretrainConfig       = field(default_factory=PretrainConfig)
     curriculum    : LossCurriculumConfig = field(default_factory=default_curriculum)
     input         : InputConfig          = field(default_factory=InputConfig.full_stack)
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)

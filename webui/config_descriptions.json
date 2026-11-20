@@ -4,7 +4,7 @@
     "normalization": "The stage that standardizes network inputs and outputs, mapping heavy-tailed input channels and Gaussian parameters onto stable numeric ranges for training and inference. It fits per-channel location/scale transforms from pixel statistics, persists them, and bounds predicted outputs to a physically valid range. The configs here control per-channel normalization recipes, per-slot strategy selection for input and output channels, runtime output clamping, and the persisted fitted statistics applied at train and inference time.",
     "dataset": "The stage that assembles trainable examples from a preprocessed dataset run. It selects input and target channels, tiles cropped scenes into overlapping patches, applies augmentation, and builds the train/val/test dataloaders. The configs here control which stack channels and Aux form the input, which per-Gaussian parameters are predicted, patch tiling and augmentation, and the parallel assembly of the image-patch datasets.",
     "architectures": "The stage that defines the backbone architectures. Each config specifies one model variant's layer geometry, output-head structure, and per-group optimizer settings. The configs here cover U-Net and transformer backbones predicting per-pixel Gaussian-mixture parameters.",
-    "training": "The stage that optimizes the backbone. It binds architecture, loss, optimization, scheduling, and runtime sub-configs into one resolved run and manages queuing, sweeps, and pre-training safeguards. The configs here control loss term weighting and curricula, optimizer, scheduler, warmup, early-stopping and gradient-clipping policy, batch-size and dataloader preflight probes, filesystem layout, VRAM reservation and resource monitoring, and the trainer and entry configs.",
+    "training": "The stage that optimizes the backbone. It binds architecture, loss, optimization, scheduling, and runtime sub-configs into one resolved run and manages queuing and sweeps. The configs here control loss term weighting and curricula, optimizer, scheduler, warmup, early-stopping and gradient-clipping policy, filesystem layout, VRAM reservation and resource monitoring, and the trainer and entry configs.",
     "resources": "Host and device sampling settings shared by every training family: whether the resource monitor runs, how often it samples CPU, RAM, shared memory and GPU memory, whether samples go to TensorBoard, and the utilisation levels that raise a warning in the run log. They live outside the training package so that a long-running processing entry can carry them without importing torch.",
     "inference": "The stage that runs trained checkpoints over data splits to produce predictions, evaluations, and reports. It drives sliding-window prediction for backbone runs, scheduling one worker per run across a GPU pool. The configs here control the per-run inference driver, its output subdirectory and filename layout, and the batch entry point that queues inference across all discovered runs.",
     "benchmark": "The stage that compares multiple model architectures under matched conditions on the same data. It size-matches each backbone to a reference parameter count, then trains, runs inference, and assembles a cross-model comparison report. The configs here control the max-batch and dataloader-tuning probes, width-matching bisection search, batched inference and its diagnostic artifacts, the comparison report assembly, and the top-level sweep orchestration.",
@@ -843,7 +843,6 @@
         "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation; the special key all_groups_lr fans out to every *_lr field of the chosen architecture (uniform learning rate across parameter groups), with explicit per-group keys applied afterwards",
         "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-channel labels",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
-        "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
         "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch, defaults to the standard recipe (param L1 at 1 plus cosine curve at 0.5 in both stages)",
         "input": "InputConfig sub-config selecting which channel groups (primary, secondaries, derived, Aux) feed the network, defaults to the full stack",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
@@ -985,32 +984,6 @@
         "log_histogram_freq": "step interval between gradient-norm histogram logs to TensorBoard"
       }
     },
-    "training/general/pretraining::PretrainConfig": {
-      "summary": "Preflight probes run before training to auto-size the batch, tune the dataloader and pick a learning-rate multiplier",
-      "fields": {
-        "find_batch_size": "Toggle running the real-loss max-batch-size probe before training starts",
-        "tune_loader": "Toggle running the dataloader worker/prefetch-factor tuning sweep before training starts",
-        "find_lr": "Toggle running the learning-rate range test before training starts, writing training.lr_multiplier for this run",
-        "vram_budget_gb": "GPU memory budget in gigabytes the max-batch probe's peak usage must stay within to accept a batch size",
-        "max_batch": "Upper bound on the power-of-two batch sizes tried by the max-batch probe, also capped by the dataset size",
-        "measure_steps": "Real-loss training steps run per candidate batch size to measure peak GPU memory in the max-batch probe",
-        "worker_counts": "DataLoader worker counts swept during loader tuning, entries above the CPU core count are dropped",
-        "prefetch_factors": "Per-worker prefetch factors, crossed with pin_memory on/off, swept in the loader-tuning refinement stage",
-        "warmup_batches": "Untimed batches consumed before measurement starts in the loader-tuning benchmark, to warm caches and workers",
-        "timed_batches": "Number of batches timed per worker/prefetch configuration when measuring throughput in the loader-tuning benchmark",
-        "data_wait_target": "Maximum data-wait fraction of step time allowed for a loader configuration to count as GPU-saturated rather than CPU-bound",
-        "lr_scale_min": "Smallest learning-rate multiplier the range test starts its geometric ramp from, relative to the trainer's warmup-free base learning rates",
-        "lr_scale_max": "Largest learning-rate multiplier the geometric ramp reaches when the loss never diverges",
-        "lr_rungs": "Multiplier rungs of the range-test ramp; the trainer is rewound to its captured starting state before each rung, so the rungs differ only in the learning rate",
-        "lr_rung_steps": "Optimizer steps taken at each rung's multiplier, run through the trainer's own step code including gradient accumulation and clipping",
-        "lr_probe_batches": "Held-out batches whose median loss is the rung's measurement, the same batches at every rung so the comparison stays paired",
-        "lr_divergence_factor": "Multiple of the best rung loss at which the ramp stops as diverged",
-        "lr_safety_factor": "Divisor applied to the minimum-loss multiplier, the reference convention being a decade of headroom below the loss minimum",
-        "lr_min_improvement": "Smallest relative drop below the first rung's loss for the ramp to count as a measurement rather than noise",
-        "lr_noise_sigmas": "Standard errors of the rung measurement the drop must also clear, calibrated from the spread across the held-out batches",
-        "seed": "Random seed for the DataLoader tuning benchmark's shuffle generator and the LR range test's probe batches, not used by the max-batch probe"
-      }
-    },
     "training/general/run::TrainingPathsConfig": {
       "summary": "Filesystem locations for a training run's dataset, ground-truth parameters, and secondary channels",
       "fields": {
@@ -1060,7 +1033,7 @@
         "vram_keep_free_gb": "gigabytes of GPU memory the reservation leaves unclaimed on the device",
         "scale_lr_with_batch": "scale the optimizer lr_scale linearly by batch_size / lr_reference_batch_size, else keep lr_scale at 1.0",
         "lr_reference_batch_size": "baseline batch size the learning-rate scaling ratio is computed against",
-        "lr_multiplier": "factor applied to every param-group learning rate on top of the batch-size rule, overwritten by the preflight LR range test",
+        "lr_multiplier": "factor applied to every param-group learning rate on top of the batch-size rule",
         "scheduler_type": "learning-rate schedule: cosine_annealing, constant, linear, polynomial, exponential, or step",
         "scheduler_step_size": "epoch interval between decays for the step scheduler",
         "scheduler_gamma": "multiplicative decay factor applied at each step-scheduler drop",

@@ -271,18 +271,18 @@ def _patch_scheduler(tmp_path, cli_overrides: dict):
 
 
 def test_scheduler_warns_when_a_trial_replaces_a_forwarded_override(tmp_path):
-    scheduler = _patch_scheduler(tmp_path, {"pretrain.find_batch_size": True, "training.epochs": 3})
+    scheduler = _patch_scheduler(tmp_path, {"training.patch_size": (4, 4), "training.epochs": 3})
     scheduler._warn_shadowed_overrides()
     scheduler.logger.close()
 
     text = (Path(scheduler.log_dir) / "train_scheduler.log").read_text(encoding="utf-8")
 
-    assert "Forwarded override pretrain.find_batch_size=True is replaced by the patch planner in 4 of 4 trial(s) (trial values: False)" in text
+    assert "Forwarded override training.patch_size=(4, 4) is replaced by the patch planner in 4 of 4 trial(s) (trial values: (8, 8), (8, 16), (16, 8), (16, 16))" in text
     assert "training.epochs" not in text
 
 
-def test_scheduler_stays_quiet_when_a_forwarded_override_matches_every_trial(tmp_path):
-    scheduler = _patch_scheduler(tmp_path, {"pretrain.find_batch_size": False})
+def test_scheduler_stays_quiet_when_no_trial_replaces_a_forwarded_override(tmp_path):
+    scheduler = _patch_scheduler(tmp_path, {"training.epochs": 3})
     scheduler._warn_shadowed_overrides()
     scheduler.logger.close()
 

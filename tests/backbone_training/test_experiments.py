@@ -139,7 +139,6 @@ def test_patch_planner_emits_shape_stride_and_budget():
     assert overrides["training.patch_size"]              == (8, 8)
     assert overrides["training.patch_stride"]            == (4, 4)
     assert overrides["training.batch_size"]              == budget // (8 * 8)
-    assert overrides["pretrain.find_batch_size"]         is False
 
     reference = training.lr_reference_batch_size * training.patch_size[0] * training.patch_size[1]
     assert overrides["training.lr_reference_batch_size"] == reference // (8 * 8)
@@ -168,15 +167,13 @@ def test_patch_planner_leaves_the_batch_alone_without_the_budget():
     for _name, overrides in planner.plan():
         assert "training.batch_size"              not in overrides
         assert "training.lr_reference_batch_size" not in overrides
-        assert overrides["pretrain.find_batch_size"] is False
 
 
-def test_patch_planner_summary_names_the_pinned_probe_and_the_per_trial_batches():
+def test_patch_planner_summary_names_the_per_trial_batches():
     planner = make_patch_planner(maximum=(16, 16))
     summary = planner.summary()
     batches = ", ".join(f"{name} {overrides['training.batch_size']} / {overrides['training.lr_reference_batch_size']}" for name, overrides in planner.plan())
 
-    assert summary["Batch-size probe"]          == "off in every trial (pretrain.find_batch_size pinned to false)"
     assert summary["Batch size / LR reference"] == batches
     assert summary["Batch size / LR reference"].startswith("p-008x008 ")
 
