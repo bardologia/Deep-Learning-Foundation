@@ -2157,21 +2157,6 @@ class FeedLineFigure extends HairlineFigureBase {
     this.tray           = { key: "tray", ring, inner, el, wells, crates, rings: HL.rings(-c, -c, c, c, 1.3, 0.5), tw: HL.tween(0), drawn: NaN };
   }
 
-  setState(state) {
-    const next = state === null ? FeedLineFigure.REST_STATE : state;
-    for (const key of ["workers", "prefetch", "wait", "util", "feed"]) {
-      if (!Number.isFinite(next[key])) throw new Error(`feed figure: state.${key} must be a finite number, got ${next[key]}`);
-    }
-    const before = this.counts;
-    const after  = this._counts(next);
-    this.data    = next;
-    if (after.lanes !== before.lanes || after.slots !== before.slots || after.filled !== before.filled) {
-      this._layout();
-      if (typeof this.chosen === "number" && this.chosen >= this.lanes.length) this.chosen = null;
-    }
-    this._retarget(performance.now());
-  }
-
   _rest() {
     return this.data.wait <= 0.1 ? "gpu" : "tray";
   }

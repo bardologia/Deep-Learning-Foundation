@@ -1,6 +1,6 @@
-# ML Template control console
+# ML-Template control console
 
-A single-page web console for the ML Template project. It documents the model zoo,
+A single-page web console for ML-Template. It documents the model zoo,
 launches and supervises the `main/` entry points, and browses everything those runs
 produce: metrics, reports, figures, prediction maps and TensorBoard curves.
 
@@ -44,8 +44,8 @@ talking to one group of JSON endpoints.
 | Tab | Route | Backed by | What it does |
 |---|---|---|---|
 | Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/gpu-activity`, `/api/host-history`, `/api/server-log`, `/api/notify/*`, `/api/impact/*` | Live host and GPU telemetry as a board of cards: the watchdog, notify and GPU week control cards (a kill switches card stacked under notify), the CUDA devices beside the processor, storage and memory, the day/week/month GPU activity timeline with intrusion markers, the neighbour-impact card, the persistent host history (CPU, RAM and network on a scaled time axis with a hover readout), the jobs card, the GPU guard history, the server's own log, the 30-day GPU heatmap calendar, and the active users and processes at the end. Alerts show for 90 s after they first appear and then hide; the watchdog status reopens them and the dismiss button hides them at once. The watchdog card also holds the launch politeness select and the auto-throttle toggle (`/api/impact/politeness`), and keep-alive, which detaches the server from the terminal and the login session into its own `ml-template-webui-<pid>.scope` systemd scope; the kill switches card pairs the nuke, which kills every process of this user on this machine but the console, with kill front end, which stops every console server on the same project root (`/api/system/shutdown` force-kills the siblings, then stops itself and returns their pids); running and detached jobs survive and are adopted again on the next start. |
-| Architectures | `#/architectures` | `/api/backbones` | The 20 backbones across 5 families, with selection guidance and per-model defaults. |
-| Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes 30 of them and folds the variants into 2 groups (analyze, compare). |
+| Architectures | `#/architectures` | `/api/backbones` | The 20 backbones across 5 families, with each model's note from `notes/models/`, an architecture diagram and the per-model defaults. |
+| Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes all 24 and folds the three comparison entries into one Compare card. |
 | Launch | `#/launch/<key>` | `/api/scripts/<key>/config` | Full-screen launch control per script: config sections grouped by dataclass, typed controls, the override manifest, the command preview and the interpreter. Launch now, queue after the current job, or save for later. Entries that write a sweep (the training entries with their trial modes, cross-validation and the benchmark) also carry a Finalize section: the seed comparison, the trial comparison and the report mail are chained onto the finished run one at a time, each starting only once the previous one exited cleanly. The chain is derived before the run starts, so a run tag left to the timestamp default or a missing SMTP password is refused at the button instead of failing hours later. |
 | Saved | `#/saved` | `/api/saved-runs` | Configurations stored from launch pages, one JSON file each under `logs/saved_runs/`, finalize switches included. Each card can be launched, queued or deleted. |
 | Templates | `#/templates` | `/api/config-templates` | Named sets of config overrides captured from a launch page or a sequence block, one JSON file each under `logs/config_templates/`. A template carries only the fields the form overrode, so it can be imported on any entry point: matching dotted paths apply and the rest are reported as skipped. Each card opens its entry point with the template already applied, renames or deletes it; the `Config templates` rail block on every launch page imports, saves and deletes them without leaving the form. Names are unique per entry point, and saving over one replaces it. |
@@ -73,7 +73,7 @@ screen, so the server renders nothing extra and no run directory is written.
   ZIP. Hovering a row outlines the figure on the page and clicking it scrolls there.
 
 A file name carries the tab, the view's context and the figure, so a single save lands as
-`microscope_<run>_row0413_col0207_predicted_profile.png` and a batch as
+`microscope_<run>_row0413_col0207_pointwise_prediction.png` and a batch as
 `<tab>_<context>_figures.zip`. Each tab supplies its context through a `figureTag()` method.
 A figure takes its label from its `data-fig` attribute, or failing that from its `alt` text,
 its caption or the heading above it.
@@ -146,7 +146,7 @@ One class per file, no comments, per the project coding rules.
 which owns one instance of every collaborator and composes the routing table. Requests
 enter `request_router.py`, which resolves the path's leading section to exactly one
 sub-router under `routers/` and delegates: `routers/dispatch.py` carries the shared
-`HttpExchange` (query accessors, JSON, PNG, byte and file responses) and the per-router
+`HttpExchange` (query accessors, JSON, PNG and file responses) and the per-router
 `RouteTable`; `static_router.py`, `results_routers.py`,
 `analysis_routers.py`, `library_routers.py`, `launch_routers.py`, `system_router.py` and
 `tensorboard_router.py` declare the routes of their own domain and hold only the
@@ -166,7 +166,7 @@ tests under `tests/webui/`: `config_descriptions.json` and the model library
 `backbone_model_library.py`, which reads the per-model notes from `notes/models/`.
 
 **Analysis surfaces.** `results_browser.py`, `dataset_browser.py`,
-`model_probe.py`, `ab_autopsy.py`.
+`model_probe.py`, `model_survey.py`, `ab_autopsy.py`.
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`,
 `static/vendor/hairline-kernel.js`,
@@ -192,7 +192,7 @@ colour of each series, and an exported figure takes the dark page as its backdro
 
 Every wait on the backend shows a short status line (`SharedCharts.waitLine` and
 `SharedCharts.waitPanel`): empty containers before their first render, picker and hint
-notes, progress cards and the probe and fit computations.
+notes, progress cards and the microscope and survey computations.
 
 `hairline_figure` defines `<hairline-figure name>`, an isometric line drawing that
 answers the pointer, over the vendored hairline kernel (Lucas Marques, MIT). It marks
@@ -218,17 +218,16 @@ bench of swappable cartridges), `landscape`,
 `surface` (two bumps riding a straight track across a ridgeline surface),
 `balance`, `podium`, `tiles`, `film`, `tray`, `shelf`, `dial`, `scheduler`, `sampler`, `feed`, `field`,
 `watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `guillotine`, `chips`, `calendar` and
-`hourglass`. Fourteen of them take `state`: `gpus` (`{devices: [{holder, util}]}`),
+`hourglass`. Thirteen of them take `state`: `gpus` (`{devices: [{holder, util}]}`),
 `balance` and `chips` (`{mine, others, alarm}`), `guard` (`{gpus, invaded, critical}`), `scheduler`
-(`{jobs: [{id, running, position, of}]}`), `feed` (`{workers, prefetch, wait, util,
-feed}`), `watchdog` (`{armed, gauges: [{level, limit, alert}]}`, four gauges for CPU,
+(`{jobs: [{id, running, position, of}]}`), `watchdog` (`{armed, gauges: [{level, limit, alert}]}`, four gauges for CPU,
 load, RAM and disk), `notify` (`{armed}`), `nuke` (`{firing}`), `cores` (`{cores}`, one
 busy percentage per core, the field relaid when the count changes), `gpuwire` (`{util,
 power}`, utilisation in percent and power draw as a fraction of the limit, falling back
 to the utilisation when no power is given), `guillotine` (`{down}`, which keeps the
 halves apart once the front end has been killed), `calendar` (`{days: [{slots: [{mine,
 others}]}]}`, six 4-hour slots a day, shares averaged over the GPUs) and `hourglass`
-(`{wait_s}`); `gpus`, `balance`, `chips`, `feed`, `watchdog`, `notify`, `nuke`, `cores`,
+(`{wait_s}`); `gpus`, `balance`, `chips`, `watchdog`, `notify`, `nuke`, `cores`,
 `gpuwire`, `guillotine`, `calendar` and `hourglass` draw their static scene when no state
 is given.
 
