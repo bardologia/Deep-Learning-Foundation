@@ -91,7 +91,7 @@ def test_the_analysis_picker_carries_the_shared_tag():
 
 def test_the_inspect_views_label_their_bare_canvases():
     labelled = {
-        "microscope.js" : ("probe-profile", "probe-erf", "probe-flips", "probe-whatif", "probe-sweep"),
+        "microscope.js" : ("probe-erf",),
         "survey.js"     : ("survey-erf", "survey-noise", "survey-occl"),
     }
 

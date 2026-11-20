@@ -2,7 +2,7 @@
 
 class SurveyView {
   static STATUS_RETRIES = 5;
-  static FLIP_LABELS = { row: "row flip", range: "range flip", both: "both flips" };
+  static FLIP_LABELS = { row: "row flip", col: "col flip", both: "both flips" };
   static PAGES = [
     { key: "prediction",  title: "Prediction" },
     { key: "attribution", title: "Attribution" },
@@ -108,12 +108,9 @@ class SurveyView {
             <section class="ms-card ms-card--snug">
               <div class="ms-card__head">
                 <h3 class="cube-panel-title">Prediction fit</h3>
-                <span class="ms-card__note">per-pixel curve errors over the whole surveyed region</span>
+                <span class="ms-card__note">error of every target channel over the whole surveyed region, in target units</span>
               </div>
               <table class="ms-slots" id="survey-fit"></table>
-              <p class="ms-wifacts" id="survey-detection"></p>
-              <p class="ms-card__note ms-witablenote" id="survey-match-note" hidden>hungarian-matched per-parameter mean absolute error over every active ground-truth component</p>
-              <table class="ms-slots" id="survey-match"></table>
             </section>
             </section>
 
@@ -163,7 +160,7 @@ class SurveyView {
             <section class="ms-card ms-card--twothird">
               <div class="ms-card__head">
                 <h3 class="cube-panel-title">Noise robustness</h3>
-                <span class="ms-card__note">Gaussian noise added to every channel, one fresh draw per tile &mdash; mean damage vs &sigma;</span>
+                <span class="ms-card__note">normal noise added to every input channel, one fresh draw per tile; mean squared prediction shift against &sigma;</span>
               </div>
               <canvas id="survey-noise" data-fig="noise robustness" width="640" height="200"></canvas>
               <p class="ms-wifacts" id="survey-noise-facts"></p>
@@ -218,9 +215,6 @@ class SurveyView {
       badge      : this.root.querySelector("#survey-badge"),
       meta       : this.root.querySelector("#survey-meta"),
       fit        : this.root.querySelector("#survey-fit"),
-      detection  : this.root.querySelector("#survey-detection"),
-      matchNote  : this.root.querySelector("#survey-match-note"),
-      match      : this.root.querySelector("#survey-match"),
       bars       : this.root.querySelector("#survey-bars"),
       barsLegend : this.root.querySelector("#survey-bars-legend"),
       gridNote   : this.root.querySelector("#survey-grid-note"),
@@ -426,8 +420,8 @@ class SurveyView {
       `<span class="ms-chip"><b>surveyed</b> ${r.coverage.tiles} of ${r.coverage.total_tiles} tiles</span>`,
       `<span class="ms-chip"><b>pixels</b> ${r.coverage.pixels.toLocaleString("en-US")}</span>`,
       `<span class="ms-chip"><b>window</b> ${r.patch[0]}&times;${r.patch[1]} px</span>`,
-      `<span class="ms-chip"><b>K</b> ${r.n_gaussians}</span>`,
       `<span class="ms-chip"><b>in</b> ${r.channels.length} ch</span>`,
+      `<span class="ms-chip"><b>out</b> ${r.targets.length} ch</span>`,
       `<span class="ms-chip"><b>took</b> ${this._seconds(r.seconds)}</span>`,
     ].join("");
 
@@ -441,51 +435,18 @@ class SurveyView {
     SharedCharts.vitalsTable(this.refs.vitalsSum, this.refs.vitals, r.vitals, {});
   }
 
-  _statRow(label, stat) {
-    return `
-      <tr>
-        <td class="ms-slots__key">${label}</td>
-        <td>${stat.mean.toExponential(2)}</td>
-        <td>${stat.median.toExponential(2)}</td>
-        <td>${stat.p90.toExponential(2)}</td>
-      </tr>`;
-  }
-
   _renderFit(r) {
-    const head = `<thead><tr><th class="ms-slots__key">CURVE MSE</th><th>MEAN</th><th>MEDIAN</th><th>P90</th></tr></thead>`;
-    const rows = [];
-    if (r.fit.curve_mse_gt) rows.push(this._statRow("vs ground truth", r.fit.curve_mse_gt));
-    rows.push(this._statRow("vs raw cube", r.fit.curve_mse_raw));
+    const head = `<thead><tr><th class="ms-slots__key">TARGET</th><th>RMSE</th><th>MAE</th><th>R&sup2;</th></tr></thead>`;
+    const rows = r.fit.map((t) => `<tr><td class="ms-slots__key">${SharedCharts.esc(t.name)}</td><td>${SharedCharts.fmt(t.rmse)}</td><td>${SharedCharts.fmt(t.mae)}</td><td>${t.r2 === null ? "&ndash;" : t.r2.toFixed(4)}</td></tr>`);
+
     this.refs.fit.innerHTML = `${head}<tbody>${rows.join("")}</tbody>`;
-
-    if (!r.detection) {
-      this.refs.detection.innerHTML  = "no ground truth on this split &mdash; detection and matched errors need GT parameters";
-      this.refs.matchNote.hidden     = true;
-      this.refs.match.innerHTML      = "";
-      return;
-    }
-
-    this.refs.detection.innerHTML = [
-      `mean active slots <b>${r.detection.mean_pred_active.toFixed(2)}</b> predicted vs <b>${r.detection.mean_gt_active.toFixed(2)}</b> in the ground truth`,
-      `exact slot-count match at <b>${(r.detection.count_match_frac * 100).toFixed(1)}%</b> of pixels`,
-    ].join(" &middot; ");
-
-    this.refs.matchNote.hidden = false;
-    this.refs.match.innerHTML = `
-      <thead><tr><th>AMP MAE</th><th>&mu; MAE [m]</th><th>&sigma; MAE [m]</th><th>MATCHED PX&middot;SLOTS</th></tr></thead>
-      <tbody><tr>
-        <td>${r.matched.amp.toFixed(4)}</td>
-        <td>${r.matched.mu.toFixed(3)}</td>
-        <td>${r.matched.sigma.toFixed(3)}</td>
-        <td>${r.matched.n_matched.toLocaleString("en-US")}</td>
-      </tr></tbody>`;
   }
 
   _renderAttribution(r) {
-    SharedCharts.familyBars(this.refs.bars, this.refs.barsLegend, r.channels, r.attribution.families, "no dependence anywhere in the region");
+    SharedCharts.targetBars(this.refs.bars, this.refs.barsLegend, r.channels, r.attribution.targets, "no dependence anywhere in the region");
     this._renderGradients(r);
 
-    const live = r.erf.families.filter((f) => !f.dead);
+    const live = r.erf.targets.filter((t) => !t.dead);
     this.refs.erfNote.innerHTML = `cumulative gradient energy vs radius, averaged over ${r.erf.samples} sampled pixels`;
 
     if (r.erf.samples === 0) {
@@ -503,13 +464,13 @@ class SurveyView {
     SharedCharts.lineChart(
       this.refs.erf,
       live[0].radii,
-      live.map((f) => ({ values: f.cumulative, color: SharedCharts.FAMILY_COLORS[f.family], width: 1.5, label: f.family })),
+      live.map((t) => ({ values: t.cumulative, color: SharedCharts.targetColor(r.erf.targets.indexOf(t)), width: 1.5, label: t.name })),
       { xUnit: "px" },
     );
 
-    this.refs.erfFacts.innerHTML = r.erf.families.map((f) => f.dead
-      ? `${f.family} &mdash; no dependence`
-      : `${f.family} r<sub>50</sub> <b>${f.r50} px</b> / r<sub>90</sub> <b>${f.r90} px</b>`
+    this.refs.erfFacts.innerHTML = r.erf.targets.map((t) => t.dead
+      ? `${SharedCharts.esc(t.name)}: no dependence`
+      : `${SharedCharts.esc(t.name)} r<sub>50</sub> <b>${t.r50} px</b> / r<sub>90</sub> <b>${t.r90} px</b>`
     ).join(" &middot; ");
   }
 
@@ -528,7 +489,7 @@ class SurveyView {
     this.refs.gridNote.innerHTML = `|&part;output/&part;input| windows averaged over ${g.samples} sampled pixels, each centred on its pixel`;
     this.refs.gridCtl.hidden     = false;
     this._renderGridChips();
-    SharedCharts.gradientGrid(this.refs.grid, { channels: r.channels, families: g.families, center: g.center, patch: g.patch }, this.gridChannel);
+    SharedCharts.gradientGrid(this.refs.grid, { channels: r.channels, targets: g.targets, center: g.center, patch: g.patch }, this.gridChannel);
   }
 
   _renderGridChips() {
@@ -546,20 +507,16 @@ class SurveyView {
   }
 
   _renderAblation(r) {
-    SharedCharts.ablationRows(this.refs.ablation, r.ablation.channels, r.fit.base_power, (c) =>
-      c.flips_frac > 0 ? ` &middot; slots flip at ${(c.flips_frac * 100).toFixed(1)}% of px` : ""
-    );
+    SharedCharts.ablationRows(this.refs.ablation, r.ablation.channels);
   }
 
   _renderFlips(r) {
-    const power = r.fit.base_power;
-    const head  = `<thead><tr><th class="ms-slots__key">FLIP</th><th>MEAN &Delta; CURVE MSE</th><th>% OF POWER</th></tr></thead>`;
+    const head = `<thead><tr><th class="ms-slots__key">FLIP</th><th>MEAN SQUARED SHIFT</th></tr></thead>`;
 
     const rows = r.flips.filter((e) => e.flip !== "none").map((e) => `
       <tr>
         <td class="ms-slots__key">${SurveyView.FLIP_LABELS[e.flip]}</td>
-        <td>${e.delta_mse.toExponential(2)}</td>
-        <td>${power > 0 ? ((e.delta_mse / power) * 100).toFixed(2) : "&ndash;"}</td>
+        <td>${e.delta.toExponential(2)}</td>
       </tr>`);
 
     this.refs.flips.innerHTML = `${head}<tbody>${rows.join("")}</tbody>`;
@@ -569,20 +526,19 @@ class SurveyView {
     SharedCharts.lineChart(
       this.refs.noise,
       r.noise.map((p) => p.value),
-      [{ values: r.noise.map((p) => p.delta_mse), color: SharedCharts.SERIES_COLORS.perturbed, width: 1.6, label: "Δ curve MSE" }],
+      [{ values: r.noise.map((p) => p.delta), color: SharedCharts.SERIES_COLORS.perturbed, width: 1.6, label: "squared shift" }],
       { xUnit: "" },
     );
 
     const last = r.noise[r.noise.length - 1];
-    const rel  = r.fit.base_power > 0 ? ` (${((last.delta_mse / r.fit.base_power) * 100).toFixed(1)}% of power)` : "";
-    this.refs.noiseFacts.innerHTML = `mean &Delta; curve MSE at &sigma; ${last.value.toFixed(1)}: <b>${last.delta_mse.toExponential(2)}</b>${rel}`;
+    this.refs.noiseFacts.innerHTML = `mean squared prediction shift at &sigma; ${last.value.toFixed(1)}: <b>${last.delta.toExponential(2)}</b> (normalized target units)`;
   }
 
   _renderOcclusion(r) {
     SharedCharts.lineChart(
       this.refs.occl,
       r.occlusion.distance,
-      [{ values: r.occlusion.delta, color: SharedCharts.SERIES_COLORS.pred, width: 1.6, label: "Δ curve MSE" }],
+      [{ values: r.occlusion.delta, color: SharedCharts.SERIES_COLORS.pred, width: 1.6, label: "squared shift" }],
       { xUnit: "px" },
     );
 

@@ -1,20 +1,13 @@
 "use strict";
 
 class MicroscopeView {
-  static FAMILIES      = ["amp", "mu", "sigma"];
-  static FLIP_STYLES   = {
-    none    : { color: SharedCharts.SERIES_COLORS.pred,      width: 1.8, label: "original" },
-    row     : { color: SharedCharts.FAMILY_COLORS.mu,        width: 1.2, label: "row flip" },
-    col     : { color: SharedCharts.FAMILY_COLORS.sigma,     width: 1.2, label: "col flip" },
-    both    : { color: SharedCharts.SERIES_COLORS.perturbed, width: 1.2, label: "both" },
-  };
+  static FLIP_LABELS    = { none: "original", row: "row flip", col: "col flip", both: "both" };
   static STATUS_RETRIES = 5;
   static PAGES = [
     { key: "prediction",  title: "Prediction" },
-    { key: "fields",      title: "Parameter fields" },
+    { key: "fields",      title: "Target fields" },
     { key: "attribution", title: "Attribution" },
     { key: "robustness",  title: "Robustness" },
-    { key: "whatif",      title: "What-if" },
     { key: "features",    title: "Feature maps" },
   ];
 
@@ -32,28 +25,19 @@ class MicroscopeView {
     this.ablToken    = 0;
     this.occlToken   = 0;
     this.flipToken   = 0;
-    this.wiToken     = 0;
     this.runs        = [];
     this.selectedId  = null;
     this.readyPath   = null;
     this.runStrip    = null;
-    this.lastPredict = null;
     this.attrib      = null;
-    this.attribSlot  = -1;
     this.gridChannel = -1;
     this.fieldsData  = null;
-    this.fieldsSlot  = 0;
+    this.fieldsIndex = 0;
     this.fieldsToken = 0;
-    this.sweepData   = null;
-    this.sweepToken  = 0;
     this.vitalsData  = null;
     this.vitalsToken = 0;
-    this.flipsData   = null;
-    this.wiData      = null;
     this.pager       = null;
     this.pageLoaded  = new Set();
-    this.wi          = { kind: "drop_channel", channel: 0, factor: 0.5, sigma: 0.5, seed: 0 };
-    this.wiTimer     = null;
   }
 
   enter() {
@@ -91,15 +75,15 @@ class MicroscopeView {
             <div class="fl-map__frame">
               <span class="cube-axis cube-axis--y">row &darr;</span>
               <div class="fl-map__wrap" id="probe-map-wrap">
-                <img id="probe-map-img" alt="Primary channel amplitude" />
+                <img id="probe-map-img" alt="First target channel of the split" />
                 <div class="fl-marks" id="probe-marks"></div>
               </div>
-              <span class="cube-axis cube-axis--x">range &rarr;</span>
+              <span class="cube-axis cube-axis--x">col &rarr;</span>
             </div>
           </div>
           <div class="ms-scene__info">
             <div class="ms-card__head">
-              <h3 class="cube-panel-title">Scene</h3>
+              <h3 class="cube-panel-title">Split</h3>
               <span class="ms-badge" id="probe-model-badge"></span>
             </div>
             <div class="ms-meta" id="probe-meta"></div>
@@ -119,7 +103,7 @@ class MicroscopeView {
         </section>
 
         <div class="ms-main">
-          <div class="ms-idle" id="probe-idle">Click a pixel on the scene map, or type row / col indices, to put it under the microscope.</div>
+          <div class="ms-idle" id="probe-idle">Click a pixel on the map, or type row / col indices, to put it under the microscope.</div>
 
           <div class="ms-layout" id="probe-cards" hidden>
             <div class="ms-pages">
@@ -127,29 +111,29 @@ class MicroscopeView {
             <section class="ms-page" data-page="prediction">
             <section class="ms-card ms-card--snug">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Predicted profile</h3>
-                <span class="ms-card__note">reflectivity vs height at the probed pixel</span>
+                <h3 class="cube-panel-title">Prediction</h3>
+                <span class="ms-card__note">every target channel at the probed pixel, in target units</span>
               </div>
-              <canvas id="probe-profile" data-fig="predicted profile" width="640" height="240"></canvas>
-              <table class="ms-slots" id="probe-slots"></table>
-              <p class="ms-wifacts" id="probe-fit"></p>
-              <p class="ms-card__note ms-witablenote" id="probe-match-note" hidden>ground-truth scatterers and their hungarian-matched predictions &mdash; red marks a miss beyond 0.1 amp or 0.5 m</p>
-              <table class="ms-slots" id="probe-match"></table>
+              <table class="ms-slots" id="probe-targets"></table>
+              <div class="ms-subhead">
+                <h4 class="cube-panel-title">Inputs</h4>
+                <span class="ms-card__note">raw input channel values at the probed pixel</span>
+              </div>
+              <table class="ms-slots" id="probe-inputs"></table>
             </section>
             </section>
 
             <section class="ms-page" data-page="fields" hidden>
             <section class="ms-card">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Local parameter fields</h3>
-                <span class="ms-card__note">one forward pass over the input window &mdash; how each parameter behaves in the pixel's neighbourhood</span>
+                <h3 class="cube-panel-title">Local target fields</h3>
+                <span class="ms-card__note">one forward pass over the input window: prediction, target and absolute error around the pixel</span>
               </div>
               <div class="ms-ctlrow">
-                <span class="ms-ctlrow__label">scatterer</span>
-                <div class="ms-chiprow" id="probe-fields-slots"></div>
+                <span class="ms-ctlrow__label">target</span>
+                <div class="ms-chiprow" id="probe-fields-targets"></div>
               </div>
               <div class="ms-fieldrow" id="probe-fields-maps"></div>
-              <div class="ms-fieldrow" id="probe-fields-overview"></div>
             </section>
             </section>
 
@@ -157,17 +141,13 @@ class MicroscopeView {
             <section class="ms-card">
               <div class="ms-card__head">
                 <h3 class="cube-panel-title">Input attribution</h3>
-                <span class="ms-card__note" id="probe-attrib-note">share of |&part;output/&part;input| per input channel, all three outputs side by side</span>
-              </div>
-              <div class="ms-ctlrow">
-                <span class="ms-ctlrow__label">scatterer</span>
-                <div class="ms-chiprow" id="probe-attrib-slots"></div>
+                <span class="ms-card__note">share of |&part;output/&part;input| per input channel, every target channel side by side</span>
               </div>
               <div class="ms-bars" id="probe-bars"></div>
               <div class="ms-legend" id="probe-bars-legend"></div>
               <div class="ms-subhead">
                 <h4 class="cube-panel-title">Spatial gradients</h4>
-                <span class="ms-card__note">|&part;output/&part;input| over the input window &mdash; pick an input channel or view all</span>
+                <span class="ms-card__note">|&part;output/&part;input| over the input window; pick an input channel or view all</span>
               </div>
               <div class="ms-ctlrow">
                 <span class="ms-ctlrow__label">channel</span>
@@ -176,7 +156,7 @@ class MicroscopeView {
               <div class="ms-gridwrap"><div class="ms-grid" id="probe-grid"></div></div>
               <div class="ms-subhead">
                 <h4 class="cube-panel-title">Effective receptive field</h4>
-                <span class="ms-card__note">share of each output's gradient energy within a radius of the probed pixel</span>
+                <span class="ms-card__note">share of each target's gradient energy within a radius of the probed pixel</span>
               </div>
               <canvas id="probe-erf" data-fig="effective receptive field" width="640" height="180" hidden></canvas>
               <p class="ms-wifacts" id="probe-erf-facts"></p>
@@ -187,7 +167,7 @@ class MicroscopeView {
             <section class="ms-card">
               <div class="ms-card__head">
                 <h3 class="cube-panel-title">Channel ablation</h3>
-                <span class="ms-card__note">zero one input channel at a time and re-run &mdash; causal damage to the prediction, unlike the attribution page's local gradients</span>
+                <span class="ms-card__note">zero one input channel at a time and re-run: causal damage to the prediction, unlike the attribution page's local gradients</span>
               </div>
               <div class="ms-abl" id="probe-ablation"></div>
             </section>
@@ -195,7 +175,7 @@ class MicroscopeView {
             <section class="ms-card ms-card--third">
               <div class="ms-card__head">
                 <h3 class="cube-panel-title">Occlusion sensitivity</h3>
-                <span class="ms-card__note">slide a zero-patch across the window and re-run &mdash; where the model's evidence for this pixel actually sits</span>
+                <span class="ms-card__note">slide a zero-patch across the window and re-run: where the model's evidence for this pixel sits</span>
               </div>
               <div class="ms-fieldrow" id="probe-occlusion"></div>
               <p class="ms-wifacts" id="probe-occl-facts"></p>
@@ -204,52 +184,10 @@ class MicroscopeView {
             <section class="ms-card ms-card--twothird">
               <div class="ms-card__head">
                 <h3 class="cube-panel-title">Symmetry</h3>
-                <span class="ms-card__note">re-run the model on flipped windows and flip the outputs back &mdash; a flip-equivariant model repeats itself exactly</span>
+                <span class="ms-card__note">re-run the model on flipped windows and flip the outputs back; a flip-equivariant model repeats itself exactly</span>
               </div>
-              <canvas id="probe-flips" data-fig="symmetry" width="640" height="240"></canvas>
+              <table class="ms-slots" id="probe-flips"></table>
               <p class="ms-wifacts" id="probe-flips-facts"></p>
-            </section>
-            </section>
-
-            <section class="ms-page" data-page="whatif" hidden>
-            <section class="ms-card ms-card--snug">
-              <div class="ms-card__head">
-                <h3 class="cube-panel-title">What-if</h3>
-                <span class="ms-card__note">perturb the input window, re-run the model, compare the predictions</span>
-              </div>
-              <div class="ms-ctlrow">
-                <span class="ms-ctlrow__label">perturb</span>
-                <div class="cube-spaces" id="probe-whatif-kind" role="group" aria-label="Perturbation">
-                  <button type="button" class="cube-space is-active" data-kind="drop_channel">zero a channel</button>
-                  <button type="button" class="cube-space" data-kind="scale_channel">scale a channel</button>
-                  <button type="button" class="cube-space" data-kind="noise">add noise</button>
-                </div>
-              </div>
-              <div class="ms-ctlrow" id="probe-whatif-chrow">
-                <span class="ms-ctlrow__label">channel</span>
-                <div class="ms-chiprow" id="probe-whatif-channels"></div>
-                <span class="ms-ctlrow__na" id="probe-whatif-chna" hidden>noise is added to every input channel at once</span>
-              </div>
-              <div class="ms-ctlrow" id="probe-whatif-valrow">
-                <span class="ms-ctlrow__label" id="probe-whatif-value-label">strength</span>
-                <div class="ms-wival" id="probe-whatif-valctl" hidden>
-                  <input type="range" id="probe-whatif-range" min="0" max="2" step="0.05" value="0.5" />
-                  <input type="number" id="probe-whatif-value" class="cube-jump__input" min="0" max="2" step="0.05" value="0.5" />
-                  <button type="button" class="btn btn--mini" id="probe-whatif-reroll" hidden>re-roll noise</button>
-                </div>
-                <span class="ms-ctlrow__na" id="probe-whatif-valna">zeroing removes the channel outright; there is no strength to tune</span>
-              </div>
-              <p class="ms-wisummary" id="probe-whatif-desc"></p>
-              <canvas id="probe-whatif" data-fig="what-if" width="640" height="240"></canvas>
-              <p class="ms-wifacts" id="probe-whatif-delta"></p>
-              <p class="ms-card__note ms-witablenote" id="probe-whatif-tablenote" hidden>scatterer parameters at the probed pixel, base &rarr; perturbed &mdash; red marks a moved value</p>
-              <table class="ms-slots" id="probe-whatif-slots"></table>
-              <div class="ms-subhead">
-                <h4 class="cube-panel-title">Response sweep</h4>
-                <span class="ms-card__note">sweep this perturbation's strength and re-run at each step &mdash; the dashed marker is the strength dialled in above</span>
-              </div>
-              <canvas id="probe-sweep" data-fig="response sweep" width="640" height="200" hidden></canvas>
-              <p class="ms-wifacts" id="probe-sweep-facts"></p>
             </section>
             </section>
 
@@ -269,7 +207,7 @@ class MicroscopeView {
               <div class="ms-feat"><img id="probe-kernels" alt="Learned convolution kernels" hidden /></div>
               <div class="ms-subhead">
                 <h4 class="cube-panel-title">Layer vitals</h4>
-                <span class="ms-card__note">one hooked forward pass at the probed window &mdash; click a row to open that layer's feature maps</span>
+                <span class="ms-card__note">one hooked forward pass at the probed window; click a row to open that layer's feature maps</span>
               </div>
               <p class="ms-wifacts" id="probe-vitals-summary"></p>
               <div class="ms-vitals"><table class="ms-slots ms-vitals__table" id="probe-vitals"></table></div>
@@ -284,71 +222,47 @@ class MicroscopeView {
       </div>`;
 
     this.refs = {
-      strip      : this.root.querySelector("#probe-strip"),
-      hint       : this.root.querySelector("#probe-hint"),
-      progress   : this.root.querySelector("#probe-progress"),
-      fill       : this.root.querySelector("#probe-progress-fill"),
-      label      : this.root.querySelector("#probe-progress-label"),
-      stage      : this.root.querySelector("#probe-stage"),
-      badge      : this.root.querySelector("#probe-model-badge"),
-      meta       : this.root.querySelector("#probe-meta"),
-      mapImg     : this.root.querySelector("#probe-map-img"),
-      marks      : this.root.querySelector("#probe-marks"),
-      coords     : this.root.querySelector("#probe-coords"),
-      rowInput   : this.root.querySelector("#probe-row"),
-      colInput   : this.root.querySelector("#probe-col"),
-      goBtn      : this.root.querySelector("#probe-go"),
-      idle       : this.root.querySelector("#probe-idle"),
-      cards      : this.root.querySelector("#probe-cards"),
-      nav        : this.root.querySelector("#probe-nav"),
-      pages      : [...this.root.querySelectorAll(".ms-page")],
-      profile    : this.root.querySelector("#probe-profile"),
-      slots      : this.root.querySelector("#probe-slots"),
-      fit        : this.root.querySelector("#probe-fit"),
-      matchNote  : this.root.querySelector("#probe-match-note"),
-      match      : this.root.querySelector("#probe-match"),
-      fieldSlots : this.root.querySelector("#probe-fields-slots"),
-      fieldMaps  : this.root.querySelector("#probe-fields-maps"),
-      fieldOver  : this.root.querySelector("#probe-fields-overview"),
-      attribNote : this.root.querySelector("#probe-attrib-note"),
-      attribSlots: this.root.querySelector("#probe-attrib-slots"),
-      bars       : this.root.querySelector("#probe-bars"),
-      barsLegend : this.root.querySelector("#probe-bars-legend"),
-      gridChips  : this.root.querySelector("#probe-grid-channels"),
-      grid       : this.root.querySelector("#probe-grid"),
-      erf        : this.root.querySelector("#probe-erf"),
-      erfFacts   : this.root.querySelector("#probe-erf-facts"),
-      ablation   : this.root.querySelector("#probe-ablation"),
-      occlusion  : this.root.querySelector("#probe-occlusion"),
-      occlFacts  : this.root.querySelector("#probe-occl-facts"),
-      flips      : this.root.querySelector("#probe-flips"),
-      flipsFacts : this.root.querySelector("#probe-flips-facts"),
-      arch       : this.root.querySelector("#probe-arch"),
-      archLayers : this.root.querySelector("#probe-arch-layers"),
-      features   : this.root.querySelector("#probe-features"),
-      featNote   : this.root.querySelector("#probe-feat-note"),
-      kernels    : this.root.querySelector("#probe-kernels"),
-      kernNote   : this.root.querySelector("#probe-kern-note"),
-      vitalsSum  : this.root.querySelector("#probe-vitals-summary"),
-      vitals     : this.root.querySelector("#probe-vitals"),
-      wKind      : this.root.querySelector("#probe-whatif-kind"),
-      wDesc      : this.root.querySelector("#probe-whatif-desc"),
-      wChRow     : this.root.querySelector("#probe-whatif-chrow"),
-      wChannels  : this.root.querySelector("#probe-whatif-channels"),
-      wChNa      : this.root.querySelector("#probe-whatif-chna"),
-      wValRow    : this.root.querySelector("#probe-whatif-valrow"),
-      wValCtl    : this.root.querySelector("#probe-whatif-valctl"),
-      wValNa     : this.root.querySelector("#probe-whatif-valna"),
-      wValueLabel: this.root.querySelector("#probe-whatif-value-label"),
-      wRange     : this.root.querySelector("#probe-whatif-range"),
-      wValue     : this.root.querySelector("#probe-whatif-value"),
-      wReroll    : this.root.querySelector("#probe-whatif-reroll"),
-      wCanvas    : this.root.querySelector("#probe-whatif"),
-      wDelta     : this.root.querySelector("#probe-whatif-delta"),
-      wTableNote : this.root.querySelector("#probe-whatif-tablenote"),
-      wSlots     : this.root.querySelector("#probe-whatif-slots"),
-      sweep      : this.root.querySelector("#probe-sweep"),
-      sweepFacts : this.root.querySelector("#probe-sweep-facts"),
+      strip         : this.root.querySelector("#probe-strip"),
+      hint          : this.root.querySelector("#probe-hint"),
+      progress      : this.root.querySelector("#probe-progress"),
+      fill          : this.root.querySelector("#probe-progress-fill"),
+      label         : this.root.querySelector("#probe-progress-label"),
+      stage         : this.root.querySelector("#probe-stage"),
+      badge         : this.root.querySelector("#probe-model-badge"),
+      meta          : this.root.querySelector("#probe-meta"),
+      mapImg        : this.root.querySelector("#probe-map-img"),
+      marks         : this.root.querySelector("#probe-marks"),
+      coords        : this.root.querySelector("#probe-coords"),
+      rowInput      : this.root.querySelector("#probe-row"),
+      colInput      : this.root.querySelector("#probe-col"),
+      goBtn         : this.root.querySelector("#probe-go"),
+      idle          : this.root.querySelector("#probe-idle"),
+      cards         : this.root.querySelector("#probe-cards"),
+      nav           : this.root.querySelector("#probe-nav"),
+      pages         : [...this.root.querySelectorAll(".ms-page")],
+      targets       : this.root.querySelector("#probe-targets"),
+      inputs        : this.root.querySelector("#probe-inputs"),
+      fieldTargets  : this.root.querySelector("#probe-fields-targets"),
+      fieldMaps     : this.root.querySelector("#probe-fields-maps"),
+      bars          : this.root.querySelector("#probe-bars"),
+      barsLegend    : this.root.querySelector("#probe-bars-legend"),
+      gridChips     : this.root.querySelector("#probe-grid-channels"),
+      grid          : this.root.querySelector("#probe-grid"),
+      erf           : this.root.querySelector("#probe-erf"),
+      erfFacts      : this.root.querySelector("#probe-erf-facts"),
+      ablation      : this.root.querySelector("#probe-ablation"),
+      occlusion     : this.root.querySelector("#probe-occlusion"),
+      occlFacts     : this.root.querySelector("#probe-occl-facts"),
+      flips         : this.root.querySelector("#probe-flips"),
+      flipsFacts    : this.root.querySelector("#probe-flips-facts"),
+      arch          : this.root.querySelector("#probe-arch"),
+      archLayers    : this.root.querySelector("#probe-arch-layers"),
+      features      : this.root.querySelector("#probe-features"),
+      featNote      : this.root.querySelector("#probe-feat-note"),
+      kernels       : this.root.querySelector("#probe-kernels"),
+      kernNote      : this.root.querySelector("#probe-kern-note"),
+      vitalsSum     : this.root.querySelector("#probe-vitals-summary"),
+      vitals        : this.root.querySelector("#probe-vitals"),
     };
 
     this.refs.mapImg.addEventListener("click", (ev) => this._onMapClick(ev));
@@ -366,36 +280,6 @@ class MicroscopeView {
       this.refs.kernNote.textContent = `${this.layer} rendered no kernels`;
     });
 
-    this.refs.wKind.querySelectorAll(".cube-space").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        this.refs.wKind.querySelectorAll(".cube-space").forEach((b) => b.classList.toggle("is-active", b === btn));
-        this.wi.kind = btn.dataset.kind;
-        this._syncWhatIfControls();
-        this._scheduleWhatIf();
-      });
-    });
-
-    this.refs.wRange.addEventListener("input", () => {
-      this.refs.wValue.value = this.refs.wRange.value;
-      this._readWhatIfValue();
-      this._renderWhatIfSummary();
-      this._renderSweepChart();
-      this._scheduleWhatIf();
-    });
-    this.refs.wValue.addEventListener("change", () => {
-      this.refs.wRange.value = this.refs.wValue.value;
-      this._readWhatIfValue();
-      this._renderWhatIfSummary();
-      this._renderSweepChart();
-      this._scheduleWhatIf();
-    });
-    this.refs.wReroll.addEventListener("click", () => {
-      this.wi.seed += 1;
-      this._renderWhatIfSummary();
-      this._runWhatIf();
-    });
-
-    this._syncWhatIfControls();
     this.pager = new SectionPager(this.refs.nav, this.refs.pages, MicroscopeView.PAGES, (key) => this._repaintPage(key));
   }
 
@@ -403,7 +287,6 @@ class MicroscopeView {
     if (key === "fields")      return [() => this._loadFields()];
     if (key === "attribution") return [() => this._loadAttribution()];
     if (key === "robustness")  return [() => this._loadAblation(), () => this._loadOcclusion(), () => this._loadFlips()];
-    if (key === "whatif")      return [() => this._runWhatIf()];
     if (key === "features")    return [() => this._loadFeatures(), () => this._loadVitals()];
     return [];
   }
@@ -418,13 +301,7 @@ class MicroscopeView {
   _repaintPage(key) {
     this._ensurePage(key);
 
-    if (key === "prediction" && this.lastPredict) this._renderProfile(this.lastPredict);
     if (key === "attribution" && this.attrib) this._renderErf(this.attrib);
-    if (key === "robustness" && this.flipsData) this._renderFlipsChart(this.flipsData);
-    if (key === "whatif" && this.wiData) {
-      this._renderWhatIfChart(this.wiData);
-      this._renderSweepChart();
-    }
   }
 
   async _refreshRuns() {
@@ -520,18 +397,11 @@ class MicroscopeView {
   async _onReady(info) {
     this.info        = info;
     this.pixel       = null;
-    this.lastPredict = null;
     this.attrib      = null;
-    this.attribSlot  = -1;
     this.gridChannel = -1;
     this.fieldsData  = null;
-    this.fieldsSlot  = 0;
-    this.sweepData   = null;
+    this.fieldsIndex = 0;
     this.vitalsData  = null;
-    this.flipsData   = null;
-    this.wiData      = null;
-    this.wi.channel  = 0;
-    this.wi.seed     = 0;
     this.pageLoaded.clear();
 
     this.refs.stage.hidden = false;
@@ -539,7 +409,7 @@ class MicroscopeView {
     this.refs.cards.hidden = true;
     this.refs.marks.innerHTML = "";
 
-    this.refs.hint.textContent   = `Loaded ${info.backbone} — probing the ${info.split} split.`;
+    this.refs.hint.textContent   = `Loaded ${info.backbone}, probing the ${info.split} split; the map shows the target '${info.target_channels[0]}'.`;
     this.refs.badge.textContent  = info.backbone;
     this.refs.coords.textContent = "Click the map to probe a pixel.";
     this.refs.mapImg.src         = `/api/probe/map?t=${Date.now()}`;
@@ -548,15 +418,12 @@ class MicroscopeView {
     this.refs.colInput.max = info.col_size - 1;
 
     this.refs.meta.innerHTML = [
-      `<span class="ms-chip"><b>K</b> ${info.n_gaussians}</span>`,
-      `<span class="ms-chip"><b>in</b> ${info.in_channels} ch</span>`,
+      `<span class="ms-chip"><b>in</b> ${info.input_channels.length} ch</span>`,
+      `<span class="ms-chip"><b>out</b> ${info.target_channels.length} ch</span>`,
       `<span class="ms-chip"><b>region</b> ${info.row_size}&times;${info.col_size} px</span>`,
       `<span class="ms-chip"><b>window</b> ${info.patch[0]}&times;${info.patch[1]} px</span>`,
       `<span class="ms-chip"><b>split</b> ${SharedCharts.esc(info.split)}</span>`,
     ].join("");
-
-    this._buildWhatIfChannels(info.channels);
-    this._syncWhatIfControls();
 
     const layers = await Api.get("/api/probe/layers");
 
@@ -566,19 +433,6 @@ class MicroscopeView {
     }
 
     this._buildArch(layers.layers);
-  }
-
-  _buildWhatIfChannels(channels) {
-    this.refs.wChannels.innerHTML = "";
-    channels.forEach((label, index) => {
-      const chip = SharedCharts.chip(label, index === this.wi.channel, () => {
-        this.wi.channel = index;
-        this.refs.wChannels.querySelectorAll(".ms-chipbtn").forEach((b, i) => b.classList.toggle("is-active", i === index));
-        this._renderWhatIfSummary();
-        this._scheduleWhatIf();
-      });
-      this.refs.wChannels.appendChild(chip);
-    });
   }
 
   _blockKey(name) {
@@ -701,15 +555,10 @@ class MicroscopeView {
       return;
     }
 
-    this.lastPredict       = out;
     this.refs.idle.hidden  = true;
     this.refs.cards.hidden = false;
 
-    this._renderProfile(out);
-    this._renderSlots(out);
-    this._renderFit(out);
-    this._renderMatches(out);
-    this._renderAttribSlotChips();
+    this._renderPrediction(out);
 
     this.pageLoaded.clear();
     this._ensurePage(this.pager.page);
@@ -721,97 +570,12 @@ class MicroscopeView {
     this.refs.marks.innerHTML = `<i class="fl-mark" style="left:${x}%;top:${y}%;background:#e11d48"></i>`;
   }
 
-  _renderProfile(out) {
-    const series = [
-      { values: out.raw_curve, color: SharedCharts.SERIES_COLORS.raw,  width: 1.0, label: "raw" },
-      { values: out.gt_curve,  color: SharedCharts.SERIES_COLORS.gt,   width: 1.4, label: "GT" },
-      { values: out.curve,     color: SharedCharts.SERIES_COLORS.pred, width: 1.8, label: "pred" },
-    ].filter((s) => Array.isArray(s.values));
+  _renderPrediction(out) {
+    const targets = out.targets.map((t) => `<tr><td class="ms-slots__key">${SharedCharts.esc(t.name)}</td><td>${SharedCharts.fmt(t.prediction)}</td><td>${SharedCharts.fmt(t.target)}</td><td>${t.error >= 0 ? "+" : ""}${SharedCharts.fmt(t.error)}</td></tr>`);
+    const inputs  = out.inputs.map((i) => `<tr><td class="ms-slots__key">${SharedCharts.esc(i.name)}</td><td>${SharedCharts.fmt(i.value)}</td></tr>`);
 
-    SharedCharts.lineChart(this.refs.profile, out.z_axis, series);
-  }
-
-  _slotRow(slot, keyLabel, rowClass, stateLabel) {
-    return `
-      <tr class="${rowClass}">
-        <td class="ms-slots__key">${SharedCharts.esc(keyLabel)}</td>
-        <td>${slot.amp.toFixed(3)}</td>
-        <td>${slot.mu.toFixed(2)}</td>
-        <td>${slot.sigma.toFixed(2)}</td>
-        <td class="ms-slots__state">${stateLabel}</td>
-      </tr>`;
-  }
-
-  _renderSlots(out) {
-    const head = `<thead><tr><th class="ms-slots__key">SLOT</th><th>AMP</th><th>&mu;</th><th>&sigma;</th><th class="ms-slots__state">STATE</th></tr></thead>`;
-    const pred = out.slots.map((s) => this._slotRow(s, `${s.slot}`, s.active ? "" : "is-inactive", s.active ? "active" : "off"));
-    const gt   = (out.gt_slots || []).filter((s) => s.active).map((s) => this._slotRow(s, `GT ${s.slot}`, "ms-slots__gt", "truth"));
-
-    this.refs.slots.innerHTML = `${head}<tbody>${pred.join("")}${gt.join("")}</tbody>`;
-  }
-
-  _renderFit(out) {
-    if (!out.fit) {
-      this.refs.fit.innerHTML = "";
-      return;
-    }
-
-    const parts = [];
-    if (out.fit.curve_mse_gt !== null) parts.push(`curve MSE vs GT <b>${out.fit.curve_mse_gt.toExponential(3)}</b>`);
-    parts.push(`curve MSE vs raw cube <b>${out.fit.curve_mse_raw.toExponential(3)}</b>`);
-
-    const active = out.fit.gt_active === null
-      ? `${out.fit.pred_active}/${this.info.n_gaussians} predicted slots active (no ground truth on this split)`
-      : `${out.fit.pred_active}/${this.info.n_gaussians} predicted slots active vs ${out.fit.gt_active} in the ground truth`;
-
-    this.refs.fit.innerHTML = `${parts.join(" &middot; ")} &middot; ${active}`;
-  }
-
-  _renderMatches(out) {
-    const rows = out.matches || [];
-    this.refs.matchNote.hidden = !rows.length;
-
-    if (!rows.length) {
-      this.refs.match.innerHTML = "";
-      return;
-    }
-
-    const head = `<thead><tr><th class="ms-slots__key">GT SLOT</th><th>PRED SLOT</th><th>&Delta; AMP</th><th>&Delta; &mu; [m]</th><th>&Delta; &sigma; [m]</th></tr></thead>`;
-    const body = rows.map((m) => {
-      const cells = [["d_amp", 3, 0.1], ["d_mu", 2, 0.5], ["d_sigma", 2, 0.5]].map(([key, digits, eps]) => {
-        const missed = Math.abs(m[key]) > eps;
-        const signed = `${m[key] >= 0 ? "+" : ""}${m[key].toFixed(digits)}`;
-        return `<td><span class="ms-shift${missed ? " is-moved" : ""}">${signed}</span></td>`;
-      }).join("");
-      return `<tr><td class="ms-slots__key">GT ${m.gt_slot}</td><td>${m.pred_slot}</td>${cells}</tr>`;
-    });
-
-    this.refs.match.innerHTML = `${head}<tbody>${body.join("")}</tbody>`;
-  }
-
-  _renderAttribSlotChips() {
-    this.refs.attribSlots.innerHTML = "";
-
-    const pick = (slot) => () => {
-      if (slot === this.attribSlot) return;
-      this.attribSlot = slot;
-      this._renderAttribSlotChips();
-      this._loadAttribution();
-    };
-
-    this.refs.attribSlots.appendChild(SharedCharts.chip("all scatterers", this.attribSlot === -1, pick(-1)));
-
-    ((this.lastPredict && this.lastPredict.slots) || []).forEach((slot) => {
-      const label = `slot ${slot.slot} · μ ${slot.mu.toFixed(1)} m${slot.active ? "" : " · off"}`;
-      const chip  = SharedCharts.chip(label, this.attribSlot === slot.slot, pick(slot.slot));
-      if (!slot.active) chip.classList.add("is-off");
-      this.refs.attribSlots.appendChild(chip);
-    });
-  }
-
-  _noteAttribution(out) {
-    const scope = out.slot < 0 ? `summed over all ${this.info.n_gaussians} scatterer slots` : `scatterer slot ${out.slot} only`;
-    this.refs.attribNote.innerHTML = `share of |&part;output/&part;input| per input channel, ${scope}`;
+    this.refs.targets.innerHTML = `<thead><tr><th class="ms-slots__key">TARGET</th><th>PREDICTION</th><th>TARGET VALUE</th><th>ERROR</th></tr></thead><tbody>${targets.join("")}</tbody>`;
+    this.refs.inputs.innerHTML  = `<thead><tr><th class="ms-slots__key">INPUT</th><th>VALUE</th></tr></thead><tbody>${inputs.join("")}</tbody>`;
   }
 
   async _loadAttribution() {
@@ -824,7 +588,7 @@ class MicroscopeView {
     this.refs.erf.hidden           = true;
     this.refs.erfFacts.innerHTML   = "";
 
-    const out = await Api.post("/api/probe/attribution", { row: this.pixel.row, col: this.pixel.col, slot: this.attribSlot });
+    const out = await Api.post("/api/probe/attribution", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.attribToken) return;
 
     if (!out.ok) {
@@ -834,19 +598,18 @@ class MicroscopeView {
     }
 
     this.attrib = out;
-    this._noteAttribution(out);
-    this._renderBars(out);
+    SharedCharts.targetBars(this.refs.bars, this.refs.barsLegend, out.channels, out.targets, "no dependence at this pixel");
     this._renderGridChips();
     this._renderGrid();
     this._renderErf(out);
   }
 
   _renderErf(out) {
-    const live = out.families.filter((f) => f.radial);
+    const live = out.targets.filter((t) => t.radial);
 
     if (!live.length) {
       this.refs.erf.hidden = true;
-      this.refs.erfFacts.innerHTML = "no gradient energy at this pixel &mdash; every output family is flat here";
+      this.refs.erfFacts.innerHTML = "no gradient energy at this pixel; every target channel is flat here";
       return;
     }
 
@@ -854,19 +617,15 @@ class MicroscopeView {
     SharedCharts.lineChart(
       this.refs.erf,
       live[0].radial.radii,
-      live.map((f) => ({ values: f.radial.cumulative, color: SharedCharts.FAMILY_COLORS[f.family], width: 1.5, label: f.family })),
+      live.map((t) => ({ values: t.radial.cumulative, color: SharedCharts.targetColor(out.targets.indexOf(t)), width: 1.5, label: t.name })),
       { xUnit: "px" },
     );
 
-    const parts = out.families.map((f) => f.radial
-      ? `${f.family} r<sub>50</sub> <b>${f.radial.r50} px</b> / r<sub>90</sub> <b>${f.radial.r90} px</b>`
-      : `${f.family} &mdash; no dependence`);
+    const parts = out.targets.map((t) => t.radial
+      ? `${SharedCharts.esc(t.name)} r<sub>50</sub> <b>${t.radial.r50} px</b> / r<sub>90</sub> <b>${t.radial.r90} px</b>`
+      : `${SharedCharts.esc(t.name)}: no dependence`);
 
     this.refs.erfFacts.innerHTML = parts.join(" &middot; ");
-  }
-
-  _renderBars(out) {
-    SharedCharts.familyBars(this.refs.bars, this.refs.barsLegend, out.channels, out.families, "no dependence at this pixel");
   }
 
   _renderGridChips() {
@@ -901,11 +660,7 @@ class MicroscopeView {
       return;
     }
 
-    SharedCharts.ablationRows(this.refs.ablation, out.channels, out.base_power, (c) => {
-      const flips = c.flips ? ` &middot; ${c.flips} slot${c.flips === 1 ? "" : "s"} flip` : "";
-      const mu    = c.max_mu_shift > 0.5 ? ` &middot; &mu; moves ${c.max_mu_shift.toFixed(1)} m` : "";
-      return `${flips}${mu}`;
-    });
+    SharedCharts.ablationRows(this.refs.ablation, out.channels);
   }
 
   async _loadOcclusion() {
@@ -928,23 +683,21 @@ class MicroscopeView {
           <img src="data:image/png;base64,${out.map.png}" alt="Occlusion sensitivity map" />
           ${SharedCharts.dot(out.center_cell, out.grid)}
         </span>
-        <figcaption>&Delta; curve MSE per occluded cell &middot; ${SharedCharts.fmt(out.map.min)} &rarr; ${SharedCharts.fmt(out.map.max)}</figcaption>
+        <figcaption>squared prediction shift per occluded cell &middot; ${SharedCharts.fmt(out.map.min)} &rarr; ${SharedCharts.fmt(out.map.max)}</figcaption>
       </figure>`;
 
-    const dAz  = (out.worst.row + 0.5) * out.occluder[0] - out.center[0];
-    const dRg  = (out.worst.col + 0.5) * out.occluder[1] - out.center[1];
-    const dist = Math.hypot(dAz, dRg);
-    const rel  = out.base_power > 0 ? ` (${((out.worst.delta_mse / out.base_power) * 100).toFixed(2)}% of the base curve's power)` : "";
+    const dRow = (out.worst.row + 0.5) * out.occluder[0] - out.center[0];
+    const dCol = (out.worst.col + 0.5) * out.occluder[1] - out.center[1];
+    const dist = Math.hypot(dRow, dCol);
 
-    this.refs.occlFacts.innerHTML = `occluder ${out.occluder[0]}&times;${out.occluder[1]} px &middot; peak damage <b>${out.worst.delta_mse.toExponential(2)}</b>${rel} about ${dist.toFixed(0)} px from the probed pixel`;
+    this.refs.occlFacts.innerHTML = `occluder ${out.occluder[0]}&times;${out.occluder[1]} px &middot; peak shift <b>${out.worst.delta.toExponential(2)}</b> (normalized target units) about ${dist.toFixed(0)} px from the probed pixel`;
   }
 
   async _loadFields() {
     const token = ++this.fieldsToken;
 
-    this.refs.fieldSlots.innerHTML = "";
-    this.refs.fieldOver.innerHTML  = "";
-    this.refs.fieldMaps.innerHTML  = SharedCharts.waitPanel("computing parameter fields…");
+    this.refs.fieldTargets.innerHTML = "";
+    this.refs.fieldMaps.innerHTML    = SharedCharts.waitPanel("computing target fields…");
 
     const out = await Api.post("/api/probe/fields", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.fieldsToken) return;
@@ -955,64 +708,49 @@ class MicroscopeView {
       return;
     }
 
-    this.fieldsData   = out;
-    const firstActive = out.slots.find((s) => s.active);
-    this.fieldsSlot   = firstActive ? firstActive.slot : 0;
-
+    this.fieldsData = out;
     this._renderFieldsChips();
     this._renderFieldsMaps();
   }
 
   _renderFieldsChips() {
-    this.refs.fieldSlots.innerHTML = "";
+    this.refs.fieldTargets.innerHTML = "";
 
-    const pick = (slot) => () => {
-      if (slot === this.fieldsSlot) return;
-      this.fieldsSlot = slot;
-      this._renderFieldsChips();
-      this._renderFieldsMaps();
-    };
-
-    this.fieldsData.slots.forEach((slot) => {
-      const predicted = (this.lastPredict && this.lastPredict.slots[slot.slot]) || null;
-      const mu        = predicted ? ` · μ ${predicted.mu.toFixed(1)} m` : "";
-      const chip      = SharedCharts.chip(`slot ${slot.slot}${mu}${slot.active ? "" : " · off"}`, this.fieldsSlot === slot.slot, pick(slot.slot));
-      if (!slot.active) chip.classList.add("is-off");
-      this.refs.fieldSlots.appendChild(chip);
+    this.fieldsData.targets.forEach((target, index) => {
+      this.refs.fieldTargets.appendChild(SharedCharts.chip(target.name, this.fieldsIndex === index, () => {
+        if (index === this.fieldsIndex) return;
+        this.fieldsIndex = index;
+        this._renderFieldsChips();
+        this._renderFieldsMaps();
+      }));
     });
   }
 
-  _fieldFigure(payload, title, rangeText) {
-    const range = rangeText || `${SharedCharts.fmt(payload.min)} &rarr; ${SharedCharts.fmt(payload.max)}`;
+  _fieldFigure(payload, title) {
     return `
       <figure class="ms-field">
         <span class="ms-cell__frame">
           <img src="data:image/png;base64,${payload.png}" alt="${SharedCharts.esc(title)}" />
           ${SharedCharts.dot(this.fieldsData.center, this.fieldsData.patch)}
         </span>
-        <figcaption>${title} &middot; ${range}</figcaption>
+        <figcaption>${SharedCharts.esc(title)} &middot; ${SharedCharts.fmt(payload.min)} &rarr; ${SharedCharts.fmt(payload.max)}</figcaption>
       </figure>`;
   }
 
   _renderFieldsMaps() {
-    const out  = this.fieldsData;
-    const slot = out.slots.find((s) => s.slot === this.fieldsSlot) || out.slots[0];
+    const target = this.fieldsData.targets[this.fieldsIndex] || this.fieldsData.targets[0];
 
-    this.refs.fieldMaps.innerHTML = slot.families.map((f) =>
-      this._fieldFigure(f, `${SharedCharts.FAMILY_LABELS[f.family]}${f.family === "amp" ? "" : " [m]"}`)
-    ).join("");
-
-    const over = [this._fieldFigure(out.activity, "active scatterers", `${SharedCharts.fmt(out.activity.min)} &rarr; ${SharedCharts.fmt(out.activity.max)} of ${this.info.n_gaussians}`)];
-    if (out.error) over.push(this._fieldFigure(out.error, "curve MSE vs GT"));
-    else over.push(`<p class="ms-ctlrow__na">no ground truth on this split &mdash; the local error map needs GT parameters</p>`);
-
-    this.refs.fieldOver.innerHTML = over.join("");
+    this.refs.fieldMaps.innerHTML = [
+      this._fieldFigure(target.prediction, `${target.name} prediction`),
+      this._fieldFigure(target.target,     `${target.name} target`),
+      this._fieldFigure(target.error,      `${target.name} absolute error`),
+    ].join("");
   }
 
   async _loadFlips() {
     const token = ++this.flipToken;
 
-    this.flipsData = null;
+    this.refs.flips.innerHTML      = "";
     this.refs.flipsFacts.innerHTML = SharedCharts.waitLine("re-running the model on flipped windows…");
 
     const out = await Api.post("/api/probe/flips", { row: this.pixel.row, col: this.pixel.col });
@@ -1023,20 +761,12 @@ class MicroscopeView {
       return;
     }
 
-    this.flipsData = out;
-    this._renderFlipsChart(out);
+    const labels = MicroscopeView.FLIP_LABELS;
+    const head   = `<thead><tr><th class="ms-slots__key">FLIP</th>${out.channels.map((name) => `<th>${SharedCharts.esc(name)}</th>`).join("")}<th>SHIFT</th></tr></thead>`;
+    const rows   = out.entries.map((e) => `<tr><td class="ms-slots__key">${labels[e.flip]}</td>${e.values.map((v) => `<td>${SharedCharts.fmt(v)}</td>`).join("")}<td>${e.delta.toExponential(2)}</td></tr>`);
 
-    const styles = MicroscopeView.FLIP_STYLES;
-    const worst  = Math.max(...out.entries.map((e) => e.delta_mse));
-    const parts  = out.entries.filter((e) => e.flip !== "none").map((e) => `${styles[e.flip].label} &Delta; <b>${e.delta_mse.toExponential(2)}</b>`);
-    const rel    = out.base_power > 0 ? ` &mdash; worst is ${((worst / out.base_power) * 100).toFixed(2)}% of the base curve's power` : "";
-
-    this.refs.flipsFacts.innerHTML = `${parts.join(" &middot; ")}${rel}`;
-  }
-
-  _renderFlipsChart(out) {
-    const styles = MicroscopeView.FLIP_STYLES;
-    SharedCharts.lineChart(this.refs.flips, out.z_axis, out.entries.map((e) => ({ values: e.curve, ...styles[e.flip] })));
+    this.refs.flips.innerHTML      = `${head}<tbody>${rows.join("")}</tbody>`;
+    this.refs.flipsFacts.innerHTML = "values in target units; the shift is the squared change of the normalized prediction against the original window";
   }
 
   _loadFeatures() {
@@ -1096,183 +826,8 @@ class MicroscopeView {
       },
     });
   }
-
-  _renderWhatIfSummary() {
-    if (!this.info) {
-      this.refs.wDesc.innerHTML = "";
-      return;
-    }
-
-    const channel = SharedCharts.esc(this.info.channels[this.wi.channel] || `ch ${this.wi.channel}`);
-    const window  = `${this.info.patch[0]}&times;${this.info.patch[1]}`;
-
-    if (this.wi.kind === "drop_channel") {
-      this.refs.wDesc.innerHTML = `Testing: zero out <b>${channel}</b> across the whole ${window} input window, then re-run the model.`;
-    } else if (this.wi.kind === "scale_channel") {
-      this.refs.wDesc.innerHTML = `Testing: multiply <b>${channel}</b> by <b>${this.wi.factor.toFixed(2)}</b> across the whole ${window} input window (1.00 leaves it untouched), then re-run the model.`;
-    } else {
-      this.refs.wDesc.innerHTML = `Testing: add Gaussian noise with &sigma; = <b>${this.wi.sigma.toFixed(2)}</b> (normalized units) to every channel of the ${window} input window, then re-run the model &mdash; noise draw #${this.wi.seed + 1}.`;
-    }
-  }
-
-  _syncWhatIfControls() {
-    const kind = this.wi.kind;
-
-    const noChannel = kind === "noise";
-    this.refs.wChRow.classList.toggle("is-off", noChannel);
-    this.refs.wChannels.hidden = noChannel;
-    this.refs.wChNa.hidden     = !noChannel;
-
-    const noValue = kind === "drop_channel";
-    this.refs.wValRow.classList.toggle("is-off", noValue);
-    this.refs.wValCtl.hidden = noValue;
-    this.refs.wValNa.hidden  = !noValue;
-
-    this.refs.wReroll.hidden          = kind !== "noise";
-    this.refs.wValueLabel.textContent = kind === "noise" ? "sigma" : (kind === "scale_channel" ? "factor" : "strength");
-
-    const value = kind === "noise" ? this.wi.sigma : this.wi.factor;
-    this.refs.wRange.value = value;
-    this.refs.wValue.value = value;
-
-    this._renderWhatIfSummary();
-  }
-
-  _readWhatIfValue() {
-    const value = parseFloat(this.refs.wValue.value);
-    if (!Number.isFinite(value)) return;
-    if (this.wi.kind === "noise") this.wi.sigma = value;
-    else this.wi.factor = value;
-  }
-
-  _scheduleWhatIf() {
-    if (!this.pixel) return;
-    clearTimeout(this.wiTimer);
-    this.wiTimer = setTimeout(() => this._runWhatIf(), 250);
-  }
-
-  async _runWhatIf() {
-    if (!this.pixel) return;
-
-    const kind         = this.wi.kind;
-    const perturbation = { kind };
-    if (kind !== "noise") perturbation.channel = this.wi.channel;
-    if (kind === "scale_channel") perturbation.factor = this.wi.factor;
-    if (kind === "noise") {
-      perturbation.sigma = this.wi.sigma;
-      perturbation.seed  = this.wi.seed;
-    }
-
-    const token = ++this.wiToken;
-    const out   = await Api.post("/api/probe/whatif", { row: this.pixel.row, col: this.pixel.col, perturbation });
-    if (token !== this.wiToken) return;
-
-    if (!out.ok) {
-      this.wiData                   = null;
-      this.refs.wDelta.textContent  = out.error;
-      this.refs.wSlots.innerHTML    = "";
-      this.refs.wTableNote.hidden   = true;
-      return;
-    }
-
-    this.wiData = out;
-    this._renderWhatIfChart(out);
-
-    const power = out.base_curve.reduce((acc, v) => acc + v * v, 0) / out.base_curve.length;
-    const rel   = power > 0 ? ` &mdash; ${((out.delta_mse / power) * 100).toFixed(2)}% of the base curve's power` : "";
-    this.refs.wDelta.innerHTML = `prediction shift: curve MSE <b>${out.delta_mse.toExponential(3)}</b>${rel}`;
-
-    this.refs.wTableNote.hidden = false;
-    this._renderWhatIfSlots(out.base_slots, out.perturbed_slots);
-    this._ensureSweep();
-  }
-
-  _renderWhatIfChart(out) {
-    const series = [];
-    if (this.lastPredict && Array.isArray(this.lastPredict.gt_curve)) {
-      series.push({ values: this.lastPredict.gt_curve, color: SharedCharts.SERIES_COLORS.raw, width: 1.0, label: "GT" });
-    }
-    series.push({ values: out.base_curve,      color: SharedCharts.SERIES_COLORS.pred,      width: 1.6, label: "base" });
-    series.push({ values: out.perturbed_curve, color: SharedCharts.SERIES_COLORS.perturbed, width: 1.6, label: "perturbed" });
-
-    SharedCharts.lineChart(this.refs.wCanvas, out.z_axis, series);
-  }
-
-  async _ensureSweep() {
-    if (this.wi.kind === "drop_channel") {
-      this.sweepData = null;
-      this.refs.sweep.hidden = true;
-      this.refs.sweepFacts.innerHTML = `<span class="ms-ctlrow__na">zeroing a channel is all-or-nothing &mdash; pick the scale or noise perturbation to sweep a strength</span>`;
-      return;
-    }
-
-    const key = [this.pixel.row, this.pixel.col, this.wi.kind, this.wi.kind === "scale_channel" ? this.wi.channel : "all"].join(":");
-    if (this.sweepData && this.sweepData.key === key) {
-      this._renderSweepChart();
-      return;
-    }
-
-    const token = ++this.sweepToken;
-    this.refs.sweep.hidden = true;
-    this.refs.sweepFacts.innerHTML = SharedCharts.waitLine("sweeping perturbation strengths…");
-
-    const body = { row: this.pixel.row, col: this.pixel.col, kind: this.wi.kind };
-    if (this.wi.kind === "scale_channel") body.channel = this.wi.channel;
-
-    const out = await Api.post("/api/probe/sweep", body);
-    if (token !== this.sweepToken) return;
-
-    if (!out.ok) {
-      this.refs.sweepFacts.innerHTML = SharedCharts.esc(out.error);
-      return;
-    }
-
-    out.key                = key;
-    this.sweepData         = out;
-    this.refs.sweep.hidden = false;
-    this._renderSweepChart();
-    this._renderSweepFacts();
-  }
-
-  _renderSweepChart() {
-    if (!this.sweepData || this.refs.sweep.hidden) return;
-
-    const marker = this.wi.kind === "noise" ? this.wi.sigma : this.wi.factor;
-
-    SharedCharts.lineChart(
-      this.refs.sweep,
-      this.sweepData.points.map((p) => p.value),
-      [{ values: this.sweepData.points.map((p) => p.delta_mse), color: SharedCharts.SERIES_COLORS.perturbed, width: 1.6, label: "Δ curve MSE" }],
-      { xUnit: "", marker },
-    );
-  }
-
-  _renderSweepFacts() {
-    const points = this.sweepData.points;
-    const peak   = points.reduce((best, p) => (p.delta_mse > best.delta_mse ? p : best), points[0]);
-    const flip   = points.find((p) => p.flips > 0);
-    const sym    = this.wi.kind === "noise" ? "&sigma;" : "factor";
-    const rel    = this.sweepData.base_power > 0 ? ` (${((peak.delta_mse / this.sweepData.base_power) * 100).toFixed(2)}% of power)` : "";
-    const flips  = flip ? `slots first flip at ${sym} ${flip.value.toFixed(2)}` : "no slot flips across the sweep";
-
-    this.refs.sweepFacts.innerHTML = `peak &Delta; curve MSE <b>${peak.delta_mse.toExponential(2)}</b>${rel} at ${sym} ${peak.value.toFixed(2)} &middot; ${flips}`;
-  }
-
-  _renderWhatIfSlots(base, perturbed) {
-    const head = `<thead><tr><th class="ms-slots__key">SLOT</th><th>AMP</th><th>&mu;</th><th>&sigma;</th></tr></thead>`;
-
-    const rows = base.map((b, k) => {
-      const p     = perturbed[k];
-      const cells = [["amp", 3, 0.005], ["mu", 2, 0.05], ["sigma", 2, 0.05]].map(([param, digits, eps]) => {
-        const moved = Math.abs(p[param] - b[param]) > eps;
-        return `<td>${b[param].toFixed(digits)} <span class="ms-shift${moved ? " is-moved" : ""}">&rarr; ${p[param].toFixed(digits)}</span></td>`;
-      }).join("");
-      return `<tr class="${b.active || p.active ? "" : "is-inactive"}"><td class="ms-slots__key">${k}</td>${cells}</tr>`;
-    });
-
-    this.refs.wSlots.innerHTML = `${head}<tbody>${rows.join("")}</tbody>`;
-  }
 }
+
 
 class SectionPager {
   constructor(nav, pages, defs, onShow) {

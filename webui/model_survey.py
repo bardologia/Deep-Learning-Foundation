@@ -25,7 +25,6 @@ class ModelSurvey:
     ERF_SAMPLES  = 24
     TILE_CAP     = 64
     CPU_THREADS  = 64
-    CHUNK_BUDGET = 4_000_000
     DISTANCE_BIN = 4.0
 
     def __init__(self, logger: WebLogger) -> None:
@@ -122,10 +121,8 @@ class ModelSurvey:
         self._set(min(1.0, self.done_units / self.total_units), stage)
 
     def _load(self, run_path: str, split: str, device: str) -> None:
-        from pipelines.backbone.inference.analysis.input_attribution import ChannelLabeler
-        from pipelines.backbone.inference.loader            import RunLoader
-        from pipelines.backbone.inference.probes            import PredictionCurves
-        from tools.monitoring.logger                        import Logger
+        from pipelines.backbone.inference.loader import RunLoader
+        from tools.monitoring.logger             import Logger
 
         self._set(0.0, "loading checkpoint and dataset")
 
@@ -142,8 +139,8 @@ class ModelSurvey:
             "path"     : run_path,
             "split"    : split,
             "device"   : device,
-            "labels"   : ChannelLabeler.build(run),
-            "renderer" : PredictionCurves(run.n_gaussians, run.z_axis),
+            "labels"   : run.input_channels,
+            "targets"  : run.target_channels,
             "patch"    : tuple(run.dataset_config.patch.size),
             "backbone" : run.backbone_name,
         }
@@ -157,153 +154,89 @@ class ModelSurvey:
         if n_rows < ph or n_cols < pw:
             raise ValueError(f"the {n_rows}x{n_cols} region is smaller than the {ph}x{pw} model window; nothing to survey")
 
-        az_starts = list(range(0, n_rows - ph + 1, ph))
-        rg_starts = list(range(0, n_cols - pw + 1, pw))
-        origins   = [(top, left) for top in az_starts for left in rg_starts]
+        row_starts = list(range(0, n_rows - ph + 1, ph))
+        col_starts = list(range(0, n_cols - pw + 1, pw))
+        origins    = [(top, left) for top in row_starts for left in col_starts]
 
         selected = origins
         if 0 < self.tile_cap < len(origins):
             indices  = np.unique(np.linspace(0, len(origins) - 1, self.tile_cap).round().astype(int))
             selected = [origins[index] for index in indices]
 
-        return selected, len(origins), len(az_starts) * ph, len(rg_starts) * pw
+        return selected, len(origins), len(row_starts) * ph, len(col_starts) * pw
 
     def _tile_window(self, top: int, left: int) -> np.ndarray:
         run    = self.loaded["run"]
         ph, pw = self.loaded["patch"]
 
-        complex_window = run.complex_inputs[:, top:top + ph, left:left + pw]
-        aux            = run.dataset.aux
-        aux_window     = aux[top:top + ph, left:left + pw] if aux is not None else None
+        return run.dataset.window(run.inputs[:, top:top + ph, left:left + pw])[None].astype(np.float32)
 
-        return run.dataset.assemble_window(complex_window, aux_window)[None].astype(np.float32)
+    def _forward(self, batch: np.ndarray) -> np.ndarray:
+        return ModelProbe._outputs(self.loaded["run"], self.loaded["device"], batch)
 
-    def _row_chunks(self, batch: int, n_rows: int, width: int):
-        run  = self.loaded["run"]
-        cost = batch * run.n_gaussians * len(run.z_axis) * width
-        rows = max(1, self.CHUNK_BUDGET // max(1, cost))
+    @staticmethod
+    def _shifts(outputs: np.ndarray) -> np.ndarray:
+        return ((outputs - outputs[:1]) ** 2).mean(axis=1)
 
-        for row0 in range(0, n_rows, rows):
-            yield row0, min(n_rows, row0 + rows)
+    def _base_pass(self, acc: dict, window: np.ndarray, top: int, left: int) -> None:
+        run         = self.loaded["run"]
+        ph, pw      = self.loaded["patch"]
+        predictions = run.model(window)[0].astype(np.float64)
+        targets     = np.asarray(run.targets[:, top:top + ph, left:left + pw], dtype=np.float64)
+        error       = predictions - targets
 
-    def _render_rows(self, params: np.ndarray, row0: int, row1: int) -> np.ndarray:
-        return self.loaded["renderer"].render(params[:, :, row0:row1, :])
-
-    def _base_pass(self, acc: dict, params: np.ndarray, top: int, left: int) -> None:
-        import torch
-
-        from tools.data.gaussians  import GaussianActivity
-        from tools.loss.param_loss import ParamMatcher
-
-        run    = self.loaded["run"]
-        ph, pw = self.loaded["patch"]
-        gt     = run.dataset.gt_parameters
-
-        pred_active = GaussianActivity.is_active(params[0, 0::3], run.activity_threshold).sum(axis=0)
-        acc["pred_active"].append(pred_active.ravel())
-
-        gt_tile = None
-        if gt is not None:
-            gt_tile   = np.asarray(gt[:, top:top + ph, left:left + pw], dtype=np.float32)
-            gt_active = GaussianActivity.is_active(gt_tile[0::3], run.activity_threshold).sum(axis=0)
-            acc["gt_active"].append(gt_active.ravel())
-            acc["count_match"].append((pred_active == gt_active).ravel())
-
-            n_k    = run.n_gaussians
-            pred_t = torch.from_numpy(params[0].reshape(n_k, 3, ph, pw)[None].copy())
-            gt_t   = torch.from_numpy(gt_tile.reshape(n_k, 3, ph, pw)[None].copy())
-
-            matched, _, sorted_gt, _ = ParamMatcher.match(pred_t, pred_t, gt_t, gt_t, active_thr=run.activity_threshold, method=ParamMatcher.HUNGARIAN)
-
-            mask  = GaussianActivity.is_active(sorted_gt[:, :, 0], run.activity_threshold).float()
-            error = (matched - sorted_gt).abs()
-
-            for offset, family in enumerate(ModelProbe.FAMILIES):
-                acc["matched_err"][family] += float((error[:, :, offset] * mask).sum())
-            acc["matched_count"] += float(mask.sum())
-
-        for row0, row1 in self._row_chunks(1, ph, pw):
-            pred_curves = self._render_rows(params, row0, row1)
-            acc["power"].append((pred_curves ** 2).mean(axis=1)[0].ravel())
-
-            raw = np.asarray(run.full_curves[:, top + row0:top + row1, left:left + pw], dtype=np.float32)
-            acc["mse_raw"].append(((pred_curves[0] - raw) ** 2).mean(axis=0).ravel())
-
-            if gt_tile is not None:
-                gt_curves = self._render_rows(gt_tile[None], row0, row1)
-                acc["mse_gt"].append(((pred_curves - gt_curves) ** 2).mean(axis=1)[0].ravel())
+        acc["sse"]   += (error ** 2).sum(axis=(1, 2))
+        acc["sae"]   += np.abs(error).sum(axis=(1, 2))
+        acc["sum"]   += targets.sum(axis=(1, 2))
+        acc["sum2"]  += (targets ** 2).sum(axis=(1, 2))
+        acc["count"] += ph * pw
 
     def _gradient_pass(self, acc: dict, window: np.ndarray) -> None:
         import torch
 
-        run = self.loaded["run"]
+        run     = self.loaded["run"]
+        targets = self.loaded["targets"]
 
         x = torch.from_numpy(window).to(self.loaded["device"]).requires_grad_(True)
         y = run.model.module(x)
 
-        for offset, family in enumerate(ModelProbe.FAMILIES):
-            target = y[0, offset::3].abs().sum()
-            keep   = offset < len(ModelProbe.FAMILIES) - 1
-            grad   = torch.autograd.grad(target, x, retain_graph=keep)[0].abs()[0].cpu().numpy()
+        for index, name in enumerate(targets):
+            keep = index < len(targets) - 1
+            grad = torch.autograd.grad(y[0, index].abs().sum(), x, retain_graph=keep)[0].abs()[0].cpu().numpy()
 
-            acc["grad"][family] += grad.sum(axis=(1, 2))
-
-    def _delta_pass(self, params: np.ndarray, base_index: int = 0):
-        ph, pw = self.loaded["patch"]
-        deltas = []
-
-        for row0, row1 in self._row_chunks(params.shape[0], ph, pw):
-            curves = self._render_rows(params, row0, row1)
-            deltas.append(((curves - curves[base_index:base_index + 1]) ** 2).mean(axis=1))
-
-        return np.concatenate(deltas, axis=1)
+            acc["grad"][name] += grad.sum(axis=(1, 2))
 
     def _ablation_pass(self, acc: dict, window: np.ndarray) -> None:
-        from tools.data.gaussians import GaussianActivity
-
-        run        = self.loaded["run"]
         n_channels = window.shape[1]
 
         batch = np.repeat(window, n_channels + 1, axis=0)
         for channel in range(n_channels):
             batch[channel + 1, channel] = 0.0
 
-        params = run.model(batch)
-        deltas = self._delta_pass(params)
+        shifts = self._shifts(self._forward(batch))
 
-        base_active = GaussianActivity.is_active(params[0, 0::3], run.activity_threshold)
         for channel in range(n_channels):
-            variant_active = GaussianActivity.is_active(params[channel + 1, 0::3], run.activity_threshold)
-            acc["abl_delta"][channel] += float(deltas[channel + 1].sum())
-            acc["abl_flips"][channel] += float((variant_active != base_active).any(axis=0).sum())
-        acc["abl_pixels"] += deltas.shape[1] * deltas.shape[2]
+            acc["abl_delta"][channel] += float(shifts[channel + 1].sum())
+        acc["abl_pixels"] += shifts.shape[1] * shifts.shape[2]
 
     def _flip_pass(self, acc: dict, window: np.ndarray) -> None:
-        run = self.loaded["run"]
+        batch   = np.concatenate([np.flip(window, axes) if axes else window for _, axes in ModelProbe.FLIPS], axis=0)
+        outputs = self._forward(batch)
 
-        batch  = np.concatenate([np.flip(window, axes) if axes else window for _, axes in ModelProbe.FLIPS], axis=0)
-        params = run.model(batch)
+        restored = np.concatenate([np.flip(outputs[index:index + 1], axes) if axes else outputs[index:index + 1] for index, (_, axes) in enumerate(ModelProbe.FLIPS)], axis=0)
+        shifts   = self._shifts(restored)
 
-        restored = np.concatenate([
-            np.flip(params[index:index + 1], axes) if axes else params[index:index + 1]
-            for index, (_, axes) in enumerate(ModelProbe.FLIPS)
-        ], axis=0)
-
-        deltas = self._delta_pass(restored)
         for index, (name, _) in enumerate(ModelProbe.FLIPS):
-            acc["flip_delta"][name] += float(deltas[index].sum())
-        acc["flip_pixels"] += deltas.shape[1] * deltas.shape[2]
+            acc["flip_delta"][name] += float(shifts[index].sum())
+        acc["flip_pixels"] += shifts.shape[1] * shifts.shape[2]
 
     def _noise_pass(self, acc: dict, window: np.ndarray, tile_index: int) -> None:
-        run = self.loaded["run"]
-
-        variants = [ModelProbe._perturb(window, {"kind": "noise", "sigma": sigma, "seed": tile_index * 100 + index}) for index, sigma in enumerate(self.NOISE_SIGMAS)]
-        params   = run.model(np.concatenate([window] + variants, axis=0))
-        deltas   = self._delta_pass(params)
+        variants = [window + np.random.default_rng(tile_index * 100 + index).normal(0.0, sigma, size=window.shape).astype(np.float32) for index, sigma in enumerate(self.NOISE_SIGMAS)]
+        shifts   = self._shifts(self._forward(np.concatenate([window] + variants, axis=0)))
 
         for index in range(len(self.NOISE_SIGMAS)):
-            acc["noise_delta"][index] += float(deltas[index + 1].sum())
-        acc["noise_pixels"] += deltas.shape[1] * deltas.shape[2]
+            acc["noise_delta"][index] += float(shifts[index + 1].sum())
+        acc["noise_pixels"] += shifts.shape[1] * shifts.shape[2]
 
     def _occlusion_grid(self) -> tuple[int, int, int, int]:
         ph, pw = self.loaded["patch"]
@@ -327,7 +260,6 @@ class ModelSurvey:
         return distances
 
     def _occlusion_pass(self, acc: dict, window: np.ndarray, distances: np.ndarray) -> None:
-        run                = self.loaded["run"]
         ph, pw             = self.loaded["patch"]
         oh, ow, rows, cols = self._occlusion_grid()
 
@@ -337,7 +269,7 @@ class ModelSurvey:
                 cell = 1 + row * cols + col
                 batch[cell, :, row * oh:min(ph, (row + 1) * oh), col * ow:min(pw, (col + 1) * ow)] = 0.0
 
-        deltas = self._delta_pass(run.model(batch))[1:]
+        deltas = self._shifts(self._forward(batch))[1:]
         bins   = (distances / self.DISTANCE_BIN).astype(np.int64)
 
         np.add.at(acc["occl_sum"], bins.ravel(), deltas.ravel().astype(np.float64))
@@ -366,13 +298,13 @@ class ModelSurvey:
         ph, pw     = self.loaded["patch"]
         n_channels = len(self.loaded["labels"])
 
-        families = []
-        for family in ModelProbe.FAMILIES:
-            if maps[family] is None:
-                families.append({"family": family, "dead": True, "shares": [0.0] * n_channels, "cells": [None] * n_channels})
+        targets = []
+        for name in self.loaded["targets"]:
+            if maps[name] is None:
+                targets.append({"name": name, "dead": True, "shares": [0.0] * n_channels, "cells": [None] * n_channels})
                 continue
 
-            mean   = maps[family] / live[family]
+            mean   = maps[name] / live[name]
             shares = mean.sum(axis=(1, 2)) / mean.sum()
 
             cells = []
@@ -380,26 +312,27 @@ class ModelSurvey:
                 peak = float(mean[channel].max())
                 cells.append(ModelProbe._cell_png(mean[channel] / peak) if peak > 0.0 else None)
 
-            families.append({"family": family, "dead": False, "shares": [float(v) for v in shares], "cells": cells})
+            targets.append({"name": name, "dead": False, "shares": [float(v) for v in shares], "cells": cells})
 
         return {
-            "families" : families,
-            "center"   : center if center is not None else [ph // 2, pw // 2],
-            "patch"    : [ph, pw],
-            "samples"  : self.erf_samples,
+            "targets" : targets,
+            "center"  : center if center is not None else [ph // 2, pw // 2],
+            "patch"   : [ph, pw],
+            "samples" : self.erf_samples,
         }
 
-    def _sampling_phase(self, coverage_az: int, coverage_rg: int) -> tuple[dict, dict]:
+    def _sampling_phase(self, coverage_rows: int, coverage_cols: int) -> tuple[dict, dict]:
         run    = self.loaded["run"]
         ph, pw = self.loaded["patch"]
+        names  = self.loaded["targets"]
         rng    = np.random.default_rng(0)
 
-        row_lo, row_hi = ph // 2, coverage_az - ph + ph // 2
-        col_lo, col_hi = pw // 2, coverage_rg - pw + pw // 2
+        row_lo, row_hi = ph // 2, coverage_rows - ph + ph // 2
+        col_lo, col_hi = pw // 2, coverage_cols - pw + pw // 2
 
-        cumulative = {family: None for family in ModelProbe.FAMILIES}
-        maps       = {family: None for family in ModelProbe.FAMILIES}
-        live       = {family: 0 for family in ModelProbe.FAMILIES}
+        cumulative = {name: None for name in names}
+        maps       = {name: None for name in names}
+        live       = {name: 0 for name in names}
         radii      = None
         center     = None
 
@@ -412,90 +345,70 @@ class ModelSurvey:
             window, cy, cx = ModelProbe._window_at(run, (ph, pw), row, col)
             center         = [cy, cx]
 
-            for family, grad in ModelProbe._family_gradients_at(run, self.loaded["device"], window, cy, cx, -1):
+            for name, grad in ModelProbe._target_gradients_at(run, self.loaded["device"], window, cy, cx):
                 if float(grad.sum()) <= 0.0:
                     continue
                 profile = ModelProbe._radial_profile(grad, cy, cx)
                 radii   = profile["radii"]
                 arc     = np.asarray(profile["cumulative"])
 
-                cumulative[family] = arc if cumulative[family] is None else cumulative[family] + arc
-                maps[family]       = grad if maps[family] is None else maps[family] + grad
-                live[family]      += 1
+                cumulative[name] = arc if cumulative[name] is None else cumulative[name] + arc
+                maps[name]       = grad if maps[name] is None else maps[name] + grad
+                live[name]      += 1
 
-        families = []
-        for family in ModelProbe.FAMILIES:
-            if cumulative[family] is None:
-                families.append({"family": family, "dead": True, "radii": None, "cumulative": None, "r50": None, "r90": None, "samples": 0})
+        targets = []
+        for name in names:
+            if cumulative[name] is None:
+                targets.append({"name": name, "dead": True, "radii": None, "cumulative": None, "r50": None, "r90": None, "samples": 0})
                 continue
 
-            mean = cumulative[family] / live[family]
-            families.append({
-                "family"     : family,
+            mean = cumulative[name] / live[name]
+            targets.append({
+                "name"       : name,
                 "dead"       : False,
                 "radii"      : radii,
                 "cumulative" : [float(v) for v in mean],
                 "r50"        : int(radii[int(np.argmax(mean >= 0.5))]),
                 "r90"        : int(radii[int(np.argmax(mean >= 0.9))]),
-                "samples"    : live[family],
+                "samples"    : live[name],
             })
 
-        return {"families": families, "samples": self.erf_samples}, self._gradient_map_payload(maps, live, center)
+        return {"targets": targets, "samples": self.erf_samples}, self._gradient_map_payload(maps, live, center)
 
-    def _spread(self, values: list) -> dict:
-        merged = np.concatenate(values)
-        return {
-            "mean"   : float(merged.mean()),
-            "median" : float(np.median(merged)),
-            "p90"    : float(np.percentile(merged, 90.0)),
-        }
+    def _fit(self, acc: dict) -> list[dict]:
+        mean = acc["sum"] / acc["count"]
+        sst  = acc["sum2"] - acc["count"] * mean ** 2
+
+        return [
+            {
+                "name" : name,
+                "rmse" : float(np.sqrt(acc["sse"][index] / acc["count"])),
+                "mae"  : float(acc["sae"][index] / acc["count"]),
+                "r2"   : float(1.0 - acc["sse"][index] / sst[index]) if sst[index] > 0.0 else None,
+            }
+            for index, name in enumerate(self.loaded["targets"])
+        ]
 
     def _finalize(self, acc: dict, tiles: list, total_tiles: int, vitals: dict, erf: dict, gradients: dict, seconds: float) -> dict:
         run    = self.loaded["run"]
         labels = self.loaded["labels"]
         pixels = len(tiles) * self.loaded["patch"][0] * self.loaded["patch"][1]
-        has_gt = run.dataset.gt_parameters is not None
 
-        fit = {
-            "curve_mse_raw" : self._spread(acc["mse_raw"]),
-            "curve_mse_gt"  : self._spread(acc["mse_gt"]) if has_gt else None,
-            "base_power"    : float(np.concatenate(acc["power"]).mean()),
-        }
-
-        detection = None
-        matched   = None
-        if has_gt:
-            detection = {
-                "mean_pred_active" : float(np.concatenate(acc["pred_active"]).mean()),
-                "mean_gt_active"   : float(np.concatenate(acc["gt_active"]).mean()),
-                "count_match_frac" : float(np.concatenate(acc["count_match"]).mean()),
-            }
-            matched = {family: acc["matched_err"][family] / max(1.0, acc["matched_count"]) for family in ModelProbe.FAMILIES}
-            matched["n_matched"] = int(acc["matched_count"])
-
-        families = []
-        for family in ModelProbe.FAMILIES:
-            total = float(acc["grad"][family].sum())
+        targets = []
+        for name in self.loaded["targets"]:
+            total = float(acc["grad"][name].sum())
             dead  = total <= 0.0
-            families.append({
-                "family" : family,
+            targets.append({
+                "name"   : name,
                 "dead"   : dead,
-                "shares" : [0.0] * len(labels) if dead else [float(v) for v in acc["grad"][family] / total],
+                "shares" : [0.0] * len(labels) if dead else [float(v) for v in acc["grad"][name] / total],
             })
 
-        channels = [
-            {
-                "channel"    : channel,
-                "label"      : labels[channel],
-                "delta_mse"  : acc["abl_delta"][channel] / acc["abl_pixels"],
-                "flips_frac" : acc["abl_flips"][channel] / acc["abl_pixels"],
-            }
-            for channel in range(len(labels))
-        ]
-        channels.sort(key=lambda entry: entry["delta_mse"], reverse=True)
+        channels = [{"channel": channel, "label": labels[channel], "delta": acc["abl_delta"][channel] / acc["abl_pixels"]} for channel in range(len(labels))]
+        channels.sort(key=lambda entry: entry["delta"], reverse=True)
 
-        flips = [{"flip": name, "delta_mse": acc["flip_delta"][name] / acc["flip_pixels"]} for name, _ in ModelProbe.FLIPS]
-        noise = [{"value": sigma, "delta_mse": acc["noise_delta"][index] / acc["noise_pixels"]} for index, sigma in enumerate(self.NOISE_SIGMAS)]
+        flips = [{"flip": name, "delta": acc["flip_delta"][name] / acc["flip_pixels"]} for name, _ in ModelProbe.FLIPS]
+        noise = [{"value": sigma, "delta": acc["noise_delta"][index] / acc["noise_pixels"]} for index, sigma in enumerate(self.NOISE_SIGMAS)]
 
         oh, ow, _, _ = self._occlusion_grid()
         occupied     = acc["occl_count"] > 0
@@ -509,16 +422,14 @@ class ModelSurvey:
             "run"         : self.loaded["path"],
             "backbone"    : self.loaded["backbone"],
             "split"       : self.loaded["split"],
-            "n_gaussians" : run.n_gaussians,
             "patch"       : list(self.loaded["patch"]),
             "channels"    : labels,
+            "targets"     : self.loaded["targets"],
             "region"      : [run.split_region.row_size, run.split_region.col_size],
             "coverage"    : {"tiles": len(tiles), "total_tiles": total_tiles, "pixels": pixels},
             "seconds"     : seconds,
-            "fit"         : fit,
-            "detection"   : detection,
-            "matched"     : matched,
-            "attribution" : {"families": families},
+            "fit"         : self._fit(acc),
+            "attribution" : {"targets": targets},
             "erf"         : erf,
             "gradients"   : gradients,
             "ablation"    : {"channels": channels},
@@ -529,27 +440,24 @@ class ModelSurvey:
         }
 
     def _survey(self) -> None:
-        started                                       = time.monotonic()
-        tiles, total_tiles, coverage_az, coverage_rg  = self._tile_origins()
+        started                                         = time.monotonic()
+        tiles, total_tiles, coverage_rows, coverage_cols = self._tile_origins()
 
         n_channels = int(self.loaded["run"].in_channels)
+        n_targets  = len(self.loaded["targets"])
         max_bin    = int(np.hypot(*self.loaded["patch"]) / self.DISTANCE_BIN) + 2
 
         self.done_units  = 0
         self.total_units = len(tiles) * 7 + self.erf_samples
 
         acc = {
-            "power"         : [],
-            "mse_raw"       : [],
-            "mse_gt"        : [],
-            "pred_active"   : [],
-            "gt_active"     : [],
-            "count_match"   : [],
-            "matched_err"   : {family: 0.0 for family in ModelProbe.FAMILIES},
-            "matched_count" : 0.0,
-            "grad"          : {family: np.zeros(n_channels, dtype=np.float64) for family in ModelProbe.FAMILIES},
+            "sse"           : np.zeros(n_targets, dtype=np.float64),
+            "sae"           : np.zeros(n_targets, dtype=np.float64),
+            "sum"           : np.zeros(n_targets, dtype=np.float64),
+            "sum2"          : np.zeros(n_targets, dtype=np.float64),
+            "count"         : 0,
+            "grad"          : {name: np.zeros(n_channels, dtype=np.float64) for name in self.loaded["targets"]},
             "abl_delta"     : np.zeros(n_channels, dtype=np.float64),
-            "abl_flips"     : np.zeros(n_channels, dtype=np.float64),
             "abl_pixels"    : 0,
             "flip_delta"    : {name: 0.0 for name, _ in ModelProbe.FLIPS},
             "flip_pixels"   : 0,
@@ -567,7 +475,7 @@ class ModelSurvey:
                 window = self._tile_window(top, left)
 
                 self._tick(f"prediction fit, {label}")
-                self._base_pass(acc, self.loaded["run"].model(window), top, left)
+                self._base_pass(acc, window, top, left)
 
                 self._tick(f"gradient attribution, {label}")
                 self._gradient_pass(acc, window)
@@ -585,7 +493,7 @@ class ModelSurvey:
                 self._occlusion_pass(acc, window, distances)
 
             vitals         = self._vitals_phase(tiles)
-            erf, gradients = self._sampling_phase(coverage_az, coverage_rg)
+            erf, gradients = self._sampling_phase(coverage_rows, coverage_cols)
             result         = self._finalize(acc, tiles, total_tiles, vitals, erf, gradients, time.monotonic() - started)
 
             with self.lock:

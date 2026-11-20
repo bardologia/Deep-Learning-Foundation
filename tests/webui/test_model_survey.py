@@ -8,23 +8,20 @@ import pytest
 
 from model_survey import ModelSurvey
 
-from pipelines.backbone.inference.probes import PredictionCurves
-
 from tests.conftest           import SilentLogger
 from tests.webui._probe_fakes import N_ROWS, N_COLS, PH, PW, fake_run
 
 
-def _survey(n_slots: int = 1, with_gt: bool = True) -> ModelSurvey:
+def _survey() -> ModelSurvey:
     survey = ModelSurvey(SilentLogger())
-    run    = fake_run(n_slots, with_gt)
 
     survey.loaded = {
-        "run"      : run,
+        "run"      : fake_run(),
         "path"     : "fake",
         "split"    : "test",
         "device"   : "cpu",
-        "labels"   : ["primary", "sec CH01"],
-        "renderer" : PredictionCurves(n_slots, run.z_axis),
+        "labels"   : ["a", "b"],
+        "targets"  : ["first", "second"],
         "patch"    : (PH, PW),
         "backbone" : "bare",
     }
@@ -43,31 +40,21 @@ def test_survey_covers_the_region_and_finishes():
     result = survey.result
     assert result["region"]   == [N_ROWS, N_COLS]
     assert result["coverage"] == {"tiles": 4, "total_tiles": 4, "pixels": 256}
-    assert result["channels"] == ["primary", "sec CH01"]
+    assert result["channels"] == ["a", "b"]
+    assert result["targets"]  == ["first", "second"]
     assert result["seconds"]  > 0.0
 
 
-def test_survey_fit_detection_and_matches():
+def test_survey_fit_scores_every_target_channel():
     survey = _survey()
     survey._survey()
 
-    result = survey.result
+    fit = {entry["name"]: entry for entry in survey.result["fit"]}
 
-    fit = result["fit"]
-    assert fit["curve_mse_gt"]["mean"] > 0.0
-    assert fit["curve_mse_gt"]["p90"] >= fit["curve_mse_gt"]["median"]
-    assert fit["curve_mse_raw"]["mean"] > 0.0
-    assert fit["base_power"] > 0.0
-
-    detection = result["detection"]
-    assert detection["mean_pred_active"] == pytest.approx(1.0)
-    assert detection["mean_gt_active"]   == pytest.approx(1.0)
-    assert detection["count_match_frac"] == pytest.approx(1.0)
-
-    matched = result["matched"]
-    assert matched["n_matched"] == 256
-    assert matched["mu"] > 1.0
-    assert matched["sigma"] == pytest.approx(1.0, abs=1e-5)
+    assert set(fit) == {"first", "second"}
+    assert fit["first"]["rmse"] == pytest.approx(0.25, abs=1e-5)
+    assert fit["first"]["mae"]  == pytest.approx(0.25, abs=1e-5)
+    assert fit["second"]["r2"]  < 1.0
 
 
 def test_survey_ranks_ablation_and_attribution_on_the_used_channel():
@@ -77,17 +64,13 @@ def test_survey_ranks_ablation_and_attribution_on_the_used_channel():
     result = survey.result
 
     channels = result["ablation"]["channels"]
-    assert channels[0]["label"]      == "primary"
-    assert channels[0]["delta_mse"]  > 1e-8
-    assert channels[1]["delta_mse"]  == pytest.approx(0.0, abs=1e-12)
-    assert channels[1]["flips_frac"] == pytest.approx(0.0)
+    assert channels[0]["label"] == "a"
+    assert channels[0]["delta"] > 1e-8
+    assert channels[1]["delta"] == pytest.approx(0.0, abs=1e-12)
 
-    mu = {f["family"]: f for f in result["attribution"]["families"]}["mu"]
-    assert mu["dead"] is False
-    assert mu["shares"][0] == pytest.approx(1.0)
-
-    sigma = {f["family"]: f for f in result["attribution"]["families"]}["sigma"]
-    assert sigma["dead"] is True
+    for target in result["attribution"]["targets"]:
+        assert target["dead"] is False
+        assert target["shares"][0] == pytest.approx(1.0)
 
 
 def test_survey_flips_noise_occlusion_and_erf_profiles():
@@ -96,26 +79,25 @@ def test_survey_flips_noise_occlusion_and_erf_profiles():
 
     result = survey.result
 
-    flips = {entry["flip"]: entry["delta_mse"] for entry in result["flips"]}
+    flips = {entry["flip"]: entry["delta"] for entry in result["flips"]}
     assert flips["none"] == pytest.approx(0.0, abs=1e-12)
-    assert flips["row"] == pytest.approx(0.0, abs=1e-10)
-    assert flips["col"] == pytest.approx(0.0, abs=1e-10)
+    assert flips["row"]  == pytest.approx(0.0, abs=1e-10)
+    assert flips["col"]  == pytest.approx(0.0, abs=1e-10)
 
     noise = result["noise"]
-    assert noise[0]["value"]     == pytest.approx(0.0)
-    assert noise[0]["delta_mse"] == pytest.approx(0.0, abs=1e-12)
-    assert noise[-1]["delta_mse"] > noise[1]["delta_mse"]
+    assert noise[0]["value"] == pytest.approx(0.0)
+    assert noise[0]["delta"] == pytest.approx(0.0, abs=1e-12)
+    assert noise[-1]["delta"] > noise[1]["delta"]
 
     occlusion = result["occlusion"]
     assert occlusion["occluder"] == [2, 2]
     assert occlusion["delta"][0] > 0.0
     assert occlusion["delta"][-1] == pytest.approx(0.0, abs=1e-12)
 
-    erf = {f["family"]: f for f in result["erf"]["families"]}
-    assert erf["mu"]["dead"] is False
-    assert erf["mu"]["r50"] == 0
-    assert erf["mu"]["samples"] == ModelSurvey.ERF_SAMPLES
-    assert erf["sigma"]["dead"] is True
+    erf = {entry["name"]: entry for entry in result["erf"]["targets"]}
+    assert erf["first"]["dead"]    is False
+    assert erf["first"]["r50"]     == 0
+    assert erf["first"]["samples"] == ModelSurvey.ERF_SAMPLES
 
     vitals = result["vitals"]
     assert vitals["summary"]["n_layers"] == 1
@@ -131,25 +113,12 @@ def test_survey_mean_gradient_maps_follow_the_used_channel():
     assert gradients["patch"]   == [PH, PW]
     assert gradients["center"]  == [PH // 2, PW // 2]
 
-    families = {f["family"]: f for f in gradients["families"]}
+    first = gradients["targets"][0]
 
-    assert families["mu"]["dead"] is False
-    assert families["mu"]["shares"][0] == pytest.approx(1.0)
-    assert base64.b64decode(families["mu"]["cells"][0])[:8] == b"\x89PNG\r\n\x1a\n"
-    assert families["mu"]["cells"][1] is None
-
-    assert families["sigma"]["dead"]  is True
-    assert families["sigma"]["cells"] == [None, None]
-
-
-def test_survey_without_gt_omits_fit_gt_sections():
-    survey = _survey(with_gt=False)
-    survey._survey()
-
-    result = survey.result
-    assert result["fit"]["curve_mse_gt"] is None
-    assert result["detection"] is None
-    assert result["matched"]   is None
+    assert first["dead"] is False
+    assert first["shares"][0] == pytest.approx(1.0)
+    assert base64.b64decode(first["cells"][0])[:8] == b"\x89PNG\r\n\x1a\n"
+    assert first["cells"][1] is None
 
 
 def test_survey_tile_cap_strides_evenly_and_reports_totals():
@@ -250,11 +219,11 @@ def test_survey_with_zero_erf_samples_skips_the_phase():
 
     erf = survey.result["erf"]
     assert erf["samples"] == 0
-    assert all(f["dead"] for f in erf["families"])
+    assert all(entry["dead"] for entry in erf["targets"])
 
     gradients = survey.result["gradients"]
     assert gradients["samples"] == 0
-    assert all(f["dead"] for f in gradients["families"])
+    assert all(entry["dead"] for entry in gradients["targets"])
 
 
 def test_survey_result_before_any_run_fails():

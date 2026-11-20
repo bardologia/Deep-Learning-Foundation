@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import base64
@@ -22,9 +21,6 @@ from pipelines.shared.inference.run_classifier import RunArtifacts
 
 class ModelProbe:
 
-    FAMILIES        = ("amp", "mu", "sigma")
-    FIELD_CMAPS     = {"amp": "magma", "mu": "viridis", "sigma": "cividis"}
-    PERTURBATIONS   = ("drop_channel", "scale_channel", "noise")
     FLIPS           = (("none", ()), ("row", (2,)), ("col", (3,)), ("both", (2, 3)))
     CONTAINER_TYPES = ("ModuleList", "ModuleDict", "Sequential")
     FUSED_LEAVES    = ("attention_dropout",)
@@ -90,10 +86,8 @@ class ModelProbe:
 
     def _load_worker(self, run_path: str, split: str, device: str) -> None:
         try:
-            from pipelines.backbone.inference.analysis.input_attribution import ChannelLabeler
-            from pipelines.backbone.inference.loader            import RunLoader
-            from pipelines.backbone.inference.probes            import PredictionCurves
-            from tools.monitoring.logger                        import Logger
+            from pipelines.backbone.inference.loader import RunLoader
+            from tools.monitoring.logger             import Logger
 
             self._set_load(0.1, "loading checkpoint and dataset")
 
@@ -102,40 +96,35 @@ class ModelProbe:
                 batch_size      = 1,
                 num_workers     = 0,
                 device          = device,
-                checkpoint_name = "best_model.pt",
+                checkpoint_name = self.CHECKPOINT,
             )
 
             self._set_load(0.8, "indexing layers")
 
-            labels   = ChannelLabeler.build(run)
-            layers   = self._probe_layers(run.model.module)
-            modules  = dict(run.model.module.named_modules())
-            renderer = PredictionCurves(run.n_gaussians, run.z_axis)
+            layers  = self._probe_layers(run.model.module)
+            modules = dict(run.model.module.named_modules())
 
             info = {
-                "run"          : run_path,
-                "backbone"     : run.backbone_name,
-                "split"        : split,
-                "in_channels"  : run.in_channels,
-                "n_gaussians"  : run.n_gaussians,
-                "row_size" : run.split_region.row_size,
-                "col_size"   : run.split_region.col_size,
-                "row_offset"    : run.split_region.row_start,
-                "col_offset"    : run.split_region.col_start,
-                "patch"        : list(run.dataset_config.patch.size),
-                "channels"     : labels,
-                "n_layers"     : len(layers),
+                "run"             : run_path,
+                "backbone"        : run.backbone_name,
+                "split"           : split,
+                "input_channels"  : run.input_channels,
+                "target_channels" : run.target_channels,
+                "row_size"        : run.split_region.row_size,
+                "col_size"        : run.split_region.col_size,
+                "row_offset"      : run.split_region.row_start,
+                "col_offset"      : run.split_region.col_start,
+                "patch"           : list(run.dataset_config.patch.size),
+                "n_layers"        : len(layers),
             }
 
             with self.lock:
                 self.loaded = {
-                    "run"      : run,
-                    "labels"   : labels,
-                    "layers"   : layers,
-                    "types"    : {name: type(modules[name]).__name__ for name in layers},
-                    "renderer" : renderer,
-                    "patch"    : tuple(run.dataset_config.patch.size),
-                    "device"   : device,
+                    "run"    : run,
+                    "layers" : layers,
+                    "types"  : {name: type(modules[name]).__name__ for name in layers},
+                    "patch"  : tuple(run.dataset_config.patch.size),
+                    "device" : device,
                 }
                 self.status = {"state": "ready", "path": run_path, "progress": 1.0, "stage": "ready", "error": "", "info": info}
 
@@ -161,19 +150,19 @@ class ModelProbe:
         with self.lock:
             if self.loaded is None:
                 return None
-            primary = np.abs(self.loaded["run"].complex_inputs[0]).astype(np.float32)
+            target = np.asarray(self.loaded["run"].targets[0], dtype=np.float32)
 
-        vmin, vmax = PlotBase._amplitude_clim(primary)
+        vmin, vmax = PlotBase._shared_clim(target)
 
         buf = io.BytesIO()
-        plt.imsave(buf, primary, cmap="gray", vmin=float(vmin), vmax=float(vmax), format="png")
+        plt.imsave(buf, target, cmap="viridis", vmin=vmin, vmax=vmax, format="png")
         return buf.getvalue()
 
     @classmethod
     def _window_at(cls, run, patch: tuple, row: int, col: int) -> tuple[np.ndarray, int, int]:
         ph, pw = patch
-        n_rows   = run.split_region.row_size
-        n_cols   = run.split_region.col_size
+        n_rows = run.split_region.row_size
+        n_cols = run.split_region.col_size
 
         if not (0 <= row < n_rows and 0 <= col < n_cols):
             raise ValueError(f"pixel ({row}, {col}) is outside the {n_rows}x{n_cols} region")
@@ -181,87 +170,26 @@ class ModelProbe:
         top  = int(np.clip(row - ph // 2, 0, n_rows - ph))
         left = int(np.clip(col - pw // 2, 0, n_cols - pw))
 
-        complex_window = run.complex_inputs[:, top:top + ph, left:left + pw]
-        aux            = run.dataset.aux
-        aux_window     = aux[top:top + ph, left:left + pw] if aux is not None else None
-
-        window = run.dataset.assemble_window(complex_window, aux_window)
+        window = run.dataset.window(run.inputs[:, top:top + ph, left:left + pw])
         return window[None].astype(np.float32), row - top, col - left
 
     def _window(self, row: int, col: int) -> tuple[np.ndarray, int, int]:
         return self._window_at(self.loaded["run"], self.loaded["patch"], row, col)
 
-    def _slots(self, params_center: np.ndarray) -> list[dict]:
-        from tools.data.gaussians import GaussianActivity
-
-        run   = self.loaded["run"]
-        slots = []
-        for k in range(run.n_gaussians):
-            amp = float(params_center[3 * k])
-            slots.append({
-                "slot"   : k,
-                "amp"    : amp,
-                "mu"     : float(params_center[3 * k + 1]),
-                "sigma"  : float(params_center[3 * k + 2]),
-                "active" : bool(GaussianActivity.is_active(amp, run.activity_threshold)),
-            })
-        return slots
-
-    def _predict_window(self, window: np.ndarray, cy: int, cx: int) -> tuple[list[dict], list[float], np.ndarray]:
-        run      = self.loaded["run"]
-        renderer = self.loaded["renderer"]
-
-        params = run.model(window)
-        curve  = renderer.render(params)[0, :, cy, cx]
-        center = np.asarray(params[0, :, cy, cx], dtype=np.float64)
-
-        return self._slots(center), [float(v) for v in curve], center
-
-    def _center_curves(self, params: np.ndarray, cy: int, cx: int) -> np.ndarray:
-        center = params[:, :, cy, cx][:, :, None, None]
-        return self.loaded["renderer"].render(center)[:, :, 0, 0]
-
-    def _match_gt(self, pred_center: np.ndarray, gt_center: np.ndarray) -> list[dict]:
+    @staticmethod
+    def _outputs(run, device: str, batch: np.ndarray) -> np.ndarray:
         import torch
 
-        from tools.data.gaussians  import GaussianActivity
-        from tools.loss.param_loss import ParamMatcher
+        with torch.no_grad():
+            return run.model.module(torch.from_numpy(np.ascontiguousarray(batch)).to(device)).cpu().numpy()
 
-        run    = self.loaded["run"]
-        n_k    = run.n_gaussians
-        pred_t = torch.from_numpy(np.asarray(pred_center, dtype=np.float32)).reshape(1, n_k, 3, 1, 1)
-        gt_t   = torch.from_numpy(np.asarray(gt_center, dtype=np.float32)).reshape(1, n_k, 3, 1, 1)
-        idx_t  = torch.arange(n_k, dtype=torch.float32).reshape(1, n_k, 1, 1, 1).expand_as(pred_t)
+    def _forward(self, batch: np.ndarray) -> np.ndarray:
+        return self._outputs(self.loaded["run"], self.loaded["device"], batch)
 
-        matched_pred, matched_idx, sorted_gt, _ = ParamMatcher.match(pred_t, idx_t, gt_t, gt_t, active_thr=run.activity_threshold, method=ParamMatcher.HUNGARIAN)
-
-        amps  = np.asarray(gt_center[0::3], dtype=np.float64)
-        mus   = np.asarray(gt_center[1::3], dtype=np.float64)
-        order = np.argsort(np.where(GaussianActivity.is_active(amps, run.activity_threshold), mus, np.inf), kind="stable")
-
-        matches = []
-        for j in range(n_k):
-            if not GaussianActivity.is_active(float(sorted_gt[0, j, 0, 0, 0]), run.activity_threshold):
-                continue
-            matches.append({
-                "gt_slot"   : int(order[j]),
-                "pred_slot" : int(matched_idx[0, j, 0, 0, 0]),
-                "d_amp"     : float(matched_pred[0, j, 0, 0, 0] - sorted_gt[0, j, 0, 0, 0]),
-                "d_mu"      : float(matched_pred[0, j, 1, 0, 0] - sorted_gt[0, j, 1, 0, 0]),
-                "d_sigma"   : float(matched_pred[0, j, 2, 0, 0] - sorted_gt[0, j, 2, 0, 0]),
-            })
-
-        return matches
-
-    def _fit_facts(self, curve: list, gt_curve: list | None, raw_curve: list, slots: list, gt_slots: list | None) -> dict:
-        pred = np.asarray(curve, dtype=np.float64)
-
-        return {
-            "curve_mse_raw" : float(((pred - np.asarray(raw_curve)) ** 2).mean()),
-            "curve_mse_gt"  : float(((pred - np.asarray(gt_curve)) ** 2).mean()) if gt_curve is not None else None,
-            "pred_active"   : sum(1 for slot in slots if slot["active"]),
-            "gt_active"     : sum(1 for slot in gt_slots if slot["active"]) if gt_slots is not None else None,
-        }
+    @staticmethod
+    def _center_shift(outputs: np.ndarray, cy: int, cx: int) -> np.ndarray:
+        center = outputs[:, :, cy, cx]
+        return ((center - center[:1]) ** 2).mean(axis=1)
 
     def predict(self, body: dict) -> dict:
         with self.lock:
@@ -269,37 +197,19 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                row, col                = int(body["row"]), int(body["col"])
-                window, cy, cx        = self._window(row, col)
-                slots, curve, center  = self._predict_window(window, cy, cx)
+                row, col       = int(body["row"]), int(body["col"])
+                window, cy, cx = self._window(row, col)
 
-                run      = self.loaded["run"]
-                renderer = self.loaded["renderer"]
-
-                gt_curve  = None
-                gt_slots  = None
-                matches   = None
-                gt_params = run.dataset.gt_parameters
-                if gt_params is not None:
-                    gt_center = np.asarray(gt_params[:, row, col], dtype=np.float64)
-                    gt_slots  = self._slots(gt_center)
-                    gt_curve  = [float(v) for v in renderer.render(gt_center.reshape(1, -1, 1, 1))[0, :, 0, 0]]
-                    matches   = self._match_gt(center, gt_center)
-
-                raw_curve = [float(v) for v in run.full_curves[:, row, col]]
+                run        = self.loaded["run"]
+                prediction = run.model(window)[0, :, cy, cx]
+                target     = np.asarray(run.targets[:, row, col], dtype=np.float64)
 
                 return {
-                    "ok"        : True,
-                    "row"       : row,
-                    "col"       : col,
-                    "z_axis"    : [float(v) for v in run.z_axis],
-                    "slots"     : slots,
-                    "curve"     : curve,
-                    "gt_slots"  : gt_slots,
-                    "gt_curve"  : gt_curve,
-                    "raw_curve" : raw_curve,
-                    "matches"   : matches,
-                    "fit"       : self._fit_facts(curve, gt_curve, raw_curve, slots, gt_slots),
+                    "ok"      : True,
+                    "row"     : row,
+                    "col"     : col,
+                    "targets" : [{"name": name, "prediction": float(prediction[index]), "target": float(target[index]), "error": float(prediction[index] - target[index])} for index, name in enumerate(run.target_channels)],
+                    "inputs"  : [{"name": name, "value": float(run.inputs[index, row, col])} for index, name in enumerate(run.input_channels)],
                 }
             except (ValueError, KeyError) as error:
                 return {"ok": False, "error": str(error)}
@@ -316,81 +226,49 @@ class ModelProbe:
 
         return {"png": self._field_png(cell, cmap, lo, hi), "min": float(cell.min()), "max": float(cell.max())}
 
-    def _error_map(self, params: np.ndarray, row: int, col: int, cy: int, cx: int) -> np.ndarray | None:
-        run = self.loaded["run"]
-        gt  = run.dataset.gt_parameters
-        if gt is None:
-            return None
-
-        ph, pw    = params.shape[2], params.shape[3]
-        top, left = row - cy, col - cx
-        gt_window = np.asarray(gt[:, top:top + ph, left:left + pw], dtype=np.float32)[None]
-
-        renderer    = self.loaded["renderer"]
-        pred_curves = renderer.render(params)
-        gt_curves   = renderer.render(gt_window)
-
-        return ((pred_curves - gt_curves) ** 2).mean(axis=1)[0]
-
     def fields(self, body: dict) -> dict:
-        from tools.data.gaussians import GaussianActivity
-
         with self.lock:
             if self.loaded is None:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                row, col         = int(body["row"]), int(body["col"])
+                row, col       = int(body["row"]), int(body["col"])
                 window, cy, cx = self._window(row, col)
 
-                run    = self.loaded["run"]
-                params = run.model(window)
-                n_k    = run.n_gaussians
+                run         = self.loaded["run"]
+                predictions = run.model(window)[0]
+                ph, pw      = predictions.shape[1], predictions.shape[2]
+                top, left   = row - cy, col - cx
+                targets     = np.asarray(run.targets[:, top:top + ph, left:left + pw], dtype=np.float32)
 
-                slots = []
-                for k in range(n_k):
-                    families = [
-                        {"family": family, **self._field_payload(params[0, 3 * k + offset], self.FIELD_CMAPS[family])}
-                        for offset, family in enumerate(self.FAMILIES)
-                    ]
-                    slots.append({
-                        "slot"     : k,
-                        "active"   : bool(GaussianActivity.is_active(float(params[0, 3 * k, cy, cx]), run.activity_threshold)),
-                        "families" : families,
+                fields = []
+                for index, name in enumerate(run.target_channels):
+                    lo, hi = float(min(targets[index].min(), predictions[index].min())), float(max(targets[index].max(), predictions[index].max()))
+                    fields.append({
+                        "name"       : name,
+                        "prediction" : self._field_payload(predictions[index], "viridis", lo, hi),
+                        "target"     : self._field_payload(targets[index], "viridis", lo, hi),
+                        "error"      : self._field_payload(np.abs(predictions[index] - targets[index]), "inferno", vmin=0.0),
                     })
 
-                activity  = GaussianActivity.is_active(params[0, 0::3], run.activity_threshold).sum(axis=0).astype(np.float32)
-                error_map = self._error_map(params, row, col, cy, cx)
-
-                return {
-                    "ok"       : True,
-                    "center"   : [cy, cx],
-                    "patch"    : [int(params.shape[2]), int(params.shape[3])],
-                    "slots"    : slots,
-                    "activity" : self._field_payload(activity, "viridis", vmin=0.0, vmax=float(n_k)),
-                    "error"    : self._field_payload(error_map, "inferno") if error_map is not None else None,
-                }
+                return {"ok": True, "center": [cy, cx], "patch": [ph, pw], "targets": fields}
             except (ValueError, KeyError) as error:
                 return {"ok": False, "error": str(error)}
 
     @classmethod
-    def _family_gradients_at(cls, run, device: str, window: np.ndarray, cy: int, cx: int, slot: int) -> list[tuple[str, np.ndarray]]:
+    def _target_gradients_at(cls, run, device: str, window: np.ndarray, cy: int, cx: int) -> list[tuple[str, np.ndarray]]:
         import torch
 
         x = torch.from_numpy(window).to(device).requires_grad_(True)
         y = run.model.module(x)
 
         gradients = []
-        for offset, family in enumerate(cls.FAMILIES):
-            target = y[0, offset::3, cy, cx].abs().sum() if slot < 0 else y[0, 3 * slot + offset, cy, cx].abs()
-            keep   = offset < len(cls.FAMILIES) - 1
-            grad   = torch.autograd.grad(target, x, retain_graph=keep)[0].abs()[0].cpu().numpy()
-            gradients.append((family, grad))
+        for index, name in enumerate(run.target_channels):
+            keep = index < len(run.target_channels) - 1
+            grad = torch.autograd.grad(y[0, index, cy, cx], x, retain_graph=keep)[0].abs()[0].cpu().numpy()
+            gradients.append((name, grad))
 
         return gradients
-
-    def _family_gradients(self, window: np.ndarray, cy: int, cx: int, slot: int) -> list[tuple[str, np.ndarray]]:
-        return self._family_gradients_at(self.loaded["run"], self.loaded["device"], window, cy, cx, slot)
 
     @classmethod
     def _cell_png(cls, cell: np.ndarray) -> str:
@@ -413,24 +291,23 @@ class ModelProbe:
 
         return {"radii": [int(v) for v in radii], "cumulative": [float(v) for v in cumulative], "r50": r50, "r90": r90}
 
-    def _family_payload(self, family: str, grad: np.ndarray, cy: int, cx: int) -> dict:
+    @classmethod
+    def _target_payload(cls, name: str, grad: np.ndarray, cy: int, cx: int) -> dict:
         total = float(grad.sum())
         if total <= 0.0:
-            return {"family": family, "dead": True, "shares": [0.0] * grad.shape[0], "cells": [None] * grad.shape[0], "radial": None}
-
-        shares = grad.sum(axis=(1, 2)) / total
+            return {"name": name, "dead": True, "shares": [0.0] * grad.shape[0], "cells": [None] * grad.shape[0], "radial": None}
 
         cells = []
         for channel in range(grad.shape[0]):
             peak = float(grad[channel].max())
-            cells.append(self._cell_png(grad[channel] / peak) if peak > 0.0 else None)
+            cells.append(cls._cell_png(grad[channel] / peak) if peak > 0.0 else None)
 
         return {
-            "family" : family,
+            "name"   : name,
             "dead"   : False,
-            "shares" : [float(v) for v in shares],
+            "shares" : [float(v) for v in grad.sum(axis=(1, 2)) / total],
             "cells"  : cells,
-            "radial" : self._radial_profile(grad, cy, cx),
+            "radial" : cls._radial_profile(grad, cy, cx),
         }
 
     def attribution(self, body: dict) -> dict:
@@ -439,39 +316,21 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                row, col = int(body["row"]), int(body["col"])
-                slot   = int(body.get("slot", -1))
-                n_k    = self.loaded["run"].n_gaussians
-
-                if not -1 <= slot < n_k:
-                    raise ValueError(f"slot {slot} is out of range; the model predicts {n_k} component slots (use -1 to sum over all of them)")
-
+                row, col       = int(body["row"]), int(body["col"])
                 window, cy, cx = self._window(row, col)
 
-                families = [self._family_payload(family, grad, cy, cx) for family, grad in self._family_gradients(window, cy, cx, slot)]
+                run     = self.loaded["run"]
+                targets = [self._target_payload(name, grad, cy, cx) for name, grad in self._target_gradients_at(run, self.loaded["device"], window, cy, cx)]
 
                 return {
                     "ok"       : True,
-                    "channels" : self.loaded["labels"],
+                    "channels" : run.input_channels,
                     "center"   : [cy, cx],
                     "patch"    : [int(window.shape[2]), int(window.shape[3])],
-                    "slot"     : slot,
-                    "families" : families,
+                    "targets"  : targets,
                 }
             except (ValueError, KeyError) as error:
                 return {"ok": False, "error": str(error)}
-
-    def _slot_shift(self, base_slots: list[dict], moved_slots: list[dict]) -> tuple[int, float]:
-        flips    = 0
-        mu_shift = 0.0
-
-        for base, moved in zip(base_slots, moved_slots):
-            if base["active"] != moved["active"]:
-                flips += 1
-            if base["active"] or moved["active"]:
-                mu_shift = max(mu_shift, abs(moved["mu"] - base["mu"]))
-
-        return flips, mu_shift
 
     def ablation(self, body: dict) -> dict:
         with self.lock:
@@ -479,7 +338,7 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                row, col         = int(body["row"]), int(body["col"])
+                row, col       = int(body["row"]), int(body["col"])
                 window, cy, cx = self._window(row, col)
 
                 run        = self.loaded["run"]
@@ -489,28 +348,12 @@ class ModelProbe:
                 for channel in range(n_channels):
                     batch[channel + 1, channel] = 0.0
 
-                params = run.model(batch)
-                curves = self._center_curves(params, cy, cx)
+                shifts = self._center_shift(self._forward(batch), cy, cx)
 
-                base_curve = curves[0]
-                base_slots = self._slots(params[0, :, cy, cx])
-                base_power = float((base_curve ** 2).mean())
+                channels = [{"channel": channel, "label": run.input_channels[channel], "delta": float(shifts[channel + 1])} for channel in range(n_channels)]
+                channels.sort(key=lambda entry: entry["delta"], reverse=True)
 
-                channels = []
-                for channel in range(n_channels):
-                    slots           = self._slots(params[channel + 1, :, cy, cx])
-                    flips, mu_shift = self._slot_shift(base_slots, slots)
-                    channels.append({
-                        "channel"      : channel,
-                        "label"        : self.loaded["labels"][channel],
-                        "delta_mse"    : float(((curves[channel + 1] - base_curve) ** 2).mean()),
-                        "flips"        : flips,
-                        "max_mu_shift" : mu_shift,
-                    })
-
-                channels.sort(key=lambda entry: entry["delta_mse"], reverse=True)
-
-                return {"ok": True, "base_power": base_power, "channels": channels}
+                return {"ok": True, "channels": channels}
             except (ValueError, KeyError) as error:
                 return {"ok": False, "error": str(error)}
 
@@ -520,36 +363,20 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                row, col         = int(body["row"]), int(body["col"])
+                row, col       = int(body["row"]), int(body["col"])
                 window, cy, cx = self._window(row, col)
 
-                run = self.loaded["run"]
+                run     = self.loaded["run"]
+                batch   = np.concatenate([np.flip(window, axes) if axes else window for _, axes in self.FLIPS], axis=0)
+                outputs = self._forward(batch)
 
-                batch  = np.concatenate([np.flip(window, axes) if axes else window for _, axes in self.FLIPS], axis=0)
-                params = run.model(batch)
+                restored = np.concatenate([np.flip(outputs[index:index + 1], axes) if axes else outputs[index:index + 1] for index, (_, axes) in enumerate(self.FLIPS)], axis=0)
+                shifts   = self._center_shift(restored, cy, cx)
+                values   = run.model.denormalize_target(restored[:, :, cy, cx][:, :, None, None])[:, :, 0, 0]
 
-                entries    = []
-                base_curve = None
-                for index, (name, axes) in enumerate(self.FLIPS):
-                    restored = np.flip(params[index:index + 1], axes) if axes else params[index:index + 1]
-                    curve    = self._center_curves(restored, cy, cx)[0]
+                entries = [{"flip": name, "values": [float(v) for v in values[index]], "delta": float(shifts[index])} for index, (name, _) in enumerate(self.FLIPS)]
 
-                    if base_curve is None:
-                        base_curve = curve
-
-                    entries.append({
-                        "flip"      : name,
-                        "slots"     : self._slots(restored[0, :, cy, cx]),
-                        "curve"     : [float(v) for v in curve],
-                        "delta_mse" : float(((curve - base_curve) ** 2).mean()),
-                    })
-
-                return {
-                    "ok"         : True,
-                    "z_axis"     : [float(v) for v in run.z_axis],
-                    "base_power" : float((base_curve ** 2).mean()),
-                    "entries"    : entries,
-                }
+                return {"ok": True, "channels": run.target_channels, "entries": entries}
             except (ValueError, KeyError) as error:
                 return {"ok": False, "error": str(error)}
 
@@ -559,26 +386,22 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                row, col         = int(body["row"]), int(body["col"])
+                row, col       = int(body["row"]), int(body["col"])
                 window, cy, cx = self._window(row, col)
 
-                run    = self.loaded["run"]
                 ph, pw = window.shape[2], window.shape[3]
                 oh, ow = max(2, ph // 8), max(2, pw // 8)
                 rows   = int(np.ceil(ph / oh))
                 cols   = int(np.ceil(pw / ow))
 
                 batch = np.repeat(window, rows * cols + 1, axis=0)
-                for row in range(rows):
-                    for col in range(cols):
-                        cell = 1 + row * cols + col
-                        batch[cell, :, row * oh:min(ph, (row + 1) * oh), col * ow:min(pw, (col + 1) * ow)] = 0.0
+                for cell_row in range(rows):
+                    for cell_col in range(cols):
+                        cell = 1 + cell_row * cols + cell_col
+                        batch[cell, :, cell_row * oh:min(ph, (cell_row + 1) * oh), cell_col * ow:min(pw, (cell_col + 1) * ow)] = 0.0
 
-                curves     = self._center_curves(run.model(batch), cy, cx)
-                base_curve = curves[0]
-                deltas     = ((curves[1:] - base_curve[None]) ** 2).mean(axis=1).reshape(rows, cols)
-
-                worst = np.unravel_index(int(np.argmax(deltas)), deltas.shape)
+                deltas = self._center_shift(self._forward(batch), cy, cx)[1:].reshape(rows, cols)
+                worst  = np.unravel_index(int(np.argmax(deltas)), deltas.shape)
 
                 return {
                     "ok"          : True,
@@ -587,125 +410,8 @@ class ModelProbe:
                     "occluder"    : [oh, ow],
                     "grid"        : [rows, cols],
                     "center_cell" : [cy // oh, cx // ow],
-                    "base_power"  : float((base_curve ** 2).mean()),
-                    "worst"       : {"row": int(worst[0]), "col": int(worst[1]), "delta_mse": float(deltas[worst])},
+                    "worst"       : {"row": int(worst[0]), "col": int(worst[1]), "delta": float(deltas[worst])},
                     "map"         : self._field_payload(deltas, "magma"),
-                }
-            except (ValueError, KeyError) as error:
-                return {"ok": False, "error": str(error)}
-
-    @classmethod
-    def _perturb(cls, window: np.ndarray, perturbation: dict) -> np.ndarray:
-        kind      = perturbation.get("kind")
-        perturbed = window.copy()
-
-        if kind == "drop_channel":
-            channel                  = int(perturbation["channel"])
-            perturbed[:, channel]    = 0.0
-        elif kind == "scale_channel":
-            channel                  = int(perturbation["channel"])
-            perturbed[:, channel]   *= float(perturbation.get("factor", 0.5))
-        elif kind == "noise":
-            sigma = float(perturbation.get("sigma", 0.5))
-            rng   = np.random.default_rng(int(perturbation.get("seed", 0)))
-            perturbed += rng.normal(0.0, sigma, size=perturbed.shape).astype(np.float32)
-        else:
-            raise ValueError(f"unknown perturbation '{kind}', expected one of {cls.PERTURBATIONS}")
-
-        return perturbed
-
-    def _sweep_variants(self, window: np.ndarray, kind: str, channel: int | None) -> tuple[np.ndarray, list[np.ndarray], int]:
-        if kind == "scale_channel":
-            values   = np.linspace(0.0, 2.0, 9)
-            variants = [self._perturb(window, {"kind": kind, "channel": channel, "factor": float(v)}) for v in values]
-            return values, variants, 1
-
-        if kind == "noise":
-            seeds    = (0, 1, 2)
-            values   = np.linspace(0.0, 2.0, 9)
-            variants = [self._perturb(window, {"kind": kind, "sigma": float(v), "seed": seed}) for v in values for seed in seeds]
-            return values, variants, len(seeds)
-
-        raise ValueError(f"kind '{kind}' has no strength to sweep; sweep one of ('scale_channel', 'noise')")
-
-    def sweep(self, body: dict) -> dict:
-        with self.lock:
-            if self.loaded is None:
-                return {"ok": False, "error": "no model loaded"}
-
-            try:
-                row, col         = int(body["row"]), int(body["col"])
-                window, cy, cx = self._window(row, col)
-
-                kind    = body.get("kind", "")
-                channel = None
-                if kind == "scale_channel":
-                    channel = int(body["channel"])
-                    if not 0 <= channel < window.shape[1]:
-                        raise ValueError(f"channel {channel} is out of range; the model reads {window.shape[1]} input channels")
-
-                values, variants, group = self._sweep_variants(window, kind, channel)
-
-                run = self.loaded["run"]
-
-                params = run.model(np.concatenate([window] + variants, axis=0))
-                curves = self._center_curves(params, cy, cx)
-
-                base_curve = curves[0]
-                base_slots = self._slots(params[0, :, cy, cx])
-
-                deltas = ((curves[1:] - base_curve[None]) ** 2).mean(axis=1)
-                flips  = [self._slot_shift(base_slots, self._slots(params[index + 1, :, cy, cx]))[0] for index in range(len(variants))]
-
-                points = []
-                for index, value in enumerate(values):
-                    chunk = deltas[index * group:(index + 1) * group]
-                    points.append({
-                        "value"     : float(value),
-                        "delta_mse" : float(chunk.mean()),
-                        "spread"    : float(chunk.std()) if group > 1 else 0.0,
-                        "flips"     : int(max(flips[index * group:(index + 1) * group])),
-                    })
-
-                return {
-                    "ok"         : True,
-                    "kind"       : kind,
-                    "channel"    : channel,
-                    "label"      : self.loaded["labels"][channel] if channel is not None else None,
-                    "base_power" : float((base_curve ** 2).mean()),
-                    "points"     : points,
-                }
-            except (ValueError, KeyError) as error:
-                return {"ok": False, "error": str(error)}
-
-    def whatif(self, body: dict) -> dict:
-        with self.lock:
-            if self.loaded is None:
-                return {"ok": False, "error": "no model loaded"}
-
-            try:
-                row, col         = int(body["row"]), int(body["col"])
-                window, cy, cx = self._window(row, col)
-
-                base_slots, base_curve, _ = self._predict_window(window, cy, cx)
-
-                perturbed                             = self._perturb(window, body.get("perturbation", {}))
-                perturbed_slots, perturbed_curve, _   = self._predict_window(perturbed, cy, cx)
-
-                base      = np.asarray(base_curve)
-                shifted   = np.asarray(perturbed_curve)
-                delta_mse = float(((base - shifted) ** 2).mean())
-
-                return {
-                    "ok"              : True,
-                    "row"             : row,
-                    "col"             : col,
-                    "z_axis"          : [float(v) for v in self.loaded["run"].z_axis],
-                    "base_slots"      : base_slots,
-                    "base_curve"      : base_curve,
-                    "perturbed_slots" : perturbed_slots,
-                    "perturbed_curve" : perturbed_curve,
-                    "delta_mse"       : delta_mse,
                 }
             except (ValueError, KeyError) as error:
                 return {"ok": False, "error": str(error)}
@@ -759,7 +465,7 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                row, col           = int(body["row"]), int(body["col"])
+                row, col         = int(body["row"]), int(body["col"])
                 window, _cy, _cx = self._window(row, col)
 
                 model    = self.loaded["run"].model.module
@@ -838,7 +544,7 @@ class ModelProbe:
         ax.set_xlabel("input channel", fontsize=8)
         ax.set_ylabel("output channel", fontsize=8)
         ax.tick_params(labelsize=7)
-        ax.set_title(f"1×1 convolution — {matrix.shape[0]}×{matrix.shape[1]} weight matrix, ±{peak:.2g}", fontsize=8)
+        ax.set_title(f"1×1 convolution, {matrix.shape[0]}×{matrix.shape[1]} weight matrix, ±{peak:.2g}", fontsize=8)
 
         return self._figure_png(fig)
 
@@ -875,6 +581,6 @@ class ModelProbe:
                 if col == 0:
                     ax.set_ylabel(f"out {int(out_index)}", fontsize=7)
 
-        fig.suptitle(f"{out_ch}×{in_ch}×{kh}×{kw} weight — strongest {len(order_out)}×{len(order_in)} kernels, ±{peak:.2g}", fontsize=8)
+        fig.suptitle(f"{out_ch}×{in_ch}×{kh}×{kw} weight, strongest {len(order_out)}×{len(order_in)} kernels, ±{peak:.2g}", fontsize=8)
 
         return self._figure_png(fig)

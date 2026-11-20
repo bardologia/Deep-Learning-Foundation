@@ -1,21 +1,24 @@
 "use strict";
 
 class SharedCharts {
-  static FAMILY_COLORS = { amp: "#6f9bff", mu: "#2dd4bf", sigma: "#fbbf24" };
-  static FAMILY_LABELS = { amp: "amplitude", mu: "mean height", sigma: "width" };
+  static TARGET_COLORS = ["#6f9bff", "#2dd4bf", "#fbbf24", "#f472b6", "#a78bfa", "#34d399", "#fb923c", "#93c5fd"];
   static SERIES_COLORS = { pred: "#6f9bff", gt: "#eef2f5", raw: "#9ca3af", perturbed: "#f87171" };
 
+  static targetColor(index) {
+    return SharedCharts.TARGET_COLORS[index % SharedCharts.TARGET_COLORS.length];
+  }
+
   static gradientGrid(container, data, selectedChannel) {
-    const cellHtml = (family, label, cell, share, head) => {
+    const cellHtml = (index, target, label, cell, share, head) => {
       const cap = head
-        ? `<figcaption class="ms-cellhead"><i style="background:${SharedCharts.FAMILY_COLORS[family]}"></i>${family} &middot; ${(share * 100).toFixed(1)}%</figcaption>`
+        ? `<figcaption class="ms-cellhead"><i style="background:${SharedCharts.targetColor(index)}"></i>${SharedCharts.esc(target)} &middot; ${(share * 100).toFixed(1)}%</figcaption>`
         : "";
       if (!cell) {
         return `<figure class="ms-cell">${cap}<div class="ms-cell--dead"><span>0</span></div></figure>`;
       }
       const img = `
         <span class="ms-cell__frame">
-          <img src="data:image/png;base64,${cell}" alt="${SharedCharts.esc(`${family} sensitivity to ${label}`)}" />
+          <img src="data:image/png;base64,${cell}" alt="${SharedCharts.esc(`${target} sensitivity to ${label}`)}" />
           ${SharedCharts.dot(data.center, data.patch)}
         </span>`;
       return head
@@ -28,7 +31,7 @@ class SharedCharts {
 
       container.className = "ms-gridone";
       container.style.gridTemplateColumns = "";
-      container.innerHTML = data.families.map((f) => cellHtml(f.family, label, f.cells[selectedChannel], f.shares[selectedChannel], true)).join("");
+      container.innerHTML = data.targets.map((t, index) => cellHtml(index, t.name, label, t.cells[selectedChannel], t.shares[selectedChannel], true)).join("");
       return;
     }
 
@@ -38,45 +41,41 @@ class SharedCharts {
     const cells = [`<span class="ms-grid__corner"></span>`];
     data.channels.forEach((label) => cells.push(`<span class="ms-grid__col">${SharedCharts.esc(label)}</span>`));
 
-    data.families.forEach((f) => {
-      cells.push(`<span class="ms-grid__row"><i style="background:${SharedCharts.FAMILY_COLORS[f.family]}"></i>${f.family}</span>`);
-      data.channels.forEach((label, index) => cells.push(cellHtml(f.family, label, f.cells[index], f.shares[index], false)));
+    data.targets.forEach((t, index) => {
+      cells.push(`<span class="ms-grid__row"><i style="background:${SharedCharts.targetColor(index)}"></i>${SharedCharts.esc(t.name)}</span>`);
+      data.channels.forEach((label, channel) => cells.push(cellHtml(index, t.name, label, t.cells[channel], t.shares[channel], false)));
     });
 
     container.innerHTML = cells.join("");
   }
 
-  static familyBars(barsEl, legendEl, channels, families, deadNote) {
-    const colors = SharedCharts.FAMILY_COLORS;
-    const labels = SharedCharts.FAMILY_LABELS;
-    const peak   = Math.max(1e-9, ...families.filter((f) => !f.dead).flatMap((f) => f.shares));
+  static targetBars(barsEl, legendEl, channels, targets, deadNote) {
+    const peak = Math.max(1e-9, ...targets.filter((t) => !t.dead).flatMap((t) => t.shares));
 
-    barsEl.innerHTML = channels.map((label, index) => {
-      const cols = families.map((f) => {
-        const share  = f.shares[index];
-        const height = f.dead ? 0 : Math.max(2, (share / peak) * 100);
-        const title  = `${labels[f.family]} · ${label}: ${(share * 100).toFixed(1)}%`;
-        return `<i style="height:${height.toFixed(1)}%;background:${colors[f.family]}" title="${SharedCharts.esc(title)}"></i>`;
+    barsEl.innerHTML = channels.map((label, channel) => {
+      const cols = targets.map((t, index) => {
+        const share  = t.shares[channel];
+        const height = t.dead ? 0 : Math.max(2, (share / peak) * 100);
+        const title  = `${t.name} · ${label}: ${(share * 100).toFixed(1)}%`;
+        return `<i style="height:${height.toFixed(1)}%;background:${SharedCharts.targetColor(index)}" title="${SharedCharts.esc(title)}"></i>`;
       }).join("");
       return `<div class="ms-bars__group"><div class="ms-bars__cols">${cols}</div><span class="ms-bars__label">${SharedCharts.esc(label)}</span></div>`;
     }).join("");
 
-    legendEl.innerHTML = families.map((f) =>
-      `<span><i style="background:${colors[f.family]}"></i>${f.family} — ${labels[f.family]}${f.dead ? ` (${deadNote})` : ""}</span>`
+    legendEl.innerHTML = targets.map((t, index) =>
+      `<span><i style="background:${SharedCharts.targetColor(index)}"></i>${SharedCharts.esc(t.name)}${t.dead ? ` (${deadNote})` : ""}</span>`
     ).join("");
   }
 
-  static ablationRows(container, channels, basePower, extras) {
-    const peak = Math.max(1e-12, ...channels.map((c) => c.delta_mse));
+  static ablationRows(container, channels) {
+    const peak = Math.max(1e-12, ...channels.map((c) => c.delta));
 
     container.innerHTML = channels.map((c) => {
-      const width = Math.max(1.5, (c.delta_mse / peak) * 100).toFixed(1);
-      const rel   = basePower > 0 ? ` &middot; ${((c.delta_mse / basePower) * 100).toFixed(2)}% of power` : "";
-      const extra = extras ? extras(c) : "";
+      const width = Math.max(1.5, (c.delta / peak) * 100).toFixed(1);
       return `
         <div class="ms-abl__row">
           <span class="ms-abl__label" title="${SharedCharts.esc(c.label)}">${SharedCharts.esc(c.label)}</span>
-          <span class="ms-abl__bar"><span class="ms-abl__track"><i style="width:${width}%"></i></span><em>curve MSE ${c.delta_mse.toExponential(2)}${rel}${extra}</em></span>
+          <span class="ms-abl__bar"><span class="ms-abl__track"><i style="width:${width}%"></i></span><em>squared shift ${c.delta.toExponential(2)} (normalized target units)</em></span>
         </div>`;
     }).join("");
   }

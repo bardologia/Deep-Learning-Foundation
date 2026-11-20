@@ -28,8 +28,6 @@ class ProbeRouter(SubRouter):
         table.add("POST", "/api/probe/ablation",    self.ablation)
         table.add("POST", "/api/probe/occlusion",   self.occlusion)
         table.add("POST", "/api/probe/flips",       self.flips)
-        table.add("POST", "/api/probe/whatif",      self.whatif)
-        table.add("POST", "/api/probe/sweep",       self.sweep)
         table.add("POST", "/api/probe/vitals",      self.vitals)
 
     def runs(self, exchange: HttpExchange) -> None:
@@ -71,12 +69,6 @@ class ProbeRouter(SubRouter):
 
     def flips(self, exchange: HttpExchange) -> None:
         exchange.send_result(self.probe.flips(exchange.body))
-
-    def whatif(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.probe.whatif(exchange.body))
-
-    def sweep(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.probe.sweep(exchange.body))
 
     def vitals(self, exchange: HttpExchange) -> None:
         exchange.send_result(self.probe.vitals(exchange.body))

@@ -272,11 +272,11 @@
     <div class="page__head page__head--figure">
       <h2 class="page__title">Model microscope</h2>
       <p class="page__lead">
-        Load a trained backbone checkpoint, pick a pixel on the scene, and inspect the model
-        from the inside: the predicted profile against ground truth and the raw cube,
-        gradient attribution of every output family to every input channel, spatial maps of
-        where in the window those gradients concentrate, feature maps along a clickable view
-        of the architecture, and live what-if perturbations of the input.
+        Load a trained backbone checkpoint, pick a pixel on the map, and inspect the model
+        from the inside: the prediction of every target channel against its target,
+        gradient attribution of every target channel to every input channel, spatial maps of
+        where in the window those gradients concentrate, channel ablation, occlusion and
+        flip symmetry, and feature maps along a clickable view of the architecture.
       </p>
       <hairline-figure name="loupe" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
@@ -289,8 +289,8 @@
       <h2 class="page__title">Model survey</h2>
       <p class="page__lead">
         The microscope's diagnostics, run over every pixel of the test region instead of one.
-        Pick a trained run and the model is re-run tile by tile: prediction fit and matched
-        scatterer errors, channel attribution and ablation, flip symmetry, noise robustness,
+        Pick a trained run and the model is re-run tile by tile: prediction fit per target
+        channel, channel attribution and ablation, flip symmetry, noise robustness,
         occlusion evidence distance, and layer vitals, all averaged over the whole region
         with a progress bar while it works.
       </p>
