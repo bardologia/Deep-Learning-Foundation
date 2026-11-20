@@ -10,7 +10,7 @@ from configuration.inference                      import InferenceConfig
 from pipelines.shared.config.config_factory       import ConfigFactory
 from pipelines.shared.dataset.dataset_files       import DatasetFiles
 from pipelines.shared.inference.metadata          import CompletedInference
-from pipelines.shared.inference.run_classifier    import InferenceLayout
+from pipelines.shared.inference.run_layout        import InferenceLayout
 from pipelines.shared.orchestration.unit_manifest import UnitManifest
 from pipelines.shared.training.seed_sweep         import SeedSet
 from tools.data.io                                import FileIO

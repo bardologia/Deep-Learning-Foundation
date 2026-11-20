@@ -10,7 +10,7 @@ from configuration.inference                         import InferenceConfig, Tar
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.shared.inference.inference_scheduler  import InferenceScheduler
 from pipelines.shared.inference.metadata             import CompletedInference, TargetDataset
-from pipelines.shared.inference.run_classifier       import InferenceLayout, RunArtifacts
+from pipelines.shared.inference.run_layout           import InferenceLayout, RunArtifacts
 from tools.data.io                                   import FileIO
 from tools.data.regions                              import CropRegion, SplitRegions
 from tools.runtime.completion                        import CompletionMarker

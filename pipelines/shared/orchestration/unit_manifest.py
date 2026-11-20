@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing  import Callable
 
-from pipelines.shared.inference.run_classifier import RunDirectoryWalk
+from pipelines.shared.inference.run_layout     import RunDirectoryWalk
 from tools.data.io                             import FileIO
 from tools.monitoring.logger                   import Logger
 from tools.runtime.completion                  import CompletionMarker

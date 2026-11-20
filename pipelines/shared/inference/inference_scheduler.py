@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from pipelines.shared.inference.metadata       import CompletedInference, TargetDataset
-from pipelines.shared.inference.run_classifier import InferenceLayout, RunArtifacts, RunDirectoryWalk
+from pipelines.shared.inference.run_layout     import InferenceLayout, RunArtifacts, RunDirectoryWalk
 from tools.monitoring.logger                   import Logger
 from tools.orchestration.gpu_queue             import GpuJob, GpuJobResult, GpuPoolFile, GpuQueue
 from tools.runtime.config_cli                  import ConfigCli

@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 from pipelines.shared.inference.metadata       import CompletedInference
-from pipelines.shared.inference.run_classifier import InferenceLayout
+from pipelines.shared.inference.run_layout     import InferenceLayout
 from pipelines.shared.training.seed_sweep      import SeedSet
 from tools.data.io                             import FileIO
 from tools.metrics.scoring                     import SeedAggregation

@@ -16,7 +16,7 @@ from catalog_roots            import CatalogRoots, RunScanner
 from tools.reporting.plotting import PlotBase
 from web_logger               import WebLogger
 
-from pipelines.shared.inference.run_classifier import RunArtifacts
+from pipelines.shared.inference.run_layout import RunArtifacts
 
 
 class ModelProbe:

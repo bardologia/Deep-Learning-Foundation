@@ -7,7 +7,7 @@ from typing  import List, Tuple
 
 from configuration.diagnostics                 import ArtifactMailConfig
 from pipelines.shared.dataset.dataset_files    import DatasetFiles
-from pipelines.shared.inference.run_classifier import RunDirectoryWalk
+from pipelines.shared.inference.run_layout     import RunDirectoryWalk
 from tools.data.archives                       import ArchivePacker
 from tools.runtime.run_selector                import RunSelector
 

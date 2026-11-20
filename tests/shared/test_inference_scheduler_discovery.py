@@ -7,7 +7,7 @@ from types   import SimpleNamespace
 
 from pipelines.shared.inference.inference_scheduler import InferenceScheduler, RunSelection
 from pipelines.shared.inference.metadata            import CompletedInference, RegionPass
-from pipelines.shared.inference.run_classifier      import InferenceLayout, RunArtifacts
+from pipelines.shared.inference.run_layout          import InferenceLayout, RunArtifacts
 from tools.runtime.completion                       import CompletionMarker
 
 from tests.conftest import RecordingLogger, SilentLogger

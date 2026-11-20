@@ -10,7 +10,7 @@ from pipelines.cross_validation.cv_report import CrossValidationReport
 from pipelines.cross_validation.folds             import FoldPlanner, FoldRunNaming, FoldTreeSurvey, FoldUnitManifest
 from pipelines.cross_validation.workers           import FoldCollector
 from pipelines.shared.inference.metadata          import CompletedInference
-from pipelines.shared.inference.run_classifier    import InferenceLayout
+from pipelines.shared.inference.run_layout        import InferenceLayout
 from pipelines.shared.orchestration.unit_manifest import UnidentifiedRuns, UnitLedger
 from pipelines.shared.training.seed_sweep         import SeedSet
 from tools.orchestration.gpu_queue import GpuJob

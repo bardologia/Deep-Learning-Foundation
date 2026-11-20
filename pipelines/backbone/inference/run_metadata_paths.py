@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from configuration.inference                   import InferenceConfig
 from pipelines.shared.inference.metadata       import TargetDataset
-from pipelines.shared.inference.run_classifier import InferenceLayout
+from pipelines.shared.inference.run_layout     import InferenceLayout
 from tools.data.io                             import FileIO
 from tools.runtime.environment_capture         import EnvironmentCapture
 from tools.runtime.run_tag                     import RunTag

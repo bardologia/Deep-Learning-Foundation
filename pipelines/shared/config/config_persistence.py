@@ -5,7 +5,7 @@ from pathlib     import Path
 
 from models                                    import BACKBONE_CONFIG_REGISTRY
 from tools.data.io                             import FileIO
-from pipelines.shared.inference.run_classifier import RunArtifacts
+from pipelines.shared.inference.run_layout     import RunArtifacts
 
 
 class BackboneModelConfigIO:

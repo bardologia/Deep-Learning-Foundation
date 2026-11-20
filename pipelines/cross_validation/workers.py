@@ -9,7 +9,7 @@ import numpy as np
 from configuration.cross_validation import CrossValidationConfig
 from pipelines.shared.comparison.trial_collection import TrainingResultsIndex, TrialCollector, TrialRecord
 from pipelines.shared.inference.metadata          import CompletedInference
-from pipelines.shared.inference.run_classifier    import InferenceLayout
+from pipelines.shared.inference.run_layout        import InferenceLayout
 from pipelines.shared.orchestration.unit_manifest import UnitResultsByRun
 from pipelines.shared.training.unit_resume        import UnitResume
 from pipelines.shared.training.worker_base        import WorkerBase

@@ -12,7 +12,7 @@ from typing        import List
 from configuration.comparison                  import TrialComparisonConfig
 from configuration.diagnostics                 import ExperimentReportMailConfig, ReportMailEntryConfig
 from pipelines.shared.inference.metadata       import CompletedInference
-from pipelines.shared.inference.run_classifier import InferenceLayout, RunDirectoryWalk
+from pipelines.shared.inference.run_layout     import InferenceLayout, RunDirectoryWalk
 from pipelines.shared.training.seed_sweep      import SeedSet
 from tools.data.io                             import FileIO
 from tools.reporting.artifact_bundles          import ArtifactBundle, DatasetSelector, RunContentBundle, RunContentSelector

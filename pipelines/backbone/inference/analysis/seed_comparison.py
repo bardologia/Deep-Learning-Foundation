@@ -8,7 +8,7 @@ from pathlib import Path
 from pipelines.backbone.inference.analysis.seed_disagreement import SeedDisagreementMaps, SeedMaps
 from pipelines.backbone.inference.metrics                    import Metrics
 from pipelines.shared.inference.metadata                     import CompletedInference
-from pipelines.shared.inference.run_classifier               import RunDirectoryWalk
+from pipelines.shared.inference.run_layout                   import RunDirectoryWalk
 from tools.data.io                                           import FileIO
 from tools.metrics.scoring                                   import SeedAggregation
 from tools.monitoring.logger                                 import Logger
