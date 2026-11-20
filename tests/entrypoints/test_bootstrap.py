@@ -115,6 +115,17 @@ def test_gpu_uuid_mask_tokens_pass_through(clean_env):
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "GPU-657ba5d8"
 
 
+def test_an_empty_inherited_mask_keeps_every_device_hidden(clean_env):
+    clean_env.setenv("CUDA_VISIBLE_DEVICES", "")
+    EnvironmentPinner.gpu(gpu_id=0)
+
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == ""
+
+    EnvironmentPinner.gpus([0, 1])
+
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == ""
+
+
 def test_repo_root_is_repository_directory():
     assert _bootstrap._REPO_ROOT == Path(_bootstrap.__file__).resolve().parent.parent
 

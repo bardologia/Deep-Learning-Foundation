@@ -37,7 +37,7 @@ class EnvironmentPinner:
     @classmethod
     def gpu(cls, gpu_id: int, expandable_segments: bool = False) -> None:
         cls._stash_inherited_mask()
-        os.environ["CUDA_VISIBLE_DEVICES"] = cls._mask_tokens([gpu_id])[0]
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(cls._mask_tokens([gpu_id]))
         cls.threads()
 
         if expandable_segments:
@@ -57,4 +57,7 @@ class EnvironmentPinner:
             return [str(gpu_id) for gpu_id in ids]
 
         inherited = [token.strip() for token in raw.split(",") if token.strip()]
+        if not inherited:
+            return []
+
         return [inherited[gpu_id] for gpu_id in ids]
