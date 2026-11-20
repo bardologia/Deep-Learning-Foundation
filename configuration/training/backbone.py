@@ -19,7 +19,7 @@ class PatchTrialsConfig:
 
     minimum               : tuple[int, int] = (0, 0)
     maximum               : tuple[int, int] = (96, 48)
-    step                  : int             = 0
+    step                  : int             = 16
     stride_ratio          : float           = 0.5
     constant_pixel_budget : bool            = True
 

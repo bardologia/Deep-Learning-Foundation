@@ -563,9 +563,9 @@
     "training/backbone::PatchTrialsConfig": {
       "summary": "Rectangular patch-shape grid swept by the patch trials mode under a constant pixel budget",
       "fields": {
-        "minimum": "Smallest (rows, cols) patch shape included in pixels; 0 on an axis starts that axis at one admissible step",
-        "maximum": "Largest (rows, cols) patch shape included in pixels; each axis runs from its start to this bound in steps of the admissible step",
-        "step": "Spacing between consecutive patch lengths in pixels, shared by both axes; 0 derives it from the backbone's encoder pyramid as 2^levels so every length stays divisible through all downsampling stages (verified one-halving-per-stage U-Nets only, others must set it explicitly)",
+        "minimum": "Smallest (rows, cols) patch shape included in pixels; 0 on an axis starts that axis at one step",
+        "maximum": "Largest (rows, cols) patch shape included in pixels; each axis runs from its start to this bound in steps of step",
+        "step": "Spacing between consecutive patch lengths in pixels, shared by both axes; keep it a multiple of the backbone's total downsampling (16 for a four-level U-Net) so every length stays divisible through all downsampling stages",
         "stride_ratio": "Patch stride as a fraction of the patch length per axis, a value in (0, 1]; 0.5 gives 50% overlap",
         "constant_pixel_budget": "When true, each trial's batch size and lr_reference_batch_size are rescaled together so batch x rows x cols matches the reference training.batch_size x training.patch_size pixels, keeping pixels per step and the batch-linear LR scale identical across patch shapes"
       }

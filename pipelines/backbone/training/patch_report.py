@@ -254,7 +254,7 @@ class PatchTrialsReport:
         row_sizes, col_sizes = self.planner.patch_sizes()
 
         return {
-            "patch_step"      : self.planner.patch_step(),
+            "patch_step"      : self.planner.trials.step,
             "row_sizes"   : row_sizes,
             "col_sizes"     : col_sizes,
             "dataset"         : Path(self.config.paths.dataset_path).name,
@@ -337,7 +337,7 @@ class PatchTrialsReport:
             "Model"          : self.model_label,
             "Dataset"        : Path(self.config.paths.dataset_path).name,
             "Dataset path"   : str(self.config.paths.dataset_path),
-            "Patch step"     : self.planner.patch_step(),
+            "Patch step"     : self.planner.trials.step,
             "Row sizes"  : row_sizes,
             "Col sizes"      : col_sizes,
             "Seeds"          : self.seeds,

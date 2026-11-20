@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from fractions import Fraction
 
-from pipelines.shared.model.model_builder import ModelBuilder
-
 
 class ArchitectureTrialPlanner:
 
@@ -72,64 +70,26 @@ class AugmentationTrialPlanner:
         return plans
 
 
-class ArchitecturePatchStep:
-
-    def __init__(self, backbone_name: str, model_overrides: dict) -> None:
-        self.backbone_name   = backbone_name
-        self.model_overrides = model_overrides
-
-    def resolve(self) -> int:
-        model_config = ModelBuilder.config_from_registry(self.backbone_name, self.model_overrides)
-        features     = model_config.features
-
-        return 2 ** len(features)
-
-
 class PatchSizeTrialPlanner:
 
-    def __init__(self, trials, backbone_name: str, model_overrides: dict, training) -> None:
-        self.trials          = trials
-        self.backbone_name   = backbone_name
-        self.model_overrides = model_overrides
-        self.training        = training
+    def __init__(self, trials, training) -> None:
+        self.trials   = trials
+        self.training = training
 
-        self._patch_step  = None
-        self._patch_sizes = None
-
-    def patch_step(self) -> int:
-        if self._patch_step is None:
-            explicit         = self.trials.step
-            self._patch_step = explicit if explicit > 0 else ArchitecturePatchStep(self.backbone_name, self.model_overrides).resolve()
-
-        return self._patch_step
-
-    def _axis_sizes(self, axis: int, label: str) -> list[int]:
-        step  = self.patch_step()
+    def _axis_sizes(self, axis: int) -> list[int]:
+        step  = self.trials.step
         start = self.trials.minimum[axis] if self.trials.minimum[axis] > 0 else step
 
         return list(range(start, self.trials.maximum[axis] + 1, step))
 
     def patch_sizes(self) -> tuple[list[int], list[int]]:
-        if self._patch_sizes is not None:
-            return self._patch_sizes
-
-        row_sizes = self._axis_sizes(0, "row")
-        col_sizes = self._axis_sizes(1, "col")
-
-        self._patch_sizes = (row_sizes, col_sizes)
-
-        return self._patch_sizes
+        return self._axis_sizes(0), self._axis_sizes(1)
 
     def _budget_scale(self, patch_size: tuple[int, int]) -> Fraction:
         reference = self.training.patch_size
         rescaled  = self.training.batch_size * reference[0] * reference[1] // (patch_size[0] * patch_size[1])
 
         return Fraction(rescaled, self.training.batch_size)
-
-    def _pixel_rescaled(self, base: int, scale: Fraction, label: str) -> int:
-        rescaled = base * scale
-
-        return int(rescaled)
 
     @staticmethod
     def run_name(patch_size: tuple[int, int]) -> str:
@@ -145,7 +105,7 @@ class PatchSizeTrialPlanner:
         row_sizes, col_sizes = self.patch_sizes()
 
         return {
-            "Patch step"                : self.patch_step(),
+            "Patch step"                : self.trials.step,
             "Row sizes"                 : row_sizes,
             "Col sizes"                 : col_sizes,
             "Stride ratio"              : self.trials.stride_ratio,
@@ -170,8 +130,8 @@ class PatchSizeTrialPlanner:
                 if self.trials.constant_pixel_budget:
                     scale = self._budget_scale(size)
 
-                    overrides["training.batch_size"]              = self._pixel_rescaled(self.training.batch_size, scale, "batch_size")
-                    overrides["training.lr_reference_batch_size"] = self._pixel_rescaled(self.training.lr_reference_batch_size, scale, "lr_reference_batch_size")
+                    overrides["training.batch_size"]              = int(self.training.batch_size * scale)
+                    overrides["training.lr_reference_batch_size"] = int(self.training.lr_reference_batch_size * scale)
 
                 plans.append((self.run_name(size), overrides))
 

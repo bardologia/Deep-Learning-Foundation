@@ -133,7 +133,7 @@ class TrainScheduler(TrialSweepScheduler):
     def _build_planner(self):
         mode = self.config.trials_mode
         if mode == "patch":
-            return PatchSizeTrialPlanner(self.config.patch_trials, self.config.backbone_name, self.config.model_overrides, self.config.training)
+            return PatchSizeTrialPlanner(self.config.patch_trials, self.config.training)
         if mode == "architecture":
             return ArchitectureTrialPlanner(self.config.architecture_trials)
         if mode == "augmentation":

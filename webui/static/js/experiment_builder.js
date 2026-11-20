@@ -42,8 +42,7 @@ class ExperimentBuilder {
       paint     : (b) => b._paintPatch(),
       summary   : (b, gpus) => {
         const grid = b._patchGrid();
-        if (grid.error)    return `invalid patch grid: ${grid.error}`;
-        if (grid.deferred) return `grid resolved at launch: ${grid.deferred}${b._seedsSuffix(null)}${gpus}`;
+        if (grid.pending) return `${grid.pending}${b._seedsSuffix(null)}${gpus}`;
         const n = grid.row.length * grid.col.length;
         return `${grid.row.length} row x ${grid.col.length} col = ${n} patch shape${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
       },
@@ -301,18 +300,18 @@ class ExperimentBuilder {
 
     const note       = document.createElement("p");
     note.className   = "exp-panel__note";
-    note.textContent = "each (row x col) shape trains the same model end to end; stride = round(length x stride_ratio) per axis; step 0 derives the admissible step from the backbone pyramid (2^levels) at launch; the pixel budget keeps batch x pixels and the batch-linear LR scale identical across shapes";
+    note.textContent = "each (row x col) shape trains the same model end to end; stride = round(length x stride_ratio) per axis; keep the step a multiple of the backbone's total downsampling, 16 for a four-level U-Net; the pixel budget keeps batch x pixels and the batch-linear LR scale identical across shapes";
 
     const grid     = document.createElement("div");
     grid.className = "exp-patch__sizes";
 
-    const minimumInput = this._patchGridInput("minimum", "minimum (row, col)", "smallest patch shape in pixels; 0 on an axis starts at one admissible step");
+    const minimumInput = this._patchGridInput("minimum", "minimum (row, col)", "smallest patch shape in pixels; 0 on an axis starts at one step");
     if (minimumInput) grid.appendChild(minimumInput);
 
     const maximumInput = this._patchGridInput("maximum", "maximum (row, col)", "largest patch shape in pixels");
     if (maximumInput) grid.appendChild(maximumInput);
 
-    const stepInput = this._patchGridInput("step", "step", "spacing between patch lengths in pixels; 0 derives it from the backbone pyramid at launch");
+    const stepInput = this._patchGridInput("step", "step", "spacing between patch lengths in pixels, a multiple of the backbone's total downsampling");
     if (stepInput) grid.appendChild(stepInput);
 
     panel.appendChild(head);
@@ -434,32 +433,18 @@ class ExperimentBuilder {
   }
 
   _patchGrid() {
-    const step = this._patchStep();
-    if (step <= 0) return { deferred: "step 0 derives the admissible step from the backbone pyramid (2^levels)" };
-
+    const step    = this._patchStep();
     const minimum = this._patchLeafTuple("minimum");
     const maximum = this._patchLeafTuple("maximum");
-    if (!minimum || !maximum) return { deferred: "the grid bounds are read from the dataset at launch" };
+    if (step <= 0 || !minimum || !maximum) return { pending: "set a positive step and the minimum and maximum shapes" };
 
-    const axis = (index, label) => {
-      const start = minimum[index] > 0 ? minimum[index] : step;
-      if (start % step !== 0)       return { error: `minimum ${label}=${start} is not a multiple of the admissible step ${step}` };
-      if (maximum[index] < start)   return { error: `maximum ${label}=${maximum[index]} is below the first admissible size ${start}` };
-
+    const axis = (index) => {
       const sizes = [];
-      for (let value = start; value <= maximum[index]; value += step) sizes.push(value);
-      return { sizes };
+      for (let value = minimum[index] > 0 ? minimum[index] : step; value <= maximum[index]; value += step) sizes.push(value);
+      return sizes;
     };
 
-    const row = axis(0, "row");
-    const col = axis(1, "col");
-    if (row.error) return row;
-    if (col.error) return col;
-
-    const shapes = row.sizes.length * col.sizes.length;
-    if (shapes < 2) return { error: `the grid row [${row.sizes}] x col [${col.sizes}] yields ${shapes} patch shape; a sweep needs at least 2` };
-
-    return { row: row.sizes, col: col.sizes };
+    return { row: axis(0), col: axis(1) };
   }
 
   _paintPatch() {

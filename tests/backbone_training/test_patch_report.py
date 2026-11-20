@@ -20,9 +20,9 @@ OPTIMUM = (24, 16)
 
 def make_planner(maximum: tuple[int, int] = (32, 16)) -> PatchSizeTrialPlanner:
     config = BackboneEntryConfig()
-    trials = PatchTrialsConfig(maximum=maximum)
+    trials = PatchTrialsConfig(maximum=maximum, step=8)
 
-    return PatchSizeTrialPlanner(trials, "unet", {"features": [64, 128, 256]}, config.training)
+    return PatchSizeTrialPlanner(trials, config.training)
 
 
 def synthetic_loss(patch_size: tuple[int, int]) -> float:
@@ -266,6 +266,7 @@ def _patch_scheduler(tmp_path, cli_overrides: dict):
     config.backbone_name        = "unet"
     config.model_overrides      = {"features": [64, 128, 256]}
     config.patch_trials.maximum = (16, 16)
+    config.patch_trials.step    = 8
 
     return backbone_launcher.TrainScheduler(config=config, cli_overrides=cli_overrides, entry_script=Path("/entry/train_backbone.py"))
 

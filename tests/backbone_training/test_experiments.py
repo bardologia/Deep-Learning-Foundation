@@ -10,18 +10,17 @@ from pipelines.backbone.training.experiments import ArchitectureTrialPlanner, Au
 
 
 def make_patch_planner(training: TrainingQueueConfig | None = None, **overrides) -> PatchSizeTrialPlanner:
-    trials = PatchTrialsConfig(**overrides)
-    return PatchSizeTrialPlanner(trials, "unet", {"features": [64, 128, 256]}, training or TrainingQueueConfig())
+    trials = PatchTrialsConfig(**{"step": 8, **overrides})
+    return PatchSizeTrialPlanner(trials, training or TrainingQueueConfig())
 
 
-def test_patch_planner_derives_the_step_from_the_backbone_pyramid():
+def test_patch_planner_spaces_the_lengths_by_the_step():
     planner = make_patch_planner(maximum=(16, 16))
 
-    assert planner.patch_step()  == 8
     assert planner.patch_sizes() == ([8, 16], [8, 16])
 
 
-def test_patch_planner_explicit_step_overrides_the_architecture():
+def test_patch_planner_takes_another_step():
     planner = make_patch_planner(step=32, maximum=(96, 64))
 
     assert planner.patch_sizes() == ([32, 64, 96], [32, 64])
