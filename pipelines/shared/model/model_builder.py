@@ -1,14 +1,10 @@
 
 from __future__ import annotations
 
-from dataclasses import fields
-
 from models import BACKBONE_CONFIG_REGISTRY, BACKBONE_IMAGE_SIZE_MODELS
 
 
 class ModelBuilder:
-
-    GROUP_FANOUTS = {"all_groups_lr": "_lr", "all_groups_wd": "_wd"}
 
     @staticmethod
     def model_key(model_name: str, head: str) -> str:
@@ -43,17 +39,6 @@ class ModelBuilder:
 
         if head is not None:
             model_overrides = {"head": head, **model_overrides}
-
-        for key, suffix in ModelBuilder.GROUP_FANOUTS.items():
-            if key not in model_overrides:
-                continue
-
-            model_overrides = dict(model_overrides)
-            uniform         = model_overrides.pop(key)
-            group_fields    = [spec.name for spec in fields(config) if spec.name.endswith(suffix)]
-
-            for name in group_fields:
-                setattr(config, name, uniform)
 
         for attribute, value in model_overrides.items():
             setattr(config, attribute, value)

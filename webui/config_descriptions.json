@@ -840,7 +840,7 @@
         "seed": "Base random seed for a single training run, controlling weight init, shuffling, and augmentation",
         "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "logdir": "Base directory under which this run's output subdirectory and TensorBoard logs are written",
-        "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation; the special key all_groups_lr fans out to every *_lr field of the chosen architecture (uniform learning rate across parameter groups), with explicit per-group keys applied afterwards",
+        "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation",
         "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-channel labels",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
         "input": "InputConfig sub-config selecting which channel groups (primary, secondaries, derived, Aux) feed the network, defaults to the full stack",
