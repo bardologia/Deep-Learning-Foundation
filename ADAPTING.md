@@ -17,14 +17,17 @@ the one file to touch. The sections after them are reference material for the st
    `--backbone_name <key>`. The keys are listed in `models/backbone/__init__.py` and
    compared in `notes/models/Model Zoo.md`. A new architecture is described under "Adding a
    model" below.
-4. **Change the loss.** Edit `Loss.elementwise` in `pipelines/backbone/training/loss.py`.
-   A new loss kind also needs its name in `LossKind`
-   (`configuration/training/general/loss.py`); the launch forms and the benchmark's loss
-   sweep read the kinds from there.
+4. **Change the loss.** A loss kind is a name in `LossKind`
+   (`configuration/training/general/loss.py`) and a method in `Loss.ELEMENTWISE`
+   (`pipelines/backbone/training/loss.py`); a kind without a method fails at the first
+   batch. The launch forms and the benchmark's loss sweep read the kinds from `LossKind`.
 5. **Change the metrics.** Edit `Metrics.channel` and `Metrics.CHANNEL_KEYS` in
-   `pipelines/backbone/inference/metrics.py`. A metric whose key starts with `rmse_`,
-   `mae_`, `mse_` or `r2_`, or holds `loss`, is ranked without further work; any other
-   prefix needs an orientation rule in `MetricOrientation` (`tools/metrics/scoring.py`).
+   `pipelines/backbone/inference/metrics.py`, and add the metric to `Metrics.MEAN_KEYS` when
+   it should also get a `<metric>_mean` over the channels. A metric whose key starts with
+   `rmse_`, `mae_`, `mse_` or `r2_`, or holds `loss`, is ranked without further work; any
+   other prefix needs an orientation rule in `MetricOrientation` (`tools/metrics/scoring.py`).
+   The console's model survey (`webui/model_survey.py`) computes its own RMSE, MAE and R²
+   and does not show a new metric.
 6. **Adjust the training defaults.** Epochs, batch size, patch size and stride and the
    learning-rate scaling are the fields of `TrainingQueueConfig` in
    `configuration/training/general/run.py`.
@@ -32,7 +35,10 @@ the one file to touch. The sections after them are reference material for the st
 
 Keep the example generator until your own data is in place: the test suite builds its
 dataset with it (`test_data_dir` in `tests/conftest.py`). When you remove it, point that
-fixture at a small copy of your data first.
+fixture at a small copy of your data first. About twenty test modules name the example's
+channels (`x0` to `x3`, `pointwise`, `neighbourhood`) or their counts; `git grep -n -E
+'pointwise|neighbourhood|"x0"' tests` lists them, and they follow the new dataset in the
+same change.
 
 ## The dataset contract
 
@@ -76,19 +82,23 @@ rows    = inputs.shape[1]
 cols    = inputs.shape[2]
 
 splits = SplitRegions(
-    train = CropRegion(row_start=0,                row_end=int(rows * 0.7), col_start=0, col_end=cols),
-    val   = CropRegion(row_start=int(rows * 0.7),  row_end=int(rows * 0.85), col_start=0, col_end=cols),
-    test  = CropRegion(row_start=int(rows * 0.85), row_end=rows,             col_start=0, col_end=cols),
+    train = [CropRegion(row_start=0,                row_end=int(rows * 0.7),  col_start=0, col_end=cols)],
+    val   = [CropRegion(row_start=int(rows * 0.7),  row_end=int(rows * 0.85), col_start=0, col_end=cols)],
+    test  = [CropRegion(row_start=int(rows * 0.85), row_end=rows,             col_start=0, col_end=cols)],
 )
 
 DatasetFiles(Path("datasets/mine"), "mine", ["a", "b"], ["y"], rows, cols, splits, {"source": "my_inputs.npy"}).write(inputs, targets)
 ```
 
-The contract has no mask. Fill invalid pixels with values the loss can take, or multiply
-the weight map of `PatchDataset` (`pipelines/backbone/dataset/datasets.py`) by a mask you
-store beside the arrays: the weight map is the one place a pixel's share of the loss is
-decided. Padding weighs 0, a train pixel 1, and a validation or test pixel 1 over the
-number of patches covering it, so every scored pixel counts once.
+The contract has no mask, and a mask has to reach two places. Training decides a pixel's
+share of the loss in the weight map of `PatchDataset` (`pipelines/backbone/dataset/datasets.py`):
+padding weighs 0, a train pixel 1, and a validation or test pixel 1 over the number of
+patches covering it, so every scored pixel counts once. Multiply that map by a mask stored
+beside the arrays, and fill the masked target pixels with values the loss can take.
+Inference scores every pixel where both the prediction and the target are finite
+(`Metrics.channel` in `pipelines/backbone/inference/metrics.py`) and ignores the weights, so
+the masked pixels must also be NaN in the targets inference reads, or `Metrics.channel` must
+take the mask; otherwise `metrics.json`, the comparisons and the seed aggregates score them.
 
 ## Loss, metrics and normalization in more detail
 
@@ -127,7 +137,9 @@ is `AugmentationConfig` in `configuration/dataset/general/dataset.py`.
    also goes into `BACKBONE_IMAGE_SIZE_MODELS`.
 4. A card in `BackboneModelLibrary._families()` (`webui/backbone_model_library.py`) and a
    note `notes/models/<card name>.md`, which the Architectures page shows.
-5. Its entry in `tests/state_dict_baseline.json` (see the gates below).
+5. A description of every field of its config in `webui/config_descriptions.json`, under
+   `architectures/backbone::<ConfigClass>`.
+6. Its entry in `tests/state_dict_baseline.json` (see the gates below).
 
 `tests/webui/test_backbone_model_library.py` checks that every registered model has a card
 and a note, and `tests/models_backbone/test_backbone_architectures.py` runs the forward pass
@@ -178,15 +190,23 @@ These tests fail loudly when the code and the console or the documentation drift
 
 The name is written out in these places:
 
-- `pyproject.toml` (`name`, `description`).
+- `pyproject.toml` (`name`, `description`), `README.md` and `PRODUCT.md`.
 - The console: `webui/serve.py`, `webui/web_ui_server.py` (start-up banner), `webui/run.sh`,
   `webui/notifier.py` (test notification, asserted in `tests/webui/test_notifier.py`) and
   `webui/static/index.html` (title, brand, footer).
-- The environment name `ml-template`: `install.sh` and `MachineProfile.DEFAULTS` in
-  `tools/runtime/machine_profile.py`.
+- The environment name `ml-template`: `install.sh`, `MachineProfile.DEFAULTS` in
+  `tools/runtime/machine_profile.py` and the setup wizard `scripts/setup_machine.py`.
 - The profile location `~/.config/ml-template/` and the `MLTEMPLATE_` variables:
   `tools/runtime/machine_profile.py`, `tools/runtime/detacher.py`,
-  `tools/runtime/cuda_mask.py`, `install.sh` and `webui/run.sh`.
+  `tools/runtime/cuda_mask.py`, `main/_bootstrap.py`, `scripts/setup_machine.py`,
+  `install.sh` and `webui/run.sh`.
+- The desktop entry `ML-Template Console` (`ml-template-console.desktop`) written by
+  `scripts/setup_machine.py`.
+- The mail subject prefix `ML-Template results` (`ReportMailEntryConfig` in
+  `configuration/diagnostics.py`).
+- The `ml-template` tag in the frontmatter of every note under `notes/models/`.
+- The package name of the screenshot harness, `webui/tools/visual/package.json` and its
+  lock file.
 - The console port 8772: `ReferenceLayout.CONSOLE_PORT` in
   `configuration/reference_layout.py`, `webui/serve.py`, and the screenshot harness in
   `webui/tools/visual/`.
