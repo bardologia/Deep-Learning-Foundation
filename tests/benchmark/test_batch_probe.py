@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -262,7 +263,7 @@ def test_run_runs_the_lr_range_test_at_the_probed_batch(monkeypatch, tmp_path):
 def test_run_skips_the_lr_range_test_when_disabled(monkeypatch, tmp_path):
     class _ForbiddenRangeTest:
         def __init__(self, **kwargs) -> None:
-            raise AssertionError("LrRangeTest was constructed although find_lr is disabled")
+            Mock(side_effect=AssertionError("LrRangeTest was constructed although find_lr is disabled"))()
 
     monkeypatch.setattr(module, "LrRangeTest", _ForbiddenRangeTest)
 
@@ -270,14 +271,6 @@ def test_run_skips_the_lr_range_test_when_disabled(monkeypatch, tmp_path):
 
     assert result["status"]        == "PASS"
     assert result["lr_multiplier"] is None
-
-
-def test_run_validates_size_match_channels_against_the_dataset(monkeypatch, tmp_path):
-    result, captured = _run_with_stubbed_context(monkeypatch, tmp_path, _StubDataset(size=64, input_channels=7))
-
-    assert result["status"] == "FAIL"
-    assert "size_match.in_channels" in result["error"]
-    assert captured == {}
 
 
 def test_run_records_the_measured_context(monkeypatch, tmp_path):

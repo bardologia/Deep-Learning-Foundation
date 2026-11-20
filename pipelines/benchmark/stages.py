@@ -7,7 +7,6 @@ from pathlib     import Path
 
 from configuration.benchmark                       import BenchmarkConfig
 from configuration.dataset.gaussian             import GaussianConfig
-from pipelines.backbone.training.loss_terms        import LossComponentCatalog
 from pipelines.benchmark.results                   import BenchmarkSeedCollector
 from pipelines.shared.comparison.comparison_report import ComparisonReport
 from pipelines.benchmark.sizing                    import SizeMatcher, SizeMatchResult
@@ -50,13 +49,6 @@ class SeedExpandedStage:
     @classmethod
     def components(cls, config: BenchmarkConfig) -> list[str | None]:
         components = list(config.sweep_loss_components)
-        if not components:
-            raise SystemExit("sweep_loss_components is empty; select at least one loss component to sweep")
-
-        valid   = set(LossComponentCatalog.names())
-        unknown = [component for component in components if component not in valid]
-        if unknown:
-            raise SystemExit(f"unknown loss component(s) {unknown}; valid: {', '.join(sorted(valid))}")
 
         return components
 
@@ -327,13 +319,7 @@ class SizeMatchStage(ExperimentStage):
             if candidate in models:
                 return candidate
 
-        SizeMatchStage.validate_reference(reference, models)
         return reference
-
-    @staticmethod
-    def validate_reference(reference: str, models: list[str]) -> None:
-        if reference not in models:
-            raise SystemExit(f"size_match.reference_model '{reference}' is not one of the swept model keys {models}; give the full key including the head (e.g. 'unet-set_pred') so the reference is capacity-matched against its own architecture and not bisected against a different head")
 
     def _load_cached(self) -> dict | None:
         if not self.config.resume or not self.records_path.exists():
@@ -388,7 +374,6 @@ class SizeMatchStage(ExperimentStage):
         self.logger.info(f"Report written to: {self.report_path}")
 
     def run(self) -> dict:
-        self.validate_reference(self.config.size_match.reference_model, self.models)
 
         matcher = SizeMatcher(config=self.config, logger=self.logger)
 
@@ -471,9 +456,6 @@ class ComparisonStage(ExperimentStage):
     def _check_coverage(self, runs: list) -> None:
         collected = [record.name for record in runs]
         scored    = [record.name for record in runs if record.has_inference]
-
-        if not collected:
-            raise SystemExit(f"no run collected under {self.run_dir / 'training'}; nothing to compare")
 
         summary = {"Collected": len(collected), "With inference": len(scored), "Without inference": len(collected) - len(scored)}
 

@@ -42,9 +42,6 @@ class BenchmarkWorker(WorkerBase):
 
         records = FileIO.load_json(size_match_path)
 
-        if model_name not in records:
-            raise SystemExit(f"size_match.json present but missing an entry for '{model_name}'; the benchmark would silently train a capacity-unmatched model")
-
         return records[model_name]["overrides"]
 
     def _max_batch_size(self, model_name: str) -> int | None:
@@ -54,12 +51,7 @@ class BenchmarkWorker(WorkerBase):
 
         records = FileIO.load_json(path)
 
-        if model_name not in records:
-            raise SystemExit(f"max_batch.json present but missing an entry for '{model_name}'")
-
         entry = records[model_name]
-        if entry.get("status") != "PASS" or not entry.get("batch_size"):
-            raise SystemExit(f"model '{model_name}' has no usable measured batch size: {entry}")
 
         return int(entry["batch_size"])
 
@@ -69,9 +61,6 @@ class BenchmarkWorker(WorkerBase):
             return None
 
         records = FileIO.load_json(path)
-
-        if model_name not in records:
-            raise SystemExit(f"max_batch.json present but missing an entry for '{model_name}'")
 
         multiplier = records[model_name]["lr_multiplier"]
 

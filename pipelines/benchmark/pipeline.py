@@ -4,11 +4,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from configuration.benchmark                        import BenchmarkConfig
-from models                                         import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
+from models                                         import BACKBONE_CONFIG_REGISTRY
 from pipelines.shared.model.model_builder           import ModelBuilder
 from pipelines.shared.orchestration.staged_pipeline import StagedPipeline
 
-from pipelines.benchmark.stages import ComparisonStage, InferenceStage, MaxBatchStage, SeedExpandedStage, SizeMatchStage, TrainingStage
+from pipelines.benchmark.stages import ComparisonStage, InferenceStage, MaxBatchStage, SizeMatchStage, TrainingStage
 
 
 class BenchmarkPipeline(StagedPipeline):
@@ -33,29 +33,7 @@ class BenchmarkPipeline(StagedPipeline):
         return [ModelBuilder.model_key(name, head) for name in BACKBONE_CONFIG_REGISTRY for head in config.heads]
 
     @classmethod
-    def unknown_skips(cls, config: BenchmarkConfig) -> list[str]:
-        keys  = cls._model_keys(config)
-        known = set(keys) | {ModelBuilder.split_key(key)[0] for key in keys}
-
-        return [entry for entry in config.skip_models if entry not in known]
-
-    @classmethod
     def validate_sweep(cls, config: BenchmarkConfig) -> None:
-        if config.stage not in cls.STAGES:
-            raise SystemExit(f"unknown benchmark stage '{config.stage}'; valid: {', '.join(cls.STAGES)}")
-
-        SeedExpandedStage.components(config)
-
-        unknown = [head for head in config.heads if head not in BACKBONE_HEADS]
-        if unknown:
-            raise SystemExit(f"unknown head(s) {unknown}; valid: {', '.join(BACKBONE_HEADS)}")
-        if not config.heads:
-            raise SystemExit("heads is empty; select at least one output head to benchmark")
-
-        unknown_skips = cls.unknown_skips(config)
-        if unknown_skips:
-            raise SystemExit(f"skip_models lists {unknown_skips}, which match no model key and no backbone name, so the model meant to be skipped would be benchmarked; valid keys: {', '.join(cls._model_keys(config))}")
-
         config.size_match.reference_model = SizeMatchStage.resolve_reference(config.size_match.reference_model, cls.select_models(config), config.heads)
 
     def _validate_sweep(self) -> None:

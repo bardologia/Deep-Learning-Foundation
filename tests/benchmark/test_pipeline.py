@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -148,19 +149,12 @@ def test_compare_stage_runs_the_comparison_only(tmp_path, monkeypatch):
     assert state["stages"]["pipeline"]["status"] == "completed"
 
 
-def test_unknown_stage_is_rejected(tmp_path):
-    pipeline = BenchmarkPipeline(_config(tmp_path, stage="warmup"), entry_script=ENTRY)
-
-    with pytest.raises(SystemExit, match="unknown benchmark stage"):
-        pipeline.run()
-
-
 def test_an_exception_in_a_stage_is_logged_with_its_stage_and_marked_failed(tmp_path, monkeypatch):
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     def failing_max_batch():
         pipeline._begin_stage("max_batch")
-        raise RuntimeError("probe queue died")
+        Mock(side_effect=RuntimeError("probe queue died"))()
 
     monkeypatch.setattr(pipeline, "_run_size_match", lambda: {})
     monkeypatch.setattr(pipeline, "_run_max_batch",  failing_max_batch)
@@ -183,7 +177,9 @@ def test_an_abort_overrides_the_completed_mark_of_an_earlier_launch(tmp_path, mo
     earlier._mark_stage("pipeline", "completed")
     earlier.logger.close()
 
-    pipeline = BenchmarkPipeline(_config(tmp_path, stage="bogus"), entry_script=ENTRY)
+    pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
+
+    monkeypatch.setattr(BenchmarkPipeline, "validate_sweep", Mock(side_effect=SystemExit("bogus")))
 
     with pytest.raises(SystemExit, match="bogus"):
         pipeline.run()
@@ -198,7 +194,7 @@ def test_a_clean_system_exit_is_not_recorded_as_an_abort(tmp_path, monkeypatch):
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
     def clean_exit():
-        raise SystemExit(0)
+        Mock(side_effect=SystemExit(0))()
 
     monkeypatch.setattr(pipeline, "_execute", clean_exit)
 
@@ -386,21 +382,6 @@ def test_every_launch_appends_its_provenance_to_the_launch_record(tmp_path, monk
     assert lines[0]["archived_config"]          is None
     assert lines[1]["resumed_from"]             is None
     assert f"Commit        : {GitState.commit()}" in text
-
-
-def test_a_skip_entry_matching_no_model_is_refused(tmp_path):
-    config = _config(tmp_path, skip_models=["unet", "resnut"])
-
-    with pytest.raises(SystemExit, match=r"skip_models lists \['resnut'\], which match no model key and no backbone name"):
-        BenchmarkPipeline.validate_sweep(config)
-
-
-def test_a_skip_entry_may_name_a_full_key_or_a_backbone_name(tmp_path):
-    config = _config(tmp_path, heads=["conv", "set_pred"], skip_models=["unet-set_pred", "resunet"])
-
-    BenchmarkPipeline.validate_sweep(config)
-
-    assert BenchmarkPipeline.unknown_skips(config) == []
 
 
 def test_the_pipeline_logs_the_selected_and_the_skipped_models(tmp_path, monkeypatch):

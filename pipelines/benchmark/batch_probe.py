@@ -98,9 +98,6 @@ class MaxBatchProbe:
     def _build_probe_setup(self) -> tuple:
         trainer_config, dataset_config, dataset, gaussian_cfg = self._build_context()
 
-        if dataset.input_channels != self.config.size_match.in_channels:
-            raise RuntimeError(f"size_match.in_channels={self.config.size_match.in_channels} but the dataset provides {dataset.input_channels} input channels; capacity matching counted the wrong width — fix size_match.in_channels and re-run size matching without resume")
-
         model, model_cfg = self._build_model(dataset_config, dataset, gaussian_cfg)
         trainer          = self._build_trainer(trainer_config, dataset_config, model, model_cfg, dataset)
 

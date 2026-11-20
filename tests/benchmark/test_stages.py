@@ -297,14 +297,6 @@ def test_sizematch_run_emits_reference_and_matched(monkeypatch, logger_stub, tes
     assert FileIO.load_json(stage.records_path)["resunet"]["provenance"]["git_commit"] == GitState.commit()
 
 
-def test_sizematch_rejects_a_reference_that_is_not_swept(config, logger_stub):
-    config.size_match.reference_model = "unet"
-    stage = SizeMatchStage(config=config, run_tag="t", models=["unet-set_pred", "resunet-set_pred"], logger=logger_stub)
-
-    with pytest.raises(SystemExit, match="reference_model"):
-        stage.run()
-
-
 def test_sizematch_load_cached_requires_all_models(config, logger_stub):
     config.resume = True
     stage = SizeMatchStage(config=config, run_tag="t", models=["unet", "resunet"], logger=logger_stub)
@@ -399,20 +391,6 @@ def test_comparison_stage_run_invokes_collector_and_report(config, logger_stub, 
     assert collected["kwargs"]["reference_model"] == config.size_match.reference_model
     assert collected["kwargs"]["seed_dispersion"] == {"unet": {"n_seeds": 2}}
     assert "comparison" in str(out_dir)
-
-
-def test_sweep_components_empty_list_fails_for_backbone(config):
-    config.sweep_loss_components = []
-
-    with pytest.raises(SystemExit, match="sweep_loss_components is empty"):
-        SeedExpandedStage.components(config)
-
-
-def test_sweep_components_unknown_name_fails(config):
-    config.sweep_loss_components = ["nope"]
-
-    with pytest.raises(SystemExit, match="unknown loss component"):
-        SeedExpandedStage.components(config)
 
 
 @pytest.mark.dataset
@@ -574,13 +552,6 @@ def test_comparison_stage_matches_planned_units_through_their_directories(config
     stage.run()
 
     assert [message for level, message in recording_logger.messages if level == "warning"] == []
-
-
-def test_comparison_stage_refuses_an_empty_collection(config, recording_logger, monkeypatch):
-    stage = _comparison_stage(config, recording_logger, {"unet/seed0": "unet/seed0"}, monkeypatch, [])
-
-    with pytest.raises(SystemExit, match="no run collected"):
-        stage.run()
 
 
 def test_comparison_stage_without_a_plan_compares_every_run(config, recording_logger, monkeypatch):

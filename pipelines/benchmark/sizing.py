@@ -50,21 +50,8 @@ class WidthScaler:
             "nafnet"         : [WidthRule(attribute="width", divisor=1)],
         }
 
-        self._enforce_locked()
-
-    def _enforce_locked(self) -> None:
-        for model_name, rules in self.rules.items():
-            if not rules:
-                raise ValueError(f"Model '{model_name}' has no width rule; size matching has nothing to scale once locked parameters are removed.")
-
-            for rule in rules:
-                if rule.attribute in self.locked and not rule.unlock:
-                    raise ValueError(f"Width rule for '{model_name}' targets locked hyperparameter '{rule.attribute}'. Locked parameters may not be scaled: {sorted(self.locked)}.")
-
     def rules_for(self, model_key: str) -> list[WidthRule]:
         name, _head = ModelBuilder.split_key(model_key)
-        if name not in self.rules:
-            raise ValueError(f"No width rule registered for model '{name}'. Available: {list(self.rules.keys())}")
 
         return self.rules[name]
 
@@ -161,19 +148,8 @@ class SizeMatcher:
         self.in_channels = config.size_match.in_channels
         self.count_cache = {}
 
-        self._validate_in_channels()
-
         gaussian_cfg      = GaussianConfig.from_dataset(config.paths.dataset_path, config.paths.parameters_path)
         self.out_channels = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, gaussian_cfg.n_default_gaussians)
-
-    def _validate_in_channels(self) -> None:
-        labels = self.config.paths.secondary_labels
-        if not labels:
-            return
-
-        expected = self.config.input.total_channels(len(labels), len(labels))
-        if self.in_channels != expected:
-            raise SystemExit(f"size_match.in_channels={self.in_channels} but the input configuration yields {expected} channels for {len(labels)} secondaries; capacity matching would count the wrong width")
 
     def reference_count(self) -> int:
         reference  = self.config.size_match.reference_model
@@ -191,13 +167,6 @@ class SizeMatcher:
         while high_count < target and high < size_match.scale_ceiling:
             high      *= 2.0
             high_count = self._count_at(model_name, high)
-
-        if high_count < target:
-            raise SystemExit(f"{model_name} reaches only {high_count:,} parameters at scale {high:g}, the ceiling size_match.scale_ceiling={size_match.scale_ceiling:g}, and cannot match the target {target:,}")
-
-        low_count = self._count_at(model_name, low)
-        if low_count > target:
-            raise SystemExit(f"{model_name} already holds {low_count:,} parameters at the lower bound size_match.scale_low={low:g} and cannot be shrunk to the target {target:,}")
 
         best    : tuple | None = None
         history : list[dict]   = []

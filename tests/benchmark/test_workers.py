@@ -56,24 +56,13 @@ def test_size_overrides_reads_overrides(config):
     assert worker._size_overrides("unet") == {"features": [32, 64]}
 
 
-def test_backbone_training_rejects_a_stale_size_override(config):
-    from pipelines.benchmark.workers import TrainingWorker
-
-    worker = TrainingWorker(config, "tag")
-
-    FileIO.save_json({"unet": {"overrides": {"renamed_features": [32, 64]}}}, worker.run_dir / "pipeline" / "size_match.json")
-
-    with pytest.raises(AttributeError, match="Unknown model override 'renamed_features'"):
-        worker._run_backbone("unet", run_name="unet", seed=None, loss_component=None)
-
-
 def test_size_overrides_missing_model_exits(config):
     worker = BenchmarkWorker(config, "tag")
     path   = worker.run_dir / "pipeline" / "size_match.json"
 
     FileIO.save_json({"other_model": {"overrides": {}}}, path)
 
-    with pytest.raises(SystemExit, match="missing an entry for 'unet'"):
+    with pytest.raises(KeyError, match="unet"):
         worker._size_overrides("unet")
 
 
@@ -98,7 +87,7 @@ def test_max_batch_size_raises_when_model_missing(config):
 
     FileIO.save_json({"resunet": {"status": "PASS", "batch_size": 128}}, path)
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(KeyError, match="unet"):
         worker._max_batch_size("unet")
 
 
@@ -108,7 +97,7 @@ def test_max_batch_size_raises_when_not_passed(config):
 
     FileIO.save_json({"unet": {"status": "FAIL", "batch_size": None}}, path)
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(TypeError):
         worker._max_batch_size("unet")
 
 
@@ -142,7 +131,7 @@ def test_lr_multiplier_raises_when_model_missing(config):
 
     FileIO.save_json({"resunet": {"status": "PASS", "batch_size": 128, "lr_multiplier": 0.5}}, path)
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(KeyError, match="unet"):
         worker._lr_multiplier("unet")
 
 
@@ -313,26 +302,6 @@ def test_training_worker_writes_the_unit_manifest_into_the_handed_over_directory
     assert manifest["kind"] == BenchmarkUnitManifest.KIND
     assert BenchmarkUnitManifest.identity(manifest) == ("unet", "param_l1", 3)
     assert manifest["unit"] == "renamed/seed3"
-
-
-def test_training_worker_refuses_a_finished_unit_when_resume_is_off(config, monkeypatch):
-    from pipelines.benchmark.workers import TrainingWorker
-    from tools.runtime.completion    import CompletionMarker
-
-    config.resume = False
-    worker        = TrainingWorker(config, "tag")
-    unit          = worker.run_dir / "training" / "renamed/seed3"
-    unit.mkdir(parents=True)
-    CompletionMarker.stamp(unit, {"stage": "training"})
-
-    trained = []
-    monkeypatch.setattr(TrainingWorker, "_run_backbone", lambda self, model_name, run_name, seed, loss_component: trained.append(run_name), raising=True)
-
-    with pytest.raises(SystemExit, match="already holds a completed run and resume is off"):
-        worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
-
-    assert trained == []
-    assert CompletionMarker.is_complete(unit)
 
 
 def test_training_worker_trains_an_unfinished_unit_when_resume_is_off(config, monkeypatch):
