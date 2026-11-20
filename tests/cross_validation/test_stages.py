@@ -74,7 +74,7 @@ def build_finished_run(root: Path, run_tag: str, n_folds: int = 3, splits: tuple
         for unit_dir in run_dirs:
             (unit_dir / "meta").mkdir(parents=True)
             FileIO.save_json({}, unit_dir / "meta" / "model_config.json")
-            FileIO.save_json({"model_name": config.backbone_name, "in_channels": 4, "out_channels": 6}, unit_dir / "meta" / "run_summary.json")
+            FileIO.save_json({"model_name": config.backbone_name, "parameters": 10, "in_channels": 4, "out_channels": 2}, unit_dir / "meta" / "run_summary.json")
             FileIO.save_json({"split_regions": planner.plan(index).split_regions.bounds()}, unit_dir / "meta" / "dataset_creation_config.json")
 
             torch.save({"best_val_loss": 0.1 * (index + 1), "best_epoch": 3, "epoch": 5}, unit_dir / "best_model.pt")

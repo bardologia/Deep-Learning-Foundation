@@ -63,7 +63,7 @@ def test_save_run_summary_payload(tmp_path):
     meta = TrainingRunMetadata(_trainer_config(), "swin", tmp_path, run_name="run_sum", logger=_logger(tmp_path))
 
     try:
-        out_path = meta.save_run_summary("swin", input_channels=["x0", "x1", "x2"], target_channels=["y"])
+        out_path = meta.save_run_summary("swin", 10, input_channels=["x0", "x1", "x2"], target_channels=["y"])
         payload  = json.loads(out_path.read_text())
 
         assert payload["model_name"]      == "swin"
@@ -180,8 +180,8 @@ def test_run_summary_records_the_patch_geometry(tmp_path):
     geometry = {"configured_size": [64, 32], "configured_stride": [32, 16], "size": [64, 64], "stride": [32, 32], "squared": True}
 
     try:
-        with_patch = json.loads(meta.save_run_summary("unet", ["x0", "x1"], ["y"], patch_geometry=geometry).read_text())
-        without    = json.loads(meta.save_run_summary("unet", ["x0", "x1"], ["y"]).read_text())
+        with_patch = json.loads(meta.save_run_summary("unet", 10, ["x0", "x1"], ["y"], patch_geometry=geometry).read_text())
+        without    = json.loads(meta.save_run_summary("unet", 10, ["x0", "x1"], ["y"]).read_text())
     finally:
         meta.close()
 
@@ -192,7 +192,7 @@ def test_run_summary_records_the_patch_geometry(tmp_path):
 def test_run_summary_records_provenance(tmp_path):
     meta = TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_prov", logger=_logger(tmp_path))
     try:
-        path    = meta.save_run_summary("unet", ["x0", "x1"], ["y"], seed=1)
+        path    = meta.save_run_summary("unet", 10, ["x0", "x1"], ["y"], seed=1)
         payload = json.loads(path.read_text())
     finally:
         meta.close()

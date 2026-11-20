@@ -60,7 +60,7 @@ def _write_aggregate(trial_dir: Path, tag: str, inference: dict) -> Path:
 
 def _make_run(run_dir: Path) -> Path:
     (run_dir / "meta").mkdir(parents=True, exist_ok=True)
-    (run_dir / "meta" / "run_summary.json").write_text(json.dumps({"target_channels": ["a", "b"]}), encoding="utf-8")
+    (run_dir / "meta" / "run_summary.json").write_text(json.dumps({"parameters": 10, "target_channels": ["a", "b"]}), encoding="utf-8")
     return run_dir
 
 

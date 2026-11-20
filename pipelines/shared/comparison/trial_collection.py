@@ -16,8 +16,7 @@ from tools.metrics.scoring                     import SeedAggregation
 from tools.monitoring.logger                   import Logger
 from tools.runtime.completion                  import CompletionMarker
 
-_TOTAL_PARAMS_PATTERN = re.compile(r"\*\*Total Parameters:\*\*\s*`([\d,]+)`")
-_CHECKPOINT_KEYS      = ("best_val_loss", "best_epoch", "epoch")
+_CHECKPOINT_KEYS = ("best_val_loss", "best_epoch", "epoch")
 
 
 @dataclass
@@ -255,16 +254,6 @@ class TrialCollector(TrialArtifactReader):
         self.logger.warning(f"{record.name}: absent from {TrainingResultsIndex.FILENAME}; training status and duration unknown")
         return {}
 
-    def _parse_parameters(self, trial_dir: Path) -> int | None:
-        summary_path = trial_dir / "docs" / "model_doc.md"
-
-        if summary_path.exists():
-            match = _TOTAL_PARAMS_PATTERN.search(summary_path.read_text(encoding="utf-8", errors="ignore"))
-            if match:
-                return int(match.group(1).replace(",", ""))
-
-        return None
-
     @staticmethod
     def _seed_dirs(trial_dir: Path) -> list[Path]:
         return sorted(d for d in trial_dir.iterdir() if d.is_dir() and re.fullmatch(r"seed\d+", d.name))
@@ -304,7 +293,7 @@ class TrialCollector(TrialArtifactReader):
             record.trainer_config  = self._run_json(record, trial_dir / "docs" / "trainer_config.json")
             record.run_summary     = self._run_json(record, trial_dir / "meta" / "run_summary.json")
             record.training_result = self._training_result(record, training_results)
-            record.parameters      = self._parse_parameters(trial_dir)
+            record.parameters      = record.run_summary["parameters"] if record.run_summary else None
             record.checkpoint      = self._read_checkpoint(trial_dir)
 
             self._attach_inference(record)

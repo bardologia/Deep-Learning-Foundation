@@ -56,6 +56,7 @@ def test_training_pipeline_learns_the_synthetic_task_and_writes_the_run(test_dat
     assert summary["input_channels"]  == ["x0", "x1", "x2", "x3"]
     assert summary["target_channels"] == ["pointwise", "neighbourhood"]
     assert (summary["in_channels"], summary["out_channels"]) == (4, 2)
+    assert summary["parameters"] > 0
     assert len(train_losses) == 6
     assert train_losses[-1] < train_losses[0]
     assert best_val < val_losses[0]

@@ -173,12 +173,13 @@ class TrainingRunMetadata:
 
         return out_path
 
-    def save_run_summary(self, model_name: str, input_channels: list[str], target_channels: list[str], seed: int = 0, patch_geometry: dict | None = None) -> Path:
+    def save_run_summary(self, model_name: str, parameters: int, input_channels: list[str], target_channels: list[str], seed: int = 0, patch_geometry: dict | None = None) -> Path:
         out_path  = self.metadata_directory / "run_summary.json"
         n_devices = torch.cuda.device_count() if torch.cuda.is_available() else 0
 
         payload  = {
             "model_name"      : model_name,
+            "parameters"      : int(parameters),
             "in_channels"     : len(input_channels),
             "out_channels"    : len(target_channels),
             "input_channels"  : list(input_channels),

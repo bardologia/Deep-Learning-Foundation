@@ -136,6 +136,7 @@ class TrainingPipeline:
             self.run_metadata.save_model_config(model_cfg, self.backbone_name)
             self.run_metadata.save_run_summary(
                 model_name      = self.backbone_name,
+                parameters      = sum(parameter.numel() for parameter in model.parameters()),
                 input_channels  = files.input_channels,
                 target_channels = files.target_channels,
                 seed            = self.seed,

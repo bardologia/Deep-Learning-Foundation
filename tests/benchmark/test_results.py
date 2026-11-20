@@ -75,13 +75,10 @@ def test_collector_reads_the_checkpoint_at_the_run_root_only(tmp_path, logger_st
     assert records[0].checkpoint["best_val_loss"] == pytest.approx(0.5)
 
 
-def test_collector_parses_parameters_from_model_doc(tmp_path, logger_stub):
+def test_collector_reads_the_parameter_count_from_the_run_summary(tmp_path, logger_stub):
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
-
-    trial_docs = tmp_path / "training" / "unet" / "docs"
-    trial_docs.mkdir(parents=True)
-    (trial_docs / "model_doc.md").write_text("**Total Parameters:** `12,345,678`\n", encoding="utf-8")
+    _write_json(tmp_path / "training" / "unet" / "meta" / "run_summary.json", {"model_name": "unet", "parameters": 12345678})
 
     records = TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()
 

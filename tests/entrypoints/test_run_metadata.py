@@ -83,10 +83,11 @@ def test_save_trainer_config_serializes_without_writer(metadata):
 
 @pytest.mark.dataset
 def test_save_run_summary_payload(metadata):
-    out_path = metadata.save_run_summary(model_name="resunet", input_channels=["x0", "x1"], target_channels=["y"])
+    out_path = metadata.save_run_summary(model_name="resunet", parameters=1234, input_channels=["x0", "x1"], target_channels=["y"])
 
     payload = json.loads(out_path.read_text())
     assert payload["model_name"]    == "resunet"
+    assert payload["parameters"]    == 1234
     assert payload["in_channels"]   == 2
     assert payload["out_channels"]  == 1
     assert payload["framework"]     == "pytorch"
