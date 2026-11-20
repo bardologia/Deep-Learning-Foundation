@@ -71,7 +71,7 @@ def test_a_train_split_smaller_than_one_batch_keeps_its_partial_batch(tmp_path):
 def test_train_shuffle_true_changes_order(tmp_path):
     train, _, _ = Loader.build(
         _CountingDataset(32), _CountingDataset(4), _CountingDataset(4),
-        batch_size=4, num_workers=0, logger=_logger(tmp_path), seed=0, shuffle_train=True,
+        batch_size=4, num_workers=0, logger=_logger(tmp_path), seed=0,
     )
 
     assert _drain_indices(train) != sorted(_drain_indices(train))

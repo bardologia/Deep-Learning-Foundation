@@ -71,7 +71,6 @@ class Trainer:
         self.warmup           = Warmup(config, self.logger)
         self.lr_scheduler     = Scheduler(self.base_lrs, self.warmup, config, self.logger)
         self.early_stopping   = EarlyStopping(config, self.logger, self.tracker)
-        self.restore_best     = config.early_stopping.restore_best
         self.grad_clipper     = GradientClipper(config=config, logger=self.logger, tracker=self.tracker, param_groups=self.optimizer.param_groups)
         self.checkpoint       = Checkpoint(self.logger, self.tracker, str(self.checkpoint_path))
         self.ema              = WeightEma(self.model, config.training.ema_decay, config.training.use_ema, config.training.ema_warmup)
@@ -169,7 +168,6 @@ class Trainer:
             "channels_last"            : self.channels_last,
             "Activation checkpointing" : f"patterns {tuple(self.config.training.activation_checkpointing)}" if self.config.training.activation_checkpointing else "disabled",
             "EMA"                      : f"enabled (decay {self.ema.decay}, decay warmup {'min(decay, (1+t)/(10+t))' if self.ema.warmup else 'off'})" if self.ema.enabled else "disabled",
-            "Restore best at end"      : self.restore_best,
             "Resume"                   : self.resume,
             "Abort on non-finite loss" : self.abort_on_nonfinite_loss,
             "Debug logging"            : training.log_debug,
@@ -468,7 +466,7 @@ class Trainer:
         return float(swa_val["avg_loss"])
 
     def _evaluate_test(self, test_loader: DataLoader, epoch: int) -> dict:
-        if self.restore_best and self.checkpoint.best_epoch >= 0:
+        if self.checkpoint.best_epoch >= 0:
             kind    = "EMA snapshot" if self.ema.enabled else "raw weights"
             weights = f"restored best checkpoint (epoch {self.checkpoint.best_epoch + 1}, {kind})"
             test    = self.evaluate(test_loader, epoch, stage="test")
@@ -573,8 +571,7 @@ class Trainer:
 
             swa_val_loss = self._finalize_swa(train_loader, val_loader, last_epoch)
 
-            if self.restore_best:
-                self.checkpoint.restore_best(self.model, self.device)
+            self.checkpoint.restore_best(self.model, self.device)
 
             self.test_metrics = self._evaluate_test(test_loader, last_epoch)
 

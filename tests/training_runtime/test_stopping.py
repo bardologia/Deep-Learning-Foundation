@@ -9,7 +9,7 @@ from tools.training.stopping import EarlyStopping
 
 
 def _es_config(patience=3, min_delta=0.0):
-    return SimpleNamespace(early_stopping=SimpleNamespace(patience=patience, min_delta=min_delta, restore_best=True))
+    return SimpleNamespace(early_stopping=SimpleNamespace(patience=patience, min_delta=min_delta))
 
 
 def test_early_stopping_first_call_sets_best(logger, tracker):

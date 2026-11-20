@@ -112,8 +112,6 @@ class DatasetPipeline:
             test_dataset    = datasets["test"],
             batch_size      = self.config.batch_size,
             num_workers     = self.config.num_workers,
-            pin_memory      = self.config.pin_memory,
-            shuffle_train   = self.config.shuffle_train,
             prefetch_factor = self.config.prefetch_factor,
             seed            = self.seed,
             logger          = self.logger,

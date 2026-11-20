@@ -59,8 +59,6 @@
         "batch_size": "number of patches per optimization step in the dataloader",
         "num_workers": "number of dataloader worker processes used for parallel patch loading",
         "prefetch_factor": "number of batches each dataloader worker prefetches ahead of consumption",
-        "shuffle_train": "shuffle patch order every epoch for the training split only",
-        "pin_memory": "pin host memory in the dataloader for faster host-to-GPU transfer",
         "fingerprint_dataset": "whether the training run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance; propagated from paths.fingerprint_dataset by the config factory"
       }
     },
@@ -661,11 +659,10 @@
       }
     },
     "training/general/optimization::EarlyStoppingConfig": {
-      "summary": "early-stopping policy halting training when validation loss stops improving",
+      "summary": "early-stopping policy halting training when validation loss stops improving; the trainer reloads the best checkpoint weights once training ends",
       "fields": {
         "patience": "consecutive validation checks without a loss improvement of at least min_delta tolerated before stopping",
-        "min_delta": "minimum validation-loss improvement required to reset the patience counter",
-        "restore_best": "whether to reload the best-checkpoint weights once training ends, whether by early stopping or reaching max epochs"
+        "min_delta": "minimum validation-loss improvement required to reset the patience counter"
       }
     },
     "training/general/optimization::GradientClipperConfig": {

@@ -39,8 +39,6 @@ class DatasetConfig:
     batch_size          : int  = 8
     num_workers         : int  = 4
     prefetch_factor     : int  = 2
-    shuffle_train       : bool = True
-    pin_memory          : bool = True
     fingerprint_dataset : bool = True
 
     def as_dict(self) -> dict:
@@ -53,8 +51,6 @@ class DatasetConfig:
             "batch_size"          : self.batch_size,
             "num_workers"         : self.num_workers,
             "prefetch_factor"     : self.prefetch_factor,
-            "shuffle_train"       : self.shuffle_train,
-            "pin_memory"          : self.pin_memory,
             "fingerprint_dataset" : self.fingerprint_dataset,
         }
 
@@ -71,7 +67,5 @@ class DatasetConfig:
             batch_size          = int(payload["batch_size"]),
             num_workers         = int(payload["num_workers"]),
             prefetch_factor     = int(payload["prefetch_factor"]),
-            shuffle_train       = bool(payload["shuffle_train"]),
-            pin_memory          = bool(payload["pin_memory"]),
             fingerprint_dataset = bool(payload["fingerprint_dataset"]),
         )

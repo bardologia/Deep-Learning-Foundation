@@ -75,9 +75,8 @@ class WarmupConfig:
 @dataclass
 class EarlyStoppingConfig:
 
-    patience     : int   = 15
-    min_delta    : float = 0.0
-    restore_best : bool  = True
+    patience  : int   = 15
+    min_delta : float = 0.0
 
 
 @dataclass

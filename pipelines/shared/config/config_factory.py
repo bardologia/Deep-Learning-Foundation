@@ -31,17 +31,8 @@ class ConfigFactory:
             batch_size          = training.batch_size,
             num_workers         = training.num_workers,
             prefetch_factor     = training.prefetch_factor,
-            shuffle_train       = True,
-            pin_memory          = True,
             fingerprint_dataset = self.config.paths.fingerprint_dataset,
         )
-
-    def _base_trainer_kwargs(self, logdir: Path) -> dict:
-        training = self.config.training
-        return {
-            "gradient_clipper" : GradientClipperConfig(clip_mode=training.clip_mode.value, max_grad_norm=training.max_grad_norm, adaptive_window=training.clip_adaptive_window, adaptive_percentile=training.clip_adaptive_percentile, adaptive_mean_std_k=training.clip_adaptive_mean_std_k),
-            "io"               : IOConfig(logdir=str(logdir)),
-        }
 
     def training_trainer_config(self, logdir: Path) -> BackboneTrainerConfig:
         training         = self.config.training
@@ -49,13 +40,13 @@ class ConfigFactory:
         lr_scale         = training.lr_scale()
 
         return BackboneTrainerConfig(
-            **self._base_trainer_kwargs(logdir),
-
-            early_stopping = EarlyStoppingConfig(patience=training.early_stop_patience, min_delta=training.early_stop_min_delta, restore_best=True),
-            warmup         = WarmupConfig(warmup_fraction=training.warmup_fraction, warmup_start_factor=0.1, warmup_enabled=training.warmup_enabled, warmup_mode=training.warmup_mode.value, warmup_poly_power=training.warmup_poly_power),
-            scheduler      = SchedulerConfig(type=training.scheduler_type.value, epochs=scheduler_epochs, eta_min=training.eta_min, step_size=training.scheduler_step_size, gamma=training.scheduler_gamma, power=training.scheduler_power),
-            optimizer      = OptimizerConfig(type=training.optimizer_type.value, betas=(0.9, 0.999), eps=1e-8, momentum=training.momentum, nesterov=training.nesterov, lr_scale=lr_scale),
-            memory         = MemoryConfig(reserve_vram=training.reserve_vram, vram_keep_free_gb=training.vram_keep_free_gb),
+            gradient_clipper = GradientClipperConfig(clip_mode=training.clip_mode.value, max_grad_norm=training.max_grad_norm, adaptive_window=training.clip_adaptive_window, adaptive_percentile=training.clip_adaptive_percentile, adaptive_mean_std_k=training.clip_adaptive_mean_std_k),
+            io               = IOConfig(logdir=str(logdir)),
+            early_stopping   = EarlyStoppingConfig(patience=training.early_stop_patience, min_delta=training.early_stop_min_delta),
+            warmup           = WarmupConfig(warmup_fraction=training.warmup_fraction, warmup_start_factor=0.1, warmup_enabled=training.warmup_enabled, warmup_mode=training.warmup_mode.value, warmup_poly_power=training.warmup_poly_power),
+            scheduler        = SchedulerConfig(type=training.scheduler_type.value, epochs=scheduler_epochs, eta_min=training.eta_min, step_size=training.scheduler_step_size, gamma=training.scheduler_gamma, power=training.scheduler_power),
+            optimizer        = OptimizerConfig(type=training.optimizer_type.value, betas=(0.9, 0.999), eps=1e-8, momentum=training.momentum, nesterov=training.nesterov, lr_scale=lr_scale),
+            memory           = MemoryConfig(reserve_vram=training.reserve_vram, vram_keep_free_gb=training.vram_keep_free_gb),
 
             training = TrainingLoopConfig(
                 epochs                      = training.epochs,

@@ -38,8 +38,6 @@ def test_training_dataset_config_propagates_loader_settings(factory):
     assert dataset_config.batch_size      == training.batch_size
     assert dataset_config.num_workers     == training.num_workers
     assert dataset_config.prefetch_factor == training.prefetch_factor
-    assert dataset_config.shuffle_train   is True
-    assert dataset_config.pin_memory      is True
 
 
 @pytest.mark.dataset
