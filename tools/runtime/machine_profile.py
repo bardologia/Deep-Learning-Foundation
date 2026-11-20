@@ -34,7 +34,7 @@ class MachineProfile:
         "console"  : {"host": ReferenceLayout.CONSOLE_HOST, "port": ReferenceLayout.CONSOLE_PORT},
         "roots"    : {"repo": "", "data": "", "runs": "", "results": ""},
         "dataset"  : {"path": "", "parameters_path": ""},
-        "hardware" : {"gpu_pool": [], "vram_budget_gb": 0.0, "cpu_workers": 0, "gif_workers": 0, "max_workers": 0},
+        "hardware" : {"gpu_pool": [], "cpu_workers": 0, "gif_workers": 0, "max_workers": 0},
         "mail"     : {"sender": "", "recipient": "", "smtp_host": "smtp.gmail.com", "smtp_port": 465},
         "ntfy"     : {"enabled": False, "topic": "", "server": "https://ntfy.sh"},
     }
@@ -190,8 +190,6 @@ class MachineProfile:
             rules.append(FieldRule("gpu_device_ids", "set", list(pool), expects=list))
             rules.append(FieldRule("gpu",            "set", pool[0],    expects=int))
 
-        if hardware["vram_budget_gb"]:
-            rules.append(FieldRule("vram_budget_gb", "set", float(hardware["vram_budget_gb"]), expects=float))
         if hardware["cpu_workers"]:
             rules.append(FieldRule("cpu_workers", "set", int(hardware["cpu_workers"]), expects=int))
         if hardware["gif_workers"]:

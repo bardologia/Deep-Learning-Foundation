@@ -184,8 +184,8 @@ suite does; a value naming a file that does not exist stops the entry point with
 the profile before parsing any flag: path defaults below a reference root are rebased
 onto the profile's root, the most specific root winning, so a default such as
 `runs/benchmark` becomes `<your runs root>/benchmark` with no per-field bookkeeping;
-`gpus`, `gpu_device_ids` and `gpu` take the profile's GPU pool; `vram_budget_gb`,
-`cpu_workers` and `gif_workers` take the profile's values; loader worker counts are
+`gpus`, `gpu_device_ids` and `gpu` take the profile's GPU pool; `cpu_workers` and
+`gif_workers` take the profile's values; loader worker counts are
 capped at its limit; the report-mail identity follows it too. A `config_overrides`
 section of the form `{"ClassName.field": value}` handles anything else.
 `--help-config` marks every rewritten default with `[machine profile]`, and the

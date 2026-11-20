@@ -54,7 +54,6 @@ class EntryConfig:
     gpus           : list                  = field(default_factory=lambda: [0, 1, 3])
     gpu            : int                   = 2
     gpu_flag       : bool                  = True
-    vram_budget_gb : float                 = 40.0
     logdir         : str                   = str(ReferenceLayout.RUNS_ROOT)
     runs_dir       : str                   = str(ReferenceLayout.RUNS_ROOT / "backbone")
     output_dir     : Path                  = ReferenceLayout.RESULTS_ROOT / "paper_figures"
@@ -69,7 +68,7 @@ FULL_DATA = {
     "console"  : {"host": "0.0.0.0", "port": 9001},
     "roots"    : {"repo": "/home/me/ML-Template", "data": "/data/me", "runs": "/scratch/me/runs", "results": "/home/me/results"},
     "dataset"  : {"path": "/data/me/scene", "parameters_path": "/data/me/scene/params/p/parameters.npy"},
-    "hardware" : {"gpu_pool": [1], "vram_budget_gb": 7.5, "cpu_workers": 6, "gif_workers": 3, "max_workers": 4},
+    "hardware" : {"gpu_pool": [1], "cpu_workers": 6, "gif_workers": 3, "max_workers": 4},
     "mail"     : {"sender": "me@example.org", "recipient": "you@example.org"},
 }
 
@@ -177,7 +176,6 @@ def test_field_rules_follow_the_hardware_and_mail_sections(tmp_path):
 
     assert rules[("gpus", "set", None)].value              == [1]
     assert rules[("gpu", "set", None)].value               == 1
-    assert rules[("vram_budget_gb", "set", None)].value    == 7.5
     assert rules[("cpu_workers", "set", None)].value       == 6
     assert rules[("num_workers", "cap", None)].value       == 4
     assert rules[("parameter_workers", "cap", None)].value == 4
@@ -204,7 +202,6 @@ def test_config_cli_applies_the_profile_to_the_defaults(tmp_path):
     assert config.gpus                     == [1]
     assert config.gpu                      == 1
     assert config.gpu_flag                 is True
-    assert config.vram_budget_gb           == 7.5
     assert config.loader.num_workers       == 4
     assert config.loader.parameter_workers == 2
     assert config.loader.pin_memory        is True
@@ -213,7 +210,7 @@ def test_config_cli_applies_the_profile_to_the_defaults(tmp_path):
     assert config.mail.recipient           == "you@example.org"
     assert config.seed                     == 7
 
-    assert set(cli.profile_overrides) == {"paths.dataset_path", "paths.log_base_dir", "paths.extra", "logdir", "runs_dir", "output_dir", "gpus", "gpu", "vram_budget_gb", "loader.num_workers", "mail.sender", "mail.recipient", "seed"}
+    assert set(cli.profile_overrides) == {"paths.dataset_path", "paths.log_base_dir", "paths.extra", "logdir", "runs_dir", "output_dir", "gpus", "gpu", "loader.num_workers", "mail.sender", "mail.recipient", "seed"}
 
 
 def test_a_dataset_path_alone_leaves_the_other_roots_relative(tmp_path):

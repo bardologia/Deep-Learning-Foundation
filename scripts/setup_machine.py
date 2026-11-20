@@ -153,13 +153,6 @@ class Validators:
     def positive_int(value: str) -> str | None:
         return None if value.isdigit() and int(value) > 0 else f"{value!r} is not a positive integer"
 
-    @staticmethod
-    def positive_float(value: str) -> str | None:
-        try:
-            return None if float(value) > 0 else f"{value!r} must be positive"
-        except ValueError:
-            return f"{value!r} is not a number"
-
 
 class MachineSetup:
 
@@ -292,24 +285,21 @@ class MachineSetup:
     def choose_hardware(self) -> None:
         self._step(6, "hardware limits")
 
-        gpus     = self.facts["gpus"]
-        indices  = [gpu["index"] for gpu in gpus]
+        indices  = [gpu["index"] for gpu in self.facts["gpus"]]
         cpus     = self.facts["cpu_count"]
-        smallest = min((gpu["memory_gb"] for gpu in gpus), default=0.0)
         previous = self.saved.get("hardware", {})
 
         if indices:
             pool_text = self.prompter.ask("gpu_pool", "GPUs the entry points may use, comma separated", ",".join(str(index) for index in previous.get("gpu_pool", indices)), "Multi-GPU entries fan out over this pool; single-GPU entries take the first one.", Validators.gpu_list(indices))
             pool      = [int(token) for token in pool_text.split(",") if token.strip()]
-            budget    = self.prompter.ask("vram_budget_gb", "VRAM budget in GB the batch-size probe may fill", str(previous.get("vram_budget_gb") or round(smallest * 0.9, 1)), f"Smallest GPU holds {smallest} GB; leave headroom for the display and other users.", Validators.positive_float)
         else:
-            pool, budget = [], "0"
+            pool = []
 
         cpu_workers = self.prompter.ask("cpu_workers", "CPU workers for inference post-processing", str(previous.get("cpu_workers") or cpus), f"{cpus} CPUs detected.", Validators.positive_int)
         gif_workers = self.prompter.ask("gif_workers", "CPU workers for animation rendering", str(previous.get("gif_workers") or max(1, cpus // 2)), "", Validators.positive_int)
         max_workers = self.prompter.ask("max_workers", "Upper limit for data-loader workers", str(previous.get("max_workers") or cpus), "Defaults above this are lowered to it.", Validators.positive_int)
 
-        self.profile.data["hardware"] = {"gpu_pool": pool, "vram_budget_gb": float(budget), "cpu_workers": int(cpu_workers), "gif_workers": int(gif_workers), "max_workers": int(max_workers)}
+        self.profile.data["hardware"] = {"gpu_pool": pool, "cpu_workers": int(cpu_workers), "gif_workers": int(gif_workers), "max_workers": int(max_workers)}
 
     def choose_notifications(self) -> None:
         self._step(7, "notifications (optional)")

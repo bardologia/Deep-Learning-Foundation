@@ -100,8 +100,6 @@ def test_validators(tmp_path):
     assert Validators.gpu_list([0, 1])("2")                    is not None
     assert Validators.gpu_list([0, 1])("")                     is not None
     assert Validators.positive_int("3")                        is None
-    assert Validators.positive_float("0.5")                    is None
-    assert Validators.positive_float("x")                      is not None
 
 
 def test_the_unattended_run_writes_a_complete_profile(tmp_path, logger_stub):
@@ -119,7 +117,7 @@ def test_the_unattended_run_writes_a_complete_profile(tmp_path, logger_stub):
     assert profile.roots["results"]       == str(tmp_path / "results")
     assert profile.roots["repo"]          == str(tmp_path / "repo")
     assert profile.dataset                == {"path": "", "parameters_path": ""}
-    assert profile.hardware               == {"gpu_pool": [0, 1], "vram_budget_gb": 10.8, "cpu_workers": 8, "gif_workers": 4, "max_workers": 8}
+    assert profile.hardware               == {"gpu_pool": [0, 1], "cpu_workers": 8, "gif_workers": 4, "max_workers": 8}
     assert profile.ntfy["enabled"]        is False
     assert profile.mail["recipient"]      == ""
     assert (tmp_path / "data").is_dir() and (tmp_path / "runs").is_dir() and (tmp_path / "results").is_dir()
@@ -173,7 +171,7 @@ def test_hardware_and_notification_answers_are_stored(tmp_path, logger_stub):
     answers = {
         "ntfy_enabled": "yes", "ntfy_topic": "secret-topic", "ntfy_server": "https://ntfy.sh/",
         "mail_enabled": "yes", "mail_sender": "me@example.org", "mail_recipient": "you@example.org",
-        "gpu_pool": "1", "vram_budget_gb": "9.5",
+        "gpu_pool": "1",
     }
 
     _setup(tmp_path, logger_stub, answers).run()
@@ -182,7 +180,6 @@ def test_hardware_and_notification_answers_are_stored(tmp_path, logger_stub):
     assert profile.ntfy                       == {"enabled": True, "topic": "secret-topic", "server": "https://ntfy.sh"}
     assert profile.mail                       == {"sender": "me@example.org", "recipient": "you@example.org", "smtp_host": "smtp.gmail.com", "smtp_port": 465}
     assert profile.hardware["gpu_pool"]       == [1]
-    assert profile.hardware["vram_budget_gb"] == 9.5
 
 
 def test_a_rerun_defaults_to_the_saved_answers(tmp_path, logger_stub):
