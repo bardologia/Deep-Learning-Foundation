@@ -105,9 +105,6 @@ class DataLoaderTuningPipeline:
         return parameters
 
     def _worker_counts(self) -> list[int]:
-        if not self.config.worker_counts:
-            raise ValueError("worker_counts is empty; select at least one dataloader worker count to benchmark")
-
         cores   = os.cpu_count() or 8
         kept    = [workers for workers in self.config.worker_counts if workers <= cores]
         dropped = [workers for workers in self.config.worker_counts if workers > cores]

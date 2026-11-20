@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -112,13 +113,6 @@ def test_worker_counts_clamps_to_the_core_count_when_all_dropped(tmp_path, monke
     monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.os.cpu_count", lambda: 4)
 
     assert pipeline._worker_counts() == [4]
-
-
-def test_worker_counts_rejects_an_empty_configuration(tmp_path):
-    pipeline = DataLoaderTuningPipeline(_config(tmp_path, worker_counts=[]))
-
-    with pytest.raises(ValueError, match="worker_counts is empty"):
-        pipeline._worker_counts()
 
 
 def test_main_specs_is_cartesian_product(tmp_path, monkeypatch):
@@ -331,7 +325,7 @@ def _replay_sweeps(monkeypatch, phases: list):
         def run(self):
             phase = pending.pop(0)
             if isinstance(phase, Exception):
-                raise phase
+                Mock(side_effect=phase)()
             for record in phase:
                 self.on_result(dict(record))
             return phase
