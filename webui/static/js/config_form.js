@@ -236,7 +236,7 @@ class ConfigForm {
 
     if (panel.panel === "experiment_builder") {
       const candidate = new window.ExperimentBuilder(this, this.byPath);
-      if (!candidate.terms.length && !candidate._modes().length) return this._buildPathsPanel("Experiment fan-out", panel.fields);
+      if (!candidate._modes().length) return this._buildPathsPanel("Experiment fan-out", panel.fields);
       this.builder = candidate;
       return candidate.build();
     }
