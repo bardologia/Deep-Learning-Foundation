@@ -127,7 +127,7 @@ class LaunchView extends ConfigForm {
     [/^(collect_reports|mail_experiment_reports|export_paper_figures|export_tensorboard_plots|export_result_tables)$/, "tray"],
     [/^animate_training$/, "film"],
     [/^measure_receptive_field$/, "field"],
-    [/^(xray_weights|xray_activations|attribute_inputs|capture_attention|probe_layers|stress_inputs|analyze)$/, "loupe"],
+    [/^(xray_weights|xray_activations|attribute_inputs|probe_layers|stress_inputs|analyze)$/, "loupe"],
   ];
 
   static figureFor(key) {

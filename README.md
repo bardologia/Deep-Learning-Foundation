@@ -296,8 +296,7 @@ samples. The normalization fit refuses a non-finite location or scale. `prior_bi
 (on `train_backbone` and `cross_validate`, off by default) starts the conv head's biases
 at the training-label prior in normalized output space and writes
 `meta/head_prior_bias.json`; it needs `--backbone_head conv`. Attention backbones run
-torch's fused `scaled_dot_product_attention`; only the attention-capture analysis
-switches to the explicit path that exposes the weights.
+torch's fused `scaled_dot_product_attention`.
 
 ### Finishing a run that broke
 
@@ -545,7 +544,7 @@ Twenty-two analysis entries under `main/analysis/` read finished runs rather tha
 producing them: trial, seed and run comparisons (the seed comparison also reports 95%
 confidence intervals and scores the across-seed mean prediction as a deep ensemble),
 weight and activation x-rays, receptive field measurement, input attribution and
-stress tests, layer probes, representation comparison, loss-landscape maps, training
+stress tests, layer probes, loss-landscape maps, training
 animations, a torch.profiler capture of full training steps, and the report, figure,
 TensorBoard, result-table (CSV/LaTeX/markdown) and ONNX exporters. Each one takes
 `--help-config` like everything else, and each one has a card in the console's

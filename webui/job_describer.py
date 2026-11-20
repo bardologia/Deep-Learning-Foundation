@@ -86,10 +86,6 @@ class JobDescriber:
             ("dataset", "dataset_dir",     "opt_tail"),
             ("params",  "parameters_path", "opt_tail"),
         ],
-        "analyze_symbolic": [
-            ("dataset", "dataset_dir",     "opt_tail"),
-            ("params",  "parameters_path", "opt_tail"),
-        ],
         "compare_trials": [
             ("runs", "run_tags", "list", "all runs"),
             ("root", "runs_dir", "opt_tail"),
@@ -124,18 +120,10 @@ class JobDescriber:
             ("runs", "run_filter", "list", "all runs"),
             ("root", "runs_dir",   "opt_tail"),
         ],
-        "capture_attention": [
-            ("runs", "run_filter", "list", "all runs"),
-            ("root", "runs_dir",   "opt_tail"),
-        ],
         "probe_layers": [
             ("runs",   "run_filter", "list", "all runs"),
             ("root",   "runs_dir",   "opt_tail"),
             ("layers", "max_layers", "text"),
-        ],
-        "compare_representations": [
-            ("runs", "run_filter", "list", "all runs"),
-            ("root", "runs_dir",   "opt_tail"),
         ],
         "map_loss_landscape": [
             ("runs", "run_filter", "list", "all runs"),

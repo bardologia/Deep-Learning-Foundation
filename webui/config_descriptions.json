@@ -1590,22 +1590,6 @@
         "figure_style": "PlotBase figure style the bar charts are rendered with (report or paper)"
       }
     },
-    "diagnostics::AttentionCaptureConfig": {
-      "summary": "Entry config that captures attention-gate maps and attention weights of one or more trained attention-based backbone runs on one real batch, with per-layer entropy and peak statistics written into each run directory",
-      "fields": {
-        "runs_dir": "Root directory scanned recursively for run directories holding the configured checkpoint file; each selected run is captured in sequence",
-        "run_filter": "Run directory names (or names of parent directories whose nested runs are expanded) to capture; empty selects interactively on a TTY and every discovered run otherwise",
-        "split": "Dataset split the capture batch is drawn from",
-        "device": "Torch device the model and batch run on during capture",
-        "checkpoint_name": "Checkpoint filename loaded from each run directory and used as the run-discovery marker",
-        "output_subdir": "Name of the output directory created inside each run directory for the JSON, gate figures and markdown report",
-        "batch_size": "Number of real patches in the single capture batch",
-        "max_gate_figures": "Maximum number of attention-gate maps rendered as individual figures",
-        "figure_style": "PlotBase figure style the figures are rendered with (report or paper)",
-        "max_batches": "Number of batches pooled into the attention statistics; more batches steady the entropy and distance estimates at linear cost",
-        "max_attention_figures": "Maximum number of attention layers (most focused first) that get a mean-attention-map figure"
-      }
-    },
     "diagnostics::LayerProbeConfig": {
       "summary": "Entry config that trains ridge linear probes on the intermediate features of one or more trained backbone runs, reporting held-out R² by depth for the GT active count and dominant component position along z, written into each run directory",
       "fields": {
@@ -1623,23 +1607,6 @@
         "seed": "Seed of the sampled probe pixels and of the held-out probe split; vary it to check how sensitive the reported R² is to the sample",
         "figure_style": "PlotBase figure style the decodability curves are rendered with (report or paper)",
         "n_folds": "Number of cross-validation folds the ridge probe averages its held-out R² over"
-      }
-    },
-    "diagnostics::CkaConfig": {
-      "summary": "Entry config that compares the internal representations of two or more trained backbone runs with linear CKA on identical sampled pixels, writing per-pair cross-layer heatmaps and a run alignment matrix into a timestamped results directory",
-      "fields": {
-        "runs_dir": "Root directory scanned recursively for run directories holding the configured checkpoint file; at least two runs must be selected",
-        "run_filter": "Run directory names (or names of parent directories whose nested runs are expanded) to compare; empty selects interactively on a TTY and every discovered run otherwise",
-        "split": "Dataset split the shared capture batches and sampled pixels are drawn from",
-        "device": "Torch device the models run on during feature capture",
-        "checkpoint_name": "Checkpoint filename loaded from each run directory and used as the run-discovery marker",
-        "output_dir": "Results directory a timestamped subdirectory with the JSON, heatmaps and report is created under",
-        "batch_size": "Batch size of the capture forward passes; runs must share the split region and patch grid so batches align sample by sample",
-        "max_batches": "Number of aligned loader batches whose activations feed the comparison",
-        "max_layers": "Maximum number of leaf layers per run entering the cross-layer CKA matrix, spread evenly across depth",
-        "samples_per_batch": "Number of pixels sampled per batch; the same seeded coordinates are used for every run so features align",
-        "sample_seed": "Seed of the shared pixel-sampling coordinates",
-        "figure_style": "PlotBase figure style the heatmaps are rendered with (report or paper)"
       }
     },
     "diagnostics::LossLandscapeConfig": {

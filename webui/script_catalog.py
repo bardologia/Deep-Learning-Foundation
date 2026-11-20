@@ -88,20 +88,10 @@ class ScriptCatalog:
             "category"  : "Analysis",
             "purpose"   : "Attribute the predictions of trained backbone runs to their input channels. Gradient attribution shares |∂ output/∂ input| across channels per output family (amp, mu, sigma) on probe windows, and an occlusion pass zeroes one normalized channel at a time to measure the prediction shift. Answers which channels and which channel kinds (amplitude vs derived-channel phase vs Aux) the model actually uses.",
         },
-        "capture_attention": {
-            "title"     : "Capture Attention",
-            "category"  : "Analysis",
-            "purpose"   : "Capture the attention of trained attention-based backbone runs on one real batch. Records attention-gate maps (attention UNet), shared-block attention weights (Swin, TransUNet, UNETR and friends) and torch multi-head attention (SegFormer), then reports per-layer entropy and peak concentration plus gate-map figures. Refuses runs whose model holds no attention module.",
-        },
         "probe_layers": {
             "title"     : "Probe Layers",
             "category"  : "Analysis",
             "purpose"   : "Probe trained backbone runs layer by layer with linear readouts. Ridge probes on sampled real pixels predict the GT active Gaussian count and the dominant component position along z from each layer's features; the held-out R² by depth shows where each quantity becomes linearly decodable inside the network.",
-        },
-        "compare_representations": {
-            "title"     : "Compare Representations",
-            "category"  : "Analysis",
-            "purpose"   : "Compare the internal representations of two or more trained backbone runs with linear CKA on identical sampled pixels. Per-pair cross-layer heatmaps expose which depths learn matching features, and a run-by-run alignment matrix shows whether different architectures or seeds converge to similar representations. Requires runs sharing the split region and patch grid.",
         },
         "map_loss_landscape": {
             "title"     : "Loss Landscape",
@@ -167,9 +157,7 @@ class ScriptCatalog:
         "xray_activations"                : "diagnostics",
         "measure_receptive_field"         : "diagnostics",
         "attribute_inputs"                : "diagnostics",
-        "capture_attention"               : "diagnostics",
         "probe_layers"                    : "diagnostics",
-        "compare_representations"         : "diagnostics",
         "map_loss_landscape"              : "diagnostics",
         "stress_inputs"                   : "diagnostics",
         "animate_training"                : "diagnostics",
