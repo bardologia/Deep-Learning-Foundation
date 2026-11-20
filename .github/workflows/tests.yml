@@ -26,7 +26,7 @@ jobs:
 
       - name: Pyflakes
         run: |
-          python -m pyflakes configuration tools models pipelines main webui scripts tests | grep -v "__init__.py" | grep -v "EventFileWriter" > pyflakes.txt || true
+          python -m pyflakes configuration tools models pipelines main webui scripts tests | grep -v "__init__.py" > pyflakes.txt || true
           if [ -s pyflakes.txt ]; then cat pyflakes.txt; exit 1; fi
 
       - name: Backend suite

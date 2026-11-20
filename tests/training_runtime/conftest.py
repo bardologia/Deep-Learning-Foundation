@@ -1,8 +1,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 import torch
 
@@ -43,14 +41,3 @@ def logger():
 @pytest.fixture
 def tracker():
     return RecordingTracker()
-
-
-@pytest.fixture
-def tiny_model():
-    torch.manual_seed(0)
-    return TinyModel()
-
-
-@pytest.fixture
-def ns():
-    return SimpleNamespace

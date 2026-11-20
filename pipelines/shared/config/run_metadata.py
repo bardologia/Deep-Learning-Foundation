@@ -8,9 +8,8 @@ from pathlib     import Path
 
 import torch
 
-from rich.markup                                  import escape
-from tensorboard.summary.writer.event_file_writer import EventFileWriter as _
-from torch.utils.tensorboard                      import SummaryWriter
+from rich.markup             import escape
+from torch.utils.tensorboard import SummaryWriter
 
 from configuration.training                     import BackboneTrainerConfig
 from pipelines.shared.config.config_persistence import BackboneModelConfigIO
