@@ -2,46 +2,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib     import Path
-from typing      import Callable
 
 import numpy as np
 import torch
-import torch.nn.functional as functional
 from torch.utils.data import Dataset
 
-from tools.diagnostics.step_profiler  import StepProfiler
-from tools.runtime.run_tag            import RunTag
+from pipelines.backbone.training.loss       import Loss
+from pipelines.shared.dataset.dataset_files import DatasetFiles
+from tools.diagnostics.step_profiler        import StepProfiler
+from tools.runtime.run_tag                  import RunTag
 
 
 @dataclass
 class FeedTarget:
 
-    dataset        : Dataset
-    model          : torch.nn.Module
-    to_model_input : Callable[[object, torch.device], torch.Tensor]
-    forward_loss   : Callable[[torch.nn.Module, torch.Tensor], torch.Tensor]
-    model_name     : str
-    sample_text    : str
+    dataset     : Dataset
+    model       : torch.nn.Module
+    loss        : Loss
+    model_name  : str
+    sample_text : str
 
 
 class FeedAdapter:
-
-    DEFAULT_MODEL = "resunet"
 
     def __init__(self, config, work_dir: Path, logger) -> None:
         self.config     = config
         self.work_dir   = Path(work_dir)
         self.logger     = logger
-        self.model_name = config.model_name or self.DEFAULT_MODEL
-
-    @staticmethod
-    def to_model_input(batch, device: torch.device) -> torch.Tensor:
-        return batch[0].to(device, non_blocking=True)
-
-    @staticmethod
-    def forward_loss(model: torch.nn.Module, model_input: torch.Tensor) -> torch.Tensor:
-        prediction = model(model_input)
-        return functional.mse_loss(prediction, torch.zeros_like(prediction))
+        self.model_name = config.model_name
 
     def _config_factory(self):
         from configuration.training                 import BackboneEntryConfig
@@ -75,18 +63,19 @@ class FeedAdapter:
         return model
 
     def build(self) -> FeedTarget:
-        dataset, dataset_config = self._dataset(self._config_factory())
+        factory                 = self._config_factory()
+        dataset, dataset_config = self._dataset(factory)
         model                   = self._model(dataset, dataset_config)
+        files                   = DatasetFiles.read(dataset_config.dataset_directory)
 
         sample = np.asarray(dataset[0][0])
 
         return FeedTarget(
-            dataset        = dataset,
-            model          = model,
-            to_model_input = self.to_model_input,
-            forward_loss   = self.forward_loss,
-            model_name     = self.model_name,
-            sample_text    = f"patches {tuple(sample.shape)}, {len(dataset):,} samples, {dataset.input_channels} input channels",
+            dataset     = dataset,
+            model       = model,
+            loss        = Loss(factory.config.loss, files.target_channels, self.logger),
+            model_name  = self.model_name,
+            sample_text = f"patches {tuple(sample.shape)}, {len(dataset):,} samples, {dataset.input_channels} input channels",
         )
 
 

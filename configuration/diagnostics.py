@@ -528,7 +528,7 @@ class OnnxExportEntryConfig:
 @dataclass
 class TrainingProfileEntryConfig:
 
-    model_name : str  = ""
+    model_name : str  = "resunet"
     gpu        : int  = 0
     seed       : int  = 0
     use_amp    : bool = False

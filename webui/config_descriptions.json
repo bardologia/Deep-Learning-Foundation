@@ -1328,7 +1328,7 @@
     "diagnostics::TrainingProfileEntryConfig": {
       "summary": "Entry config that records full training steps of one backbone under torch.profiler and writes a chrome trace, an operator table and a top-operator summary",
       "fields": {
-        "model_name": "backbone registry key building the profiled workload; empty picks resunet",
+        "model_name": "backbone registry key building the profiled workload",
         "gpu": "index of the GPU the profiled steps execute on",
         "seed": "random seed for sampling and model initialisation",
         "use_amp": "whether the profiled forward runs under bfloat16 autocast, matching a mixed-precision training run",

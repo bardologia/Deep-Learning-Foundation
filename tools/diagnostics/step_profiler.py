@@ -114,10 +114,10 @@ class StepProfiler:
             with_stack     = self.with_stack,
         ) as prof:
             for batch in self._batches(loader, total):
-                model_input = self.feed.to_model_input(batch, self.device)
+                inputs, targets, weights = (tensor.to(self.device, non_blocking=True) for tensor in batch)
 
                 with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.use_amp):
-                    loss = self.feed.forward_loss(model, model_input)
+                    loss = self.feed.loss(model(inputs), targets, weights)["total_loss"].value
 
                 loss.backward()
                 optimizer.step()

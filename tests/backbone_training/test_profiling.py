@@ -8,6 +8,8 @@ import torch
 from torch.utils.data import TensorDataset
 
 from configuration.diagnostics              import TrainingProfileEntryConfig
+from configuration.training.general.loss   import LossConfig
+from pipelines.backbone.training.loss      import Loss
 from pipelines.backbone.training.profiling import FeedAdapter, FeedTarget, TrainingProfilePipeline
 from tools.diagnostics.step_profiler       import StepProfiler
 
@@ -25,43 +27,12 @@ def _entry(tmp_path) -> TrainingProfileEntryConfig:
 
 def _feed() -> FeedTarget:
     return FeedTarget(
-        dataset        = TensorDataset(torch.randn(64, 2, 4, 4)),
-        model          = torch.nn.Conv2d(2, 3, kernel_size=1),
-        to_model_input = FeedAdapter.to_model_input,
-        forward_loss   = FeedAdapter.forward_loss,
-        model_name     = "conv",
-        sample_text    = "64 samples",
+        dataset     = TensorDataset(torch.randn(64, 2, 4, 4), torch.randn(64, 3, 4, 4), torch.ones(64, 1, 4, 4)),
+        model       = torch.nn.Conv2d(2, 3, kernel_size=1),
+        loss        = Loss(LossConfig(), ["a", "b", "c"], SilentLogger()),
+        model_name  = "conv",
+        sample_text = "64 samples",
     )
-
-
-def test_the_adapter_defaults_to_its_model_when_none_is_named():
-    adapter = FeedAdapter(TrainingProfileEntryConfig(), ".", SilentLogger())
-
-    assert adapter.model_name == FeedAdapter.DEFAULT_MODEL
-
-
-def test_an_explicit_model_name_overrides_the_default():
-    adapter = FeedAdapter(TrainingProfileEntryConfig(model_name="unet"), ".", SilentLogger())
-
-    assert adapter.model_name == "unet"
-
-
-def test_the_model_input_is_the_first_batch_element():
-    inputs = torch.ones(2, 3, 4, 4)
-
-    model_input = FeedAdapter.to_model_input((inputs, torch.zeros(2)), torch.device("cpu"))
-
-    assert torch.equal(model_input, inputs)
-
-
-def test_the_feed_loss_is_an_mse_surrogate_against_zeros():
-    class Offset(torch.nn.Module):
-        def forward(self, x):
-            return x + 3.0
-
-    inputs = torch.arange(6, dtype=torch.float32).reshape(2, 3)
-
-    assert float(FeedAdapter.forward_loss(Offset(), inputs)) == pytest.approx(float(((inputs + 3.0) ** 2).mean()))
 
 
 def test_pipeline_writes_trace_table_and_summary(tmp_path, monkeypatch):
