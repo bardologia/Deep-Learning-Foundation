@@ -7,7 +7,7 @@
     "resources": "Host and device sampling settings shared by every training family: whether the resource monitor runs, how often it samples CPU, RAM, shared memory and GPU memory, whether samples go to TensorBoard, and the utilisation levels that raise a warning in the run log. They live outside the training package so that a long-running processing entry can carry them without importing torch.",
     "inference": "The stage that runs trained checkpoints over data splits to produce predictions, evaluations, and reports. It drives sliding-window prediction for backbone runs, scheduling one worker per run across a GPU pool. The configs here control the per-run inference driver, its output subdirectory and filename layout, and the batch entry point that queues inference across all discovered runs.",
     "benchmark": "The stage that compares multiple model architectures on the same data. It trains each backbone at its own configured size, runs inference, and assembles a cross-model comparison report. The configs here control batched inference and its diagnostic artifacts, the comparison report assembly, and the top-level sweep orchestration.",
-    "cross_validation": "The stage that estimates generalization by partitioning the stack along row into k folds and training and evaluating on each. It orchestrates per-fold training, inference, and comparison for the backbone. The configs here control the row-range fold partitioning and the top-level k-fold orchestration.",
+    "cross_validation": "The stage that estimates generalization by partitioning the dataset rows into k folds and training and evaluating on each. It orchestrates per-fold training, inference, and comparison for the backbone. The configs here control the row-range fold partitioning and the top-level k-fold orchestration.",
     "tuning": "The stage that searches hyperparameter spaces with Optuna to improve a chosen backbone. It wires the search budget, pruning, and resources to a nested training configuration and swaps in per-trial hyperparameter samples. The configs here control the Optuna search controls and artifact emission, and the entry point binding resources and data to the search.",
     "comparison": "The stage that rebuilds side-by-side comparisons across completed runs and trials without re-running training or inference. It aggregates existing inference outputs into a single report grouped by the varied factor. The configs here control the comparison of trial runs, the aggregation of seed runs, and the standalone rebuild of an existing benchmark comparison report.",
     "diagnostics": "The stage that inspects completed training runs independently of any data run. The weight-xray diagnostic classifies each checkpoint tensor against numeric thresholds and emits a per-run report and plots; the tensorboard export renders every logged scalar series as a publication-quality figure inside the run directory, pairing train and validation series of the same metric in one shared figure. The configs here control the pathology classification thresholds, the single-run diagnostics and their report and plot outputs, and the batch webui entries that select runs and build a per-run configuration.",
@@ -33,7 +33,7 @@
     "dataset/general/dataset::PatchConfig": {
       "summary": "Tiling of cropped scenes into overlapping training/inference patches",
       "fields": {
-        "size": "patch z and width in pixels as a (H, W) tuple; the two dimensions may differ for rectangular patches",
+        "size": "patch rows and cols in pixels as a (H, W) tuple; the two dimensions may differ for rectangular patches",
         "stride": "pixel step between adjacent patch origins as a per-axis (vertical, horizontal) tuple, entries smaller than the matching size give overlapping patches",
         "use_symmetric_padding": "pad scene borders with numpy symmetric (mirror, edge-duplicating) padding instead of zero (constant) padding so edge patches are still fully covered"
       }
@@ -497,7 +497,7 @@
       }
     },
     "architectures/backbone::LocalCNNConfig": {
-      "summary": "Full-resolution CNN control baseline: a stack of ConvBlocks with no downsampling whose per-block kernel sizes set the receptive field, providing local-context-only inversion between per-pixel processing (all 1x1) and the encode-decode backbones (global context)",
+      "summary": "Full-resolution CNN control baseline: a stack of ConvBlocks with no downsampling whose per-block kernel sizes set the receptive field, providing local-context-only regression between per-pixel processing (all 1x1) and the encode-decode backbones (global context)",
       "fields": {
         "features": "Channel widths of the full-resolution trunk, one entry per ConvBlock (two convolutions each); default [1072, 1072] is the bare two-block 9x9 baseline (~31.1M, capacity-matched to the default unet). The context-ladder rungs override features and block_kernels together so every rung keeps the same depth and parameter budget while only the receptive field varies",
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
@@ -569,7 +569,7 @@
         "maximum": "Largest (rows, cols) patch shape included in pixels; each axis runs from its start to this bound in steps of the admissible step",
         "step": "Spacing between consecutive patch lengths in pixels, shared by both axes; 0 derives it from the backbone's encoder pyramid as 2^levels so every length stays divisible through all downsampling stages (verified one-halving-per-stage U-Nets only, others must set it explicitly)",
         "stride_ratio": "Patch stride as a fraction of the patch length per axis, valid range (0, 1]; 0.5 gives 50% overlap",
-        "constant_pixel_budget": "When true, each trial's batch size and lr_reference_batch_size are rescaled together so batch x rows x cols matches the reference training.batch_size x training.patch_size pixels, keeping pixels per step and the batch-linear LR scale identical across patch shapes; the max-batch probe is disabled for every patch trial either way so the comparison stays controlled"
+        "constant_pixel_budget": "When true, each trial's batch size and lr_reference_batch_size are rescaled together so batch x rows x cols matches the reference training.batch_size x training.patch_size pixels, keeping pixels per step and the batch-linear LR scale identical across patch shapes"
       }
     },
     "training/backbone::BackboneTrainerConfig": {
@@ -740,7 +740,7 @@
         "clip_adaptive_window": "number of recent step norms kept to compute the adaptive clip threshold",
         "clip_adaptive_percentile": "percentile of the recent-norm window used as the clip bound when clip_mode is adaptive_percentile",
         "clip_adaptive_mean_std_k": "std-dev multiplier k in mean + k*std used as the clip bound when clip_mode is adaptive_mean_std",
-        "patch_size": "z and width in pixels of training patches cropped from the input stack, (H, W) may be rectangular for fully-convolutional backbones",
+        "patch_size": "rows and cols in pixels of training patches cropped from the dataset grid, (H, W) may be rectangular for fully-convolutional backbones",
         "patch_stride": "per-axis (vertical, horizontal) pixel stride between overlapping extracted patches",
         "use_symmetric_padding": "pad scene borders with symmetric (mirror) padding instead of zero (constant) padding so edge patches stay fully covered",
         "snapshot_every_n_epochs": "Save a weights-only epoch snapshot to checkpoints/epoch_<N>.pt every N epochs (EMA weights when EMA is on); 0 disables. Snapshots feed the training-evolution animation and cost one state_dict write each"
@@ -886,9 +886,9 @@
         "gpus_file": "Path of the live GPU pool control file for this queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it is in flight (added devices pick up queued jobs, removed devices retire once the job in flight ends). Empty places gpu_pool.json inside the run directory",
         "skip_models": "model names excluded from the backbone registry before the sweep is expanded",
         "run_tag": "optional identifier tagging this benchmark's run directory and output artifacts; None auto-generates one",
-        "resume": "Whether to reuse stage results that finished in a prior run of the same run_tag: max-batch units with a cached PASS result, and training/inference units whose directory holds a complete.json marker stamped only at successful completion; unfinished unit directories are deleted and restarted",
+        "resume": "Whether to reuse stage results that finished in a prior run of the same run_tag: training and inference units whose directory holds a complete.json marker stamped only at successful completion; unfinished unit directories are deleted and restarted",
         "infer_after": "Whether to run the inference stage automatically after training; off leaves the comparison report without inference galleries",
-        "seed": "base random seed used for the max-batch probe and as the default per-unit seed when seeds is empty",
+        "seed": "default per-unit seed when seeds is empty",
         "seeds": "List of seeds expanded across every (model, loss-component) pair, one run per seed nested as seed<N> inside each unit directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "poll_interval_s": "seconds between polls of queued job status while waiting for GPUs or completed jobs",
         "resume_from": "Path at or inside an existing benchmark run to finish (the run directory, its pipeline, training or one unit run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every model x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference passes run. Empty starts a fresh run",
@@ -896,12 +896,12 @@
       }
     },
     "cross_validation/general::FoldConfig": {
-      "summary": "Defines row-range partitioning of the stack into cross-validation folds",
+      "summary": "Defines the partitioning of the dataset rows into cross-validation folds",
       "fields": {
-        "n_folds": "Number of row blocks the stack is split into (equal width except the last, which absorbs the integer-division remainder), must be at least 3 so train/val/test stay disjoint",
-        "row_start": "First row line index of the usable range, must lie within the dataset global crop extent",
-        "row_end": "Last (exclusive) row line index of the usable range, must lie within the dataset global crop extent",
-        "guard": "Row lines excluded around every internal fold boundary, half trimmed from each side, must be non-negative and even, and strictly smaller than the narrowest fold block"
+        "n_folds": "Number of row blocks the dataset is split into (equal width except the last, which absorbs the integer-division remainder), must be at least 3 so train/val/test stay disjoint",
+        "row_start": "First row of the usable range, must lie within the dataset rows",
+        "row_end": "Last (exclusive) row of the usable range, must lie within the dataset rows",
+        "guard": "Rows excluded around every internal fold boundary, half trimmed from each side, must be non-negative and even, and strictly smaller than the narrowest fold block"
       }
     },
     "cross_validation/general::CrossValidationConfig": {
@@ -1169,7 +1169,7 @@
       "fields": {
         "runs_dir": "Root directory scanned recursively for run directories holding the configured checkpoint file; each selected run is measured in sequence",
         "run_filter": "Run directory names (or names of parent directories whose nested runs are expanded) to measure; empty selects interactively on a TTY and every discovered run otherwise",
-        "split": "Dataset split whose region provides the real input stack the probes are cut from",
+        "split": "Dataset split whose region provides the real inputs the probes are cut from",
         "device": "Torch device the model and probe windows run on; cpu is enough since only a handful of windows are evaluated",
         "checkpoint_name": "Checkpoint filename loaded from each run directory and used as the run-discovery marker",
         "output_subdir": "Name of the output directory created inside each run directory for the gradient maps, summary JSON, figures and markdown report",

@@ -439,7 +439,7 @@ class ExperimentBuilder {
 
     const minimum = this._patchLeafTuple("minimum");
     const maximum = this._patchLeafTuple("maximum");
-    if (!minimum || !maximum) return { deferred: "the grid bounds are read from the stack at launch" };
+    if (!minimum || !maximum) return { deferred: "the grid bounds are read from the dataset at launch" };
 
     const axis = (index, label) => {
       const start = minimum[index] > 0 ? minimum[index] : step;
