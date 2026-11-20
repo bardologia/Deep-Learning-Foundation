@@ -436,10 +436,6 @@ the same slice SSIM the headline runs against the labels, in raw intensity
 off by default because it runs two more full sweeps; the benchmark's inference block has
 the switch too.
 
-`scripts/export_slice_ssim.py <metrics.json>...` saves the per-slice SSIM of a stamp as
-`ssim_gt_col.npy` and `ssim_gt_row.npy` beside each file, in slice order with
-non-finite slices kept as NaN.
-
 ## 7. Start the web console
 
 ```bash
