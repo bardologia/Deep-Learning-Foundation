@@ -6,11 +6,14 @@ from pathlib import Path
 
 import numpy as np
 
-from configuration.inference               import InferenceConfig, TargetDatasetConfig
-from pipelines.backbone.inference.pipeline import InferencePipeline
-from pipelines.shared.dataset.dataset_files import DatasetFiles
-from pipelines.shared.inference.metadata   import CompletedInference
-from tools.runtime.completion              import CompletionMarker
+from configuration.benchmark                                 import BenchmarkConfig
+from configuration.inference                                 import InferenceConfig, TargetDatasetConfig
+from pipelines.backbone.inference.analysis.seed_disagreement import SeedMaps
+from pipelines.backbone.inference.pipeline                   import InferencePipeline
+from pipelines.shared.config.config_factory                  import ConfigFactory
+from pipelines.shared.dataset.dataset_files                  import DatasetFiles
+from pipelines.shared.inference.metadata                     import CompletedInference
+from tools.runtime.completion                                import CompletionMarker
 
 from tests.backbone_inference._helpers import build_run_directory
 
@@ -43,9 +46,21 @@ def test_inference_skips_maps_and_figures_when_asked(tmp_path, test_data_dir):
     run_dir = build_run_directory(tmp_path, test_data_dir)
     stamp   = InferencePipeline(_config(run_dir, save_maps=False, save_plots=False)).run().parent
 
-    assert not any((stamp / "maps").iterdir())
-    assert not any((stamp / "figures").iterdir())
+    assert not (stamp / "maps").exists()
+    assert not (stamp / "figures").exists()
     assert (stamp / "metrics.json").is_file()
+
+
+def test_the_benchmark_inference_config_writes_the_maps_seed_comparison_reads(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
+    config  = ConfigFactory(BenchmarkConfig()).inference_config(run_dir)
+
+    config.device, config.num_workers, config.output_subdir = "cpu", 0, "stamp"
+    stamp = InferencePipeline(config).run().parent
+    maps  = SeedMaps([run_dir], [stamp], "maps")
+
+    assert maps.predictions().shape[1:] == maps.targets().shape
+    assert maps.channels == ["pointwise", "neighbourhood"]
 
 
 def test_a_run_scored_on_a_target_dataset_stamps_under_its_cross_dataset_tree(tmp_path, test_data_dir):

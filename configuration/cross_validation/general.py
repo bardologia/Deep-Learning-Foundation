@@ -34,7 +34,7 @@ class CrossValidationConfig:
     paths      : RunPathsConfig         = field(default_factory=lambda: RunPathsConfig(log_base_dir=Path("runs/cross_validation")))
     folds      : FoldConfig             = field(default_factory=FoldConfig)
     training   : TrainingQueueConfig    = field(default_factory=TrainingQueueConfig)
-    inference  : InferenceQueueConfig   = field(default_factory=lambda: InferenceQueueConfig(save_maps=True))
+    inference  : InferenceQueueConfig   = field(default_factory=InferenceQueueConfig)
     comparison : ComparisonReportConfig = field(default_factory=ComparisonReportConfig)
 
     loss          : LossConfig           = field(default_factory=LossConfig)

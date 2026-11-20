@@ -12,6 +12,7 @@ from pipelines.backbone.inference.predictor          import Predictor
 from pipelines.backbone.inference.report             import Report
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.shared.inference.metadata             import CompletedInference, RegionPass, TargetDataset
+from tools.data.io                                   import FileIO
 from tools.data.regions                              import CropRegion
 from tools.monitoring.logger                         import Logger
 from tools.reporting.plotting                        import PlotBase
@@ -68,6 +69,7 @@ class InferencePipeline:
             logger.subsection("Maps : not saved (save_maps=False)")
             return
 
+        FileIO.ensure_dirs(meta.maps_dir)
         np.save(meta.maps_dir / "predictions.npy", predictions)
         np.save(meta.maps_dir / "targets.npy", run.targets)
         logger.subsection(f"Maps : predictions.npy and targets.npy, shape {predictions.shape}, in {meta.maps_dir}")

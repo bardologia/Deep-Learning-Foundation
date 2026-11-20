@@ -19,7 +19,7 @@ class InferenceQueueConfig:
     seed            : int        = 0
 
     stitch_window : str  = "hann"
-    save_maps     : bool = False
+    save_maps     : bool = True
     save_plots    : bool = False
 
     cmap         : str = "viridis"

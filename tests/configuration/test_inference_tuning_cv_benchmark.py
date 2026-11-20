@@ -141,7 +141,7 @@ def test_cross_validation_validates_the_standard_backbone():
 
 def test_cross_validation_fold_inference_saves_maps():
     assert CrossValidationConfig().inference.save_maps is True
-    assert BenchmarkConfig().inference.save_maps is False
+    assert BenchmarkConfig().inference.save_maps is True
 
 
 def test_cross_validation_runs_inference_logic():

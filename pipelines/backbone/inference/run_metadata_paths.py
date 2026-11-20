@@ -27,5 +27,5 @@ class InferenceMetadata:
         self.config_path  = self.output_dir / self.CONFIG_FILENAME
 
     def create_dirs(self) -> None:
-        FileIO.ensure_dirs(self.output_dir, self.figures_dir, self.logs_dir, self.maps_dir)
+        FileIO.ensure_dirs(self.output_dir, self.logs_dir)
         FileIO.save_json(EnvironmentCapture.snapshot(), self.output_dir / "environment.json")
