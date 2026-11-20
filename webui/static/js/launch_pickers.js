@@ -592,7 +592,7 @@ class EntryFormControl {
 }
 
 class RunConfigCopy extends EntryFormControl {
-  static DATASET_ENTRIES = ["generate_dataset", "extract_params", "inject_external_params"];
+  static DATASET_ENTRIES = ["generate_dataset", "extract_params"];
 
   constructor(view) {
     super(view);
