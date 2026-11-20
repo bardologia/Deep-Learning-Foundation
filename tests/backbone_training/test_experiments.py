@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from configuration.training                  import BackboneEntryConfig, CurriculumInheritance, default_curriculum
+from configuration.training                  import BackboneEntryConfig
 from configuration.training.backbone         import FullModel, AugmentationTrialsConfig, ClampTrialsConfig, HeadMatchingTrialsConfig, LogEnergyTrialsConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig
 from configuration.training.general.run      import TrainingQueueConfig
 from configuration.training.general.trials   import TrialCatalog
@@ -14,7 +14,6 @@ from pipelines.backbone.training.experiments import (
     AugmentationTrialPlanner,
     ClampTrialPlanner,
     ContextTrialPlanner,
-    CurriculumTrialPlanner,
     HeadMatchingTrialPlanner,
     InputTrialPlanner,
     LogEnergyTrialPlanner,
@@ -23,7 +22,6 @@ from pipelines.backbone.training.experiments import (
     ReachTrialPlanner,
     SecondaryTrialPlanner,
     SlotPresenceTrialPlanner,
-    WarmupTrialPlanner,
 )
 from pipelines.backbone.training.launcher    import TrainScheduler
 from tools.runtime.config_cli                import ConfigCli
@@ -39,36 +37,7 @@ def _dataset(root: Path, channel_labels) -> Path:
     return root
 
 
-def test_curriculum_planner_crosses_warmup_and_complete():
-    planner = CurriculumTrialPlanner(
-        {"w1": {"use_param_l1": True}, "w2": {"use_l1_curve": True}},
-        {"c1": {"use_mse_curve": True}},
-    )
-
-    plans = planner.plan()
-
-    assert len(plans) == 2
-    assert planner.summary() == {"Warmup losses": 2, "Complete losses": 1}
-
-    run_name, overrides = plans[0]
-    assert run_name == "w-w1_c-c1"
-    assert overrides["curriculum.enabled"]                is True
-    assert overrides["curriculum.warmup.use_param_l1"]    is True
-    assert overrides["curriculum.complete.use_mse_curve"] is True
-
-
-def test_warmup_planner_disables_curriculum():
-    planner = WarmupTrialPlanner({"a": {"use_param_l1": True}, "b": {"use_mse_curve": True}})
-
-    plans = planner.plan()
-
-    assert len(plans) == 2
-    assert all(overrides["curriculum.enabled"] is False for _, overrides in plans)
-    assert plans[0][0] == "nc-a"
-    assert plans[0][1]["curriculum.complete.use_param_l1"] is True
-
-
-def test_presence_planner_disables_curriculum():
+def test_presence_planner_overrides_the_loss_flags():
     planner = SlotPresenceTrialPlanner(
         {"AB": {"use_active_normalization": True, "presence_balance": True}},
     )
@@ -81,10 +50,9 @@ def test_presence_planner_disables_curriculum():
 
     ov = dict(plans)["pr-AB"]
 
-    assert ov["curriculum.enabled"] is False
-    assert "curriculum.complete.param_match" not in ov
-    assert ov["curriculum.complete.use_active_normalization"] is True
-    assert ov["curriculum.complete.presence_balance"]         is True
+    assert "loss.param_match" not in ov
+    assert ov["loss.use_active_normalization"] is True
+    assert ov["loss.presence_balance"]         is True
 
 
 def test_presence_planner_default_matrix():
@@ -101,9 +69,8 @@ def test_presence_planner_default_matrix():
         "pr-AB"   : (True,  True),
     }
     for name, (active_norm, balance) in expected.items():
-        assert plans[name]["curriculum.enabled"]                           is False
-        assert plans[name]["curriculum.complete.use_active_normalization"] is active_norm
-        assert plans[name]["curriculum.complete.presence_balance"]         is balance
+        assert plans[name]["loss.use_active_normalization"] is active_norm
+        assert plans[name]["loss.presence_balance"]         is balance
 
 
 def make_patch_planner(training: TrainingQueueConfig | None = None, **overrides) -> PatchSizeTrialPlanner:
@@ -469,10 +436,10 @@ def test_head_matching_planner_default_crosses_heads_and_matchings():
     plans = planner.plan()
 
     assert plans == [
-        ("hm-conv-sorted_gt",     {"backbone_name": "unet", "backbone_head": "conv",     "curriculum.warmup.param_matching": "sorted_gt", "curriculum.complete.param_matching": "sorted_gt"}),
-        ("hm-conv-hungarian",     {"backbone_name": "unet", "backbone_head": "conv",     "curriculum.warmup.param_matching": "hungarian", "curriculum.complete.param_matching": "hungarian"}),
-        ("hm-set_pred-sorted_gt", {"backbone_name": "unet", "backbone_head": "set_pred", "curriculum.warmup.param_matching": "sorted_gt", "curriculum.complete.param_matching": "sorted_gt"}),
-        ("hm-set_pred-hungarian", {"backbone_name": "unet", "backbone_head": "set_pred", "curriculum.warmup.param_matching": "hungarian", "curriculum.complete.param_matching": "hungarian"}),
+        ("hm-conv-sorted_gt",     {"backbone_name": "unet", "backbone_head": "conv",     "loss.param_matching": "sorted_gt"}),
+        ("hm-conv-hungarian",     {"backbone_name": "unet", "backbone_head": "conv",     "loss.param_matching": "hungarian"}),
+        ("hm-set_pred-sorted_gt", {"backbone_name": "unet", "backbone_head": "set_pred", "loss.param_matching": "sorted_gt"}),
+        ("hm-set_pred-hungarian", {"backbone_name": "unet", "backbone_head": "set_pred", "loss.param_matching": "hungarian"}),
     ]
     assert planner.summary() == {"Backbone": "unet", "Heads": ["conv", "set_pred"], "Matchings": ["sorted_gt", "hungarian"], "Total runs": 4}
 
@@ -600,12 +567,10 @@ def test_pair_planner_crosses_components_and_weights():
     assert planner.summary()["Base"]       == "param_l1 @ 1"
 
     overrides = dict(plans)["pair-cosine_curve-w0.05"]
-    assert overrides["curriculum.enabled"]                      is False
-    assert overrides["curriculum.inherit"]                      is False
-    assert overrides["curriculum.complete.use_param_l1"]        is True
-    assert overrides["curriculum.complete.weight_param_l1"]     == 1.0
-    assert overrides["curriculum.complete.use_cosine_curve"]    is True
-    assert overrides["curriculum.complete.weight_cosine_curve"] == 0.05
+    assert overrides["loss.use_param_l1"]        is True
+    assert overrides["loss.weight_param_l1"]     == 1.0
+    assert overrides["loss.use_cosine_curve"]    is True
+    assert overrides["loss.weight_cosine_curve"] == 0.05
 
 
 def test_pair_planner_neutralizes_every_other_term():
@@ -613,13 +578,13 @@ def test_pair_planner_neutralizes_every_other_term():
     planner = PairLossTrialPlanner(trials)
 
     overrides = planner.plan()[0][1]
-    enabled   = [path for path, value in overrides.items() if path.startswith("curriculum.complete.use_") and value is True]
+    enabled   = [path for path, value in overrides.items() if path.startswith("loss.use_") and value is True]
 
-    assert sorted(enabled) == ["curriculum.complete.use_moments", "curriculum.complete.use_param_l1"]
-    assert overrides["curriculum.complete.use_cosine_curve"]       is False
-    assert overrides["curriculum.complete.weight_cosine_curve"]    == 0.0
-    assert overrides["curriculum.complete.use_total_power"]        is False
-    assert overrides["curriculum.complete.weight_total_power"]     == 0.0
+    assert sorted(enabled) == ["loss.use_moments", "loss.use_param_l1"]
+    assert overrides["loss.use_cosine_curve"]       is False
+    assert overrides["loss.weight_cosine_curve"]    == 0.0
+    assert overrides["loss.use_total_power"]        is False
+    assert overrides["loss.weight_total_power"]     == 0.0
 
 
 def test_pair_planner_uses_catalog_flags_for_irregular_names():
@@ -629,8 +594,8 @@ def test_pair_planner_uses_catalog_flags_for_irregular_names():
     name, overrides = planner.plan()[0]
 
     assert name == "pair-total_power_relerr-w0.1"
-    assert overrides["curriculum.complete.use_total_power"]    is True
-    assert overrides["curriculum.complete.weight_total_power"] == 0.1
+    assert overrides["loss.use_total_power"]    is True
+    assert overrides["loss.weight_total_power"] == 0.1
 
 
 def test_pair_planner_prepends_base_only_baseline():
@@ -642,10 +607,10 @@ def test_pair_planner_prepends_base_only_baseline():
     assert [name for name, _ in plans] == ["pair-baseline", "pair-param_l1-w0.01"]
 
     baseline = dict(plans)["pair-baseline"]
-    enabled  = [path for path, value in baseline.items() if path.startswith("curriculum.complete.use_") and value is True]
+    enabled  = [path for path, value in baseline.items() if path.startswith("loss.use_") and value is True]
 
-    assert enabled == ["curriculum.complete.use_cosine_curve"]
-    assert baseline["curriculum.complete.weight_cosine_curve"] == 0.5
+    assert enabled == ["loss.use_cosine_curve"]
+    assert baseline["loss.weight_cosine_curve"] == 0.5
 
 
 def test_pair_planner_default_config_targets_param_l1_partners():
@@ -665,24 +630,21 @@ def test_pair_plan_round_trips_through_config_cli():
     def _apply(overrides: dict):
         cli   = ConfigCli(BackboneEntryConfig())
         trial = cli.apply(ConfigCli.to_argv(overrides) + ["--trial"])
-        CurriculumInheritance(trial.curriculum, default_curriculum(), cli.overrides).apply()
         return trial
 
     plans = dict(planner.plan())
 
     baseline = _apply({**plans["pair-baseline"], "run_name": "pair-baseline", "logdir": "/tmp/pair"})
-    assert baseline.curriculum.enabled                           is False
-    assert baseline.curriculum.initial_stage.use_param_l1        is True
-    assert baseline.curriculum.initial_stage.use_cosine_curve    is False
-    assert baseline.curriculum.initial_stage.use_moments         is False
+    assert baseline.loss.use_param_l1     is True
+    assert baseline.loss.use_cosine_curve is False
+    assert baseline.loss.use_moments      is False
 
     tested = _apply({**plans["pair-cosine_curve-w0.05"], "run_name": "pair-cosine_curve-w0.05", "logdir": "/tmp/pair"})
-    assert tested.curriculum.enabled                            is False
-    assert tested.curriculum.initial_stage.use_param_l1         is True
-    assert tested.curriculum.initial_stage.weight_param_l1      == 1.0
-    assert tested.curriculum.initial_stage.use_cosine_curve     is True
-    assert tested.curriculum.initial_stage.weight_cosine_curve  == 0.05
-    assert tested.curriculum.initial_stage.use_moments          is False
+    assert tested.loss.use_param_l1        is True
+    assert tested.loss.weight_param_l1     == 1.0
+    assert tested.loss.use_cosine_curve    is True
+    assert tested.loss.weight_cosine_curve == 0.05
+    assert tested.loss.use_moments         is False
 
 
 def test_pair_planner_paths_are_entry_config_leaves():
@@ -704,16 +666,13 @@ def test_log_energy_planner_sweeps_weights_with_baseline():
     assert planner.summary()["Total runs"] == 3
 
     tested = dict(plans)["logE-w0.5"]
-    assert tested["curriculum.inherit"] is False
-    for stage in ("warmup", "complete"):
-        assert tested[f"curriculum.{stage}.use_log_energy_curve"]    is True
-        assert tested[f"curriculum.{stage}.weight_log_energy_curve"] == 0.5
+    assert tested["loss.use_log_energy_curve"]    is True
+    assert tested["loss.weight_log_energy_curve"] == 0.5
 
     baseline = dict(plans)["logE-baseline"]
-    for stage in ("warmup", "complete"):
-        assert baseline[f"curriculum.{stage}.use_log_energy_curve"]    is False
-        assert baseline[f"curriculum.{stage}.weight_log_energy_curve"] == 0.0
-    assert "curriculum.complete.use_moments" not in baseline
+    assert baseline["loss.use_log_energy_curve"]    is False
+    assert baseline["loss.weight_log_energy_curve"] == 0.0
+    assert "loss.use_moments" not in baseline
 
 
 def test_log_energy_planner_replace_covariance_strips_it_from_every_arm():
@@ -721,9 +680,8 @@ def test_log_energy_planner_replace_covariance_strips_it_from_every_arm():
     planner = LogEnergyTrialPlanner(trials)
 
     for _name, overrides in planner.plan():
-        for stage in ("warmup", "complete"):
-            assert overrides[f"curriculum.{stage}.use_moments"]    is False
-            assert overrides[f"curriculum.{stage}.weight_moments"] == 0.0
+        assert overrides["loss.use_moments"]    is False
+        assert overrides["loss.weight_moments"] == 0.0
 
 
 def test_log_energy_plan_round_trips_through_config_cli():
@@ -733,23 +691,18 @@ def test_log_energy_plan_round_trips_through_config_cli():
     def _apply(overrides: dict):
         cli   = ConfigCli(BackboneEntryConfig())
         trial = cli.apply(ConfigCli.to_argv(overrides) + ["--trial"])
-        CurriculumInheritance(trial.curriculum, default_curriculum(), cli.overrides).apply()
         return trial
 
     plans = dict(planner.plan())
 
     baseline = _apply({**plans["logE-baseline"], "run_name": "logE-baseline", "logdir": "/tmp/logE"})
-    assert baseline.curriculum.enabled                       is True
-    assert baseline.curriculum.warmup.use_log_energy_curve   is False
-    assert baseline.curriculum.complete.use_log_energy_curve is False
-    assert baseline.curriculum.complete.use_cosine_curve     is True
-    assert baseline.curriculum.complete.weight_cosine_curve  == FullModel.COSINE_WEIGHT
+    assert baseline.loss.use_log_energy_curve is False
+    assert baseline.loss.use_cosine_curve     is True
+    assert baseline.loss.weight_cosine_curve  == FullModel.COSINE_WEIGHT
 
     tested = _apply({**plans["logE-w0.25"], "run_name": "logE-w0.25", "logdir": "/tmp/logE"})
-    assert tested.curriculum.warmup.use_log_energy_curve      is True
-    assert tested.curriculum.warmup.weight_log_energy_curve   == 0.25
-    assert tested.curriculum.complete.use_log_energy_curve    is True
-    assert tested.curriculum.complete.weight_log_energy_curve == 0.25
+    assert tested.loss.use_log_energy_curve    is True
+    assert tested.loss.weight_log_energy_curve == 0.25
 
 
 def test_log_energy_planner_paths_are_entry_config_leaves():

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from configuration.dataset                      import AugmentationConfig, InputConfig
 from configuration.normalization.general        import NormalizationConfig
-from configuration.training.backbone            import default_curriculum
+from configuration.training.backbone            import default_loss
 from configuration.training.general.loss        import LossConfig
 from configuration.training.general.run         import RunPathsConfig, TrainingQueueConfig, standard_seeds
 
@@ -63,10 +63,6 @@ class ComparisonReportConfig:
     embed_images: bool = False
 
 
-def _default_base_loss():
-    return default_curriculum().complete
-
-
 @dataclass
 class BenchmarkConfig:
 
@@ -80,7 +76,7 @@ class BenchmarkConfig:
     input         : InputConfig          = field(default_factory=InputConfig.full_stack)
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
-    loss          : LossConfig           = field(default_factory=_default_base_loss)
+    loss          : LossConfig           = field(default_factory=default_loss)
 
     gpus            : list[int]  = field(default_factory=lambda: [0])
     gpus_file       : str        = ""

@@ -332,12 +332,8 @@ def test_a_resumed_launch_leaves_the_change_report_to_the_resumed_run(tmp_path):
 
     class FakeResumed:
         def __init__(self):
-            self.root      = tmp_path / "unit_run"
-            self.logged    = False
-            self.refreshed = None
-
-        def refresh(self, config):
-            self.refreshed = config
+            self.root   = tmp_path / "unit_run"
+            self.logged = False
 
         def log(self, logger):
             self.logged = True
@@ -352,8 +348,7 @@ def test_a_resumed_launch_leaves_the_change_report_to_the_resumed_run(tmp_path):
 
     text = (second.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
 
-    assert resumed.logged    is True
-    assert resumed.refreshed is changed
+    assert resumed.logged is True
     assert "differ from the configuration this run recorded" not in text
 
 

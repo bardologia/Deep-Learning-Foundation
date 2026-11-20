@@ -32,19 +32,8 @@ class Checkpoint:
         self.save_path       = save_path
         self.best_val_loss   = float("inf")
         self.best_epoch      = -1
-        self.loss_generation = 0
-
-    def reset_baseline(self, loss_generation: int, epoch: int) -> None:
-        self.best_val_loss   = float("inf")
-        self.best_epoch      = -1
-        self.loss_generation = int(loss_generation)
-        self.logger.warning(f"Checkpoint baseline reset at epoch {epoch + 1}: loss composition changed (generation {loss_generation}); best_val_loss is not comparable across the swap and tracking restarts on the new scale.")
 
     def step(self, val_loss: float, epoch: int, trainer) -> bool:
-        loss_generation = int(trainer.criterion.loss_generation)
-        if loss_generation != self.loss_generation:
-            self.reset_baseline(loss_generation, epoch)
-
         if val_loss < self.best_val_loss:
             self.best_val_loss = float(val_loss)
             self.best_epoch    = int(epoch)
@@ -76,15 +65,13 @@ class Checkpoint:
 
     def state_dict(self) -> dict:
         return {
-            "best_val_loss"   : self.best_val_loss,
-            "best_epoch"      : self.best_epoch,
-            "loss_generation" : self.loss_generation,
+            "best_val_loss" : self.best_val_loss,
+            "best_epoch"    : self.best_epoch,
         }
 
     def load_state_dict(self, state: dict) -> None:
-        self.best_val_loss   = float(state["best_val_loss"])
-        self.best_epoch      = int(state["best_epoch"])
-        self.loss_generation = int(state["loss_generation"])
+        self.best_val_loss = float(state["best_val_loss"])
+        self.best_epoch    = int(state["best_epoch"])
 
 
 class WeightEma:
@@ -302,6 +289,5 @@ class TrainerState:
         trainer.global_step  = int(state["global_step"])
 
         TrainerState._restore_rng(state["rng"], loader_generator)
-        trainer._on_state_restored(state)
 
         return int(state["epoch"]) + 1

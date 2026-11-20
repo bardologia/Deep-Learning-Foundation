@@ -145,8 +145,8 @@ def tiny_trainer_config(n_gaussians: int = 2, epochs: int = 1) -> BackboneTraine
     cfg.training.validation_frequency = 1
     cfg.resources.enabled             = False
 
-    cfg.curriculum.complete.use_param_l1    = True
-    cfg.curriculum.complete.weight_param_l1 = 1.0
+    cfg.loss.use_param_l1    = True
+    cfg.loss.weight_param_l1 = 1.0
 
     return cfg
 

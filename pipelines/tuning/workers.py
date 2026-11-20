@@ -27,7 +27,7 @@ class TuningWorker:
         factory = ConfigFactory(self.config)
 
         trainer_config            = factory.training_trainer_config(logdir=Path(self.config.paths.log_base_dir))
-        trainer_config.curriculum = self.config.curriculum
+        trainer_config.loss = self.config.loss
         dataset_config            = factory.training_dataset_config()
 
         return trainer_config, dataset_config

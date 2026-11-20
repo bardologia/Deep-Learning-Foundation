@@ -14,16 +14,9 @@ class CrossValidationPipeline(StagedPipeline):
     LOGGER_NAME = "cross_validation_pipeline"
     STAGES      = ("full", "prepare", "compare")
 
-    def __init__(self, config: CrossValidationConfig, entry_script: Path, resumed=None, inherited: dict | None = None) -> None:
+    def __init__(self, config: CrossValidationConfig, entry_script: Path, resumed=None) -> None:
         super().__init__(config, entry_script, resumed=resumed)
         self.factory   = FoldConfigFactory(config)
-        self.inherited = dict(inherited or {})
-
-    def _log_inherited(self) -> None:
-        if not self.inherited:
-            return
-
-        self.logger.kv_table({f"curriculum.warmup.{name}": repr(value) for name, value in self.inherited.items()}, title=f"{len(self.inherited)} warmup field(s) inherited from the complete stage")
 
     def _log_unit_status(self) -> None:
         self._begin_stage("prepare")
@@ -82,7 +75,6 @@ class CrossValidationPipeline(StagedPipeline):
         }, title="Configuration")
 
         self._log_launch()
-        self._log_inherited()
 
         if self.config.stage == "compare":
             reports_dir = self._run_reports(planner)

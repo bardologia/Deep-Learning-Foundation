@@ -93,11 +93,6 @@ class Warmup:
 
         return factor
 
-    def reset(self) -> None:
-        self.current_step       = 0
-        self.warmup_finished    = False
-        self._logged_completion = False
-
     def is_finished(self) -> bool:
         return self.warmup_finished or not self.enabled or self.warmup_fraction <= 0
 
@@ -124,8 +119,6 @@ class Scheduler:
         self.base_lrs       = list(base_lrs)
         self.current_lrs    = list(base_lrs)
         self.scheduler_type = self.config.scheduler.type
-
-        self._epoch_offset = 0
 
         self._log_scheduler_info()
 
@@ -184,14 +177,8 @@ class Scheduler:
 
         return {"step": self._step}[self.scheduler_type](epoch)
 
-    def reset(self, epoch_offset: int = 0) -> None:
-        self._epoch_offset = epoch_offset
-        self.current_lrs   = list(self.base_lrs)
-
-        self.logger.subsection(f"LR schedule restarted from its base LRs: epoch offset {epoch_offset}, horizon {self.config.scheduler.epochs} epochs from the offset.")
-
     def step(self, epoch: int) -> list[float]:
-        factor           = self._factor_for(epoch - self._epoch_offset)
+        factor           = self._factor_for(epoch)
         self.current_lrs = [lr * factor for lr in self.base_lrs]
 
         return list(self.current_lrs)
@@ -204,14 +191,10 @@ class Scheduler:
         return list(self.current_lrs)
 
     def state_dict(self) -> dict:
-        return {
-            "current_lrs"  : list(self.current_lrs),
-            "epoch_offset" : self._epoch_offset,
-        }
+        return {"current_lrs": list(self.current_lrs)}
 
     def load_state_dict(self, state: dict) -> None:
-        self.current_lrs   = list(state["current_lrs"])
-        self._epoch_offset = int(state["epoch_offset"])
+        self.current_lrs = list(state["current_lrs"])
 
     def _log_scheduler_info(self):
         self.logger.section("[Learning Rate Scheduler]")

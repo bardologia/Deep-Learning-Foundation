@@ -141,7 +141,7 @@ The head that emits the parameters is chosen with `--backbone_head`, and
 
 Slot order is a convention, not a fact, so the loss aligns the two sides before comparing
 them. `ParamMatcher.match` in `tools/loss/param_loss.py` runs on every backward pass of
-the backbone loss, under `curriculum.<stage>.param_matching`: `sorted_gt` sorts the
+the backbone loss, under `loss.param_matching`: `sorted_gt` sorts the
 ground-truth slots by mean, active slots first, and leaves the prediction alone;
 `hungarian` sorts the ground truth and then assigns predicted slots to it by minimum
 cost. `match` takes the activity threshold as a required argument. The assignment is
@@ -157,9 +157,9 @@ with no permutation freedom, the shape of the work is:
    marked `denorm` (`mse_curve`, `l1_curve`, `huber_curve`, `charbonnier_curve`,
    `cosine_curve`, `total_power_relerr`, `moments`) compare reconstructed curves; the ones
    marked `norm` (`param_l1`, `param_huber`, `param_mse`, `smoothness_tv`) compare
-   parameters. Turn the `use_param_*` flags off in both curriculum stages. `Loss`
-   refuses a stage that enables no term or whose enabled weights sum to zero, so keep at
-   least one curve term on with a positive weight in each.
+   parameters. Turn the `use_param_*` flags off in `loss`. `Loss` refuses a configuration
+   that enables no term or whose enabled weights sum to zero, so keep at least one curve
+   term on with a positive weight.
 3. Replace `Loss` in `pipelines/backbone/training/loss.py`. Turning the flags off is not
    enough on its own: `Loss.__call__` reconstructs curves through `GaussianCurve`, calls
    `_match_params`, and computes `amp_mae`, `mu_mae` and `sigma_mae` on every batch

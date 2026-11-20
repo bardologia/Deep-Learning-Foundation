@@ -43,9 +43,6 @@ class StagedPipeline:
         self.config_changes  = self._archive_previous_config()
         ConfigCli.save_resolved(config, self.pipeline_dir / "resolved_config.json")
 
-        if resumed is not None:
-            resumed.refresh(config)
-
         self._record_launch()
 
         self.logger = Logger(log_dir=str(self.pipeline_dir), name=self.LOGGER_NAME)

@@ -12,12 +12,12 @@ from web_logger         import WebLogger
 
 
 LEAVES = {
-    "train_backbone"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "training.seed": "0", "training.use_ema": "False", "trials_mode": "curriculum", "paths.log_base_dir": "runs/benchmark", "logdir": "runs/backbone"},
+    "train_backbone"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "training.seed": "0", "training.use_ema": "False", "trials_mode": "presence", "paths.log_base_dir": "runs/benchmark", "logdir": "runs/backbone"},
     "infer_backbone"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "runs_dir": "runs"},
     "benchmark"        : {"dataset_base_path": "/data", "dataset_filter": "", "training.seed": "0"},
     "generate_dataset" : {"runs_dir": "datasets"},
-    "cross_validate"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "run_tag": "None", "paths.log_base_dir": "runs/cross_validation", "training.batch_size": "256", "curriculum.enabled": "True"},
-    "tune"             : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "run_tag": "None", "paths.log_base_dir": "runs/tuning", "training.batch_size": "256", "curriculum.enabled": "True"},
+    "cross_validate"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "run_tag": "None", "paths.log_base_dir": "runs/cross_validation", "training.batch_size": "256", "loss.use_param_l1": "True"},
+    "tune"             : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "run_tag": "None", "paths.log_base_dir": "runs/tuning", "training.batch_size": "256", "loss.use_param_l1": "True"},
 }
 
 

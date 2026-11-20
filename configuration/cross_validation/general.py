@@ -10,8 +10,8 @@ from configuration.benchmark.general import (
 )
 from configuration.dataset                  import AugmentationConfig, InputConfig
 from configuration.normalization.general    import NormalizationConfig
-from configuration.training.backbone        import default_curriculum
-from configuration.training.general.loss    import LossCurriculumConfig
+from configuration.training.backbone        import default_loss
+from configuration.training.general.loss    import LossConfig
 from configuration.training.general.run     import RunPathsConfig, TrainingQueueConfig, standard_seeds
 
 
@@ -40,7 +40,7 @@ class CrossValidationConfig:
     comparison : ComparisonReportConfig = field(default_factory=ComparisonReportConfig)
 
     input         : InputConfig          = field(default_factory=InputConfig.full_stack)
-    curriculum    : LossCurriculumConfig = field(default_factory=default_curriculum)
+    loss          : LossConfig           = field(default_factory=default_loss)
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
 

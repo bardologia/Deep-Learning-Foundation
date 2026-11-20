@@ -74,18 +74,6 @@ def test_early_stopping_best_tracks_running_minimum(logger, tracker):
     assert es.best_epoch == 5
 
 
-def test_early_stopping_reset(logger, tracker):
-    es = EarlyStopping(_es_config(patience=2), logger, tracker)
-    es(1.0, 0)
-    es(2.0, 1)
-    es.reset()
-
-    assert es.best_loss  is None
-    assert es.counter    == 0
-    assert es.best_epoch == -1
-    assert es.triggered  is False
-
-
 def test_early_stopping_min_delta_treats_small_gains_as_no_improvement(logger, tracker):
     es = EarlyStopping(_es_config(patience=2, min_delta=0.1), logger, tracker)
 

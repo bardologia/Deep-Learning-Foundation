@@ -50,12 +50,6 @@ class EarlyStopping:
 
         return stop
 
-    def reset(self) -> None:
-        self.best_loss  = None
-        self.counter    = 0
-        self.best_epoch = -1
-        self.triggered  = False
-
     def state_dict(self) -> dict:
         return {
             "best_loss"  : self.best_loss,

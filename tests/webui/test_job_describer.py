@@ -18,7 +18,7 @@ BACKBONE_LEAVES = [
     {"path": "backbone_name",          "value": "resunet"},
     {"path": "backbone_head",          "value": "conv"},
     {"path": "trials_enabled",         "value": "False"},
-    {"path": "trials_mode",            "value": "curriculum"},
+    {"path": "trials_mode",            "value": "presence"},
     {"path": "run_name",               "value": "None"},
     {"path": "infer_after",            "value": "False"},
     {"path": "paths.dataset_path",     "value": "/data/base_dataset_w20_10"},

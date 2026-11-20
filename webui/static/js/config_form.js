@@ -17,8 +17,6 @@ class ConfigForm {
     this.gates           = [];
     this.repainters      = [];
     this.sections        = [];
-    this.pairs           = [];
-    this.pairBase        = new Map();
     this.byPath          = new Map();
     this.activeSection   = null;
     this.query           = "";
@@ -230,7 +228,6 @@ class ConfigForm {
   _buildPanel(panel) {
     if (panel.kind === "hidden") return null;
     if (panel.kind === "special") return this._buildSpecialPanel(panel);
-    if (panel.kind === "pair") return this._buildPairPanel(panel);
     return this._buildFieldsPanel(panel);
   }
 
@@ -295,7 +292,7 @@ class ConfigForm {
     return note;
   }
 
-  _buildGroups(groups, pathMap = null) {
+  _buildGroups(groups) {
     const body = document.createElement("div");
     body.className = "cfg-panel__groups";
 
@@ -310,7 +307,7 @@ class ConfigForm {
       }
       const inner = document.createElement("div");
       inner.className = "field-group__grid";
-      group.fields.forEach((entry) => this._buildEntry(entry, inner, pathMap));
+      group.fields.forEach((entry) => this._buildEntry(entry, inner));
       groupEl.appendChild(inner);
       body.appendChild(groupEl);
     });
@@ -318,17 +315,13 @@ class ConfigForm {
     return body;
   }
 
-  _mapPath(path, pathMap) {
-    return pathMap ? pathMap.override + path.slice(pathMap.base.length) : path;
-  }
-
-  _buildEntry(entry, host, pathMap) {
+  _buildEntry(entry, host) {
     if (!entry.gate) {
-      host.appendChild(this._buildRow(this.byPath.get(this._mapPath(entry.path, pathMap)), this._section));
+      host.appendChild(this._buildRow(this.byPath.get(entry.path), this._section));
       return;
     }
 
-    const lead = this.byPath.get(this._mapPath(entry.gate, pathMap));
+    const lead = this.byPath.get(entry.gate);
     const cell = document.createElement("div");
     cell.className = "band-block";
 
@@ -336,7 +329,7 @@ class ConfigForm {
 
     const gatedRows = [];
     entry.fields.forEach((sub) => {
-      const leaf = this.byPath.get(this._mapPath(sub.path, pathMap));
+      const leaf = this.byPath.get(sub.path);
       const short = this._shortName(leaf);
       const row = short.startsWith("weight_") ? this._buildWeightRow(leaf) : this._buildRow(leaf, this._section);
       row.classList.add("cfg-edit__row--dependent");
@@ -356,59 +349,6 @@ class ConfigForm {
 
   _shortName(leaf) {
     return leaf.section ? leaf.path.slice(leaf.section.length + 1) : leaf.path;
-  }
-
-  _buildPairPanel(panel) {
-    const el = document.createElement("section");
-    el.className = "cfg-panel cfg-panel--pair";
-
-    const head = document.createElement("header");
-    head.className = "cfg-panel__head";
-    head.innerHTML = `<h4 class="cfg-panel__name">${panel.title}</h4><span class="cfg-panel__hint">${panel.base} · overridden per-field by ${panel.override}</span>`;
-    el.appendChild(head);
-
-    if (panel.note) el.appendChild(this._buildPanelNote(panel.note));
-
-    el.appendChild(this._buildGroups(panel.groups));
-
-    const override = document.createElement("div");
-    override.className = "pair-override";
-
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "pair-override__head";
-    toggle.setAttribute("aria-expanded", "false");
-    const badge = document.createElement("span");
-    badge.className = "edit-badge";
-    toggle.innerHTML = `<span class="pair-override__chev">&rsaquo;</span><h4 class="pair-override__name">${panel.override} overrides</h4>`;
-    toggle.appendChild(badge);
-
-    const note = document.createElement("p");
-    note.className = "pair-override__note";
-    note.textContent = `Fields where both stages share a default inherit ${panel.base} edits; editing here pins the ${panel.override} value.`;
-
-    const startAt = this.states.length;
-    const body = this._buildGroups(panel.groups, { base: panel.base, override: panel.override });
-    body.classList.add("pair-override__body");
-    body.hidden = true;
-
-    const record = { base: panel.base, override: panel.override, badge, body, toggle, container: override, open: false, states: this.states.slice(startAt) };
-
-    const inheritPath = panel.base.split(".").slice(0, -1).concat("inherit").join(".");
-    record.states.forEach(({ leaf }) => {
-      this.pairBase.set(leaf.path, { base: panel.base + leaf.path.slice(panel.override.length), inherit: inheritPath });
-    });
-    toggle.addEventListener("click", () => {
-      record.open = !record.open;
-      this._applyVisibility();
-    });
-    this.pairs.push(record);
-
-    override.appendChild(toggle);
-    override.appendChild(note);
-    override.appendChild(body);
-    el.appendChild(override);
-    return el;
   }
 
   _buildRow(leaf, sectionKey, pinned = false) {
@@ -504,24 +444,7 @@ class ConfigForm {
   }
 
   _effective(leaf) {
-    if (this.dirty[leaf.path] !== undefined) return this.dirty[leaf.path];
-    const inherited = this._inherited(leaf);
-    return inherited !== undefined ? inherited : leaf.value;
-  }
-
-  _inherited(leaf) {
-    if (!this.pairBase || this.dirty[leaf.path] !== undefined) return undefined;
-
-    const link = this.pairBase.get(leaf.path);
-    if (!link) return undefined;
-
-    const inheritLeaf = this.byPath.get(link.inherit);
-    if (inheritLeaf && (this.dirty[link.inherit] !== undefined ? this.dirty[link.inherit] : inheritLeaf.value) !== "True") return undefined;
-
-    const base = this.byPath.get(link.base);
-    if (!base || leaf.value !== base.value) return undefined;
-
-    return this.dirty[link.base];
+    return this.dirty[leaf.path] !== undefined ? this.dirty[leaf.path] : leaf.value;
   }
 
   _leafByPath(path) {
@@ -566,7 +489,7 @@ class ConfigForm {
   }
 
   _setValue(leaf, value, defer) {
-    const changed = value !== leaf.value || this._inherited(leaf) !== undefined;
+    const changed = value !== leaf.value;
     if (changed) this.dirty[leaf.path] = value;
     else delete this.dirty[leaf.path];
     this._runRefresh(defer);
@@ -868,13 +791,6 @@ class ConfigForm {
       row.hidden = !matchesQuery || row.dataset.gated === "1";
     });
 
-    this.pairs.forEach((pair) => {
-      const wantOpen = pair.open || (searching && pair.states.some(({ row }) => !row.hidden));
-      pair.body.hidden = !wantOpen;
-      pair.toggle.setAttribute("aria-expanded", String(wantOpen));
-      pair.toggle.classList.toggle("is-open", wantOpen);
-    });
-
     this._sweepShells(true);
 
     let anyVisible = false;
@@ -918,24 +834,6 @@ class ConfigForm {
     });
   }
 
-  _refreshPairs() {
-    this.pairs.forEach((pair) => {
-      pair.states.forEach(({ leaf, row }) => {
-        row.classList.toggle("is-inherited", this._inherited(leaf) !== undefined);
-
-        const control = this.controls[leaf.path];
-        if (control && this.dirty[leaf.path] === undefined && document.activeElement !== control.input) control.reset();
-      });
-
-      const differ = pair.states.filter(({ leaf }) => {
-        const base = this.byPath.get(pair.base + leaf.path.slice(pair.override.length));
-        return base && this._effective(leaf) !== this._effective(base);
-      }).length;
-      pair.badge.hidden = differ === 0;
-      pair.badge.textContent = differ ? `${differ} differ` : "";
-    });
-  }
-
   _refreshBadges() {
     const counts = new Map();
     this.states.forEach(({ leaf, sectionKey }) => {
@@ -949,7 +847,6 @@ class ConfigForm {
       section.badge.textContent = n ? `${n}` : "";
     });
 
-    this._refreshPairs();
   }
 }
 

@@ -222,7 +222,7 @@ def test_execute_queues_instead_of_launching_when_asked():
 def test_a_launch_with_finalize_switches_registers_its_chain(monkeypatch):
     monkeypatch.setenv(ReportMailEntryConfig.password_env, "pw")
     processes = StubProcesses()
-    launcher  = _launcher(StubResolver({"logdir": "/data/runs", "trials_mode": "curriculum"}), processes)
+    launcher  = _launcher(StubResolver({"logdir": "/data/runs", "trials_mode": "presence"}), processes)
 
     result  = launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, True, False, FinalizeChain.flags({"compare_trials": True}))
     pending = launcher.finalizer.pending()
@@ -231,7 +231,7 @@ def test_a_launch_with_finalize_switches_registers_its_chain(monkeypatch):
     assert len(processes.launched) == 1
     assert pending[0]["job_id"]    == result["job_id"]
     assert pending[0]["steps"]     == ["compare_trials"]
-    assert pending[0]["experiment_dir"] == "/data/runs/curriculum"
+    assert pending[0]["experiment_dir"] == "/data/runs/presence"
     assert processes.attached == [(result["job_id"], FinalizeChain.flags({"compare_trials": True}))]
 
 

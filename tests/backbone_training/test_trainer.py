@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader, TensorDataset
 from configuration.training.general.loss import LossConfig
 from pipelines.backbone.training.loss    import Loss
 from pipelines.backbone.training.trainer import Trainer
-from pipelines.shared.training.curriculum import CurriculumController
 from tools.training.checkpoint            import WeightSwa
 
 from tests.backbone_training._helpers import identity_normalizer, tiny_model, tiny_trainer_config, x_axis_numpy
@@ -68,7 +67,6 @@ def test_trainer_builds_on_cpu_with_wired_components(tmp_path):
     assert trainer.lr_scheduler   is not None
     assert trainer.early_stopping is not None
     assert trainer.warmup         is not None
-    assert isinstance(trainer.curriculum_controller, CurriculumController)
 
 
 def test_trainer_optimizer_has_named_param_groups(tmp_path):
@@ -427,63 +425,12 @@ def test_restore_best_loads_best_parameters(tmp_path):
         assert torch.equal(param, saved["params"][name])
 
 
-def test_early_stopping_reset_clears_state(tmp_path):
-    trainer = _build_trainer(tmp_path)
-
-    trainer.early_stopping(val_loss=1.0, epoch=0)
-    trainer.early_stopping.reset()
-
-    assert trainer.early_stopping.best_loss is None
-    assert trainer.early_stopping.counter   == 0
-    assert trainer.early_stopping.triggered is False
-
-
-def test_scheduler_reset_restores_base_lrs(tmp_path):
-    trainer = _build_trainer(tmp_path)
-
-    trainer.lr_scheduler.step(epoch=5)
-    trainer.lr_scheduler.reset(epoch_offset=0)
-
-    assert trainer.lr_scheduler.current_lrs == trainer.lr_scheduler.base_lrs
-
-
-def test_curriculum_swap_disabled_is_noop(tmp_path):
-    trainer = _build_trainer(tmp_path)
-
-    swapped = trainer.curriculum_controller.maybe_swap(epoch=0)
-
-    assert swapped is False
-    assert trainer.criterion.loss_generation == 0
-
-
-def test_curriculum_swap_replaces_loss_config(tmp_path):
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
-    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
-
-    config.curriculum.enabled    = True
-    config.curriculum.swap_epoch = 0
-    config.curriculum.warmup     = LossConfig(use_param_l1=True, weight_param_l1=1.0)
-    config.curriculum.complete   = LossConfig(use_mse_curve=True, weight_mse_curve=1.0)
-
-    logger     = Logger(log_dir=str(tmp_path / "logs"), name="curr", level="ERROR")
-    norm_stats = identity_normalizer(6)
-    trainer    = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=norm_stats, emit_docs=False)
-
-    swapped = trainer.curriculum_controller.maybe_swap(epoch=0)
-
-    assert swapped is True
-    assert trainer.criterion.loss_generation == 1
-
-
 def test_slot_diagnostics_adopt_the_label_run_threshold(tmp_path):
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
 
     config.gaussian.activity_threshold = 2.5e-3
-    config.curriculum.enabled          = True
-    config.curriculum.swap_epoch       = 0
-    config.curriculum.warmup           = LossConfig(use_param_l1=True, weight_param_l1=1.0)
-    config.curriculum.complete         = LossConfig(use_param_l1=True, weight_param_l1=1.0, use_active_normalization=True)
+    config.loss                        = LossConfig(use_param_l1=True, weight_param_l1=1.0, use_active_normalization=True)
 
     logger  = Logger(log_dir=str(tmp_path / "logs"), name="thr", level="ERROR")
     trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
@@ -495,31 +442,3 @@ def test_slot_diagnostics_adopt_the_label_run_threshold(tmp_path):
 
     assert trainer.param_sampler.thr == pytest.approx(2.5e-3)
     assert trainer.slot_vitals.thr   == pytest.approx(2.5e-3)
-
-    trainer.curriculum_controller.maybe_swap(epoch=0)
-    trainer._before_validation(1, val_loader)
-
-    assert trainer.param_sampler.thr == pytest.approx(2.5e-3)
-    assert trainer.slot_vitals.thr   == pytest.approx(2.5e-3)
-
-
-def test_curriculum_swap_applies_the_scheduled_learning_rate(tmp_path):
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
-    config           = tiny_trainer_config(n_gaussians=2, epochs=4)
-
-    config.curriculum.enabled      = True
-    config.curriculum.swap_epoch   = 2
-    config.curriculum.warmup       = LossConfig(use_param_l1=True, weight_param_l1=1.0)
-    config.curriculum.reset_lr     = False
-    config.curriculum.reset_warmup = True
-    config.warmup.warmup_enabled   = False
-
-    logger  = Logger(log_dir=str(tmp_path / "logs"), name="swaplr", level="ERROR")
-    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
-
-    decayed = trainer.lr_scheduler.step(epoch=2)
-
-    trainer.curriculum_controller.maybe_swap(epoch=2)
-
-    assert [group["lr"] for group in trainer.optimizer.param_groups] == pytest.approx(decayed)
-    assert decayed != pytest.approx(trainer.lr_scheduler.base_lrs)

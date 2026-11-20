@@ -724,14 +724,14 @@ class _FakeOptimizer:
 class _FakeTrainerConfig:
     def __init__(self):
         from configuration.dataset.gaussian import GaussianConfig
-        from configuration.training import LossConfig, LossCurriculumConfig
+        from configuration.training import LossConfig
 
         self.training       = _FakeTrainingLoop()
         self.scheduler      = _FakeScheduler()
         self.early_stopping = _FakeEarlyStop()
         self.io             = _FakeIO()
         self.optimizer      = _FakeOptimizer()
-        self.curriculum     = LossCurriculumConfig(complete=LossConfig(use_param_l1=True))
+        self.loss           = LossConfig(use_param_l1=True)
         self.gaussian       = GaussianConfig(n_default_gaussians=3, x_min=-20.0, x_max=80.0, activity_threshold=1e-4)
 
 

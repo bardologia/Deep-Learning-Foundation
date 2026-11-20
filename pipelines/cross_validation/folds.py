@@ -209,7 +209,7 @@ class FoldRunNaming:
 
         config = self.config
 
-        return RunNaming.training_tag(config.backbone_name, config.backbone_head, config.curriculum, self._n_gaussians(), config.augmentation)
+        return RunNaming.tag(config.backbone_name, config.backbone_head, config.loss, self._n_gaussians(), config.augmentation)
 
     def run_name(self, fold_index: int, seed: int | None) -> str:
         from pipelines.shared.training.run_naming import RunNaming

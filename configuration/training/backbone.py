@@ -9,7 +9,7 @@ from configuration.dataset                       import AugmentationConfig, Inpu
 from configuration.inference.general             import InferenceConfig
 from configuration.dataset.gaussian           import GaussianConfig
 from configuration.normalization.general         import NormalizationConfig
-from configuration.training.general.loss         import LossConfig, LossCurriculumConfig, ParamMatching
+from configuration.training.general.loss         import LossConfig, ParamMatching
 from configuration.training.general.optimization import EarlyStoppingConfig, GradientClipperConfig, OptimizerConfig, SchedulerConfig, WarmupConfig
 from configuration.resources                     import ResourceConfig
 from configuration.training.general.runtime      import IOConfig, MemoryConfig, TrainingLoopConfig
@@ -18,23 +18,12 @@ from configuration.training.general.trials       import TrialCatalog
 
 class FullModel:
 
-    PARAM_MATCH           = ParamMatching.HUNGARIAN
-    COSINE_WEIGHT         = 0.5
-    CURRICULUM_SWAP_EPOCH = 15
+    PARAM_MATCH   = ParamMatching.HUNGARIAN
+    COSINE_WEIGHT = 0.5
 
 
-def default_curriculum() -> LossCurriculumConfig:
-    warmup = LossConfig(
-        use_param_l1             = True,
-        weight_param_l1          = 1.0,
-        param_matching           = FullModel.PARAM_MATCH,
-        use_active_normalization = True,
-        presence_balance         = False,
-        use_cosine_curve         = True,
-        weight_cosine_curve      = FullModel.COSINE_WEIGHT,
-    )
-
-    complete = LossConfig(
+def default_loss() -> LossConfig:
+    return LossConfig(
         use_param_l1             = True,
         weight_param_l1          = 1.0,
         param_matching           = FullModel.PARAM_MATCH,
@@ -42,13 +31,6 @@ def default_curriculum() -> LossCurriculumConfig:
         presence_balance         = True,
         use_cosine_curve         = True,
         weight_cosine_curve      = FullModel.COSINE_WEIGHT,
-    )
-
-    return LossCurriculumConfig(
-        enabled    = True,
-        swap_epoch = FullModel.CURRICULUM_SWAP_EPOCH,
-        warmup     = warmup,
-        complete   = complete,
     )
 
 
@@ -151,7 +133,7 @@ class BackboneTrainerConfig:
     io               : IOConfig              = field(default_factory=IOConfig)
     optimizer        : OptimizerConfig       = field(default_factory=OptimizerConfig)
     training         : TrainingLoopConfig    = field(default_factory=TrainingLoopConfig)
-    curriculum       : LossCurriculumConfig  = field(default_factory=LossCurriculumConfig)
+    loss             : LossConfig            = field(default_factory=LossConfig)
     resources        : ResourceConfig        = field(default_factory=ResourceConfig)
     memory           : MemoryConfig          = field(default_factory=MemoryConfig)
     gradient_clipper : GradientClipperConfig = field(default_factory=GradientClipperConfig)
@@ -173,7 +155,7 @@ class BackboneEntryConfig:
 
     paths         : TrainingPathsConfig  = field(default_factory=TrainingPathsConfig)
     training      : TrainingQueueConfig  = field(default_factory=TrainingQueueConfig)
-    curriculum    : LossCurriculumConfig = field(default_factory=default_curriculum)
+    loss          : LossConfig           = field(default_factory=default_loss)
     input         : InputConfig          = field(default_factory=InputConfig.full_stack)
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
@@ -186,9 +168,7 @@ class BackboneEntryConfig:
     inference    : InferenceConfig = field(default_factory=lambda: InferenceConfig.for_run_directory())
 
     trials_enabled       : bool                      = False
-    trials_mode          : str                       = "curriculum"
-    warmup_losses        : dict                      = field(default_factory=TrialCatalog.warmup_losses)
-    complete_losses      : dict                      = field(default_factory=TrialCatalog.complete_losses)
+    trials_mode          : str                       = "presence"
     presence_trials      : dict                      = field(default_factory=TrialCatalog.presence_trials)
     pair_trials          : PairTrialsConfig          = field(default_factory=PairTrialsConfig)
     log_energy_trials    : LogEnergyTrialsConfig     = field(default_factory=LogEnergyTrialsConfig)

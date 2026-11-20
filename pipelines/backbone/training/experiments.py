@@ -13,56 +13,6 @@ from pipelines.shared.dataset.dataset_spatial import Layout
 from pipelines.shared.model.model_builder     import ModelBuilder
 
 
-class TrialPlanner:
-
-    def __init__(self, warmup_losses: dict) -> None:
-        self.warmup_losses = warmup_losses
-
-    @staticmethod
-    def _stage_overrides(stage: str, loss: dict) -> dict:
-        return {f"curriculum.{stage}.{key}": value for key, value in loss.items()}
-
-
-class CurriculumTrialPlanner(TrialPlanner):
-
-    def __init__(self, warmup_losses: dict, complete_losses: dict) -> None:
-        super().__init__(warmup_losses)
-        self.complete_losses = complete_losses
-
-    def summary(self) -> dict:
-        return {"Warmup losses": len(self.warmup_losses), "Complete losses": len(self.complete_losses)}
-
-    def plan(self) -> list[tuple[str, dict]]:
-        plans = []
-
-        for warmup_label, warmup_loss in self.warmup_losses.items():
-            for complete_label, complete_loss in self.complete_losses.items():
-                run_name  = f"w-{warmup_label}_c-{complete_label}"
-                overrides = {"curriculum.enabled": True, "curriculum.inherit": False}
-                overrides.update(self._stage_overrides("warmup",   warmup_loss))
-                overrides.update(self._stage_overrides("complete", complete_loss))
-                plans.append((run_name, overrides))
-
-        return plans
-
-
-class WarmupTrialPlanner(TrialPlanner):
-
-    def summary(self) -> dict:
-        return {"Warmup losses": len(self.warmup_losses)}
-
-    def plan(self) -> list[tuple[str, dict]]:
-        plans = []
-
-        for label, loss in self.warmup_losses.items():
-            run_name  = f"nc-{label}"
-            overrides = {"curriculum.enabled": False}
-            overrides.update(self._stage_overrides("complete", loss))
-            plans.append((run_name, overrides))
-
-        return plans
-
-
 class SlotPresenceTrialPlanner:
 
     FLAG_KEYS = ("use_active_normalization", "presence_balance")
@@ -77,12 +27,7 @@ class SlotPresenceTrialPlanner:
         }
 
     def _overrides(self, spec: dict) -> dict:
-        overrides = {"curriculum.enabled": False}
-
-        for key, value in spec.items():
-            overrides[f"curriculum.complete.{key}"] = value
-
-        return overrides
+        return {f"loss.{key}": value for key, value in spec.items()}
 
     def plan(self) -> list[tuple[str, dict]]:
         plans = []
@@ -110,15 +55,15 @@ class PairLossTrialPlanner:
         }
 
     def _base_overrides(self) -> dict:
-        overrides = {"curriculum.enabled": False, "curriculum.inherit": False}
+        overrides = {}
 
         for term in self.terms.values():
-            overrides[f"curriculum.complete.{term.use_flag}"]   = False
-            overrides[f"curriculum.complete.{term.weight_key}"] = 0.0
+            overrides[f"loss.{term.use_flag}"]   = False
+            overrides[f"loss.{term.weight_key}"] = 0.0
 
         base = self.terms[self.trials.base_component]
-        overrides[f"curriculum.complete.{base.use_flag}"]   = True
-        overrides[f"curriculum.complete.{base.weight_key}"] = self.trials.base_weight
+        overrides[f"loss.{base.use_flag}"]   = True
+        overrides[f"loss.{base.weight_key}"] = self.trials.base_weight
 
         return overrides
 
@@ -133,16 +78,14 @@ class PairLossTrialPlanner:
             for weight in self.trials.weights:
                 run_name  = f"pair-{component}-w{weight:g}"
                 overrides = self._base_overrides()
-                overrides[f"curriculum.complete.{term.use_flag}"]   = True
-                overrides[f"curriculum.complete.{term.weight_key}"] = weight
+                overrides[f"loss.{term.use_flag}"]   = True
+                overrides[f"loss.{term.weight_key}"] = weight
                 plans.append((run_name, overrides))
 
         return plans
 
 
 class LogEnergyTrialPlanner:
-
-    STAGES = ("warmup", "complete")
 
     def __init__(self, trials) -> None:
         self.trials = trials
@@ -158,16 +101,14 @@ class LogEnergyTrialPlanner:
         }
 
     def _neutral_overrides(self) -> dict:
-        overrides = {"curriculum.inherit": False}
-
-        for stage in self.STAGES:
-            overrides[f"curriculum.{stage}.use_log_energy_curve"]    = False
-            overrides[f"curriculum.{stage}.weight_log_energy_curve"] = 0.0
+        overrides = {
+            "loss.use_log_energy_curve"    : False,
+            "loss.weight_log_energy_curve" : 0.0,
+        }
 
         if self.trials.replace_covariance:
-            for stage in self.STAGES:
-                overrides[f"curriculum.{stage}.use_moments"]    = False
-                overrides[f"curriculum.{stage}.weight_moments"] = 0.0
+            overrides["loss.use_moments"]    = False
+            overrides["loss.weight_moments"] = 0.0
 
         return overrides
 
@@ -179,9 +120,8 @@ class LogEnergyTrialPlanner:
 
         for weight in self.trials.weights:
             overrides = self._neutral_overrides()
-            for stage in self.STAGES:
-                overrides[f"curriculum.{stage}.use_log_energy_curve"]    = True
-                overrides[f"curriculum.{stage}.weight_log_energy_curve"] = weight
+            overrides["loss.use_log_energy_curve"]    = True
+            overrides["loss.weight_log_energy_curve"] = weight
             plans.append((f"logE-w{weight:g}", overrides))
 
         return plans
@@ -291,10 +231,9 @@ class HeadMatchingTrialPlanner:
             for matching in self.trials.matchings:
                 run_name  = f"hm-{head}-{matching}"
                 overrides = {
-                    "backbone_name"                      : self.backbone,
-                    "backbone_head"                      : head,
-                    "curriculum.warmup.param_matching"   : matching,
-                    "curriculum.complete.param_matching" : matching,
+                    "backbone_name"       : self.backbone,
+                    "backbone_head"       : head,
+                    "loss.param_matching" : matching,
                 }
                 plans.append((run_name, overrides))
 

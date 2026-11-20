@@ -87,7 +87,7 @@ def _write_experiment(root: Path, name: str, aggregate: bool = True, comparison:
 
     logs = experiment_dir / "batch_train_logs"
     logs.mkdir()
-    (logs / "resolved_config.json").write_text(json.dumps({"trials_mode": "curriculum"}), encoding="utf-8")
+    (logs / "resolved_config.json").write_text(json.dumps({"trials_mode": "presence"}), encoding="utf-8")
     (logs / "train_scheduler_results.json").write_text(json.dumps({"units": 2}), encoding="utf-8")
 
     return experiment_dir
@@ -162,7 +162,7 @@ def test_scanner_finds_every_kind_of_experiment_under_a_workspace(workspace):
 
 def test_scanner_finds_experiments_at_any_depth_without_entering_runs(tmp_path):
     runs = tmp_path / "runs"
-    _write_experiment(runs / "sequences" / "ws_a", "curriculum")
+    _write_experiment(runs / "sequences" / "ws_a", "presence")
     _write_experiment(runs / "sequences" / "ws_b", "patch")
     _write_experiment(runs / "sequences" / "_archive", "old")
     _write_experiment(runs / "sequences" / ".hidden", "old")
@@ -171,7 +171,7 @@ def test_scanner_finds_experiments_at_any_depth_without_entering_runs(tmp_path):
     scanner = ExperimentScanner(runs)
     names   = [scanner.name(experiment) for experiment in scanner.scan()]
 
-    assert names == ["sequences/ws_a/curriculum", "sequences/ws_b/patch"]
+    assert names == ["sequences/ws_a/presence", "sequences/ws_b/patch"]
 
 
 def test_scanner_goes_on_below_a_sweep_of_standalone_runs(tmp_path):
@@ -598,13 +598,13 @@ def test_batch_mails_the_run_whose_folds_directory_is_the_root(entry_config, wor
 
 
 def test_same_named_sweeps_under_different_parents_do_not_collide(entry_config, tmp_path):
-    first  = Experiment(tmp_path / "ws_a" / "curriculum", tmp_path / "ws_a" / "curriculum")
-    second = Experiment(tmp_path / "ws_b" / "curriculum", tmp_path / "ws_b" / "curriculum")
+    first  = Experiment(tmp_path / "ws_a" / "presence", tmp_path / "ws_a" / "presence")
+    second = Experiment(tmp_path / "ws_b" / "presence", tmp_path / "ws_b" / "presence")
 
-    assert first.label  == "ws_a/curriculum"
-    assert second.label == "ws_b/curriculum"
-    assert entry_config.to_config(first.label).staging_dir  == entry_config.staging_dir / "ws_a" / "curriculum"
-    assert entry_config.to_config(second.label).staging_dir == entry_config.staging_dir / "ws_b" / "curriculum"
+    assert first.label  == "ws_a/presence"
+    assert second.label == "ws_b/presence"
+    assert entry_config.to_config(first.label).staging_dir  == entry_config.staging_dir / "ws_a" / "presence"
+    assert entry_config.to_config(second.label).staging_dir == entry_config.staging_dir / "ws_b" / "presence"
 
 
 def test_missing_seed_aggregate_averages_the_split_the_comparison_reads(entry_config, tmp_path):

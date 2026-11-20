@@ -227,9 +227,6 @@ class BaseTrainer:
     def _before_training(self, train_loader: DataLoader) -> None:
         pass
 
-    def _before_epoch(self, epoch: int) -> None:
-        pass
-
     def _before_validation(self, epoch: int, val_loader: DataLoader) -> None:
         pass
 
@@ -237,9 +234,6 @@ class BaseTrainer:
         pass
 
     def _log_train_epoch_extra(self, avg_loss: float, epoch: int) -> None:
-        pass
-
-    def _on_state_restored(self, state: dict) -> None:
         pass
 
     def _build_optimizer(self, param_groups: list[dict]):
@@ -590,7 +584,6 @@ class BaseTrainer:
                         last_epoch = epoch
 
                         self.logger.section(f"[Epoch {epoch_num}/{self.epochs}]")
-                        self._before_epoch(epoch)
 
                         train_loss = self.train_epoch(train_loader, epoch)
                         self.logger.subsection(f"Train  : loss={train_loss:.4f}")

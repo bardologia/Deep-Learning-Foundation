@@ -29,7 +29,7 @@ class BenchmarkWorker(WorkerBase):
 
         from pipelines.backbone.training.loss_terms import LossComponentCatalog
 
-        trainer_config.curriculum = LossComponentCatalog.curriculum(component, base=self.config.loss)
+        trainer_config.loss = LossComponentCatalog.standalone(component, base=self.config.loss)
 
 class TrainingWorker(BenchmarkWorker):
 

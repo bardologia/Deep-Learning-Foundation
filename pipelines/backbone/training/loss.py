@@ -28,7 +28,6 @@ class Loss:
         self.slot_vitals     = slot_vitals
         self.dx              = dx
         self.log_all_losses  = log_all_losses
-        self.loss_generation = 0
 
         self._moment_empty_warned = False
 
@@ -102,20 +101,6 @@ class Loss:
         self.logger.kv_table({
             "power_floor" : f"{cfg.power_floor:g}  (integrated target power a pixel must exceed to enter the total_power_relerr and moments terms; pixels at or below it are excluded, loss_monitor/moment_valid_frac tracks the share kept)",
         }, title=title)
-
-    def set_curriculum(self, complete_cfg, context: str = "curriculum swap") -> None:
-        self.loss_cfg       = complete_cfg
-        self.loss_generation += 1
-
-        self._moment_empty_warned = False
-
-        if context == "curriculum swap":
-            self.logger.subsection("Active loss composition changes at the curriculum swap; train/val loss curves are not comparable across the swap epoch.")
-
-        self.logger.subsection(f"Param matching ({context}): {complete_cfg.param_matching.value}")
-        self.log_active_terms(complete_cfg, title=f"Active Terms ({context})")
-        self.log_slot_presence_config(complete_cfg, title=f"Slot-Presence Loss Config ({context})")
-        self.log_moment_config(complete_cfg, title=f"Moment Terms Config ({context})")
 
     def reconstruct_gaussians(self, params: torch.Tensor) -> torch.Tensor:
         return GaussianCurve.reconstruct(params, self.z_axis, self.gaussian_cfg.params_per_gaussian)

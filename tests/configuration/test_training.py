@@ -18,14 +18,10 @@ from configuration.training.general.runtime import (
     TrainingLoopConfig,
     MemoryConfig,
 )
-from configuration.training.general.loss import (
-    CurriculumInheritance,
-    LossConfig,
-    LossCurriculumConfig,
-)
+from configuration.training.general.loss import LossConfig
 
 from configuration.training.backbone import (
-    default_curriculum,
+    default_loss,
     PatchTrialsConfig,
     SecondaryTrialsConfig,
     BackboneTrainerConfig,
@@ -47,7 +43,6 @@ SIMPLE_DEFAULT_CONFIGS = [
     MemoryConfig,
     ResourceConfig,
     LossConfig,
-    LossCurriculumConfig,
     PatchTrialsConfig,
     SecondaryTrialsConfig,
     BackboneEntryConfig,
@@ -113,88 +108,16 @@ def test_loss_config_param_weights_tuple():
     assert len(cfg.param_weights) == 3
 
 
-def test_loss_curriculum_holds_two_loss_configs():
-    cfg = LossCurriculumConfig()
-    assert isinstance(cfg.warmup, LossConfig)
-    assert isinstance(cfg.complete, LossConfig)
-    assert cfg.warmup is not cfg.complete
-
-
-def test_loss_curriculum_initial_stage_follows_enabled():
-    cfg = LossCurriculumConfig()
-
-    cfg.enabled = True
-    assert cfg.initial_stage is cfg.warmup
-    assert cfg.active_stages() == [cfg.warmup, cfg.complete]
-
-    cfg.enabled = False
-    assert cfg.initial_stage is cfg.complete
-    assert cfg.active_stages() == [cfg.complete]
-
-
-def test_curriculum_inheritance_copies_explicit_complete_edits_into_warmup():
-    cfg       = default_curriculum()
-    overrides = {"curriculum.complete.use_l1_curve": True, "curriculum.complete.weight_l1_curve": 0.3}
-
-    cfg.complete.use_l1_curve    = True
-    cfg.complete.weight_l1_curve = 0.3
-
-    inherited = CurriculumInheritance(cfg, default_curriculum(), overrides).apply()
-
-    assert set(inherited) == {"use_l1_curve", "weight_l1_curve"}
-    assert cfg.warmup.use_l1_curve    is True
-    assert cfg.warmup.weight_l1_curve == pytest.approx(0.3)
-
-
-def test_curriculum_inheritance_respects_explicit_warmup_overrides():
-    cfg       = default_curriculum()
-    overrides = {"curriculum.complete.use_cosine_curve": False, "curriculum.warmup.use_cosine_curve": True}
-
-    cfg.complete.use_cosine_curve = False
-
-    inherited = CurriculumInheritance(cfg, default_curriculum(), overrides).apply()
-
-    assert inherited == {}
-    assert cfg.warmup.use_cosine_curve is True
-
-
-def test_curriculum_inheritance_skips_fields_with_divergent_stage_defaults():
-    cfg       = default_curriculum()
-    overrides = {"curriculum.complete.presence_balance": False}
-
-    cfg.complete.presence_balance = False
-
-    inherited = CurriculumInheritance(cfg, default_curriculum(), overrides).apply()
-
-    assert inherited == {}
-    assert cfg.warmup.presence_balance is False
-
-
-def test_curriculum_inheritance_disabled_by_inherit_flag():
-    cfg       = default_curriculum()
-    overrides = {"curriculum.complete.use_l1_curve": True}
-
-    cfg.inherit               = False
-    cfg.complete.use_l1_curve = True
-
-    assert CurriculumInheritance(cfg, default_curriculum(), overrides).apply() == {}
-    assert cfg.warmup.use_l1_curve is False
-
-
 def test_backbone_entry_default_subconfigs():
     cfg = BackboneEntryConfig()
     assert cfg.backbone_name == "resunet"
-    assert isinstance(cfg.curriculum, LossCurriculumConfig)
+    assert isinstance(cfg.loss, LossConfig)
     assert isinstance(cfg.inference, InferenceConfig)
-    assert isinstance(cfg.warmup_losses, dict)
-    assert isinstance(cfg.complete_losses, dict)
 
 
-def test_backbone_entry_default_complete_losses_nonempty():
-    cfg = BackboneEntryConfig()
-    assert len(cfg.complete_losses) > 0
-    for spec in cfg.complete_losses.values():
-        assert spec["use_param_l1"] is True
+def test_backbone_entry_default_loss_trains_the_parameter_l1_term():
+    assert default_loss().use_param_l1 is True
+    assert BackboneEntryConfig().loss == default_loss()
 
 
 def test_backbone_trainer_subconfig_factories():

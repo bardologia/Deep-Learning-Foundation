@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 from collections import namedtuple
 
-from configuration.training import LossConfig, LossCurriculumConfig
+from configuration.training import LossConfig
 
 
 LossTerm = namedtuple("LossTerm", ["name", "use_flag", "weight_key", "space"])
@@ -50,8 +50,3 @@ class LossComponentCatalog:
             setattr(cfg, term.weight_key, 1.0)
 
         return cfg
-
-    @classmethod
-    def curriculum(cls, name: str, base: LossConfig | None = None) -> LossCurriculumConfig:
-        cfg = cls.standalone(name, base=base)
-        return LossCurriculumConfig(enabled=False, warmup=cfg, complete=cfg)

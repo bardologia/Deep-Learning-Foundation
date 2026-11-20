@@ -12,9 +12,7 @@ from configuration.training.general.runtime import (
     MemoryConfig,
 )
 from configuration.training.general.loss import (
-    CurriculumInheritance,
     LossConfig,
-    LossCurriculumConfig,
     ParamMatching,
 )
 from configuration.training.general.run import (

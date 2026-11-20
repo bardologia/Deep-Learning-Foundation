@@ -231,19 +231,15 @@ training run is one command:
 python main/training/train_backbone.py \
   --seeds "[0]" \
   --training.epochs 5 \
-  --curriculum.swap_epoch 2 \
   --gpu 0
 ```
 
 The defaults are sized for the bundled scene: `training.batch_size` is 64, which fits
-the 209-patch training split of `datasets/synthetic_small`, and `gpus` is `[0]`. The two
-overrides exist because this is a shortened demonstration run:
+the 209-patch training split of `datasets/synthetic_small`, and `gpus` is `[0]`. The
+seed override exists because this is a shortened demonstration run:
 
 - `--seeds "[0]"` trains one model. The default is `[0, 1]`, which fans one job per seed
   across the GPU pool in `--gpus` and doubles the runtime of a demo.
-- `--curriculum.swap_epoch 2` keeps the loss curriculum inside the run. The warmup loss
-  swaps for the complete loss at that epoch, the default is 15 (sized for the default 60
-  epochs), and the trainer refuses to start unless it is below `training.epochs`.
 
 Overrides work the same way for anything else:
 
@@ -253,7 +249,6 @@ python main/training/train_backbone.py \
   --backbone_name unet \
   --backbone_head conv \
   --training.epochs 5 \
-  --curriculum.swap_epoch 2 \
   --gpu 0
 ```
 
@@ -295,7 +290,7 @@ or from a state saved before the geometry was recorded, is refused. A state that
 already stopped early goes straight to the final checkpoint, the best-weight restore and
 the test evaluation.
 
-The loss refuses a curriculum stage with no enabled term or with weights summing to zero,
+The loss refuses a configuration with no enabled term or with weights summing to zero,
 warns about enabled terms of weight zero, and refuses a z axis with fewer than two
 samples. The normalization fit refuses a non-finite location or scale. `prior_bias_init`
 (on `train_backbone` and `cross_validate`, off by default) starts the conv head's biases
@@ -504,7 +499,7 @@ Three experiment entries under `main/experiments/` wrap the training loop:
 `benchmark.py` sweeps models, heads and losses; `cross_validate.py` runs k-fold over the
 scene; `tune.py` drives an Optuna study. Patch-shape sweeps run through the
 training entries themselves as `trials_mode=patch`, alongside the other fan-out modes
-(curriculum, warmup, presence, pair, log-energy, secondary, input, context, reach, head,
+(presence, pair, log-energy, secondary, input, context, reach, head,
 augmentation, clamp, stability, EMA and AMP ladders). The patch sweep report
 follows the planned seeds and names the seeds a trial mean drops.
 

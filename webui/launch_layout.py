@@ -337,12 +337,6 @@ class LaunchLayout:
                 ]},
             ]},
         ],
-        "curriculum_head": [
-            {"title": "Curriculum", "fields": [
-                "inherit",
-                {"gate": "enabled", "fields": ["swap_epoch", "reset_lr", "reset_warmup", "reset_optimizer"]},
-            ]},
-        ],
     }
 
     TRAIN_ESSENTIALS = [
@@ -360,7 +354,7 @@ class LaunchLayout:
     ]
 
     EXPERIMENT_TRIALS = [
-        "trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "input_trials", "context_trials",
+        "trials_enabled", "trials_mode", "presence_trials", "input_trials", "context_trials",
         "augmentation_trials.flip_probability", "augmentation_trials.noise_probability", "augmentation_trials.noise_stds",
         "clamp_trials.leaky_slopes", "clamp_trials.param_leaky_slopes",
         "stability_trials.warmup_fractions", "stability_trials.warmup_mode", "stability_trials.clip_mode", "stability_trials.max_grad_norms",
@@ -509,8 +503,7 @@ class LaunchLayout:
                     {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
-                    {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
-                    {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
+                    {"kind": "fields", "title": "Loss", "template": "loss", "at": "loss"},
                 ]},
                 {"key": "experiments", "title": "Experiments", "panels": [
                     {"kind": "special", "panel": "experiment_builder", "fields": EXPERIMENT_TRIALS},
@@ -612,8 +605,7 @@ class LaunchLayout:
                     {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
-                    {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
-                    {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
+                    {"kind": "fields", "title": "Loss", "template": "loss", "at": "loss"},
                 ]},
                 {"key": "inference", "title": "Inference", "panels": [
                     {"kind": "fields", "groups": [{"title": "Splits", "fields": ["inference_splits"]}]},
@@ -656,8 +648,7 @@ class LaunchLayout:
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
-                    {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
-                    {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
+                    {"kind": "fields", "title": "Loss", "template": "loss", "at": "loss"},
                 ]},
             ],
         },
@@ -1187,14 +1178,6 @@ class LaunchLayout:
         if panel["kind"] == "hidden":
             return {"kind": "hidden", "fields": list(panel["fields"])}
 
-        if panel["kind"] == "pair":
-            base_widgets = {}
-            groups       = self._panel_groups(panel, panel["base"], base_widgets)
-            for path, widget in base_widgets.items():
-                widgets[path] = widget
-                widgets[panel["override"] + path[len(panel["base"]):]] = widget
-            return {"kind": "pair", "title": panel.get("title"), "note": panel.get("note"), "base": panel["base"], "override": panel["override"], "groups": groups}
-
         groups = self._panel_groups(panel, panel.get("at", ""), widgets)
         return {"kind": "fields", "title": panel.get("title"), "note": panel.get("note"), "groups": groups}
 
@@ -1251,8 +1234,6 @@ class LaunchLayout:
                         self._entry_claims(entry, rows)
 
                 claimed.extend(rows)
-                if panel["kind"] == "pair":
-                    claimed.extend(panel["override"] + path[len(panel["base"]):] for path in rows)
 
         return claimed
 

@@ -216,7 +216,7 @@ class FoldTrainingWorker(CrossValidationWorker):
 
     def _spatial_configs(self, split_regions: SplitRegions) -> tuple:
         trainer_config            = self.factory.training_trainer_config(logdir=self.run_dir / "folds")
-        trainer_config.curriculum = self.config.curriculum
+        trainer_config.loss = self.config.loss
 
         dataset_config               = self.factory.training_dataset_config()
         dataset_config.split_regions = split_regions

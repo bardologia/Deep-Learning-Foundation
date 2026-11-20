@@ -6,7 +6,7 @@ from pathlib import Path
 from configuration.benchmark            import BenchmarkConfig
 from configuration.dataset             import DatasetConfig, InputConfig, OutputConfig, PatchConfig, SplitRegions
 from configuration.inference           import InferenceConfig
-from configuration.training            import default_curriculum, EarlyStoppingConfig, GradientClipperConfig, MemoryConfig, OptimizerConfig, SchedulerConfig, WarmupConfig, IOConfig, TrainingLoopConfig, BackboneTrainerConfig
+from configuration.training            import default_loss, EarlyStoppingConfig, GradientClipperConfig, MemoryConfig, OptimizerConfig, SchedulerConfig, WarmupConfig, IOConfig, TrainingLoopConfig, BackboneTrainerConfig
 from configuration.dataset.gaussian import GaussianConfig
 from tools.data.io                     import FileIO
 from tools.data.regions                import CropRegion
@@ -111,7 +111,7 @@ class ConfigFactory:
                 snapshot_every_n_epochs     = training.snapshot_every_n_epochs,
             ),
 
-            curriculum = default_curriculum(),
+            loss = default_loss(),
         )
 
     def inference_config(self, run_directory: Path) -> InferenceConfig:

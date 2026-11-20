@@ -8,13 +8,11 @@ from configuration.training.general import (
     IOConfig,
     TrainingLoopConfig,
     MemoryConfig,
-    CurriculumInheritance,
     LossConfig,
-    LossCurriculumConfig,
     ParamMatching,
 )
 from configuration.training.backbone import (
-    default_curriculum,
+    default_loss,
     PairTrialsConfig,
     LogEnergyTrialsConfig,
     PatchTrialsConfig,

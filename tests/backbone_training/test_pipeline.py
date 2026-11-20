@@ -57,8 +57,8 @@ def _trainer_config(test_data_dir, params_dir, tmp_path) -> BackboneTrainerConfi
     config.training.validation_frequency = 1
     config.resources.enabled             = False
 
-    config.curriculum.complete.use_param_l1    = True
-    config.curriculum.complete.weight_param_l1 = 1.0
+    config.loss.use_param_l1    = True
+    config.loss.weight_param_l1 = 1.0
 
     return config
 

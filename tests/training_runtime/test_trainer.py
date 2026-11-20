@@ -103,7 +103,6 @@ def test_no_op_hooks_return_none():
     shim = TrainerShim()
     assert BaseTrainer._log_init_banner(shim)             is None
     assert BaseTrainer._on_optimizer_step(shim)           is None
-    assert BaseTrainer._before_epoch(shim, 0)             is None
     assert BaseTrainer._after_eval(shim, 1.0, 0)          is None
 
 

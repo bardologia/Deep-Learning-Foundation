@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from configuration.dataset                  import AugmentationConfig
-from configuration.training                 import LossConfig, LossCurriculumConfig
+from configuration.training                 import LossConfig
 from pipelines.backbone.training.loss_terms import LOSS_TERMS
 from pipelines.shared.model.model_builder   import ModelBuilder
 
@@ -44,10 +44,6 @@ class RunNaming:
     @classmethod
     def tag(cls, model_name: str, head: str, loss: LossConfig, n_gaussians: int, augmentation: AugmentationConfig) -> str:
         return f"{cls.stem(model_name, head, loss, n_gaussians, augmentation)}-{cls.loss_tag(loss)}"
-
-    @classmethod
-    def training_tag(cls, model_name: str, head: str, curriculum: LossCurriculumConfig, n_gaussians: int, augmentation: AugmentationConfig) -> str:
-        return cls.tag(model_name, head, curriculum.active_stages()[-1], n_gaussians, augmentation)
 
     @classmethod
     def benchmark_unit(cls, model_key: str, component: str | None, loss: LossConfig, n_gaussians: int, augmentation: AugmentationConfig) -> str:

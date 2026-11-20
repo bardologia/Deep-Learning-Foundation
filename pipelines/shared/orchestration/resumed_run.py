@@ -72,7 +72,9 @@ class ResumedRun:
         ConfigCli.apply_overrides(config, overrides)
 
         self._settle_location(config)
-        self.refresh(config)
+
+        current      = ConfigCli.to_mapping(config)
+        self.changed = {path: (self.baseline[path], current[path]) for path in self.baseline if path not in self.LOCATION_FIELDS and current[path] != self.baseline[path]}
 
         return config
 
@@ -80,10 +82,6 @@ class ResumedRun:
         config.run_tag            = self.root.name
         config.paths.log_base_dir = self.root.parent
         config.resume             = True
-
-    def refresh(self, config) -> None:
-        current      = ConfigCli.to_mapping(config)
-        self.changed = {path: (self.baseline[path], current[path]) for path in self.baseline if path not in self.LOCATION_FIELDS and current[path] != self.baseline[path]}
 
     def log(self, logger: Logger) -> None:
         logger.section("Resumed run")

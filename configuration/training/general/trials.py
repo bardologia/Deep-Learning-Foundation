@@ -5,37 +5,6 @@ from __future__ import annotations
 class TrialCatalog:
 
 
-    CURVE_TERMS = {
-        "mse"   : ("use_mse_curve",         "weight_mse_curve"),
-        "l1"    : ("use_l1_curve",          "weight_l1_curve"),
-        "huber" : ("use_huber_curve",       "weight_huber_curve"),
-        "charb" : ("use_charbonnier_curve", "weight_charbonnier_curve"),
-        "cos"   : ("use_cosine_curve",      "weight_cosine_curve"),
-    }
-
-    CURVE_WEIGHTS = [0.01, 0.05, 0.02]
-
-    @staticmethod
-    def warmup_losses() -> dict:
-        return {
-            "pL11" : {"use_param_l1": True, "weight_param_l1": 1.0},
-        }
-
-    @classmethod
-    def complete_losses(cls) -> dict:
-        losses = {}
-
-        for label, (use_key, weight_key) in cls.CURVE_TERMS.items():
-            for weight in cls.CURVE_WEIGHTS:
-                losses[f"pL11-{label}{weight:g}"] = {
-                    "use_param_l1"    : True,
-                    "weight_param_l1" : 1.0,
-                    use_key           : True,
-                    weight_key        : weight,
-                }
-
-        return losses
-
     @staticmethod
     def presence_trials() -> dict:
         return {

@@ -340,7 +340,7 @@ def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_pat
 
 
 @pytest.mark.dataset
-def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path, monkeypatch):
+def test_backbone_fold_trainer_uses_the_entry_loss(test_data_dir, tmp_path, monkeypatch):
     config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     config.prior_bias_init    = True
@@ -363,12 +363,11 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path
     worker.run(1, seed=7)
 
     trainer_config = captured["trainer_config"]
-    assert trainer_config.curriculum is config.curriculum
-    assert trainer_config.curriculum.enabled is True
-    assert trainer_config.curriculum.complete.use_param_l1 is True
+    assert trainer_config.loss is config.loss
+    assert trainer_config.loss.use_param_l1 is True
     from pipelines.shared.training.run_naming import RunNaming
 
-    run_tag = RunNaming.training_tag(config.backbone_name, config.backbone_head, config.curriculum, SynthesisConfig().k_max, config.augmentation)
+    run_tag = RunNaming.tag(config.backbone_name, config.backbone_head, config.loss, SynthesisConfig().k_max, config.augmentation)
     assert captured["run_name"] == f"{run_tag}_fold_1/seed7"
 
     assert captured["prior_bias_init"] is True

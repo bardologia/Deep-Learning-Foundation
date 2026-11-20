@@ -6,7 +6,6 @@ import pytest
 import torch
 
 from configuration.normalization            import OutputClampConfig
-from configuration.training.backbone        import default_curriculum
 from configuration.training.general.loss    import LossConfig, ParamMatching
 from pipelines.backbone.training.loss       import Loss
 from pipelines.backbone.training.loss_terms import LOSS_TERMS, LossComponentCatalog
@@ -60,13 +59,6 @@ def test_catalog_standalone_inherits_shared_knobs_from_base():
     assert cfg.param_weights   == (2.0, 3.0, 4.0)
     assert cfg.use_mse_curve   is False
 
-
-def test_catalog_curriculum_is_disabled_with_matching_phases():
-    curriculum = LossComponentCatalog.curriculum("moments")
-
-    assert curriculum.enabled is False
-    assert curriculum.warmup.use_moments   is True
-    assert curriculum.complete.use_moments is True
 
 
 def test_catalog_combined_enables_the_union_of_terms():
@@ -408,19 +400,6 @@ def test_moment_terms_report_the_valid_fraction_and_flag_empty_batches():
     assert "power_floor" in logger.warnings[0]
 
 
-def test_moment_empty_batch_warning_rearms_at_the_curriculum_swap():
-    loss, logger = _recording_loss(LossConfig(use_moments=True, weight_moments=1.0))
-    pred         = valid_param_tensor(2, 2, 5, 5, seed=53)
-
-    loss(pred, _gt_without_active_slots(seed=54))
-    loss.set_curriculum(LossConfig(use_total_power=True, weight_total_power=1.0))
-    swapped = loss(pred, _gt_without_active_slots(seed=55))
-
-    assert swapped["monitor"]["moment_empty_batch"].item() == 1.0
-    assert len(logger.warnings) == 2
-    assert any(title == "Moment Terms Config (curriculum swap)" for title, _ in logger.tables)
-
-
 def test_moment_valid_fraction_absent_without_a_moment_term():
     loss = build_loss(n_gaussians=2)
     out  = loss(valid_param_tensor(2, 2, 5, 5, seed=49), valid_param_tensor(2, 2, 5, 5, seed=50))
@@ -476,27 +455,6 @@ def test_count_metrics_under_when_pred_drops_a_slot():
     assert out["occupancy"]["count/exact_frac"].item() == pytest.approx(0.0)
     assert out["occupancy"]["count/over_frac"].item()  == pytest.approx(0.0)
     assert out["occupancy"]["count/acc_gt2"].item()    == pytest.approx(0.0)
-
-
-def test_curriculum_swap_changes_active_terms():
-    loss = build_loss(n_gaussians=2)
-
-    before = loss(param_tensor(2, 2, 5, 5, seed=13), param_tensor(2, 2, 5, 5, seed=14))
-    assert "param_l1" in before["components"]
-
-    swap = LossConfig(use_mse_curve=True, weight_mse_curve=1.0)
-    loss.set_curriculum(swap)
-
-    assert loss.loss_generation == 1
-
-    after = loss(param_tensor(2, 2, 5, 5, seed=15), param_tensor(2, 2, 5, 5, seed=16))
-
-    assert "mse_curve" in after["components"]
-    assert "param_l1"  not in after["components"]
-
-
-
-
 
 
 def test_total_loss_is_weighted_normalised_mean():
@@ -640,13 +598,3 @@ def _his_masked_mse_loss(y_pred, y):
     loss2 = masked_mse(h2_p, h2_t, mask2) + masked_mse(w2_p, w2_t, mask2) + masked_mse(a2_p, a2_t, mask2)
 
     return loss1 + loss2
-
-
-
-
-
-
-
-
-
-

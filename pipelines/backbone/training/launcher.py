@@ -9,12 +9,12 @@ from pathlib     import Path
 
 import torch
 
-from configuration.training                       import BackboneEntryConfig, CurriculumInheritance, default_curriculum
+from configuration.training                       import BackboneEntryConfig
 from configuration.training.general.loss          import ParamMatching
 from configuration.training.general.optimization  import ClipMode, WarmupMode
 from models                                       import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
 from pipelines.backbone.inference.pipeline        import InferencePipeline
-from pipelines.backbone.training.experiments      import AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
+from pipelines.backbone.training.experiments      import AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner
 from pipelines.backbone.training.patch_report     import PatchTrialsReport
 from pipelines.backbone.training.pipeline         import TrainingPipeline
 from pipelines.shared.config.config_factory       import ConfigFactory
@@ -56,7 +56,7 @@ class SingleTrainRunner:
     @property
     def label(self) -> str:
         n_gaussians = self.factory.gaussian_config().n_default_gaussians
-        return RunNaming.training_tag(self.model_name, self.model_head, self.config.curriculum, n_gaussians, self.config.augmentation)
+        return RunNaming.tag(self.model_name, self.model_head, self.config.loss, n_gaussians, self.config.augmentation)
 
     def _apply_resume_from(self) -> None:
         target = Path(self.config.resume_from).expanduser()
@@ -85,8 +85,8 @@ class SingleTrainRunner:
         return ModelBuilder.config_from_registry(self.config.backbone_name, self.config.model_overrides, head=self.config.backbone_head)
 
     def _pipeline(self, logdir) -> TrainingPipeline:
-        trainer_config            = self.factory.training_trainer_config(logdir=logdir)
-        trainer_config.curriculum = self.config.curriculum
+        trainer_config      = self.factory.training_trainer_config(logdir=logdir)
+        trainer_config.loss = self.config.loss
 
         dataset_config              = self.factory.training_dataset_config()
         dataset_config.input_config = self.config.input
@@ -129,11 +129,9 @@ class SingleTrainRunner:
 
 class TrainScheduler(TrialSweepScheduler):
 
-    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "pair_trials", "log_energy_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "clamp_trials", "stability_trials", "ema_trials", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
+    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "presence_trials", "pair_trials", "log_energy_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "clamp_trials", "stability_trials", "ema_trials", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
 
     MODE_SUBDIRS = {
-        "curriculum"    : "curriculum",
-        "warmup"        : "warmup",
         "presence"      : "presence",
         "pair"          : "pair",
         "log_energy"    : "log_energy",
@@ -171,10 +169,6 @@ class TrainScheduler(TrialSweepScheduler):
 
     def _build_planner(self):
         mode = self.config.trials_mode
-        if mode == "curriculum":
-            return CurriculumTrialPlanner(self.config.warmup_losses, self.config.complete_losses)
-        if mode == "warmup":
-            return WarmupTrialPlanner(self.config.warmup_losses)
         if mode == "presence":
             return SlotPresenceTrialPlanner(self.config.presence_trials)
         if mode == "pair":
@@ -247,11 +241,9 @@ class BackboneTrainingLauncher:
         self.entry_script = Path(entry_script)
 
     def _configure(self, argv: list[str]):
-        cli    = ConfigCli(BackboneEntryConfig(), description="Train one backbone end to end, or fan out curriculum/warmup/secondary trials across GPUs; point resume_from at a run or sweep to finish it with the configuration it recorded")
+        cli    = ConfigCli(BackboneEntryConfig(), description="Train one backbone end to end, or fan out trials across GPUs; point resume_from at a run or sweep to finish it with the configuration it recorded")
         config = cli.apply(argv)
         config = ResumeLauncher.configure(BackboneEntryConfig, config, cli.overrides, trial_sweep=config.trials_enabled and "--trial" not in argv, unit="--trial" in argv)
-
-        CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
 
         return config, cli
 

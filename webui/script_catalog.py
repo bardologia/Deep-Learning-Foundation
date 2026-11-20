@@ -21,7 +21,7 @@ class ScriptCatalog:
         "train_backbone": {
             "title"     : "Train Backbone",
             "category"  : "Training",
-            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: loss-curriculum combinations, single-stage losses, slot-presence balance matrices, loss-pair searches, secondary-channel selections, rectangular patch-shape grids under a constant pixel budget, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, weight-EMA on/off ladders, or mixed-precision on/off pairs.",
+            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: slot-presence balance matrices, loss-pair searches, secondary-channel selections, rectangular patch-shape grids under a constant pixel budget, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, weight-EMA on/off ladders, or mixed-precision on/off pairs.",
         },
         "infer_backbone": {
             "title"     : "Infer Backbone",

@@ -955,7 +955,7 @@ def test_study_progress_refuses_what_it_cannot_read(rig):
     assert runner.study_progress(sequence_id, "t1") == {"ok": True, "studies": {}}
 
 
-def _experiment_tree(run_dir: str, mode: str = "curriculum", trials: tuple = ("rung_a", "rung_b")) -> Path:
+def _experiment_tree(run_dir: str, mode: str = "presence", trials: tuple = ("rung_a", "rung_b")) -> Path:
     experiment = Path(run_dir) / mode
     for trial in trials:
         (experiment / trial / "seed0").mkdir(parents=True)

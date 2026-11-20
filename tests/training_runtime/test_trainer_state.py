@@ -62,7 +62,6 @@ def _trainer(tmp_path, seed: int = 0, batch_size: int = 8, lr_scale: float = 1.0
         accumulation_steps = 1,
         distributed        = SimpleNamespace(world_size=1),
         restored_states    = [],
-        _on_state_restored = lambda state: None,
     )
 
 
@@ -116,20 +115,6 @@ def test_roundtrip_restores_all_components(tmp_path):
         assert torch.allclose(target.model.state_dict()[key], source.model.state_dict()[key])
 
     assert torch.allclose(target.ema.shadow["linear.weight"], source.ema.shadow["linear.weight"])
-
-
-def test_restore_invokes_hook_with_state(tmp_path):
-    source = _trainer(tmp_path)
-    path   = tmp_path / "last.pt"
-    TrainerState.save(source, epoch=2, path=path)
-
-    seen                      = []
-    target                    = _trainer(tmp_path, seed=1)
-    target._on_state_restored = lambda state: seen.append(state["epoch"])
-
-    TrainerState.restore(target, path)
-
-    assert seen == [2]
 
 
 def test_restore_missing_file_raises(tmp_path):

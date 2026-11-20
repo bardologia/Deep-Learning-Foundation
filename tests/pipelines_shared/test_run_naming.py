@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 from configuration.dataset                import AugmentationConfig
-from configuration.training               import LossConfig, LossCurriculumConfig, ParamMatching
+from configuration.training               import LossConfig, ParamMatching
 from pipelines.shared.training.run_naming import RunNaming
 
 
@@ -50,17 +50,6 @@ def test_tag_orders_model_head_matching_gaussians_augmentation_presence_loss():
     loss = _loss(use_param_l1=True, weight_param_l1=1.0, param_matching=ParamMatching.SORTED_GT, use_active_normalization=True)
 
     assert RunNaming.tag("resunet", "set_pred", loss, 3, _aug()) == "resunet-set_pred-sorted_gt-K_3-hv-A-param_l1_1"
-
-
-def test_training_tag_names_the_final_stage():
-    warmup   = _loss(use_param_l1=True, weight_param_l1=1.0)
-    complete = _loss(use_param_l1=True, weight_param_l1=1.0, use_moments=True, weight_moments=0.05)
-
-    enabled  = LossCurriculumConfig(enabled=True,  warmup=warmup, complete=complete)
-    disabled = LossCurriculumConfig(enabled=False, warmup=warmup, complete=complete)
-
-    assert RunNaming.training_tag("unet", "conv", enabled, 3, _aug())  == "unet-conv-hungarian-K_3-hv-none-param_l1_1-moments_0.05"
-    assert RunNaming.training_tag("unet", "conv", disabled, 3, _aug()) == "unet-conv-hungarian-K_3-hv-none-param_l1_1-moments_0.05"
 
 
 def test_benchmark_unit_keeps_the_component_separator():

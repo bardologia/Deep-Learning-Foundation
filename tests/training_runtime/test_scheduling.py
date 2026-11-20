@@ -105,17 +105,6 @@ def test_warmup_step_increments_and_finishes(logger):
     assert warmup.step()          == 1.0
 
 
-def test_warmup_reset_restores_initial_state(logger):
-    warmup = _warmup(logger, steps=3, mode="linear")
-    warmup.step()
-    warmup.step()
-    warmup.reset()
-
-    assert warmup.current_step       == 0
-    assert warmup.warmup_finished    is False
-    assert warmup._logged_completion is False
-
-
 def test_warmup_resolve_converts_fraction_to_steps(logger):
     warmup = Warmup(_warmup_config(fraction=0.03), logger)
     warmup.resolve(1000)
@@ -235,15 +224,6 @@ def test_scheduler_unknown_type_fails_at_the_lookup(logger):
 
     with pytest.raises(KeyError, match="nonexistent"):
         sched.step(0)
-
-
-def test_scheduler_reset_applies_epoch_offset(logger):
-    config = _scheduler_config("cosine_annealing", epochs=10, eta_min=0.0)
-    sched  = Scheduler([0.02], warmup=None, config=config, logger=logger)
-
-    sched.reset(epoch_offset=5)
-    lrs = sched.step(5)
-    assert lrs[0] == pytest.approx(0.02)
 
 
 def test_effective_lrs_applies_warmup_factor(logger):

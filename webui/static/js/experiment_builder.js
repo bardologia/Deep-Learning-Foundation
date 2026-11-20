@@ -232,30 +232,7 @@ class WeightSweepPanel {
 class ExperimentBuilder {
 
   static MODES = [
-    { group: "loss", key: "curriculum", label: "curriculum",  hint: "warmup x complete cross product, one trial each",
-      el        : "columnsEl",
-      available : (b) => Boolean(b.warmupLeaf && b.completeLeaf),
-      summary   : (b, gpus) => {
-        const total = b.variants.warmup.length * b.variants.complete.length;
-        return `${b.variants.warmup.length} warmup x ${b.variants.complete.length} complete = ${total} trials${b._seedsSuffix(total)}${gpus}`;
-      },
-      names     : (b, model) => {
-        const names = [];
-        b.variants.warmup.forEach((w) => b.variants.complete.forEach((c) => names.push(`${model}_w-${w.label}_c-${c.label}`)));
-        return names;
-      } },
-
-    { group: "loss", key: "warmup",     label: "single stage", hint: "curriculum disabled, check losses from the catalog and each trains alone as one trial",
-      el        : "warmupCatalogEl",
-      available : (b) => Boolean(b.warmupLeaf && b.completeLeaf),
-      paint     : (b) => b._paintWarmupCatalog(),
-      summary   : (b, gpus) => {
-        const n = b.variants.warmup.length;
-        return `${n} warmup loss${n === 1 ? "" : "es"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
-      },
-      names     : (b, model) => b.variants.warmup.map((w) => `${model}_nc-${w.label}`) },
-
-    { group: "loss", key: "pair",       label: "loss pairs",  hint: "one base component plus one candidate second component per weight, curriculum disabled, one trial per pair plus an optional base-only baseline",
+    { group: "loss", key: "pair",       label: "loss pairs",  hint: "one base component plus one candidate second component per weight, one trial per pair plus an optional base-only baseline",
       at        : 3,
       el        : "pairEl",
       available : (b) => b.pair.size > 0,
@@ -277,7 +254,7 @@ class ExperimentBuilder {
         return names;
       } },
 
-    { group: "loss", key: "log_energy", label: "log-energy",  hint: "the log-energy curve term swept across weights on top of the standard loss in both curriculum stages, one trial per weight plus an optional no-log-energy baseline",
+    { group: "loss", key: "log_energy", label: "log-energy",  hint: "the log-energy curve term swept across weights on top of the standard loss, one trial per weight plus an optional no-log-energy baseline",
       at        : 13,
       el        : "logEnergyEl",
       available : (b) => b.logEnergy.size > 0,
@@ -333,7 +310,7 @@ class ExperimentBuilder {
         return grid.row.flatMap((row) => grid.range.map((col) => `${model}_p-${pad(row)}x${pad(col)}`));
       } },
 
-    { group: "arch", key: "presence",   label: "slot presence", hint: "active-normalization x presence-balance matrix (none, A, B, AB), curriculum disabled, one trial per cell",
+    { group: "arch", key: "presence",   label: "slot presence", hint: "active-normalization x presence-balance matrix (none, A, B, AB), one trial per cell",
       at        : 4,
       el        : "presenceEl",
       available : (b) => Boolean(b.presenceTrialsLeaf),
@@ -497,13 +474,13 @@ class ExperimentBuilder {
       elProp      : "logEnergyEl",
       panelClass  : "exp-secondary exp-patch exp-physics",
       title       : "log-energy weight sweep",
-      note        : "each weight trains the standard loss plus the log-energy curve term at that weight, enabled in both curriculum stages so the energy supervision accompanies the cosine term from epoch 0",
+      note        : "each weight trains the standard loss plus the log-energy curve term at that weight, so the energy supervision accompanies the cosine term from epoch 0",
       flags       : [
         { field: "include_baseline",   label: "baseline",           hint: "prepend one run of the plain standard loss without the log-energy term, as the reference" },
         { field: "replace_covariance", label: "replace covariance", hint: "drop moments from every arm including the baseline, so the sweep tests log-energy as the replacement for the covariance tail repair rather than an addition" },
       ],
       catalog     : null,
-      weightTitle : "log-energy curve weight applied in both curriculum stages",
+      weightTitle : "log-energy curve weight",
       base        : null,
     },
     pair: {
@@ -511,7 +488,7 @@ class ExperimentBuilder {
       elProp      : "pairEl",
       panelClass  : "exp-secondary exp-patch exp-pair",
       title       : "loss pair sweep",
-      note        : "each checked component joins the base component at each weight as a two-term loss with every other term disabled; curriculum stays off so the pair applies from epoch 0",
+      note        : "each checked component joins the base component at each weight as a two-term loss with every other term disabled",
       flags       : [{ field: "include_baseline", label: "baseline", hint: "prepend one run that trains the base component alone, as the reference" }],
       catalog     : { head: "second components", options: ExperimentBuilder.PAIR_COMPONENTS.map((name) => ({ key: name, label: name })), onTitle: "Click to drop this component from the sweep", offTitle: "Click to test this component as the second term" },
       weightTitle : "weight of the second component",
@@ -543,8 +520,6 @@ class ExperimentBuilder {
     this.view         = view;
     this.trialsLeaf   = byPath.get("trials_enabled");
     this.modeLeaf     = byPath.get("trials_mode");
-    this.warmupLeaf   = byPath.get("warmup_losses");
-    this.completeLeaf = byPath.get("complete_losses");
     this.modelLeaf    = byPath.get("backbone_name");
     this.gpusLeaf     = byPath.get("gpus");
     this.seedsLeaf    = byPath.get("seeds");
@@ -578,8 +553,6 @@ class ExperimentBuilder {
     });
 
     this.claimed = ["trials_enabled"];
-    if (this.warmupLeaf)   this.claimed.push("warmup_losses");
-    if (this.completeLeaf) this.claimed.push("complete_losses");
     if (this.modeLeaf) this.claimed.push("trials_mode");
     this.secondary.forEach((leaf) => this.claimed.push(leaf.path));
     this.patch.forEach((leaf) => this.claimed.push(leaf.path));
@@ -596,14 +569,10 @@ class ExperimentBuilder {
     if (this.contextTrialsLeaf)    this.claimed.push(this.contextTrialsLeaf.path);
 
     this.terms          = this._termCatalog();
-    this.variants       = { warmup: [], complete: [] };
-    this.lists          = {};
     this.summaryEl      = null;
     this.namesEl        = null;
     this.hintEl         = null;
     this.root           = null;
-    this.columnsEl      = null;
-    this.columnEls      = {};
     this.secondaryEl    = null;
     this.strategySelect = null;
     this.strategyNoteEl = null;
@@ -614,9 +583,6 @@ class ExperimentBuilder {
     this.logEnergyEl         = null;
     this.sweeps              = {};
     Object.entries(ExperimentBuilder.SWEEPS).forEach(([key, spec]) => { this.sweeps[key] = new WeightSweepPanel(this, spec); });
-    this.warmupCatalogEl     = null;
-    this.warmupCatalogGridEl = null;
-    this.warmupCountEl       = null;
     this.warmupCustomEl      = null;
     this.warmupCustomHeadEl  = null;
     this.presenceEl     = null;
@@ -661,17 +627,7 @@ class ExperimentBuilder {
     body.className = "exp-builder__body";
     if (this.modeLeaf) body.appendChild(this._modePicker());
 
-    if (this.warmupLeaf && this.completeLeaf) {
-      const columns     = document.createElement("div");
-      columns.className = "exp-builder__columns";
-      this.columnsEl    = columns;
-      this.columnEls.warmup   = columns.appendChild(this._column("warmup", "warmup losses"));
-      this.columnEls.complete = columns.appendChild(this._column("complete", "complete losses"));
-      body.appendChild(columns);
-    }
-
     if (this.modeLeaf) {
-      if (this.warmupLeaf && this.completeLeaf) body.appendChild(this._warmupCatalogPanel());
       this._panelModes().forEach((mode) => body.appendChild(mode.make(this)));
     }
 
@@ -686,10 +642,6 @@ class ExperimentBuilder {
 
     this.root.appendChild(head);
     this.root.appendChild(body);
-
-    [this.warmupLeaf, this.completeLeaf].filter(Boolean).forEach((leaf) => {
-      this.view.controls[leaf.path] = { leaf, reset: () => this._reload() };
-    });
 
     this._reload();
     return this.root;
@@ -718,7 +670,7 @@ class ExperimentBuilder {
 
   _mode() {
     const modes = this._modes();
-    const first = modes.length ? modes[0].key : "curriculum";
+    const first = modes.length ? modes[0].key : "presence";
     if (!this.modeLeaf) return first;
     const value = this.view._effective(this.modeLeaf);
     return modes.some((mode) => mode.key === value) ? value : first;
@@ -1102,7 +1054,7 @@ class ExperimentBuilder {
 
     const note       = document.createElement("p");
     note.className   = "exp-secondary__note";
-    note.textContent = "Toggle cells of the active-normalization x presence-balance matrix; every cell trains with curriculum disabled and repeats across the seeds list. Cell specs live in code (TrialCatalog.presence_trials); use reset matrix to restore the full 2x2.";
+    note.textContent = "Toggle cells of the active-normalization x presence-balance matrix; every cell repeats across the seeds list. Cell specs live in code (TrialCatalog.presence_trials); use reset matrix to restore the full 2x2.";
 
     const cellHead       = document.createElement("div");
     cellHead.className   = "exp-presence__sub";
@@ -2019,7 +1971,7 @@ class ExperimentBuilder {
 
     const note       = document.createElement("p");
     note.className   = "exp-secondary__note";
-    note.textContent = "One training run per checked head x matching pair, all on the backbone this entry names in its own backbone field. The matching strategy is applied to both curriculum stages; everything else comes from the base config.";
+    note.textContent = "One training run per checked head x matching pair, all on the backbone this entry names in its own backbone field. The matching strategy is applied to the loss; everything else comes from the base config.";
 
     const headsHead       = document.createElement("div");
     headsHead.className   = "exp-presence__sub";
@@ -2212,7 +2164,6 @@ class ExperimentBuilder {
     if (this.modeEl) this.modeEl.classList.toggle("is-dirty", this.view.dirty[this.modeLeaf.path] !== undefined);
     if (this.hintEl) this.hintEl.textContent = this._modeEntry(mode).hint;
 
-    if (this.columnEls.complete) this.columnEls.complete.hidden = mode !== "curriculum";
     ExperimentBuilder.MODES.forEach((entry) => {
       const el = this[entry.el];
       if (el) el.hidden = mode !== entry.key;
@@ -2242,8 +2193,8 @@ class ExperimentBuilder {
   }
 
   _termCatalog() {
-    const prefix  = "curriculum.complete.";
-    const leaves  = this.view.config.leaves.filter((leaf) => leaf.section === "curriculum.complete");
+    const prefix  = "loss.";
+    const leaves  = this.view.config.leaves.filter((leaf) => leaf.section === "loss");
     const short   = (leaf) => leaf.path.slice(prefix.length);
     const weights = leaves.filter((leaf) => short(leaf).startsWith("weight_") && (leaf.type === "float" || leaf.type === "int"));
 
@@ -2305,95 +2256,7 @@ class ExperimentBuilder {
     return wrap;
   }
 
-  _column(which, title) {
-    const col     = document.createElement("div");
-    col.className = "exp-col";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">${title}</span><span class="exp-col__count"></span>`;
-    head.appendChild(LaunchWidgetDom.mini("Add variant", () => {
-      this.variants[which].push(this._blankVariant(which));
-      this._emit(which);
-    }));
-
-    const list     = document.createElement("div");
-    list.className = "exp-col__list";
-
-    this.lists[which] = { list, count: head.querySelector(".exp-col__count") };
-    col.appendChild(head);
-    col.appendChild(list);
-    return col;
-  }
-
-  _blankVariant(which) {
-    const base  = this.terms.find((term) => term.key === "param_l1") || this.terms[0];
-    const label = this._uniqueLabel(which, which === "warmup" ? "warm" : "exp");
-    return { label, terms: [{ useKey: base.useKey, weightKey: base.weightKey, weight: base.defaultWeight }], extras: {} };
-  }
-
-  _uniqueLabel(which, seed) {
-    const taken = new Set(this.variants[which].map((variant) => variant.label));
-    if (!taken.has(seed)) return seed;
-
-    let n = 2;
-    while (taken.has(`${seed}${n}`)) n += 1;
-    return `${seed}${n}`;
-  }
-
-  _variantsFrom(leaf) {
-    let raw = null;
-    try {
-      raw = PythonLiteral.parse(this.view._effective(leaf));
-    } catch (e) {
-      raw = null;
-    }
-    if (!raw || Array.isArray(raw) || typeof raw !== "object") return [];
-
-    return Object.entries(raw).map(([label, spec]) => {
-      const entry  = spec && typeof spec === "object" && !Array.isArray(spec) ? spec : {};
-      const terms  = [];
-      const extras = {};
-      const used   = new Set();
-
-      this.terms.forEach((term) => {
-        if (entry[term.useKey] !== true) return;
-        const weight = typeof entry[term.weightKey] === "number" ? entry[term.weightKey] : term.defaultWeight;
-        terms.push({ useKey: term.useKey, weightKey: term.weightKey, weight });
-        used.add(term.useKey);
-        used.add(term.weightKey);
-      });
-
-      Object.entries(entry).forEach(([key, value]) => {
-        if (!used.has(key)) extras[key] = value;
-      });
-
-      return { label, terms, extras };
-    });
-  }
-
-  _dictFor(variants) {
-    const out = {};
-    variants.forEach((variant) => {
-      const entry = { ...variant.extras };
-      variant.terms.forEach((term) => {
-        entry[term.useKey]    = true;
-        entry[term.weightKey] = Number(term.weight) || 0;
-      });
-      out[variant.label || "unnamed"] = entry;
-    });
-    return out;
-  }
-
-  _emit(which) {
-    const leaf = which === "warmup" ? this.warmupLeaf : this.completeLeaf;
-    this.view._setValue(leaf, PythonLiteral.render(this._dictFor(this.variants[which])));
-    this._paintAll();
-  }
-
   _reload() {
-    this.variants.warmup   = this.warmupLeaf ? this._variantsFrom(this.warmupLeaf) : [];
-    this.variants.complete = this.completeLeaf ? this._variantsFrom(this.completeLeaf) : [];
     if (this._paintSwitch) this._paintSwitch();
     this._paintMode();
     ExperimentBuilder.MODES.forEach((mode) => { if (mode.paint) mode.paint(this); });
@@ -2401,297 +2264,8 @@ class ExperimentBuilder {
   }
 
   _paintAll() {
-    ["warmup", "complete"].forEach((which) => {
-      if (!this.lists[which]) return;
-      const { list, count } = this.lists[which];
-      list.innerHTML = "";
-      this.variants[which].forEach((variant, index) => list.appendChild(this._card(which, variant, index)));
-      count.textContent = `${this.variants[which].length} variant${this.variants[which].length === 1 ? "" : "s"}`;
-    });
-
-    this._paintWarmupCatalog();
     this._paintSummary();
     this._paintNames();
-  }
-
-  _card(which, variant, index) {
-    const card     = document.createElement("div");
-    card.className = "exp-card";
-
-    const top     = document.createElement("div");
-    top.className = "exp-card__top";
-
-    const label      = document.createElement("input");
-    label.className  = "cfg-edit__input exp-card__label";
-    label.value      = variant.label;
-    label.spellcheck = false;
-    label.title      = "variant label, used in the run name";
-    label.addEventListener("change", () => {
-      const wanted = label.value.trim() || variant.label;
-      const taken  = new Set(this.variants[which].filter((other) => other !== variant).map((other) => other.label));
-      variant.label = taken.has(wanted) ? this._uniqueLabel(which, wanted) : wanted;
-      label.value   = variant.label;
-      this._emit(which);
-    });
-
-    top.appendChild(label);
-    top.appendChild(LaunchWidgetDom.mini("Duplicate", () => {
-      const copy = JSON.parse(JSON.stringify(variant));
-      copy.label = this._uniqueLabel(which, copy.label);
-      this.variants[which].splice(index + 1, 0, copy);
-      this._emit(which);
-    }));
-    top.appendChild(LaunchWidgetDom.mini("Remove", () => {
-      this.variants[which].splice(index, 1);
-      this._emit(which);
-    }));
-    card.appendChild(top);
-
-    const terms     = document.createElement("div");
-    terms.className = "exp-card__terms";
-    variant.terms.forEach((term, ti) => terms.appendChild(this._termRow(which, variant, term, ti)));
-    card.appendChild(terms);
-
-    const extrasKeys = Object.keys(variant.extras);
-    if (extrasKeys.length) {
-      const note       = document.createElement("div");
-      note.className   = "exp-card__extras";
-      note.textContent = `raw keys kept: ${extrasKeys.join(", ")}`;
-      card.appendChild(note);
-    }
-
-    const addTerm = LaunchWidgetDom.mini("Add term", () => {
-      const unused = this.terms.find((term) => !variant.terms.some((vt) => vt.useKey === term.useKey));
-      const pick   = unused || this.terms[0];
-      variant.terms.push({ useKey: pick.useKey, weightKey: pick.weightKey, weight: pick.defaultWeight });
-      this._emit(which);
-    });
-    addTerm.classList.add("exp-card__add");
-    card.appendChild(addTerm);
-
-    return card;
-  }
-
-  _termRow(which, variant, term, index) {
-    const row     = document.createElement("div");
-    row.className = "exp-term";
-
-    const select     = document.createElement("select");
-    select.className = "run-select exp-term__select";
-    this.terms.forEach((option) => {
-      const opt       = document.createElement("option");
-      opt.value       = option.useKey;
-      opt.textContent = option.key;
-      if (option.useKey === term.useKey) opt.selected = true;
-      select.appendChild(opt);
-    });
-    select.addEventListener("change", () => {
-      const picked   = this.terms.find((option) => option.useKey === select.value);
-      term.useKey    = picked.useKey;
-      term.weightKey = picked.weightKey;
-      term.weight    = picked.defaultWeight;
-      this._emit(which);
-    });
-
-    const weight      = document.createElement("input");
-    weight.className  = "cfg-edit__input exp-term__weight";
-    weight.type       = "number";
-    weight.step       = "any";
-    weight.value      = String(term.weight);
-    weight.spellcheck = false;
-    weight.title      = "loss weight";
-    weight.addEventListener("change", () => {
-      term.weight = Number(weight.value) || 0;
-      this._emit(which);
-    });
-
-    const remove = LaunchWidgetDom.mini("×", () => {
-      variant.terms.splice(index, 1);
-      this._emit(which);
-    });
-    remove.classList.add("exp-term__remove");
-    remove.title = "Remove term";
-
-    row.appendChild(select);
-    row.appendChild(weight);
-    row.appendChild(remove);
-    return row;
-  }
-
-  _warmupCatalogPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-warmup";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">warmup loss sweep</span><span class="exp-col__count exp-warmup__count"></span>`;
-    this.warmupCountEl = head.querySelector(".exp-warmup__count");
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "Check a loss to train it alone as one trial. Expand a checked card to stack extra terms onto that trial.";
-
-    const grid     = document.createElement("div");
-    grid.className = "exp-warmup__grid";
-    this.warmupCatalogGridEl = grid;
-
-    const customHead       = document.createElement("div");
-    customHead.className    = "exp-presence__sub exp-warmup__customhead";
-    customHead.textContent  = "other variants";
-    this.warmupCustomHeadEl = customHead;
-
-    const custom     = document.createElement("div");
-    custom.className = "exp-warmup__custom";
-    this.warmupCustomEl = custom;
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(grid);
-    panel.appendChild(customHead);
-    panel.appendChild(custom);
-    this.warmupCatalogEl = panel;
-    return panel;
-  }
-
-  _warmupBindings() {
-    const byTerm = new Map();
-    const custom = [];
-
-    this.variants.warmup.forEach((variant, index) => {
-      const base  = variant.terms[0];
-      const known = base && this.terms.some((term) => term.useKey === base.useKey);
-      if (known && !byTerm.has(base.useKey)) byTerm.set(base.useKey, index);
-      else custom.push(index);
-    });
-
-    return { byTerm, custom };
-  }
-
-  _paintWarmupCatalog() {
-    if (!this.warmupCatalogGridEl) return;
-
-    const { byTerm, custom } = this._warmupBindings();
-
-    this.warmupCatalogGridEl.innerHTML = "";
-    this.terms.forEach((term) => {
-      const index   = byTerm.has(term.useKey) ? byTerm.get(term.useKey) : -1;
-      const variant = index >= 0 ? this.variants.warmup[index] : null;
-      this.warmupCatalogGridEl.appendChild(this._warmupLossCard(term, variant, index));
-    });
-
-    this.warmupCustomEl.innerHTML = "";
-    custom.forEach((index) => this.warmupCustomEl.appendChild(this._card("warmup", this.variants.warmup[index], index)));
-    const hasCustom = custom.length > 0;
-    this.warmupCustomEl.hidden     = !hasCustom;
-    this.warmupCustomHeadEl.hidden = !hasCustom;
-
-    if (this.warmupCountEl) {
-      const n = this.variants.warmup.length;
-      this.warmupCountEl.textContent = `${n} selected = ${n} trial${n === 1 ? "" : "s"}`;
-    }
-  }
-
-  _warmupLossCard(term, variant, index) {
-    const on       = !!variant;
-    const card     = document.createElement("div");
-    card.className = "exp-loss-card" + (on ? " is-on" : "");
-
-    const head     = document.createElement("div");
-    head.className = "exp-loss-card__head";
-
-    const toggle     = document.createElement("button");
-    toggle.type      = "button";
-    toggle.className = "switch exp-loss-card__switch" + (on ? " is-on" : "");
-    toggle.setAttribute("role", "switch");
-    toggle.setAttribute("aria-checked", String(on));
-    toggle.title     = on ? "Drop this loss from the sweep" : "Add this loss as a trial";
-    toggle.innerHTML = `<span class="switch__knob"></span>`;
-    toggle.addEventListener("click", () => this._toggleWarmupLoss(term, index));
-
-    const name       = document.createElement("span");
-    name.className   = "exp-loss-card__name";
-    name.textContent = term.key;
-
-    head.appendChild(toggle);
-    head.appendChild(name);
-    card.appendChild(head);
-
-    if (!on) return card;
-
-    const body     = document.createElement("div");
-    body.className = "exp-loss-card__body";
-
-    const labelRow     = document.createElement("label");
-    labelRow.className = "exp-loss-card__labelrow";
-    labelRow.innerHTML = `<span>label</span>`;
-    const label        = document.createElement("input");
-    label.className    = "cfg-edit__input";
-    label.value        = variant.label;
-    label.spellcheck   = false;
-    label.title        = "variant label, used in the run name";
-    label.addEventListener("change", () => {
-      const wanted = label.value.trim() || variant.label;
-      const taken  = new Set(this.variants.warmup.filter((other) => other !== variant).map((other) => other.label));
-      variant.label = taken.has(wanted) ? this._uniqueLabel("warmup", wanted) : wanted;
-      label.value   = variant.label;
-      this._emit("warmup");
-    });
-    labelRow.appendChild(label);
-    body.appendChild(labelRow);
-
-    const baseRow     = document.createElement("div");
-    baseRow.className = "exp-loss-card__base";
-    baseRow.innerHTML = `<span class="exp-loss-card__weightlabel">weight</span>`;
-    const baseWeight       = document.createElement("input");
-    baseWeight.className    = "cfg-edit__input";
-    baseWeight.type        = "number";
-    baseWeight.step        = "any";
-    baseWeight.value       = String(variant.terms[0].weight);
-    baseWeight.spellcheck  = false;
-    baseWeight.title       = "loss weight";
-    baseWeight.addEventListener("change", () => {
-      variant.terms[0].weight = Number(baseWeight.value) || 0;
-      this._emit("warmup");
-    });
-    baseRow.appendChild(baseWeight);
-    body.appendChild(baseRow);
-
-    if (variant.terms.length > 1) {
-      const extras     = document.createElement("div");
-      extras.className = "exp-card__terms";
-      variant.terms.forEach((extra, ti) => {
-        if (ti === 0) return;
-        extras.appendChild(this._termRow("warmup", variant, extra, ti));
-      });
-      body.appendChild(extras);
-    }
-
-    const extrasKeys = Object.keys(variant.extras);
-    if (extrasKeys.length) {
-      const kept       = document.createElement("div");
-      kept.className   = "exp-card__extras";
-      kept.textContent = `raw keys kept: ${extrasKeys.join(", ")}`;
-      body.appendChild(kept);
-    }
-
-    const addTerm = LaunchWidgetDom.mini("Add term", () => {
-      const unused = this.terms.find((candidate) => !variant.terms.some((vt) => vt.useKey === candidate.useKey));
-      const pick   = unused || this.terms[0];
-      variant.terms.push({ useKey: pick.useKey, weightKey: pick.weightKey, weight: pick.defaultWeight });
-      this._emit("warmup");
-    });
-    addTerm.classList.add("exp-card__add");
-    body.appendChild(addTerm);
-
-    card.appendChild(body);
-    return card;
-  }
-
-  _toggleWarmupLoss(term, index) {
-    if (index >= 0) this.variants.warmup.splice(index, 1);
-    else this.variants.warmup.push({ label: this._uniqueLabel("warmup", term.key), terms: [{ useKey: term.useKey, weightKey: term.weightKey, weight: term.defaultWeight }], extras: {} });
-
-    this._emit("warmup");
   }
 
   _seedsSuffix(trials) {

@@ -4,7 +4,7 @@
     "normalization": "The stage that standardizes network inputs and outputs, mapping heavy-tailed input channels and Gaussian parameters onto stable numeric ranges for training and inference. It fits per-channel location/scale transforms from pixel statistics, persists them, and bounds predicted outputs to a physically valid range. The configs here control per-channel normalization recipes, per-slot strategy selection for input and output channels, runtime output clamping, and the persisted fitted statistics applied at train and inference time.",
     "dataset": "The stage that assembles trainable examples from a preprocessed dataset run. It selects input and target channels, tiles cropped scenes into overlapping patches, applies augmentation, and builds the train/val/test dataloaders. The configs here control which stack channels and Aux form the input, which per-Gaussian parameters are predicted, patch tiling and augmentation, and the parallel assembly of the image-patch datasets.",
     "architectures": "The stage that defines the backbone architectures. Each config specifies one model variant's layer geometry, output-head structure, and per-group optimizer settings. The configs here cover U-Net and transformer backbones predicting per-pixel Gaussian-mixture parameters.",
-    "training": "The stage that optimizes the backbone. It binds architecture, loss, optimization, scheduling, and runtime sub-configs into one resolved run and manages queuing and sweeps. The configs here control loss term weighting and curricula, optimizer, scheduler, warmup, early-stopping and gradient-clipping policy, filesystem layout, VRAM reservation and resource monitoring, and the trainer and entry configs.",
+    "training": "The stage that optimizes the backbone. It binds architecture, loss, optimization, scheduling, and runtime sub-configs into one resolved run and manages queuing and sweeps. The configs here control loss term weighting, optimizer, scheduler, warmup, early-stopping and gradient-clipping policy, filesystem layout, VRAM reservation and resource monitoring, and the trainer and entry configs.",
     "resources": "Host and device sampling settings shared by every training family: whether the resource monitor runs, how often it samples CPU, RAM, shared memory and GPU memory, whether samples go to TensorBoard, and the utilisation levels that raise a warning in the run log. They live outside the training package so that a long-running processing entry can carry them without importing torch.",
     "inference": "The stage that runs trained checkpoints over data splits to produce predictions, evaluations, and reports. It drives sliding-window prediction for backbone runs, scheduling one worker per run across a GPU pool. The configs here control the per-run inference driver, its output subdirectory and filename layout, and the batch entry point that queues inference across all discovered runs.",
     "benchmark": "The stage that compares multiple model architectures on the same data. It trains each backbone at its own configured size, runs inference, and assembles a cross-model comparison report. The configs here control batched inference and its diagnostic artifacts, the comparison report assembly, and the top-level sweep orchestration.",
@@ -727,7 +727,7 @@
       "summary": "Grid crossing output heads with parameter-matching strategies on one fixed backbone for the head-and-matching trial planner",
       "fields": {
         "heads": "Output heads to cross, each trained once per matching strategy: conv, multihead, per_gaussian, or set_pred",
-        "matchings": "Parameter-matching strategies applied to both curriculum stages, each crossed with every head: sorted_gt or hungarian"
+        "matchings": "Parameter-matching strategies applied to the loss, each crossed with every head: sorted_gt or hungarian"
       }
     },
     "training/backbone::PairTrialsConfig": {
@@ -743,7 +743,7 @@
     "training/backbone::LogEnergyTrialsConfig": {
       "summary": "Weight sweep of the log-energy curve term on top of the standard loss for the log-energy trial planner",
       "fields": {
-        "weights": "Candidate log-energy weights, one training run each; the term is enabled in both curriculum stages so it accompanies the cosine term from epoch 0, all must be positive and unique",
+        "weights": "Candidate log-energy weights, one training run each; the term accompanies the cosine term from epoch 0, all must be positive and unique",
         "replace_covariance": "Disable moments in both stages of every arm including the baseline, so the sweep tests log-energy as the replacement for the covariance tail repair rather than an addition",
         "include_baseline": "Prepend one run of the standard loss without the log-energy term, as the reference for the sweep"
       }
@@ -822,10 +822,10 @@
         "io": "IOConfig sub-config holding the run logdir; the TensorBoard writer is runtime state owned by the run metadata and passed to the trainer directly",
         "optimizer": "OptimizerConfig sub-config for the AdamW-style optimizer (lr, betas, eps, weight decay, lr scale)",
         "training": "TrainingLoopConfig sub-config for the training loop: epochs, validation frequency, AMP, gradient accumulation, EMA, resume (batch size and worker count are never part of BackboneTrainerConfig, they only drive the DataLoader built upstream by ConfigFactory; scheduler/warmup/clip knobs live in their own top-level fields here)",
-        "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch, overwritten from the entry config's curriculum before training starts",
         "resources": "ResourceConfig sub-config controlling the system-resource monitor (poll interval, TensorBoard logging, RAM/VRAM/swap/shm warn thresholds)",
         "memory": "MemoryConfig sub-config governing CUDA cache clearing cadence and VRAM reservation to protect other GPU users",
-        "gradient_clipper": "GradientClipperConfig sub-config selecting the gradient-clip mode (disabled, fixed, adaptive_percentile, or adaptive_mean_std) and its thresholds"
+        "gradient_clipper": "GradientClipperConfig sub-config selecting the gradient-clip mode (disabled, fixed, adaptive_percentile, or adaptive_mean_std) and its thresholds",
+        "loss": "LossConfig selecting the loss terms and their weights for the whole run"
       }
     },
     "training/backbone::BackboneEntryConfig": {
@@ -843,7 +843,6 @@
         "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation; the special key all_groups_lr fans out to every *_lr field of the chosen architecture (uniform learning rate across parameter groups), with explicit per-group keys applied afterwards",
         "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-channel labels",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
-        "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch, defaults to the standard recipe (param L1 at 1 plus cosine curve at 0.5 in both stages)",
         "input": "InputConfig sub-config selecting which channel groups (primary, secondaries, derived, Aux) feed the network, defaults to the full stack",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
@@ -852,12 +851,10 @@
         "infer_at_end": "Hold all inference until every training job of the fan-out has finished, then run one inference job per completed run through the same GPU queue; keeps the GPUs saturated with training first, mutually exclusive with infer_after",
         "inference": "InferenceConfig sub-config used to run inference automatically after training when infer_after or infer_at_end is set",
         "trials_enabled": "Enable the multi-trial GPU sweep (TrainScheduler) instead of a single training run",
-        "trials_mode": "Sweep dimension the trial scheduler varies: curriculum, warmup, presence, physics, pair, log_energy, secondary, patch, input, context, reach, head, augmentation, clamp, stability, ema or amp",
-        "warmup_losses": "Named loss-term override presets: in trials_mode=curriculum applied to the curriculum warmup stage and crossed against every complete_losses preset (one run per pair); in trials_mode=warmup applied instead to the complete stage with curriculum disabled, one run per preset",
-        "complete_losses": "Named loss-term override presets applied to the curriculum complete stage, used only by trials_mode=curriculum where each preset is crossed against every warmup_losses preset (one run per pair)",
-        "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, swept with curriculum disabled and every trial repeated across the seeds list",
-        "pair_trials": "PairTrialsConfig sub-config for the loss-pair sweep pairing one fixed base component with each candidate second component and weight, curriculum disabled",
-        "log_energy_trials": "LogEnergyTrialsConfig sub-config for the log-energy weight sweep adding the term to the standard loss in both curriculum stages, one run per weight",
+        "trials_mode": "Sweep dimension the trial scheduler varies: presence, physics, pair, log_energy, secondary, patch, input, context, reach, head, augmentation, clamp, stability, ema or amp",
+        "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, every trial repeated across the seeds list",
+        "pair_trials": "PairTrialsConfig sub-config for the loss-pair sweep pairing one fixed base component with each candidate second component and weight",
+        "log_energy_trials": "LogEnergyTrialsConfig sub-config for the log-energy weight sweep adding the term to the standard loss, one run per weight",
         "secondary_trials": "SecondaryTrialsConfig sub-config for the secondary-channel selection sweep (strategy, count, sampling seed)",
         "patch_trials": "PatchTrialsConfig sub-config for the rectangular patch-shape grid sweep under a constant pixel budget",
         "input_trials": "Named input-channel presets (use_primary/use_secondaries/use_derived/use_aux) each scoped by a mandatory tracks key: all expands the secondary list to every channel of the dataset, reduced keeps the configured secondary selection; defaults cover the full grid of channel-amplitude-only, derived-phase-only and the combined stack on both scopes, every base variant duplicated as an explicit no-aux (-noaux) and with-aux (-aux) version",
@@ -871,7 +868,8 @@
         "gpus": "List of GPU device indices across which queued runs are distributed and launched in parallel; feeds the trials fan-out when trials are enabled and the per-seed fan-out of a plain multi-seed run otherwise",
         "ddp": "Train the single resolved seed data-parallel across the gpus devices: one synchronised rank process per GPU sharing the configured global batch (batch_size must divide by the rank count, so the LR batch rule is preserved). Rank 0 starts alone and owns the canonical run directory, and the other ranks join once its resume gate has settled that directory, mirroring their artifacts into the ddp/rank<N> subtree. Gradients are averaged every optimizer window and evaluation losses reduced across ranks, so checkpointing and early stopping decide identically everywhere. Greyed out while a multi-seed sweep is configured, since it trains exactly the one seed pinned in the seed field; also rejects the pre-training probes. Local-only for now: the ranks are subprocesses on this machine's own GPUs, so a cluster launch refuses it, as does a trial sweep, whose units already take one GPU each",
         "gpus_file": "Path of the live GPU pool control file for this fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the experiment while it runs (added devices pick up queued jobs, removed devices retire once the job in flight ends). Empty places gpu_pool.json inside the trials directory for trials, or the base run directory for a multi-seed fan-out",
-        "poll_interval_s": "Seconds between successive polls of the run queue while waiting for GPUs or completed jobs"
+        "poll_interval_s": "Seconds between successive polls of the run queue while waiting for GPUs or completed jobs",
+        "loss": "LossConfig selecting the loss terms and their weights for the whole run, defaulting to parameter L1 with Hungarian matching, active normalization, presence balance and a cosine curve term"
       }
     },
     "training/general/loss::LossConfig": {
@@ -914,19 +912,6 @@
         "weight_moments": "Relative weight of the moments term in the weighted-average loss",
         "moments_weights": "Per-moment sub-weights for mass, mean, and spread combined in the moments loss",
         "power_floor": "Integrated target power a pixel must exceed to enter the total-power and moments terms; pixels at or below it are masked out, the share kept is logged as loss_monitor/moment_valid_frac, and a batch with none contributes 0.0 and is flagged in loss_monitor/moment_empty_batch; also floors those terms' power-normalization denominators"
-      }
-    },
-    "training/general/loss::LossCurriculumConfig": {
-      "summary": "Schedules a two-phase warmup-to-complete switch between loss configurations during training",
-      "fields": {
-        "enabled": "Activate the two-stage warmup-to-complete loss curriculum for this run",
-        "swap_epoch": "Epoch at which the warmup loss config switches to complete; must be below training.epochs",
-        "inherit": "Copy CLI-overridden complete-stage field values into the matching warmup field, unless warmup was overridden separately or the two stages default that field differently",
-        "warmup": "LossConfig used before swap_epoch; ignored entirely when the curriculum is disabled",
-        "complete": "LossConfig used from swap_epoch onward, or for the whole run when the curriculum is disabled",
-        "reset_lr": "Restart the LR scheduler's progress and re-apply warmup-adjusted LR at the swap epoch",
-        "reset_warmup": "Restart the warmup step counter and re-apply warmup-adjusted LR at the swap epoch",
-        "reset_optimizer": "Clear Adam optimizer moment state (m/v) for all parameters at the swap epoch"
       }
     },
     "training/general/optimization::OptimizerConfig": {
@@ -1242,7 +1227,7 @@
         "input": "InputConfig sub-config selecting the input channel stack fed to each model, defaults to the full stack (primary+secondaries+derived, Aux off)",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
-        "loss": "LossConfig base loss-term weights (the curriculum's complete stage) that each swept loss component is layered onto",
+        "loss": "LossConfig base loss-term weights that each swept loss component is layered onto",
         "gpus": "list of GPU device indices across which the queued sweep's jobs are distributed and launched in parallel",
         "gpus_file": "Path of the live GPU pool control file for this queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it is in flight (added devices pick up queued jobs, removed devices retire once the job in flight ends). Empty places gpu_pool.json inside the run directory",
         "heads": "Output heads crossed with every backbone in the sweep; each backbone x head pair runs as its own unit (default [conv])",
@@ -1279,7 +1264,6 @@
         "inference": "InferenceQueueConfig sub-config governing the queue that runs per-fold inference jobs after training",
         "comparison": "ComparisonReportConfig sub-config controlling the cross-fold comparison report generated once all folds finish",
         "input": "InputConfig sub-config selecting the input channel stack every fold trains on, defaults to the full stack (primary+secondaries+derived, Aux off)",
-        "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch, applied to every fold's trainer",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping, shared across folds' datasets",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to every fold's training patches",
         "prior_bias_init": "Start each backbone fold's conv output head biases at the prior of that fold's training labels instead of PyTorch's random U(-1/sqrt(fan_in), 1/sqrt(fan_in)) draw: per output channel, the mean label in the model's normalized output space over the fold's training pixels where that slot is active (slots in sorted_gt order, activity at the label run's threshold); every other weight keeps its default init and the values land in each fold run's meta/head_prior_bias.json. Backbone family only, needs backbone_head conv and raises otherwise; default off",
@@ -1291,7 +1275,8 @@
         "seed": "Base random seed used for a fold when no per-seed override is given, controlling weight init, shuffling, and augmentation",
         "seeds": "List of seeds for a multi-seed sweep, one run per fold and seed nested as seed<N> inside each fold directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "poll_interval_s": "Seconds between successive polls of the fold job queue while waiting for GPUs or completed jobs",
-        "resume_from": "Path at or inside an existing cross-validation run to finish (the run directory, its pipeline, folds or one fold run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every fold x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference splits run. Empty starts a fresh run"
+        "resume_from": "Path at or inside an existing cross-validation run to finish (the run directory, its pipeline, folds or one fold run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every fold x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference splits run. Empty starts a fresh run",
+        "loss": "LossConfig every fold trains under, defaulting to the training entry's loss"
       }
     },
     "tuning/general::TuningConfig": {
@@ -1328,10 +1313,10 @@
         "skip_models": "model names excluded from the sweep's registry-driven model loop",
         "run_tag": "optional label naming this sweep's run directory and Optuna study/database, defaults to a timestamp",
         "training": "TrainingQueueConfig sub-config supplying the base training-loop/queue settings (epochs, batch size, LR schedule, clipping, splits) shared across all trials",
-        "curriculum": "LossCurriculumConfig sub-config defining the warmup/complete loss schedule applied to every backbone trial",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategy shared by all backbone trials",
         "augmentation": "AugmentationConfig sub-config setting flip/rot90/noise probabilities applied to training patches across all backbone trials",
-        "resume_from": "Path at or inside an existing tuning run to continue (the run directory or any path inside it). The run recorded configuration beside its Optuna database is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and every study is topped up to the trial target; the study-defining fields stay guarded exactly as with --resume. Empty starts a fresh run"
+        "resume_from": "Path at or inside an existing tuning run to continue (the run directory or any path inside it). The run recorded configuration beside its Optuna database is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and every study is topped up to the trial target; the study-defining fields stay guarded exactly as with --resume. Empty starts a fresh run",
+        "loss": "LossConfig every tuning trial trains under, defaulting to the training entry's loss"
       }
     },
     "comparison::TrialComparisonConfig": {

@@ -14,7 +14,6 @@ def _scheduler() -> None:
     EnvironmentPinner.threads()
 
     from configuration.cross_validation             import CrossValidationConfig
-    from configuration.training                     import CurriculumInheritance, default_curriculum
     from pipelines.cross_validation.pipeline        import CrossValidationPipeline
     from pipelines.shared.orchestration.resumed_run import ResumedRun
     from tools.runtime.config_cli                   import ConfigCli
@@ -27,9 +26,7 @@ def _scheduler() -> None:
         resumed = ResumedRun(CrossValidationConfig, config, cli.overrides)
         config  = resumed.load()
 
-    inherited = CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
-
-    pipeline = CrossValidationPipeline(config=config, entry_script=Path(__file__).resolve(), resumed=resumed, inherited=inherited)
+    pipeline = CrossValidationPipeline(config=config, entry_script=Path(__file__).resolve(), resumed=resumed)
     pipeline.run()
 
 

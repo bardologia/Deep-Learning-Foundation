@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from configuration.cross_validation             import CrossValidationConfig
-from configuration.training                     import CurriculumInheritance, default_curriculum
 from pipelines.cross_validation.stages          import FoldUnitStage
 from pipelines.shared.orchestration.resumed_run import ResumedRun
 from tools.runtime.config_cli                   import ConfigCli
@@ -72,7 +71,5 @@ class CrossValidationLauncher:
 
         if config.resume_from:
             config = ResumedRun(CrossValidationConfig, config, cli.overrides).load()
-
-        CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
 
         return CrossValidationClusterScheduler(config=config, cli_overrides=cli.overrides, entry_script=self.entry_script)

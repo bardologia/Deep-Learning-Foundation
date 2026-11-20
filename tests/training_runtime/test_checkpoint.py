@@ -10,10 +10,9 @@ from tools.training.checkpoint import Checkpoint
 
 
 class StubTrainer:
-    def __init__(self, model, loss_generation=0):
-        self.model     = model
-        self.criterion = SimpleNamespace(loss_generation=loss_generation)
-        self.ema       = SimpleNamespace(enabled=False)
+    def __init__(self, model):
+        self.model = model
+        self.ema   = SimpleNamespace(enabled=False)
 
     def capture_state(self, epoch: int) -> dict:
         return {
@@ -107,22 +106,6 @@ def test_restore_best_noop_when_no_checkpoint(tmp_path, logger, tracker):
         assert torch.equal(v, before[k])
 
 
-def test_loss_generation_change_resets_baseline(tmp_path, logger, tracker):
-    ckpt    = Checkpoint(logger, tracker, str(tmp_path / "best.pt"))
-    trainer = StubTrainer(_model(), loss_generation=0)
-
-    ckpt.step(1.0, 1, trainer)
-    assert ckpt.best_val_loss == 1.0
-
-    trainer.criterion.loss_generation = 1
-    improved = ckpt.step(5.0, 2, trainer)
-
-    assert improved              is True
-    assert ckpt.loss_generation  == 1
-    assert ckpt.best_val_loss    == 5.0
-    assert ckpt.best_epoch       == 2
-
-
 class NumpyAxisTrainer(StubTrainer):
     def capture_state(self, epoch: int) -> dict:
         return {
@@ -142,15 +125,3 @@ def test_restore_best_with_numpy_axis_like_real_trainer(tmp_path, logger, tracke
 
     restored = torch.load(str(tmp_path / "best.pt"), map_location="cpu", weights_only=False)
     assert isinstance(restored["z_axis"], np.ndarray)
-
-
-def test_reset_baseline_clears_state(tmp_path, logger, tracker):
-    ckpt = Checkpoint(logger, tracker, str(tmp_path / "best.pt"))
-    ckpt.best_val_loss = 0.1
-    ckpt.best_epoch    = 4
-
-    ckpt.reset_baseline(loss_generation=2, epoch=10)
-
-    assert ckpt.best_val_loss   == float("inf")
-    assert ckpt.best_epoch      == -1
-    assert ckpt.loss_generation == 2

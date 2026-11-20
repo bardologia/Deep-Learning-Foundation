@@ -102,18 +102,14 @@ def test_a_first_launch_records_no_config_change(tmp_path):
     assert pipeline.archived_config is None
 
 
-def test_a_resumed_launch_refreshes_and_logs_the_resumed_report_instead_of_the_relaunch_warning(tmp_path):
+def test_a_resumed_launch_logs_the_resumed_report_instead_of_the_relaunch_warning(tmp_path):
     StubPipeline(_config(tmp_path)).logger.close()
 
     class FakeResumed:
 
         def __init__(self) -> None:
-            self.root      = tmp_path / "unit_run"
-            self.logged    = False
-            self.refreshed = None
-
-        def refresh(self, config) -> None:
-            self.refreshed = config
+            self.root   = tmp_path / "unit_run"
+            self.logged = False
 
         def log(self, logger) -> None:
             self.logged = True
@@ -125,8 +121,7 @@ def test_a_resumed_launch_refreshes_and_logs_the_resumed_report_instead_of_the_r
     second._log_launch()
     second.logger.close()
 
-    assert resumed.logged    is True
-    assert resumed.refreshed is changed
+    assert resumed.logged is True
     assert "differ from the configuration this run recorded" not in _log(second)
 
 
