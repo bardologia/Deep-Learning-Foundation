@@ -180,13 +180,15 @@ cross-validation ten folds and the tuning a hundred trials per backbone, each un
 seeds or for tens of epochs. A first launch on the example dataset can be much smaller:
 
 ```bash
-python main/experiments/benchmark.py --seeds "[0]" --training.epochs 2 --skip_models unet_skip,resunet,attention_unet,unetplusplus,linknet,swin_unet,transunet,unetr,deeplabv3plus,segformer,convnext_unet,dense_unet,hrnet,multires_unet,fpn,u2net,local_cnn,nafnet
+python main/experiments/benchmark.py --seeds "[0]" --training.epochs 2 --training.batch_size 16 --skip_models unet_skip,resunet,attention_unet,unetplusplus,linknet,swin_unet,transunet,unetr,deeplabv3plus,segformer,convnext_unet,dense_unet,hrnet,multires_unet,fpn,u2net,local_cnn,nafnet
 python main/experiments/cross_validate.py --backbone_name unet --folds.n_folds 3 --seeds "[0]" --training.epochs 2
-python main/experiments/tune.py --model unet --tuning.n_trials 3 --tuning.n_epochs 2
+python main/experiments/tune.py --model unet --tuning.n_trials 3 --tuning.n_epochs 2 --tuning.search_arch false
 ```
 
 The benchmark line keeps unet and pixel_mlp; the console's model toggle builds the same
-skip list by clicking.
+skip list by clicking. The batch size of 16 keeps pixel_mlp inside a 4 GB GPU. The tuning
+line searches learning rates and weight decays only; with `--tuning.search_arch true` the
+sampled architectures reach a few hundred million parameters and need a larger GPU.
 
 The eighteen entries under `main/analysis/` read finished runs: trial, seed and run
 comparisons, weight and activation x-rays, receptive field measurement, input attribution
