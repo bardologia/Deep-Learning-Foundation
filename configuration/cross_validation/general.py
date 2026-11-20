@@ -44,8 +44,6 @@ class CrossValidationConfig:
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
 
-    prior_bias_init : bool = False
-
     inference_splits : list[str] = field(default_factory=lambda: ["val", "test"])
 
     gpus            : list[int]  = field(default_factory=lambda: [0])

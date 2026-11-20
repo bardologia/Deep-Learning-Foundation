@@ -4,110 +4,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import torch
 
 from configuration.dataset                         import DatasetConfig
 from configuration.training                        import BackboneTrainerConfig
 from models                                        import get_backbone
-from pipelines.backbone.dataset.datasets           import MultiRegionDataset
 from pipelines.backbone.dataset.pipeline           import DatasetPipeline
 from pipelines.backbone.training.trainer           import Trainer
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
 from pipelines.shared.config.run_metadata          import TrainingRunMetadata
 from pipelines.shared.model.model_builder          import ModelBuilder
-from tools.data.gaussians                          import GaussianActivity, GaussianAxis, GaussianHead, GaussianSlotSorter
-from tools.data.io                                 import FileIO
+from tools.data.gaussians                          import GaussianAxis, GaussianHead
 from tools.runtime.reproducibility                 import Reproducibility
-
-
-class HeadPriorBias:
-
-    PARAMS    = ("amplitude", "mu", "sigma")
-    ROW_CHUNK = 256
-
-    def __init__(self, dataset, n_gaussians: int, activity_threshold: float, logger) -> None:
-        self.dataset            = dataset
-        self.n_gaussians        = n_gaussians
-        self.activity_threshold = activity_threshold
-        self.logger             = logger
-
-    @property
-    def channel_names(self) -> list[str]:
-        return [f"slot_{slot}_{param}" for slot in range(self.n_gaussians) for param in self.PARAMS]
-
-    def _head_bias(self, model) -> torch.nn.Parameter:
-        bias = model.output_head.bias
-
-        return bias
-
-    def _parts(self) -> list:
-        return list(self.dataset.parts) if isinstance(self.dataset, MultiRegionDataset) else [self.dataset]
-
-    def _accumulate(self, labels: np.ndarray, sums: np.ndarray, counts: np.ndarray) -> None:
-        n_params = len(self.PARAMS)
-
-        for start in range(0, labels.shape[1], self.ROW_CHUNK):
-            physical   = np.asarray(labels[:, start:start + self.ROW_CHUNK], dtype=np.float32)
-            ordered    = GaussianSlotSorter.by_mean(physical, self.n_gaussians, self.activity_threshold)
-            normalized = self.dataset.normalizer.normalize_output(ordered)
-
-            for slot in range(self.n_gaussians):
-                channels = slice(n_params * slot, n_params * (slot + 1))
-                active   = GaussianActivity.is_active(ordered[n_params * slot], self.activity_threshold)
-
-                sums[channels] += normalized[channels][:, active].sum(axis=1, dtype=np.float64)
-                counts[slot]   += int(active.sum())
-
-    def prior(self) -> tuple[np.ndarray, np.ndarray, int]:
-        n_params   = len(self.PARAMS)
-        n_channels = n_params * self.n_gaussians
-        sums       = np.zeros(n_channels, dtype=np.float64)
-        counts     = np.zeros(self.n_gaussians, dtype=np.int64)
-        n_pixels   = 0
-
-        for part in self._parts():
-            labels = part.gt_selected
-
-            self._accumulate(labels, sums, counts)
-            n_pixels += int(labels.shape[1] * labels.shape[2])
-
-        prior = sums / np.repeat(counts, n_params)
-
-        return prior, counts, n_pixels
-
-    def _log(self, prior: np.ndarray, default_bias: np.ndarray, counts: np.ndarray, n_pixels: int) -> None:
-        rows = {
-            "Activity threshold" : f"{self.activity_threshold:g}",
-            "Training pixels"    : f"{n_pixels:,}",
-        }
-
-        for slot in range(self.n_gaussians):
-            rows[f"Slot {slot} active"] = f"{int(counts[slot]):,} ({counts[slot] / n_pixels:.1%})"
-
-        for name, value, default in zip(self.channel_names, prior, default_bias):
-            rows[name] = f"{value:.4f} (default init {default:.4f})"
-
-        self.logger.section("[Head Prior Bias]")
-        self.logger.kv_table(rows)
-
-    def apply(self, model) -> dict:
-        bias                    = self._head_bias(model)
-        prior, counts, n_pixels = self.prior()
-        default_bias            = bias.detach().cpu().numpy().astype(np.float64)
-
-        with torch.no_grad():
-            bias.copy_(torch.as_tensor(prior, dtype=bias.dtype, device=bias.device))
-
-        self._log(prior, default_bias, counts, n_pixels)
-
-        return {
-            "activity_threshold" : self.activity_threshold,
-            "training_pixels"    : n_pixels,
-            "active_pixels"      : [int(count) for count in counts],
-            "channels"           : self.channel_names,
-            "default_bias"       : default_bias.tolist(),
-            "prior_bias"         : prior.tolist(),
-        }
 
 
 class TrainingPipeline:
@@ -120,7 +27,6 @@ class TrainingPipeline:
         model_config    = None,
         seed            : int = 0,
         run_name        : str | None = None,
-        prior_bias_init : bool = False,
     ) -> None:
         self.trainer_config  = trainer_config
         self.dataset_config  = dataset_config
@@ -128,7 +34,6 @@ class TrainingPipeline:
         self.model_config    = model_config
         self.seed            = seed
         self.run_name        = run_name
-        self.prior_bias_init = prior_bias_init
 
         patch                    = self.dataset_config.patch
         self.configured_patch    = (tuple(patch.size), tuple(patch.stride))
@@ -206,15 +111,6 @@ class TrainingPipeline:
 
         return overrides
 
-    def _apply_prior_bias(self, model, train_dataset) -> None:
-        gaussian_cfg = self.trainer_config.gaussian
-        prior_bias   = HeadPriorBias(train_dataset, gaussian_cfg.n_default_gaussians, gaussian_cfg.activity_threshold, self.logger)
-        record       = prior_bias.apply(model)
-        out_path     = self.run_metadata.metadata_directory / "head_prior_bias.json"
-
-        FileIO.save_json(record, out_path)
-        self.logger.info(f"Head prior bias saved: {out_path}")
-
     def _make_trainer(self, model, model_cfg, z_axis, norm_stats, run_dir: Path, logger, emit_docs: bool = True, writer=None):
         return Trainer(
             model      = model,
@@ -268,9 +164,6 @@ class TrainingPipeline:
             x_axis_length = int(z_axis.size)
 
             model, model_cfg = self._build_model(in_channels=in_channels, out_channels=out_channels)
-
-            if self.prior_bias_init:
-                self._apply_prior_bias(model, train_dataset)
 
             self.run_metadata.save_trainer_config()
             self.run_metadata.save_model_config(model_cfg, self.backbone_name)

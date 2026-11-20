@@ -112,51 +112,6 @@ def test_training_pipeline_saves_configs(test_data_dir, params_dir, tmp_path):
     assert len(written) > 0
 
 
-def _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init: bool) -> TrainingPipeline:
-    return TrainingPipeline(
-        trainer_config  = _trainer_config(test_data_dir, params_dir, tmp_path),
-        dataset_config  = _dataset_config(test_data_dir, params_dir),
-        backbone_name   = "unet",
-        model_config    = ModelBuilder.config_from_registry("unet", {"features": [8, 16]}, head="conv"),
-        seed            = 0,
-        run_name        = f"pipeline_prior_bias_{prior_bias_init}",
-        prior_bias_init = prior_bias_init,
-    )
-
-
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_training_pipeline_starts_the_conv_head_at_the_training_label_prior(test_data_dir, params_dir, tmp_path):
-    pipeline = _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init=True)
-    pipeline.run()
-
-    record      = FileIO.load_json(pipeline.run_metadata.run_directory / "meta" / "head_prior_bias.json")
-    threshold   = pipeline.trainer_config.gaussian.activity_threshold
-    n_gaussians = pipeline.trainer_config.gaussian.n_default_gaussians
-
-    labels     = np.load(params_dir / "parameters.npy", mmap_mode="r")
-    rows, cols = pipeline.dataset_config.split_regions.train.local_slices(pipeline.dataset_pipeline.layout.global_crop)
-    ordered    = GaussianSlotSorter.by_mean(np.asarray(labels[:3 * n_gaussians, rows, cols], dtype=np.float32), n_gaussians, threshold)
-    active     = [int(GaussianActivity.is_active(ordered[3 * slot], threshold).sum()) for slot in range(n_gaussians)]
-
-    assert record["activity_threshold"] == threshold
-    assert record["training_pixels"]    == 24 * 24
-    assert record["active_pixels"]      == active
-    assert len(record["prior_bias"])    == 3 * n_gaussians
-    assert np.isfinite(record["prior_bias"]).all()
-    assert not np.allclose(record["prior_bias"], record["default_bias"])
-
-
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_training_pipeline_keeps_the_default_head_bias_when_the_prior_is_off(test_data_dir, params_dir, tmp_path):
-    pipeline = _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init=False)
-    pipeline.run()
-
-    assert (pipeline.run_metadata.run_directory / "meta" / "run_summary.json").is_file()
-    assert not (pipeline.run_metadata.run_directory / "meta" / "head_prior_bias.json").exists()
-
-
 def test_training_pipeline_records_a_dataset_stage_abort_in_its_run_log(tmp_path, monkeypatch):
     trainer_config                   = _square_patch_trainer_config()
     trainer_config.io.logdir         = str(tmp_path)

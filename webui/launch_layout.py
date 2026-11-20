@@ -499,7 +499,6 @@ class LaunchLayout:
                 ]},
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
-                    {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Loss", "template": "loss", "at": "loss"},
@@ -601,7 +600,6 @@ class LaunchLayout:
                 ]},
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
-                    {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Loss", "template": "loss", "at": "loss"},

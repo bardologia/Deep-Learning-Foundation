@@ -48,10 +48,6 @@ class SingleTrainRunner:
         return self.config.backbone_head
 
     @property
-    def prior_bias_init(self) -> bool:
-        return self.config.prior_bias_init
-
-    @property
     def label(self) -> str:
         n_gaussians = self.factory.gaussian_config().n_default_gaussians
         return RunNaming.tag(self.model_name, self.model_head, self.config.loss, n_gaussians, self.config.augmentation)
@@ -96,7 +92,6 @@ class SingleTrainRunner:
             model_config    = self._model_config(),
             seed            = self.config.seed,
             run_name        = self.config.run_name,
-            prior_bias_init = self.prior_bias_init,
         )
 
     def _run_inference(self, run_directory: Path):

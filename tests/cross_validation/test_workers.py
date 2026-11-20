@@ -343,17 +343,15 @@ def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_pat
 def test_backbone_fold_trainer_uses_the_entry_loss(test_data_dir, tmp_path, monkeypatch):
     config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
-    config.prior_bias_init    = True
     worker                    = FoldTrainingWorker(config, run_tag="rt")
 
     captured = {}
 
     class _FakePipeline:
-        def __init__(self, trainer_config, dataset_config, backbone_name, model_config, seed, run_name, prior_bias_init):
+        def __init__(self, trainer_config, dataset_config, backbone_name, model_config, seed, run_name):
             captured["trainer_config"]  = trainer_config
             captured["dataset_config"]  = dataset_config
             captured["run_name"]        = run_name
-            captured["prior_bias_init"] = prior_bias_init
 
         def run(self):
             pass
@@ -370,7 +368,6 @@ def test_backbone_fold_trainer_uses_the_entry_loss(test_data_dir, tmp_path, monk
     run_tag = RunNaming.tag(config.backbone_name, config.backbone_head, config.loss, SynthesisConfig().k_max, config.augmentation)
     assert captured["run_name"] == f"{run_tag}_fold_1/seed7"
 
-    assert captured["prior_bias_init"] is True
     assert captured["dataset_config"].input_config is config.input
 
 

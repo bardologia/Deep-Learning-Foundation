@@ -292,11 +292,8 @@ the test evaluation.
 
 The loss refuses a configuration with no enabled term or with weights summing to zero,
 warns about enabled terms of weight zero, and refuses a z axis with fewer than two
-samples. The normalization fit refuses a non-finite location or scale. `prior_bias_init`
-(on `train_backbone` and `cross_validate`, off by default) starts the conv head's biases
-at the training-label prior in normalized output space and writes
-`meta/head_prior_bias.json`; it needs `--backbone_head conv`. Attention backbones run
-torch's fused `scaled_dot_product_attention`.
+samples. The normalization fit refuses a non-finite location or scale. Attention
+backbones run torch's fused `scaled_dot_product_attention`.
 
 ### Finishing a run that broke
 

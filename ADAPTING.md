@@ -130,8 +130,6 @@ The head that emits the parameters is chosen with `--backbone_head`, and
 
 - `conv`, a single 1x1 convolution to `out_channels`. It imposes no slot structure and is
   the only head that does not require `out_channels` to divide by `params_per_gaussian`.
-  `prior_bias_init` starts its biases at the training-label prior, which assumes three
-  channels per slot and raises otherwise.
 - `multihead`, three pixel MLPs, one each for amplitude, mean and width, interleaved back
   into slot order. It is written for three parameters per slot.
 - `per_gaussian`, one pixel MLP per slot emitting that slot's parameters.

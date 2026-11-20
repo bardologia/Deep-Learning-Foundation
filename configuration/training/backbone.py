@@ -161,8 +161,6 @@ class BackboneEntryConfig:
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
 
 
-    prior_bias_init : bool = False
-
     infer_after  : bool            = False
     infer_at_end : bool            = False
     inference    : InferenceConfig = field(default_factory=lambda: InferenceConfig.for_run_directory())
