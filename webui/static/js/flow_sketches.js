@@ -594,7 +594,7 @@ class FlowSketches {
   },
 
   schedule: {
-    tip: "Effective LR = base x cosine decay x linear warmup; the curriculum swaps objectives at swap epoch 15.",
+    tip: "Effective LR = base x cosine decay x linear warmup over warmup_fraction = 0.03 of the total optimizer steps; the curriculum swaps objectives at swap epoch 15.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="28" y1="118" x2="216" y2="118"/>
       <line class="skl-axis" x1="28" y1="22" x2="28" y2="118"/>
