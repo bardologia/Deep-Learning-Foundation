@@ -122,8 +122,8 @@ class SwinTransformerBlock(nn.Module):
         if self.shift_size == 0:
             return None
 
-        mask     = torch.zeros(1, height, width, 1, device=device)
-        z_slices = [
+        mask          = torch.zeros(1, height, width, 1, device=device)
+        height_slices = [
             slice(0, -self.window_size),
             slice(-self.window_size, -self.shift_size),
             slice(-self.shift_size, None),
@@ -134,9 +134,9 @@ class SwinTransformerBlock(nn.Module):
             slice(-self.shift_size, None),
         ]
         region_index = 0
-        for z_slice in z_slices:
+        for height_slice in height_slices:
             for width_slice in width_slices:
-                mask[:, z_slice, width_slice, :] = region_index
+                mask[:, height_slice, width_slice, :] = region_index
                 region_index += 1
 
         window_count = (height // self.window_size) * (width // self.window_size)
