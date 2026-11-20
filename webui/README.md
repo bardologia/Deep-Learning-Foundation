@@ -26,8 +26,7 @@ them in the facts rail.
 
 The HTTP transport is standard library only (`http.server` plus server-sent events), but
 the console itself needs the project environment. `web_ui_server.py` imports the cube
-explorer, fit lab, model probe, A/B autopsy, triage board, training-curve reader and
-system monitor at boot, and those pull numpy, matplotlib, scipy, torch, scikit-image,
+explorer, fit lab, model probe, A/B autopsy, triage board and system monitor at boot, and those pull numpy, matplotlib, scipy, torch, scikit-image,
 tensorboard and psutil. On a bare interpreter the server fails with an ImportError before
 it binds the port, which is why `run.sh` starts from the interpreter the profile records.
 

@@ -468,8 +468,7 @@ webui/run.sh 9000     # different port
 `run.sh` reads the interpreter, bind address and port from the machine profile's shell
 twin (`~/.config/ml-template/machine.env`) and refuses to start without one, pointing at
 `./install.sh`. The HTTP layer is standard library only, but the console runs inside the
-project environment: the cube explorer, fit lab, model probe and training-curve readers
-are imported at boot, so numpy, matplotlib, scipy, torch, scikit-image, tensorboard and
+project environment: the cube explorer, fit lab and model probe are imported at boot, so numpy, matplotlib, scipy, torch, scikit-image, tensorboard and
 psutil all have to be there, which is why the profile records the project environment's
 interpreter. Each launch page also has an interpreter picker filled from the conda envs
 the server discovers, with the profile's environment preselected.
