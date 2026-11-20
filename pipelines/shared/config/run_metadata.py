@@ -52,7 +52,7 @@ class RunDirectoryLeftovers:
             return
 
         if CompletionMarker.is_complete(run_directory):
-            raise ValueError(f"Run directory {run_directory} already holds a completed run ({', '.join(found)}) and training.resume is False, so a fresh run would overwrite it. Pick a new run_name, set resume=True to reuse the completed run, or delete the directory.")
+            raise SystemExit(f"Run directory {run_directory} already holds a completed run ({', '.join(found)}) and training.resume is False, so a fresh run would overwrite it. Pick a new run_name, set resume=True to reuse the completed run, or delete the directory.")
 
         logger.warning(f"Run directory {run_directory} holds an unfinished earlier attempt; deleting its artifacts before the fresh run starts: {', '.join(found)}")
 
@@ -90,7 +90,7 @@ class TrainingRunMetadata:
 
         try:
             RunDirectoryLeftovers.clear(self.run_directory, trainer_config.training.resume, self.logger)
-        except ValueError as error:
+        except SystemExit as error:
             if self._owns_logger:
                 self.logger.close(error)
             raise
