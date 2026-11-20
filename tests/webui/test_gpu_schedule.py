@@ -64,7 +64,7 @@ class StubGuard:
 
 class StubSystem:
     def __init__(self) -> None:
-        self.user    = "bard"
+        self.user    = "me"
         self.holders = {}
         self.blind   = False
 
@@ -235,8 +235,8 @@ def test_a_gpu_held_by_another_user_is_left_out_of_the_pool(schedule):
 def test_our_own_processes_never_block_the_pool(schedule):
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
-    system.occupy(2, "bard")
-    system.occupy(3, "bard")
+    system.occupy(2, "me")
+    system.occupy(3, "me")
 
     scheduler.tick(WEDNESDAY)
     scheduler.tick(WEDNESDAY_NIGHT)

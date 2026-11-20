@@ -89,7 +89,7 @@ so high-resolution detail and low-resolution context are mixed at every stage ra
 
 **No resolution bottleneck.** Every other CNN in the zoo compresses to $P/8$ or $P/16$ and reconstructs; position-sensitive information (the exact per-pixel target values) must survive that round trip through skip connections. HRNet never discards the full-resolution stream, which is precisely the property dense per-pixel regression rewards in human-pose and segmentation benchmarks.
 
-> The hypothesis: per-pixel $\mu$ estimation is position-critical, so a permanently high-resolution representation should reduce peak-location error relative to hourglass designs at equal capacity.
+> The hypothesis: dense per-pixel regression is position-critical, so a permanently high-resolution representation should reduce per-pixel error relative to hourglass designs at equal capacity.
 
 ---
 
