@@ -18,7 +18,7 @@ from tests.backbone_inference._helpers import StageLogger, build_run_directory
 from tests.conftest                    import RecordingLogger
 
 
-CHECKPOINT_META = {"epoch": 41, "best_val_loss": 0.125, "best_epoch": 37}
+CHECKPOINT_META = {"epoch": 42, "best_val_loss": 0.125, "best_epoch": 38}
 
 
 class _StubRun(AnalysisRun):
@@ -125,7 +125,7 @@ def test_activation_xray_pass_on_a_real_run_is_stamped(tmp_path, test_data_dir):
     provenance = json.loads((output / "analysis_provenance.json").read_text())
 
     assert (output / "activation_xray.json").is_file()
-    assert provenance["checkpoint"] == {"name": "best_model.pt", "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1}
+    assert provenance["checkpoint"] == {"name": "best_model.pt", "epoch": 2, "best_val_loss": 0.1, "best_epoch": 2}
     assert CompletionMarker.payload(output)["stage"] == "activation_xray"
     assert outcome.report_path == output / "activation_xray.md"
 

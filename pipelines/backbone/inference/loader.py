@@ -86,9 +86,9 @@ class RunLoader:
         model.eval()
 
         return {
-            "epoch"         : int(checkpoint["epoch"]),
+            "epoch"         : int(checkpoint["epoch"]) + 1,
             "best_val_loss" : float(checkpoint["best_val_loss"]),
-            "best_epoch"    : int(checkpoint["best_epoch"]),
+            "best_epoch"    : int(checkpoint["best_epoch"]) + 1,
         }
 
     def _region(self, dataset_config: DatasetConfig, split: str, region_override: Optional[CropRegion]) -> tuple[CropRegion, Optional[CropRegion]]:
@@ -135,7 +135,7 @@ class RunLoader:
         self.logger.section(f"[Model]         : '{backbone_name}'")
         self.logger.kv_table({
             "Checkpoint"       : checkpoint_path,
-            "Checkpoint epoch" : f"{checkpoint_meta['epoch'] + 1} (best epoch {checkpoint_meta['best_epoch'] + 1}, best val loss {checkpoint_meta['best_val_loss']:.6g})",
+            "Checkpoint epoch" : f"{checkpoint_meta['epoch']} (best epoch {checkpoint_meta['best_epoch']}, best val loss {checkpoint_meta['best_val_loss']:.6g})",
             "Input channels"   : ", ".join(input_channels),
             "Target channels"  : ", ".join(target_channels),
         })

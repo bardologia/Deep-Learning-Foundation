@@ -81,7 +81,7 @@ class InferencePipeline:
         metrics["split"]            = run.split_name
         metrics["split_region"]     = list(run.split_region.as_tuple())
         metrics["checkpoint_name"]  = self.config.checkpoint_name
-        metrics["checkpoint_epoch"] = run.checkpoint_meta["epoch"] + 1
+        metrics["checkpoint_epoch"] = run.checkpoint_meta["epoch"]
         metrics["code_commit"]      = GitState.commit()
 
         if run.core_region is not None:

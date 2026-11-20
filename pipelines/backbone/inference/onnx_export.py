@@ -57,7 +57,7 @@ class OnnxRunExporter:
         model.load_state_dict(checkpoint["params"])
         model.eval()
 
-        summary["checkpoint_epoch"]    = int(checkpoint["epoch"])
+        summary["checkpoint_epoch"]    = int(checkpoint["epoch"]) + 1
         summary["checkpoint_val_loss"] = float(checkpoint["best_val_loss"])
 
         return model, summary, patch_size

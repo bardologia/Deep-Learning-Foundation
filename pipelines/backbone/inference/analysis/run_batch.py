@@ -110,7 +110,7 @@ class AnalysisRun:
             "stage"      : self.stage,
             "split"      : self.config.split,
             "checkpoint" : self.config.checkpoint_name,
-            "epoch"      : run.checkpoint_meta["epoch"] + 1,
+            "epoch"      : run.checkpoint_meta["epoch"],
             "status"     : outcome.status,
         })
 

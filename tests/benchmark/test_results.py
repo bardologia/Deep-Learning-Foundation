@@ -106,8 +106,8 @@ def test_collector_reads_checkpoint_with_weights_only_false(tmp_path, logger_stu
     records = TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()
 
     assert records[0].checkpoint["best_val_loss"]  == pytest.approx(0.123)
-    assert records[0].checkpoint["best_epoch"]     == 7
-    assert records[0].checkpoint["epoch"]          == 9
+    assert records[0].checkpoint["best_epoch"]     == 8
+    assert records[0].checkpoint["epoch"]          == 10
     assert records[0].checkpoint["n_train_epochs"] == 10
 
 

@@ -62,7 +62,7 @@ def test_the_loader_rebuilds_the_run_and_the_predictor_stitches_its_split(tmp_pa
     predictions = Predictor(run, SilentLogger()).predict()
 
     assert run.target_channels == ["pointwise", "neighbourhood"]
-    assert run.checkpoint_meta == {"epoch": 1, "best_val_loss": 0.1, "best_epoch": 1}
+    assert run.checkpoint_meta == {"epoch": 2, "best_val_loss": 0.1, "best_epoch": 2}
     assert predictions.shape == (2, region.row_size, region.col_size)
     assert np.isfinite(predictions).all()
     assert np.array_equal(run.targets, targets[:, region.row_start:region.row_end, region.col_start:region.col_end])

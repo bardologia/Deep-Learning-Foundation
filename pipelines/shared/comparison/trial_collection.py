@@ -17,8 +17,6 @@ from tools.metrics.scoring                 import SeedAggregation
 from tools.monitoring.logger               import Logger
 from tools.runtime.completion              import CompletionMarker
 
-_CHECKPOINT_KEYS = ("best_val_loss", "best_epoch", "epoch")
-
 
 @dataclass
 class TrialRecord:
@@ -138,7 +136,7 @@ class TrialArtifactReader:
             return {}
 
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False, mmap=True)
-        info       = {key: checkpoint.get(key) for key in _CHECKPOINT_KEYS}
+        info       = {"best_val_loss": checkpoint["best_val_loss"], "best_epoch": checkpoint["best_epoch"] + 1, "epoch": checkpoint["epoch"] + 1}
 
         del checkpoint
 
