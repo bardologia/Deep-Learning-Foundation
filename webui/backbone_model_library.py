@@ -131,7 +131,7 @@ class BackboneModelLibrary:
                     {
                         "key": "dense_unet", "name": "DenseUNet", "skip": "Dense concat",
                         "head": "Single 1x1 conv", "params": "~1.0M", "recommended": False,
-                        "when": "Parameter efficiency through feature reuse. At matched capacity the deepest, thinnest model in the zoo.",
+                        "when": "Parameter efficiency through feature reuse. At a similar parameter budget the deepest, thinnest model in the zoo.",
                     },
                     {
                         "key": "multires_unet", "name": "MultiResUNet", "skip": "ResPath concat",

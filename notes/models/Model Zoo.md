@@ -84,7 +84,7 @@ Testing whether a strong hierarchical attention encoder with a near-trivial MLP 
 Evaluating modern convolution design (large depthwise kernels, inverted bottlenecks, LayerNorm, GELU) under the unchanged U-Net topology.
 
 ### Use DenseUNet when
-Parameter efficiency through feature reuse is the question; at matched capacity it is the deepest, thinnest model in the zoo.
+Parameter efficiency through feature reuse is the question; at a similar parameter budget it is the deepest, thinnest model in the zoo.
 
 ### Use HRNet when
 Per-pixel position accuracy is the priority: the full-resolution stream is never downsampled, avoiding the encode-decode round trip entirely.

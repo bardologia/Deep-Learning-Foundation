@@ -481,17 +481,17 @@
     "architectures/backbone::PixelMLPNetConfig": {
       "summary": "Pixel-wise MLP control baseline: a stack of 1x1 convolutions with no spatial context whatsoever, quantifying how much of backbone performance comes from per-pixel mapping capacity alone",
       "fields": {
-        "features": "Hidden layer widths of the per-pixel MLP, one entry per 1x1 convolution layer; the receptive field stays 1x1 regardless of depth; default [3200, 3200, 3200, 3200] (~30.8M, capacity-matched to the encode-decode backbones)",
+        "features": "Hidden layer widths of the per-pixel MLP, one entry per 1x1 convolution layer; the receptive field stays 1x1 regardless of depth; default [3200, 3200, 3200, 3200] (~30.8M parameters, close to the default unet)",
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
-        "dropout": "Element-wise dropout probability applied after each trunk layer's activation, masking hidden units independently per pixel; 0 disables dropout; default 0.3, stronger than the encode-decode backbones' 0.15 because the control overfits at matched capacity",
+        "dropout": "Element-wise dropout probability applied after each trunk layer's activation, masking hidden units independently per pixel; 0 disables dropout; default 0.3, stronger than the encode-decode backbones' 0.15",
         "activation": "Activation function used throughout the trunk (relu, leaky_relu, gelu, elu, silu)",
         "normalization": "Normalization layer inserted after every trunk convolution (batch, instance, group, none)",
         "conv_bias": "Whether trunk convolutions carry a bias term; kept off by default because each convolution is followed by a normalization layer",
         "init_mode": "Weight initialization scheme (default = PyTorch native, kaiming, xavier)",
         "trunk_lr": "AdamW learning rate for the trunk parameter group",
         "output_head_lr": "AdamW learning rate for the final 1x1 output convolution",
-        "trunk_wd": "Weight decay for the trunk parameter group; default 1e-2, raised from the backbones' 1e-4 to curb overfitting at matched capacity",
+        "trunk_wd": "Weight decay for the trunk parameter group; default 1e-2, higher than the backbones' 1e-4",
         "output_head_wd": "Weight decay for the final 1x1 output convolution",
         "shape_logger_types": "Module types the shape logger hooks into when tracing tensor shapes through the network; excluded from config persistence"
       }
@@ -499,20 +499,20 @@
     "architectures/backbone::LocalCNNConfig": {
       "summary": "Full-resolution CNN control baseline: a stack of ConvBlocks with no downsampling whose per-block kernel sizes set the receptive field, providing local-context-only regression between per-pixel processing (all 1x1) and the encode-decode backbones (global context)",
       "fields": {
-        "features": "Channel widths of the full-resolution trunk, one entry per ConvBlock (two convolutions each); default [1072, 1072] is the bare two-block 9x9 baseline (~31.1M, capacity-matched to the default unet). The context-ladder rungs override features and block_kernels together so every rung keeps the same depth and parameter budget while only the receptive field varies",
+        "features": "Channel widths of the full-resolution trunk, one entry per ConvBlock (two convolutions each); default [1072, 1072] is a two-block 9x9 baseline (~31.1M parameters, close to the default unet)",
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
-        "dropout": "Dropout2d probability applied after each ConvBlock; 0 disables dropout; default 0.3, stronger than the encode-decode backbones' 0.15 because the control overfits at matched capacity",
+        "dropout": "Dropout2d probability applied after each ConvBlock; 0 disables dropout; default 0.3, stronger than the encode-decode backbones' 0.15",
         "activation": "Activation function used throughout the trunk (relu, leaky_relu, gelu, elu, silu)",
         "normalization": "Normalization layer inserted after every trunk convolution (batch, instance, group, none)",
         "conv_bias": "Whether trunk convolutions carry a bias term; kept off by default because each convolution is followed by a normalization layer",
         "init_mode": "Weight initialization scheme (default = PyTorch native, kaiming, xavier)",
         "trunk_lr": "AdamW learning rate for the trunk parameter group",
         "output_head_lr": "AdamW learning rate for the final 1x1 output convolution",
-        "trunk_wd": "Weight decay for the trunk parameter group; default 1e-2, raised from the backbones' 1e-4 to curb overfitting at matched capacity",
+        "trunk_wd": "Weight decay for the trunk parameter group; default 1e-2, higher than the backbones' 1e-4",
         "output_head_wd": "Weight decay for the final 1x1 output convolution",
         "shape_logger_types": "Module types the shape logger hooks into when tracing tensor shapes through the network; excluded from config persistence",
-        "block_kernels": "Per-block convolution kernel sizes (odd, one entry per features entry); None means 3x3 everywhere. Each 3x3 block adds 4 px of receptive field while a 1x1 block adds none (RF = 1 + sum of 2*(k-1) per block), so mixing 3x3 and 1x1 blocks sets the receptive field at constant depth and near-constant width instead of coupling small fields to shallow-wide pancake stacks"
+        "block_kernels": "Per-block convolution kernel sizes (odd, one entry per features entry); None means 3x3 everywhere. Each 3x3 block adds 4 px of receptive field while a 1x1 block adds none (RF = 1 + sum of 2*(k-1) per block), so mixing 3x3 and 1x1 blocks sets the receptive field without changing the depth"
       }
     },
     "architectures/backbone::NAFNetConfig": {
@@ -520,7 +520,7 @@
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
-        "width": "Base channel width after the intro convolution; doubles at every encoder stage (width x 2^i) and is the single knob capacity matching scales",
+        "width": "Base channel width after the intro convolution; doubles at every encoder stage (width x 2^i) and so sets the parameter count",
         "enc_blocks": "NAFBlocks per encoder stage, one entry per stage; each stage ends in a stride-2 2x2 convolution that halves resolution and doubles channels; default [2, 2, 4, 8]",
         "middle_blocks": "NAFBlocks in the bottleneck stage at the coarsest resolution (width x 2^n_stages channels); default 12",
         "dec_blocks": "NAFBlocks per decoder stage, one entry per stage, must have the same length as enc_blocks; each stage starts with a 1x1 conv + PixelShuffle upsample and an additive skip from the matching encoder stage",

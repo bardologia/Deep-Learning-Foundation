@@ -75,7 +75,7 @@ Stage $i$ of the encoder stacks `enc_blocks[i]` NAFBlocks at width $c_i = \textt
 
 ## Parameter Reference
 
-See `NAFNetConfig` in `configuration/architectures/backbone.py` (`width` — the capacity-matching knob; `enc_blocks`, `middle_blocks`, `dec_blocks`; `dw_expand`, `ffn_expand`).
+See `NAFNetConfig` in `configuration/architectures/backbone.py` (`width`, which sets the parameter count; `enc_blocks`, `middle_blocks`, `dec_blocks`; `dw_expand`, `ffn_expand`).
 
 ---
 
