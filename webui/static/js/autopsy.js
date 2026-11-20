@@ -66,7 +66,7 @@ class AutopsyView {
     this._renderStrip();
 
     if (!this.runs.length) {
-      this.refs.hint.textContent = `No comparable inferences under ${data.root} (each needs metrics.json and cubes/pixel_mse.npy). Run inference with save_cubes first, or point the runs directory in the Results tab at the right place.`;
+      this.refs.hint.textContent = `No comparable inferences under ${data.root} (each needs metrics.json and maps/predictions.npy with maps/targets.npy). Run inference with save_maps first, or point the runs directory in the Results tab at the right place.`;
     }
   }
 
@@ -137,7 +137,7 @@ class AutopsyView {
 
     this.refs.hint.textContent = `A = ${data.run_a} · B = ${data.run_b} · region ${data.region[0]}×${data.region[1]} px`;
     this._render(data);
-    data.hotspots.forEach((spot, index) => this._loadProfile(spot, index, a, b, token));
+    data.hotspots.forEach((spot, index) => this._loadPixel(spot, index, a, b, token));
   }
 
   _render(data) {
@@ -160,8 +160,8 @@ class AutopsyView {
         html += `
           <article class="fl-card">
             <h3 class="cube-panel-title">${spot.winner} wins · row ${spot.row}, col ${spot.col}</h3>
-            <p class="cube-hint">block Δ pixel MSE (A−B): ${spot.mean_delta.toExponential(2)}</p>
-            <canvas id="autopsy-spot-${index}" data-fig="hotspot ${index + 1} row${spot.row} col${spot.col}" width="560" height="220"></canvas>
+            <p class="cube-hint">block Δ standardized squared error (A−B): ${spot.mean_delta.toExponential(2)}</p>
+            <div class="tbl-scroll" id="autopsy-spot-${index}"></div>
           </article>`;
       });
       html += `</div>`;
@@ -172,26 +172,26 @@ class AutopsyView {
     this.refs.out.innerHTML = html;
   }
 
-  async _loadProfile(spot, index, a, b, token) {
+  async _loadPixel(spot, index, a, b, token) {
     const data = await Api.get(
-      `/api/autopsy/profile?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&row=${spot.row}&col=${spot.col}`
+      `/api/autopsy/pixel?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&row=${spot.row}&col=${spot.col}`
     );
 
     if (token !== this.cmpToken) return;
 
     if (!data.ok) {
-      this.refs.hint.textContent = data.error || "profile failed";
+      this.refs.hint.textContent = data.error || "pixel lookup failed";
       return;
     }
 
-    const canvas = this.root.querySelector(`#autopsy-spot-${index}`);
-    if (!canvas) return;
+    const holder = this.root.querySelector(`#autopsy-spot-${index}`);
+    if (!holder) return;
 
-    SharedCharts.lineChart(canvas, data.z_axis, [
-      { values: data.gt, color: "#eef2f5", width: 1.2, label: "GT" },
-      { values: data.a,  color: "#2dd4bf", width: 1.7, label: "A" },
-      { values: data.b,  color: "#f87171", width: 1.7, label: "B" },
-    ]);
+    let html = `<table class="tbl tbl--diff"><thead><tr><th class="tbl-th">target channel</th><th class="tbl-th">target</th><th class="tbl-th">A</th><th class="tbl-th">B</th></tr></thead><tbody>`;
+    data.channels.forEach((name, channel) => {
+      html += `<tr><td class="tbl-key">${SharedCharts.esc(name)}</td><td>${this._fmt(data.target[channel])}</td><td>${this._fmt(data.a[channel])}</td><td>${this._fmt(data.b[channel])}</td></tr>`;
+    });
+    holder.innerHTML = `${html}</tbody></table>`;
   }
 
   _fmt(value) {

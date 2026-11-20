@@ -122,7 +122,7 @@ class AutopsyRouter(SubRouter):
     def declare(self, table: RouteTable) -> None:
         table.add("GET", "/api/autopsy/runs",    self.runs)
         table.add("GET", "/api/autopsy/compare", self.compare)
-        table.add("GET", "/api/autopsy/profile", self.profile)
+        table.add("GET", "/api/autopsy/pixel",   self.pixel)
 
     def runs(self, exchange: HttpExchange) -> None:
         exchange.send_result(self.autopsy.runs(exchange.text("base")))
@@ -134,8 +134,8 @@ class AutopsyRouter(SubRouter):
         )
         exchange.send_result(result)
 
-    def profile(self, exchange: HttpExchange) -> None:
-        result = self.autopsy.profile(
+    def pixel(self, exchange: HttpExchange) -> None:
+        result = self.autopsy.pixel(
             a   = exchange.text("a"),
             b   = exchange.text("b"),
             row = exchange.integer("row"),

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -10,26 +9,22 @@ from ab_autopsy import AbAutopsy
 from web_logger import WebLogger
 
 
-N_Z, N_ROWS, N_COLS = 6, 32, 32
+N_CHANNELS, N_ROWS, N_COLS = 2, 32, 32
 
 
-def _stamp(base: Path, name: str, mse: np.ndarray, rmse: float, z_axis: tuple = (-10.0, 30.0), n_z: int = N_Z) -> Path:
-    stamp = base / name / "inference" / "stamp"
-    cubes = stamp / "cubes"
-    cubes.mkdir(parents=True)
+def _stamp(base: Path, name: str, error: np.ndarray, rmse: float) -> Path:
+    run_dir = base / name
+    stamp   = run_dir / "inference" / "stamp"
+    maps    = stamp / "maps"
+    maps.mkdir(parents=True)
+    (run_dir / "meta").mkdir()
 
-    (stamp / "metrics.json").write_text(json.dumps({
-        "curve_rmse_gt" : rmse,
-        "overall_r2_gt" : 1.0 - rmse,
-        "x_axis_min"    : z_axis[0],
-        "x_axis_max"    : z_axis[1],
-        "n_pixels"      : N_ROWS * N_COLS,
-    }), encoding="utf-8")
+    (run_dir / "meta" / "run_summary.json").write_text(json.dumps({"target_channels": ["first", "second"]}), encoding="utf-8")
+    (stamp / "metrics.json").write_text(json.dumps({"rmse_mean": rmse, "r2_mean": 1.0 - rmse, "n_pixels": int(error.size)}), encoding="utf-8")
 
-    rng = np.random.default_rng(hash(name) % 2**32)
-    np.save(cubes / "pixel_mse.npy", mse.astype(np.float32))
-    np.save(cubes / "pred_curves.npy", rng.random((n_z, N_ROWS, N_COLS)).astype(np.float32))
-    np.save(cubes / "gt_curves.npy",   rng.random((n_z, N_ROWS, N_COLS)).astype(np.float32))
+    targets = np.random.default_rng(0).normal(size=(N_CHANNELS, *error.shape))
+    np.save(maps / "targets.npy", targets.astype(np.float32))
+    np.save(maps / "predictions.npy", (targets + np.sqrt(error)[None]).astype(np.float32))
 
     return stamp
 
@@ -41,12 +36,12 @@ def _autopsy(tmp_path: Path) -> AbAutopsy:
 
 
 def _pair(tmp_path: Path) -> tuple[Path, Path]:
-    mse_a              = np.full((N_ROWS, N_COLS), 0.1)
-    mse_b              = np.full((N_ROWS, N_COLS), 0.1)
-    mse_a[0:16, 0:16]  = 3.0
-    mse_b[16:32, 0:16] = 3.0
+    error_a              = np.full((N_ROWS, N_COLS), 0.1)
+    error_b              = np.full((N_ROWS, N_COLS), 0.1)
+    error_a[0:16, 0:16]  = 3.0
+    error_b[16:32, 0:16] = 3.0
 
-    return _stamp(tmp_path, "run_a", mse_a, rmse=0.2), _stamp(tmp_path, "run_b", mse_b, rmse=0.4)
+    return _stamp(tmp_path, "run_a", error_a, rmse=0.2), _stamp(tmp_path, "run_b", error_b, rmse=0.4)
 
 
 def test_compare_ranks_metric_gaps_and_finds_hotspots(tmp_path):
@@ -57,7 +52,7 @@ def test_compare_ranks_metric_gaps_and_finds_hotspots(tmp_path):
     assert out["ok"] is True
     assert out["run_a"] == "run_a" and out["run_b"] == "run_b"
 
-    rmse_row = next(row for row in out["metrics"] if row["key"] == "curve_rmse_gt")
+    rmse_row = next(row for row in out["metrics"] if row["key"] == "rmse_mean")
     assert rmse_row["winner"] == "A"
     assert "n_pixels" not in {row["key"] for row in out["metrics"]}
 
@@ -78,48 +73,37 @@ def test_compare_rejects_region_mismatch(tmp_path):
     assert "different regions" in out["error"]
 
 
-def test_compare_missing_metrics_fails_cleanly(tmp_path):
+def test_compare_missing_maps_fails_cleanly(tmp_path):
     out = _autopsy(tmp_path).compare(str(tmp_path / "nope"), str(tmp_path / "nope2"))
 
     assert out["ok"] is False
 
 
-def test_profile_returns_both_predictions(tmp_path):
+def test_pixel_returns_every_target_channel_of_both_predictions(tmp_path):
     stamp_a, stamp_b = _pair(tmp_path)
 
-    out = _autopsy(tmp_path).profile(str(stamp_a), str(stamp_b), row=4, col=5)
+    out = _autopsy(tmp_path).pixel(str(stamp_a), str(stamp_b), row=4, col=5)
 
     assert out["ok"] is True
-    assert len(out["a"]) == N_Z
-    assert len(out["b"]) == N_Z
-    assert len(out["gt"]) == N_Z
-    assert out["z_axis"][0] == -10.0
+    assert out["channels"] == ["first", "second"]
+    assert len(out["a"]) == len(out["b"]) == len(out["target"]) == N_CHANNELS
+    assert abs(out["a"][0] - out["target"][0] - np.sqrt(3.0)) < 1e-5
 
 
-def test_profile_outside_region_fails(tmp_path):
+def test_pixel_outside_region_fails(tmp_path):
     stamp_a, stamp_b = _pair(tmp_path)
 
-    assert _autopsy(tmp_path).profile(str(stamp_a), str(stamp_b), row=999, col=0)["ok"] is False
+    assert _autopsy(tmp_path).pixel(str(stamp_a), str(stamp_b), row=999, col=0)["ok"] is False
 
 
-def test_profile_rejects_z_axis_mismatch(tmp_path):
+def test_pixel_rejects_a_map_shape_mismatch(tmp_path):
     stamp_a, _ = _pair(tmp_path)
-    stamp_d    = _stamp(tmp_path, "run_d", np.full((N_ROWS, N_COLS), 0.1), rmse=0.3, z_axis=(-5.0, 45.0))
+    stamp_e    = _stamp(tmp_path, "run_e", np.full((8, 8), 0.1), rmse=0.3)
 
-    out = _autopsy(tmp_path).profile(str(stamp_a), str(stamp_d), row=4, col=5)
+    out = _autopsy(tmp_path).pixel(str(stamp_a), str(stamp_e), row=4, col=5)
 
     assert out["ok"] is False
-    assert "different z axes" in out["error"]
-
-
-def test_profile_rejects_z_length_mismatch(tmp_path):
-    stamp_a, _ = _pair(tmp_path)
-    stamp_e    = _stamp(tmp_path, "run_e", np.full((N_ROWS, N_COLS), 0.1), rmse=0.3, n_z=N_Z + 3)
-
-    out = _autopsy(tmp_path).profile(str(stamp_a), str(stamp_e), row=4, col=5)
-
-    assert out["ok"] is False
-    assert "different cubes" in out["error"]
+    assert "different maps" in out["error"]
 
 
 def test_compare_refuses_a_stamp_outside_every_opened_root(tmp_path):
@@ -136,14 +120,14 @@ def test_compare_refuses_a_stamp_outside_every_opened_root(tmp_path):
     assert autopsy.compare(str(stamp_a), str(stamp_b))["ok"] is True
 
 
-def test_profile_refuses_a_stamp_outside_every_opened_root(tmp_path):
+def test_pixel_refuses_a_stamp_outside_every_opened_root(tmp_path):
     stamp_a, _ = _pair(tmp_path / "opened")
     outside    = _stamp(tmp_path / "elsewhere", "run_x", np.full((N_ROWS, N_COLS), 0.1), rmse=0.3)
 
     autopsy = AbAutopsy(WebLogger())
     autopsy.runs(str(tmp_path / "opened"))
 
-    out = autopsy.profile(str(outside), str(stamp_a), row=4, col=5)
+    out = autopsy.pixel(str(outside), str(stamp_a), row=4, col=5)
 
     assert out["ok"] is False
     assert "outside every catalogued runs root" in out["error"]
@@ -151,14 +135,14 @@ def test_profile_refuses_a_stamp_outside_every_opened_root(tmp_path):
 
 def test_runs_lists_only_comparable_stamps(tmp_path):
     complete = tmp_path / "backbone" / "run_a" / "inference" / "s1"
-    (complete / "cubes").mkdir(parents=True)
-    (complete / "cubes" / "pred_curves.npy").write_bytes(b"x")
-    (complete / "cubes" / "pixel_mse.npy").write_bytes(b"x")
+    (complete / "maps").mkdir(parents=True)
+    (complete / "maps" / "predictions.npy").write_bytes(b"x")
+    (complete / "maps" / "targets.npy").write_bytes(b"x")
     (complete / "metrics.json").write_text("{}")
 
     bare = tmp_path / "backbone" / "run_b" / "inference" / "s2"
-    (bare / "cubes").mkdir(parents=True)
-    (bare / "cubes" / "pred_curves.npy").write_bytes(b"x")
+    (bare / "maps").mkdir(parents=True)
+    (bare / "maps" / "predictions.npy").write_bytes(b"x")
 
     out = AbAutopsy(WebLogger()).runs(str(tmp_path))
 

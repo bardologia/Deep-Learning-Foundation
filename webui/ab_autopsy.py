@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -16,8 +15,7 @@ class AbAutopsy:
     BLOCK        = 16
     MAX_METRICS  = 40
     MAX_HOTSPOTS = 3
-    SKIP_PREFIX  = ("tracks", "track_positions", "split", "z_axis")
-    REQUIRED     = ("metrics.json", "cubes/pixel_mse.npy")
+    REQUIRED     = ("metrics.json", "maps/predictions.npy", "maps/targets.npy")
 
     def __init__(self, logger: WebLogger) -> None:
         self.logger  = logger
@@ -36,24 +34,29 @@ class AbAutopsy:
             raise ValueError(f"{stamp} is outside every catalogued runs root; scan the runs directory first")
         return stamp
 
-    def _metrics(self, stamp: Path) -> dict:
-        path = stamp / "metrics.json"
-        if not path.is_file():
-            raise FileNotFoundError(f"no metrics.json under {stamp}")
-        return json.loads(path.read_text(encoding="utf-8"))
+    @staticmethod
+    def _metrics(stamp: Path) -> dict:
+        return json.loads((stamp / "metrics.json").read_text(encoding="utf-8"))
 
-    def _cube(self, stamp: Path, name: str) -> np.ndarray:
-        path = stamp / "cubes" / f"{name}.npy"
-        if not path.is_file():
-            raise FileNotFoundError(f"{path} is missing; re-run inference with save_cubes")
-        return np.load(path, mmap_mode="r")
+    @staticmethod
+    def _map(stamp: Path, name: str) -> np.ndarray:
+        return np.load(stamp / "maps" / f"{name}.npy", mmap_mode="r")
+
+    @staticmethod
+    def _channels(stamp: Path) -> list[str]:
+        return list(json.loads((stamp.parent.parent / "meta" / "run_summary.json").read_text(encoding="utf-8"))["target_channels"])
+
+    @staticmethod
+    def _error_map(stamp: Path) -> np.ndarray:
+        predictions = np.asarray(AbAutopsy._map(stamp, "predictions"), dtype=np.float64)
+        targets     = np.asarray(AbAutopsy._map(stamp, "targets"), dtype=np.float64)
+        scale       = targets.reshape(targets.shape[0], -1).std(axis=1)[:, None, None]
+
+        return (((predictions - targets) / np.where(scale > 0.0, scale, 1.0)) ** 2).mean(axis=0)
 
     def _metric_rows(self, metrics_a: dict, metrics_b: dict) -> list[dict]:
         rows = []
         for key in sorted(set(metrics_a) & set(metrics_b)):
-            if key.startswith(self.SKIP_PREFIX):
-                continue
-
             value_a, value_b = metrics_a[key], metrics_b[key]
             if not isinstance(value_a, (int, float)) or not isinstance(value_b, (int, float)):
                 continue
@@ -69,20 +72,13 @@ class AbAutopsy:
             rel    = delta / max(abs(float(value_b)), 1e-12)
             winner = "tie" if delta == 0.0 else ("A" if sign * delta > 0 else "B")
 
-            rows.append({
-                "key"     : key,
-                "a"       : float(value_a),
-                "b"       : float(value_b),
-                "delta"   : delta,
-                "rel"     : rel,
-                "winner"  : winner,
-            })
+            rows.append({"key": key, "a": float(value_a), "b": float(value_b), "delta": delta, "rel": rel, "winner": winner})
 
         rows.sort(key=lambda row: abs(row["rel"]), reverse=True)
         return rows[: self.MAX_METRICS]
 
-    def _hotspots(self, mse_a: np.ndarray, mse_b: np.ndarray) -> list[dict]:
-        delta      = np.asarray(mse_a, dtype=np.float64) - np.asarray(mse_b, dtype=np.float64)
+    def _hotspots(self, error_a: np.ndarray, error_b: np.ndarray) -> list[dict]:
+        delta          = error_a - error_b
         n_rows, n_cols = delta.shape
 
         blocks = []
@@ -93,13 +89,12 @@ class AbAutopsy:
                 if finite.sum() < max(4, patch.size // 4):
                     continue
 
-                mean_delta = float(patch[finite].mean())
-                peak_flat  = np.nanargmax(np.where(finite, np.abs(patch), -np.inf))
+                peak_flat = np.nanargmax(np.where(finite, np.abs(patch), -np.inf))
 
                 blocks.append({
                     "row0"       : row0,
                     "col0"       : col0,
-                    "mean_delta" : mean_delta,
+                    "mean_delta" : float(patch[finite].mean()),
                     "row"        : row0 + int(peak_flat // patch.shape[1]),
                     "col"        : col0 + int(peak_flat % patch.shape[1]),
                 })
@@ -118,17 +113,14 @@ class AbAutopsy:
         try:
             stamp_a, stamp_b = self._stamp(a), self._stamp(b)
 
-            metrics_a = self._metrics(stamp_a)
-            metrics_b = self._metrics(stamp_b)
+            error_a = self._error_map(stamp_a)
+            error_b = self._error_map(stamp_b)
 
-            mse_a = self._cube(stamp_a, "pixel_mse")
-            mse_b = self._cube(stamp_b, "pixel_mse")
+            if error_a.shape != error_b.shape:
+                return {"ok": False, "error": f"runs cover different regions: {error_a.shape} vs {error_b.shape}"}
 
-            if mse_a.shape != mse_b.shape:
-                return {"ok": False, "error": f"runs cover different regions: {mse_a.shape} vs {mse_b.shape}"}
-
-            rows     = self._metric_rows(metrics_a, metrics_b)
-            hotspots = self._hotspots(mse_a, mse_b)
+            rows     = self._metric_rows(self._metrics(stamp_a), self._metrics(stamp_b))
+            hotspots = self._hotspots(error_a, error_b)
 
             self.logger.info(f"autopsy: {len(rows)} metric deltas, {len(hotspots)} hotspots for {stamp_a.parent.parent.name} vs {stamp_b.parent.parent.name}")
 
@@ -138,44 +130,34 @@ class AbAutopsy:
                 "b"        : b,
                 "run_a"    : stamp_a.parent.parent.name,
                 "run_b"    : stamp_b.parent.parent.name,
-                "region"   : list(mse_a.shape),
+                "region"   : list(error_a.shape),
                 "metrics"  : rows,
                 "hotspots" : hotspots,
             }
-        except (OSError, ValueError, FileNotFoundError) as error:
+        except (OSError, ValueError) as error:
             return {"ok": False, "error": str(error)}
 
-    def profile(self, a: str, b: str, row: int, col: int) -> dict:
+    def pixel(self, a: str, b: str, row: int, col: int) -> dict:
         try:
             stamp_a, stamp_b = self._stamp(a), self._stamp(b)
 
-            pred_a = self._cube(stamp_a, "pred_curves")
-            pred_b = self._cube(stamp_b, "pred_curves")
-            gt     = self._cube(stamp_a, "gt_curves")
+            pred_a  = self._map(stamp_a, "predictions")
+            pred_b  = self._map(stamp_b, "predictions")
+            targets = self._map(stamp_a, "targets")
 
             if pred_b.shape != pred_a.shape:
-                return {"ok": False, "error": f"runs cover different cubes: {pred_a.shape} vs {pred_b.shape}"}
+                return {"ok": False, "error": f"runs cover different maps: {pred_a.shape} vs {pred_b.shape}"}
             if not (0 <= row < pred_a.shape[1] and 0 <= col < pred_a.shape[2]):
                 return {"ok": False, "error": f"pixel ({row}, {col}) is outside the region {pred_a.shape[1:]}"}
 
-            metrics   = self._metrics(stamp_a)
-            metrics_b = self._metrics(stamp_b)
-            bounds    = (float(metrics["x_axis_min"]), float(metrics["x_axis_max"]))
-            bounds_b  = (float(metrics_b["x_axis_min"]), float(metrics_b["x_axis_max"]))
-
-            if bounds_b != bounds:
-                return {"ok": False, "error": f"runs cover different z axes: {bounds} vs {bounds_b}"}
-
-            z_axis = np.linspace(bounds[0], bounds[1], pred_a.shape[0])
-
             return {
-                "ok"     : True,
-                "row"    : row,
-                "col"    : col,
-                "z_axis" : [float(v) for v in z_axis],
-                "a"      : [float(v) for v in pred_a[:, row, col]],
-                "b"      : [float(v) for v in pred_b[:, row, col]],
-                "gt"     : [float(v) for v in gt[:, row, col]],
+                "ok"       : True,
+                "row"      : row,
+                "col"      : col,
+                "channels" : self._channels(stamp_a),
+                "target"   : [float(v) for v in targets[:, row, col]],
+                "a"        : [float(v) for v in pred_a[:, row, col]],
+                "b"        : [float(v) for v in pred_b[:, row, col]],
             }
-        except (OSError, ValueError, FileNotFoundError, IndexError, KeyError) as error:
+        except (OSError, ValueError, KeyError) as error:
             return {"ok": False, "error": str(error)}
