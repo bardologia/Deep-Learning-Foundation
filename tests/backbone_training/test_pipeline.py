@@ -81,7 +81,7 @@ def test_training_pipeline_records_a_dataset_stage_abort_in_its_run_log(test_dat
 
 
 def _square_patch_dataset_config() -> DatasetConfig:
-    splits = SplitRegions(train=CropRegion(0, 8, 0, 8), val=CropRegion(8, 16, 0, 8), test=CropRegion(16, 24, 0, 8))
+    splits = SplitRegions(train=[CropRegion(0, 8, 0, 8)], val=[CropRegion(8, 16, 0, 8)], test=[CropRegion(16, 24, 0, 8)])
 
     return DatasetConfig(dataset_directory=Path("/x"), split_regions=splits, patch=PatchConfig(size=(64, 32), stride=(32, 16)))
 

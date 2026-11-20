@@ -22,30 +22,17 @@ def test_crop_region_as_tuple():
 
 def _band_splits() -> SplitRegions:
     return SplitRegions(
-        train = CropRegion(0,   700,  0, 500),
-        val   = CropRegion(700, 850,  0, 500),
-        test  = CropRegion(850, 1000, 0, 500),
+        train = [CropRegion(0,   700,  0, 500)],
+        val   = [CropRegion(700, 850,  0, 500)],
+        test  = [CropRegion(850, 1000, 0, 500)],
     )
-
-
-def test_as_list_wraps_single():
-    region = CropRegion(0, 10, 0, 10)
-
-    assert SplitRegions.as_list(region) == [region]
-
-
-def test_as_list_passes_through_list():
-    a = CropRegion(0, 10, 0, 10)
-    b = CropRegion(10, 20, 0, 10)
-
-    assert SplitRegions.as_list([a, b]) == [a, b]
 
 
 def test_regions_lookup_by_name():
     splits = _band_splits()
 
-    assert splits.regions("train") == [splits.train]
-    assert splits.regions("test")  == [splits.test]
+    assert splits.regions("train") == splits.train
+    assert splits.regions("test")  == splits.test
 
 
 def test_region_rows_single_region_labels():
@@ -59,7 +46,7 @@ def test_region_rows_single_region_labels():
 def test_region_rows_list_region_indexes():
     a      = CropRegion(0, 100, 0, 50)
     b      = CropRegion(100, 200, 0, 50)
-    splits = SplitRegions(train=[a, b], val=a, test=b)
+    splits = SplitRegions(train=[a, b], val=[a], test=[b])
     rows   = splits.region_rows()
 
     train_labels = [r["Split"] for r in rows if r["Split"].startswith("train")]

@@ -30,35 +30,26 @@ class CropRegion:
 
 @dataclass
 class SplitRegions:
-    train : CropRegion | list[CropRegion]
-    val   : CropRegion | list[CropRegion]
-    test  : CropRegion | list[CropRegion]
-
-    @staticmethod
-    def as_list(value) -> list[CropRegion]:
-        if isinstance(value, (list, tuple)):
-            return list(value)
-        return [value]
+    train : list[CropRegion]
+    val   : list[CropRegion]
+    test  : list[CropRegion]
 
     @classmethod
     def from_bounds(cls, payload: dict) -> "SplitRegions":
         return cls(train=[CropRegion(*bounds) for bounds in payload["train"]], val=[CropRegion(*bounds) for bounds in payload["val"]], test=[CropRegion(*bounds) for bounds in payload["test"]])
 
     def bounds(self) -> dict:
-        return {name: [list(region.as_tuple()) for region in regions] for name, regions in self.region_lists()}
+        return {name: [list(region.as_tuple()) for region in regions] for name, regions in self.items()}
 
     def items(self):
         return [("train", self.train), ("val", self.val), ("test", self.test)]
 
-    def region_lists(self):
-        return [(name, self.as_list(value)) for name, value in self.items()]
-
     def regions(self, split_name: str) -> list[CropRegion]:
-        return self.as_list(dict(self.items())[split_name])
+        return dict(self.items())[split_name]
 
     def region_rows(self) -> list[dict]:
         rows = []
-        for name, regions in self.region_lists():
+        for name, regions in self.items():
             for index, region in enumerate(regions):
                 label = name if len(regions) == 1 else f"{name}[{index}]"
                 rows.append({"Split": label, "Crop": str(region.as_tuple()), "Rows": region.row_size, "Cols": region.col_size})

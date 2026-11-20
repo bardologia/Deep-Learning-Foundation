@@ -57,6 +57,4 @@ class WorkerInitializer:
 
     @staticmethod
     def _augmenters(dataset) -> list:
-        parts = getattr(dataset, "parts", None) or [dataset]
-
-        return [part.augmenter for part in parts if getattr(part, "augmenter", None) is not None]
+        return [part.augmenter for part in dataset.parts if part.augmenter is not None]

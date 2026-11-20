@@ -105,19 +105,17 @@ def test_plan_val_block_is_next_cyclic():
     assert planner.plan(4).val_block == 0
 
 
-def test_plan_train_is_single_region_when_contiguous():
+def test_plan_train_is_one_region_when_contiguous():
     planner = make_planner(5)
     plan    = planner.plan(0)
 
-    assert isinstance(plan.split_regions.train, CropRegion)
     assert row_intervals(plan.split_regions.regions("train")) == [(400, 1000)]
 
 
-def test_plan_train_is_list_of_disjoint_regions_when_split():
+def test_plan_train_is_disjoint_regions_when_split():
     planner = make_planner(5)
     plan    = planner.plan(2)
 
-    assert isinstance(plan.split_regions.train, list)
     assert row_intervals(plan.split_regions.regions("train")) == [(0, 400), (800, 1000)]
 
 

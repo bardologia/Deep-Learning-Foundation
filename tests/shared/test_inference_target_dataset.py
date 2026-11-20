@@ -46,7 +46,7 @@ def test_an_enabled_target_names_its_dataset(tmp_path):
 
 def test_the_dataset_config_moves_onto_the_target_and_keeps_the_runs_geometry(tmp_path):
     dataset = _target_dataset(tmp_path)
-    trained = DatasetConfig(dataset_directory=tmp_path / "trained", split_regions=SplitRegions(train=CropRegion(0, 8, 0, 8), val=CropRegion(8, 16, 0, 8), test=CropRegion(16, 24, 0, 8)), patch=PatchConfig(size=(16, 16), stride=(8, 8)), batch_size=7)
+    trained = DatasetConfig(dataset_directory=tmp_path / "trained", split_regions=SplitRegions(train=[CropRegion(0, 8, 0, 8)], val=[CropRegion(8, 16, 0, 8)], test=[CropRegion(16, 24, 0, 8)]), patch=PatchConfig(size=(16, 16), stride=(8, 8)), batch_size=7)
 
     moved = TargetDataset.of(_config(dataset)).dataset_config(trained)
 

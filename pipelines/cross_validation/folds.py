@@ -90,9 +90,9 @@ class FoldPlanner:
         train_regions = [self._run_region(run) for run in self._merge_adjacent(train_blocks)]
 
         split_regions = SplitRegions(
-            train = train_regions if len(train_regions) > 1 else train_regions[0],
-            val   = self._block_region(val_block),
-            test  = self._block_region(test_block),
+            train = train_regions,
+            val   = [self._block_region(val_block)],
+            test  = [self._block_region(test_block)],
         )
 
         return FoldPlan(
