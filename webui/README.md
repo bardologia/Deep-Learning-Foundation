@@ -150,8 +150,8 @@ sub-router under `routers/` and delegates: `routers/dispatch.py` carries the sha
 `RouteTable`; `static_router.py`, `results_routers.py`,
 `analysis_routers.py`, `library_routers.py`, `launch_routers.py`, `system_router.py` and
 `tensorboard_router.py` declare the routes of their own domain and hold only the
-collaborators they use. A section may be claimed by one sub-router only; a second claim
-raises at construction. `project_paths.py` resolves repository paths and candidate
+collaborators they use. Each section belongs to one sub-router; when two claim the same
+section, the last one listed wins. `project_paths.py` resolves repository paths and candidate
 interpreters, `catalog_roots.py` gates filesystem browsing to roots the user has opened,
 and `web_logger.py` handles console logging.
 

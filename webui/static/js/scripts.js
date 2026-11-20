@@ -3,7 +3,7 @@
 class ScriptPanel {
   static SECTIONS = [
     { category: "Data",        blurb: "Synthesise the bundled example dataset: smooth input fields and the target channels computed from them." },
-    { category: "Training",    blurb: "Train one stage end to end, or fan an experiment ladder across GPUs." },
+    { category: "Training",    blurb: "Train one backbone end to end, or fan a set of trials across GPUs." },
     { category: "Inference",   blurb: "Turn trained checkpoints into stitched target maps, metrics, and reports." },
     { category: "Analysis",    blurb: "Post-hoc work on finished runs: rebuild trial reports, diagnose trained models, and collect artifacts for publication." },
     { category: "Experiments", blurb: "Structured studies with their own orchestration: benchmarks, cross-validation, sweeps, and tuning." },

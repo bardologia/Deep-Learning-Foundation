@@ -783,7 +783,7 @@ class LaunchLayout:
                     ]},
                 ]},
                 {"key": "datasets", "title": "Datasets", "when": {"field": "target", "in": ["datasets"]}, "panels": [
-                    {"kind": "fields", "note": "Mails everything generate_dataset wrote into a dataset, the layout and the metadata, packed into zip volumes. The arrays under data/ are left out unless you name them; the gathered tree is rebuilt by unpacking every volume into one directory.", "groups": [
+                    {"kind": "fields", "note": "Mails the dataset.json and logs generate_dataset wrote into a dataset, packed into zip volumes. The inputs.npy and targets.npy arrays are left out unless you name them; the gathered tree is rebuilt by unpacking every volume into one directory.", "groups": [
                         {"title": "Datasets", "fields": [
                             "datasets_dir",
                             {"path": "dataset_filter", "widget": {"kind": "dataset", "mode": "datasets", "multi": True, "baseFrom": "datasets_dir", "validOnly": True}},

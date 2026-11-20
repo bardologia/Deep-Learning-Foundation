@@ -41,7 +41,7 @@ class ScriptCatalog:
         "compare_trials": {
             "title"     : "Compare Trials",
             "category"  : "Analysis",
-            "purpose"   : "Compare inference results across multiple training runs: metrics leaderboard, side-by-side figures, and optional GIF comparison. A trial with nested seed runs enters the comparison as one entry with seed-mean metrics and sample-std annotations; figures come from a representative seed.",
+            "purpose"   : "Compare inference results across multiple training runs: metrics leaderboard and side-by-side figures. A trial with nested seed runs enters the comparison as one entry with seed-mean metrics and sample-std annotations; figures come from a representative seed.",
         },
         "compare_runs": {
             "title"     : "Compare Benchmark Runs",
@@ -126,7 +126,7 @@ class ScriptCatalog:
         "mail_experiment_reports": {
             "title"     : "Mail Results",
             "category"  : "Analysis",
-            "purpose"   : "Email gathered results, one bundle per source, with the target tab choosing what is mailed. Experiments: any path is scanned for experiments by the trial runs they hold (a sweep of trials, a cross-validation run, a benchmark run, a sequence workspace or a whole runs tree), and each one is mailed as one message carrying the seed-aggregate report of every trial, the trial-comparison reports, a cross-validation run's cross-fold report and the configuration it ran with; a missing seed aggregate, comparison or cross-fold report is written first. Runs: the runs picked at or below a path travel whole, everything each one holds (configuration, metadata, logs, docs, TensorBoard events, reports and figures) minus the checkpoints, the saved prediction maps and any file above the per-file cap. Datasets: everything Generate Dataset wrote (layout and metadata). Run and dataset bundles are packed into zip volumes that each stay under the attachment cap, sent as one message per volume, and the arrays under data/ are left out unless you name them in the gathered paths. The SMTP password comes from an environment variable, and a dry run stages without sending.",
+            "purpose"   : "Email gathered results, one bundle per source, with the target tab choosing what is mailed. Experiments: any path is scanned for experiments by the trial runs they hold (a sweep of trials, a cross-validation run, a benchmark run, a sequence workspace or a whole runs tree), and each one is mailed as one message carrying the seed-aggregate report of every trial, the trial-comparison reports, a cross-validation run's cross-fold report and the configuration it ran with; a missing seed aggregate, comparison or cross-fold report is written first. Runs: the runs picked at or below a path travel whole, everything each one holds (configuration, metadata, logs, docs, TensorBoard events, reports and figures) minus the checkpoints, the saved prediction maps and any file above the per-file cap. Datasets: the dataset.json and logs Generate Dataset wrote. Run and dataset bundles are packed into zip volumes that each stay under the attachment cap, sent as one message per volume, and a dataset's inputs.npy and targets.npy are left out unless you name them in the gathered paths. The SMTP password comes from an environment variable, and a dry run stages without sending.",
         },
     }
 
