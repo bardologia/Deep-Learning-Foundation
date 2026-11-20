@@ -800,8 +800,6 @@ class ModelProbe:
 
         if stored is None:
             return None
-        if stored.ndim != 4:
-            raise ValueError(f"layer '{layer}' emits a {stored.ndim}-D activation; the feature grid renders 4-D (B, C, H, W) maps only")
 
         maps   = stored[0].numpy()
         energy = np.abs(maps).sum(axis=(1, 2))
@@ -850,11 +848,7 @@ class ModelProbe:
                 return None
             module = dict(self.loaded["run"].model.module.named_modules())[layer]
 
-        weight = getattr(module, "weight", None)
-        if weight is None or weight.ndim != 4:
-            raise ValueError(f"layer '{layer}' holds no 4-D convolution weight; kernels render convolution layers only")
-
-        w = weight.detach().cpu().numpy()
+        w = module.weight.detach().cpu().numpy()
         if "Transpose" in type(module).__name__:
             w = w.transpose(1, 0, 2, 3)
 

@@ -109,10 +109,6 @@ class HttpExchange:
         self.handler.wfile.write(data)
 
 
-class RouteConflict(RuntimeError):
-    pass
-
-
 class RouteTable:
 
     def __init__(self) -> None:
@@ -120,15 +116,9 @@ class RouteTable:
         self.wildcards = []
 
     def add(self, method: str, path: str, action) -> None:
-        if (method, path) in self.exact:
-            raise RouteConflict(f"{method} {path} is declared twice")
-
         self.exact[(method, path)] = action
 
     def wildcard(self, method: str, prefix: str, suffix: str, action) -> None:
-        if any(entry[:3] == (method, prefix, suffix) for entry in self.wildcards):
-            raise RouteConflict(f"{method} {prefix}*{suffix} is declared twice")
-
         self.wildcards.append((method, prefix, suffix, action))
 
     def action_for(self, method: str, path: str) -> tuple:

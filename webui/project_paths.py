@@ -10,7 +10,6 @@ from tools.runtime.machine_profile  import MachineProfile
 
 class ProjectPaths:
 
-    REQUIRED_DIRS = ("main", "configuration", "tools")
     CONDA_BASES   = ("miniconda3", "anaconda3", ".conda")
 
     ENTRY_OVERRIDES = {
@@ -48,14 +47,6 @@ class ProjectPaths:
         self.saved_runs_dir = self.logs_dir / "saved_runs"
         self.templates_dir  = self.logs_dir / "config_templates"
         self.sequences_dir  = self.logs_dir / "sequences"
-
-        self._require_repository()
-
-    def _require_repository(self) -> None:
-        missing = [name for name in self.REQUIRED_DIRS if not (self.repo_root / name).is_dir()]
-
-        if missing:
-            raise ValueError(f"project root {self.repo_root} is not an ML Template repository: missing {', '.join(missing)}")
 
     @property
     def priority(self) -> list[str]:

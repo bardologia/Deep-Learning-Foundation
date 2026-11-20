@@ -255,8 +255,6 @@ class SequenceRunner:
     def _runs_roots(self) -> tuple:
         roots = tuple(root for root in (str(self.store.paths.runs_dir),) if root.strip("/") not in ("", str(ReferenceLayout.RUNS_ROOT)))
 
-        if not roots:
-            raise ValueError("cannot determine the project's runs tree: the checkout run directory is not configured")
         return roots
 
     def _launch_block(self, entry: dict, block: dict, run_dir: str) -> None:

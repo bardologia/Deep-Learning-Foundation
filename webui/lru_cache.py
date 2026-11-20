@@ -8,9 +8,6 @@ from collections import OrderedDict
 class LruCache:
 
     def __init__(self, capacity: int) -> None:
-        if capacity < 1:
-            raise ValueError(f"an LRU cache needs room for at least one entry, got {capacity}")
-
         self.capacity = capacity
         self.lock     = threading.Lock()
         self.entries  = OrderedDict()

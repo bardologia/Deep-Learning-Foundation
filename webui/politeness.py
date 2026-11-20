@@ -31,8 +31,6 @@ class JobPoliteness:
 
         loaded = json.loads(self.path.read_text())
         level  = loaded["level"]
-        if level not in self.LEVELS:
-            raise ValueError(f"{self.path} names unknown politeness level {level!r}")
         return {"level": level, "auto_throttle": bool(loaded["auto_throttle"])}
 
     def level(self) -> str:

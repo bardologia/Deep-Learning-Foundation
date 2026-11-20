@@ -4,7 +4,7 @@ from __future__ import annotations
 import traceback
 from urllib.parse import urlparse
 
-from routers.dispatch import HttpExchange, RouteConflict, SubRouter
+from routers.dispatch import HttpExchange, SubRouter
 from web_logger       import WebLogger
 
 
@@ -20,9 +20,6 @@ class RequestRouter:
 
         for router in self.routers:
             for section in router.sections:
-                owner = index.get(section)
-                if owner is not None:
-                    raise RouteConflict(f"section '{section}' is claimed by both {type(owner).__name__} and {type(router).__name__}")
                 index[section] = router
 
         return index
