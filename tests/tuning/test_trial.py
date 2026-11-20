@@ -8,11 +8,7 @@ import pytest
 
 import pipelines.tuning.trial as trial_mod
 
-from pipelines.tuning.trial  import TrialTrainer
-from configuration.synthesis import SynthesisConfig
-
-
-SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
+from pipelines.tuning.trial import TrialTrainer
 
 
 def test_trial_callback_reports_intermediate_value(fake_logger):
@@ -46,8 +42,8 @@ def test_trial_pipeline_honours_the_caller_emit_docs(monkeypatch):
     for emit_trial_docs in (True, False):
         pipeline._emit_docs = emit_trial_docs
 
-        pipeline._make_trainer(None, None, None, None, Path("run"), None)
-        pipeline._make_trainer(None, None, None, None, Path("run"), None, emit_docs=False)
+        pipeline._make_trainer(None, None, None, Path("run"), None)
+        pipeline._make_trainer(None, None, None, Path("run"), None, emit_docs=False)
 
     assert captured == [True, False, False, False]
 

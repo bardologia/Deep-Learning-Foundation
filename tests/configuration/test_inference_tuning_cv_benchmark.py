@@ -20,7 +20,7 @@ from configuration.benchmark.general import (
 )
 from configuration.training.general.run        import RunPathsConfig, TrainingQueueConfig
 
-from configuration.dataset                  import AugmentationConfig, InputConfig
+from configuration.dataset                  import AugmentationConfig
 from configuration.normalization.general import NormalizationConfig
 
 
@@ -55,20 +55,12 @@ def test_inference_config_requires_run_directory():
     assert cfg.device == "cuda"
     assert cfg.batch_size is None
     assert isinstance(cfg.paths, InferencePaths)
-    assert isinstance(cfg.gif_axes, list)
-
-
-def test_inference_config_profile_counts_positive():
-    cfg = InferenceConfig(run_directory=Path("."))
-    assert cfg.n_best_profiles   > 0
-    assert cfg.n_worst_profiles  > 0
-    assert cfg.n_random_profiles > 0
+    assert cfg.save_maps is True
 
 
 def test_backbone_inference_entry_config_holds_inference():
     cfg = BackboneInferenceEntryConfig()
     assert isinstance(cfg.inference, InferenceConfig)
-    assert cfg.inference.gif_axes == ["z", "col", "row"]
     assert isinstance(cfg.run_filter, list)
     assert cfg.runs_dir == "runs"
 
@@ -80,10 +72,7 @@ def test_run_directory_inference_defaults_come_from_one_factory():
     training   = [BackboneEntryConfig().inference]
 
     for cfg in standalone + training:
-        assert cfg.run_directory == Path(".")
-        assert cfg.save_cubes  is True
-        assert cfg.cpu_workers == 16
-        assert cfg.gif_axes    == ["z", "col", "row"]
+        assert cfg == InferenceConfig(run_directory=Path("."))
 
 
 def test_tuning_config_positive_trials():
@@ -151,16 +140,9 @@ def test_cross_validation_validates_the_standard_backbone():
     assert cfg.backbone_head == BackboneEntryConfig.backbone_head
 
 
-def test_cross_validation_carries_the_input_stack():
-    cfg = CrossValidationConfig()
-
-    assert isinstance(cfg.input, InputConfig)
-    assert cfg.input.use_secondaries is True
-
-
-def test_cross_validation_fold_inference_saves_cubes():
-    assert CrossValidationConfig().inference.save_cubes is True
-    assert BenchmarkConfig().inference.save_cubes is False
+def test_cross_validation_fold_inference_saves_maps():
+    assert CrossValidationConfig().inference.save_maps is True
+    assert BenchmarkConfig().inference.save_maps is False
 
 
 def test_cross_validation_runs_inference_logic():
@@ -171,8 +153,6 @@ def test_cross_validation_runs_inference_logic():
 def test_benchmark_paths_defaults_are_paths():
     cfg = RunPathsConfig()
     assert isinstance(cfg.dataset_path, Path)
-    assert isinstance(cfg.parameters_path, Path)
-    assert isinstance(cfg.secondary_labels, tuple)
 
 
 def test_training_queue_config_axis_tuples():
@@ -180,8 +160,7 @@ def test_training_queue_config_axis_tuples():
     assert cfg.epochs > 0
     assert cfg.batch_size > 0
     assert len(cfg.patch_size) == 2
-    assert len(cfg.train_rows) == 2
-    assert cfg.train_rows[1] > cfg.train_rows[0]
+    assert len(cfg.patch_stride) == 2
 
 
 def test_benchmark_config_runs_inference_when_infer_after_is_on():
@@ -191,6 +170,5 @@ def test_benchmark_config_runs_inference_when_infer_after_is_on():
 
 def test_benchmark_config_exposes_training_recipe_sections():
     cfg = BenchmarkConfig()
-    assert isinstance(cfg.input, InputConfig)
     assert isinstance(cfg.normalization, NormalizationConfig)
     assert isinstance(cfg.augmentation, AugmentationConfig)

@@ -7,22 +7,20 @@ from tools.runtime.config_cli        import ConfigCli
 
 
 GENERATE_DATASET_LEAVES = [
-    {"path": "synthesis.output_directory", "value": "None"},
-    {"path": "synthesis.global_crop",      "value": "[0, 1512, 0, 1024]"},
-    {"path": "synthesis.k_max",            "value": "2"},
-    {"path": "synthesis.params_run_name",  "value": "None"},
-    {"path": "synthesis.seed",             "value": "0"},
+    {"path": "generation.output_directory", "value": "datasets/synthetic"},
+    {"path": "generation.rows",             "value": "256"},
+    {"path": "generation.cols",             "value": "128"},
+    {"path": "generation.seed",             "value": "0"},
 ]
 
 BACKBONE_LEAVES = [
     {"path": "backbone_name",          "value": "resunet"},
     {"path": "backbone_head",          "value": "conv"},
     {"path": "trials_enabled",         "value": "False"},
-    {"path": "trials_mode",            "value": "presence"},
+    {"path": "trials_mode",            "value": "augmentation"},
     {"path": "run_name",               "value": "None"},
     {"path": "infer_after",            "value": "False"},
-    {"path": "paths.dataset_path",     "value": "/data/base_dataset_w20_10"},
-    {"path": "paths.parameters_path",  "value": "/data/base_dataset_w20_10/params/params_Ng3_sigonly_k5.npy"},
+    {"path": "paths.dataset_path",     "value": "/data/scene_a"},
     {"path": "training.patch_size",    "value": "(64, 32)"},
     {"path": "training.epochs",        "value": "60"},
 ]
@@ -57,18 +55,17 @@ def test_backbone_defaults_read_as_single_training():
     text = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", {})
 
     assert text.startswith("single training · resunet-conv")
-    assert "dataset base_dataset_w20_10" in text
-    assert "params params_Ng3_sigonly_k5.npy" in text
+    assert "dataset scene_a" in text
     assert "patch (64, 32)" in text
     assert "epochs 60" in text
     assert "run" not in text.replace("single training", "")
 
 
 def test_backbone_trials_read_as_experiment():
-    overrides = {"trials_enabled": "True", "trials_mode": "presence"}
+    overrides = {"trials_enabled": "True", "trials_mode": "augmentation"}
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
 
-    assert text.startswith("presence trials experiment · resunet-conv")
+    assert text.startswith("augmentation trials experiment · resunet-conv")
 
 
 def test_overrides_win_over_defaults():
@@ -82,13 +79,13 @@ def test_overrides_win_over_defaults():
 def test_generate_dataset_shows_scene_shape_and_seed():
     text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {})
 
-    assert "crop [0, 1512, 0, 1024]" in text
-    assert "K 2" in text
+    assert "rows 256" in text
+    assert "cols 128" in text
     assert "seed 0" in text
 
 
 def test_generate_dataset_output_override_appears():
-    text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {"synthesis.output_directory": "/data/scenes/synthetic_big"})
+    text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {"generation.output_directory": "/data/scenes/synthetic_big"})
 
     assert "synthetic_big" in text
 

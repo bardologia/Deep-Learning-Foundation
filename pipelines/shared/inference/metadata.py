@@ -4,13 +4,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 from pathlib     import Path
 
-from configuration.dataset                    import DatasetConfig, SplitRegions
-from configuration.dataset.gaussian           import DatasetParameterPairing
-from configuration.inference.general          import InferenceConfig
-from pipelines.shared.dataset.dataset_spatial import Layout
-from tools.data.io                            import FileIO
-from tools.data.regions                       import CropRegion
-from tools.runtime.completion                 import CompletionMarker
+from configuration.dataset                  import DatasetConfig
+from configuration.inference.general        import InferenceConfig
+from pipelines.shared.dataset.dataset_files import DatasetFiles
+from tools.runtime.completion               import CompletionMarker
 
 
 @dataclass(frozen=True)
@@ -40,67 +37,25 @@ class TargetDataset:
     KEY   = "target_dataset"
     SPLIT = "test"
 
-    def __init__(self, dataset_path: Path, parameters_path: Path, secondary_labels: tuple | None, region: CropRegion) -> None:
-        self.dataset_path     = Path(dataset_path)
-        self.parameters_path  = Path(parameters_path)
-        self.secondary_labels = secondary_labels
-        self.region           = region
+    def __init__(self, dataset_path: Path) -> None:
+        self.dataset_path = Path(dataset_path)
 
     @property
     def name(self) -> str:
         return self.dataset_path.name
 
     @staticmethod
-    def _check_paths(dataset_path: Path, parameters_path: Path) -> CropRegion:
-        layout_path = dataset_path / Layout.LAYOUT_RELPATH
-
-        DatasetParameterPairing.relative_template(dataset_path, parameters_path)
-
-        return CropRegion(*FileIO.load_json(layout_path)["global_crop"])
-
-    @staticmethod
-    def _region(config: InferenceConfig, global_crop: CropRegion) -> CropRegion:
-        target      = config.target
-        row_bounds  = (global_crop.row_start, global_crop.row_end) if target.row_start == target.row_end == 0 else (target.row_start, target.row_end)
-        col_bounds  = (global_crop.col_start, global_crop.col_end) if target.col_start == target.col_end == 0 else (target.col_start, target.col_end)
-        bounds      = (*row_bounds, *col_bounds)
-
-        return CropRegion(*bounds)
-
-    @staticmethod
     def of(config: InferenceConfig) -> "TargetDataset | None":
-        target = config.target
-        if not target.enabled:
-            return None
-
-        dataset_path    = Path(target.dataset_path)
-        parameters_path = Path(target.parameters_path)
-        global_crop     = TargetDataset._check_paths(dataset_path, parameters_path)
-        labels          = tuple(target.secondary_labels) if target.secondary_labels else None
-
-        return TargetDataset(dataset_path, parameters_path, labels, TargetDataset._region(config, global_crop))
+        return TargetDataset(config.target.dataset_path) if config.target.enabled else None
 
     def dataset_config(self, trained: DatasetConfig) -> DatasetConfig:
-        return replace(
-            trained,
-            preprocessing_run_directory = self.dataset_path,
-            parameters_path             = self.parameters_path,
-            secondary_labels            = self.secondary_labels,
-            split_regions               = SplitRegions(train=[], val=[], test=self.region),
-        )
+        return replace(trained, dataset_directory=self.dataset_path, split_regions=DatasetFiles.read(self.dataset_path).splits)
 
     def payload(self) -> dict:
-        return {
-            "dataset_path"     : str(self.dataset_path),
-            "parameters_path"  : str(self.parameters_path),
-            "secondary_labels" : list(self.secondary_labels) if self.secondary_labels is not None else None,
-            "region"           : list(self.region.as_tuple()),
-        }
+        return {"dataset_path": str(self.dataset_path)}
 
     def describe(self) -> str:
-        channels = ", ".join(self.secondary_labels) if self.secondary_labels else "every secondary channel"
-
-        return f"{self.name}, labels {self.parameters_path.parent.name}, crop {self.region.as_tuple()}, secondaries {channels}"
+        return f"{self.name}, scored on its own {self.SPLIT} split"
 
 
 class CompletedInference:

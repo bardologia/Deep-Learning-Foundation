@@ -69,8 +69,8 @@ def test_duplicate_breaks_run():
 
 
 @pytest.mark.dataset
-def test_compact_on_contiguous_channel_index(channel_labels):
-    keys = sorted(channel_labels)
+def test_compact_on_contiguous_channel_index(dataset_json):
+    keys = sorted(dataset_json["input_channels"])
     assert keys
 
     indices = list(range(len(keys)))

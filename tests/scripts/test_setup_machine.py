@@ -116,8 +116,8 @@ def test_the_unattended_run_writes_a_complete_profile(tmp_path, logger_stub):
     assert profile.roots["runs"]          == str(tmp_path / "runs")
     assert profile.roots["results"]       == str(tmp_path / "results")
     assert profile.roots["repo"]          == str(tmp_path / "repo")
-    assert profile.dataset                == {"path": "", "parameters_path": ""}
-    assert profile.hardware               == {"gpu_pool": [0, 1], "cpu_workers": 8, "gif_workers": 4, "max_workers": 8}
+    assert profile.dataset                == {"path": ""}
+    assert profile.hardware               == {"gpu_pool": [0, 1], "max_workers": 8}
     assert profile.ntfy["enabled"]        is False
     assert profile.mail["recipient"]      == ""
     assert (tmp_path / "data").is_dir() and (tmp_path / "runs").is_dir() and (tmp_path / "results").is_dir()
@@ -136,19 +136,16 @@ def test_the_default_roots_are_the_checkout_reference_layout(tmp_path, logger_st
     assert profile.roots["results"] == str(tmp_path / "repo" / ReferenceLayout.RESULTS_ROOT)
 
 
-def test_detected_datasets_and_parameter_files_become_the_defaults(tmp_path, logger_stub):
+def test_a_detected_dataset_becomes_the_default(tmp_path, logger_stub):
     scene = tmp_path / "data" / "scene_b"
-    (scene / "data").mkdir(parents=True)
-    (scene / "data" / "dataset.json").write_text("{}")
-    (scene / "params" / "run_1").mkdir(parents=True)
-    (scene / "params" / "run_1" / "parameters.npy").write_text("")
+    scene.mkdir(parents=True)
+    (scene / "dataset.json").write_text("{}")
     (tmp_path / "data" / "not_a_dataset").mkdir()
 
     _setup(tmp_path, logger_stub).run()
     profile = MachineProfile.load(tmp_path / "cfg" / "machine.json")
 
-    assert profile.dataset["path"]            == str(scene)
-    assert profile.dataset["parameters_path"] == str(scene / "params" / "run_1" / "parameters.npy")
+    assert profile.dataset == {"path": str(scene)}
 
 
 def test_the_handed_over_interpreter_skips_the_question_unless_a_preset_names_one(tmp_path, logger_stub):

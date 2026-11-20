@@ -22,11 +22,10 @@ class ResultsBrowser:
     MAX_TEXT_BYTES = 262144
 
     STAGE_MARKERS = (
-        ("benchmark",        ("pipeline/resolved_config.json", "results/benchmark_overview.md", "benchmark_overview.md")),
-        ("preprocess",       ("images/primary", "images/derived", "images/aux")),
-        ("param extraction", ("images/colormaps", "images/example_fits", "fit_report.md")),
-        ("training",         ("docs/trainer_config.json", "last.pt", "tensorboard")),
-        ("inference",        ("inference", "figures", "animations")),
+        ("benchmark", ("pipeline/resolved_config.json", "results/benchmark_overview.md", "benchmark_overview.md")),
+        ("dataset",   ("dataset.json",)),
+        ("training",  ("docs/trainer_config.json", "last.pt", "tensorboard")),
+        ("inference", ("inference", "figures", "maps")),
     )
 
     def __init__(self, logger: WebLogger) -> None:
@@ -126,11 +125,7 @@ class ResultsBrowser:
 
         items = []
         for entry in self._subdirs(root):
-            params     = []
-            params_dir = entry / "params"
-            if params_dir.is_dir():
-                params = [{"name": child.name, "path": str(child)} for child in self._subdirs(params_dir)]
-            items.append({"name": entry.name, "path": str(entry), "params": params})
+            items.append({"name": entry.name, "path": str(entry)})
 
         return {"error": "", "items": items}
 

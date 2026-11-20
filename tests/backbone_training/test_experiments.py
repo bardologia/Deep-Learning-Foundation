@@ -1,76 +1,18 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
 from configuration.training                  import BackboneEntryConfig
-from configuration.training.backbone         import FullModel, AugmentationTrialsConfig, ClampTrialsConfig, HeadMatchingTrialsConfig, LogEnergyTrialsConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig
+from configuration.training.backbone         import AugmentationTrialsConfig, PatchTrialsConfig, ReachTrialsConfig
 from configuration.training.general.run      import TrainingQueueConfig
 from configuration.training.general.trials   import TrialCatalog
 from pipelines.backbone.training.experiments import (
     AugmentationTrialPlanner,
-    ClampTrialPlanner,
     ContextTrialPlanner,
-    HeadMatchingTrialPlanner,
-    InputTrialPlanner,
-    LogEnergyTrialPlanner,
     PatchSizeTrialPlanner,
-    PairLossTrialPlanner,
     ReachTrialPlanner,
-    SecondaryTrialPlanner,
-    SlotPresenceTrialPlanner,
 )
-from pipelines.backbone.training.launcher    import TrainScheduler
-from tools.runtime.config_cli                import ConfigCli
-
-
-CANDIDATES = ["CH01", "CH02", "CH03", "CH04", "CH05", "CH06"]
-
-
-def _dataset(root: Path, channel_labels) -> Path:
-    (root / "data").mkdir(parents=True)
-    (root / "data" / "dataset.json").write_text(json.dumps({"channel_labels": channel_labels}))
-
-    return root
-
-
-def test_presence_planner_overrides_the_loss_flags():
-    planner = SlotPresenceTrialPlanner(
-        {"AB": {"use_active_normalization": True, "presence_balance": True}},
-    )
-
-    plans = planner.plan()
-
-    assert len(plans) == 1
-    assert [name for name, _ in plans] == ["pr-AB"]
-    assert planner.summary()["Total runs"] == 1
-
-    ov = dict(plans)["pr-AB"]
-
-    assert "loss.param_match" not in ov
-    assert ov["loss.use_active_normalization"] is True
-    assert ov["loss.presence_balance"]         is True
-
-
-def test_presence_planner_default_matrix():
-    planner = SlotPresenceTrialPlanner(TrialCatalog.presence_trials())
-
-    plans = dict(planner.plan())
-
-    assert list(plans) == ["pr-none", "pr-A", "pr-B", "pr-AB"]
-
-    expected = {
-        "pr-none" : (False, False),
-        "pr-A"    : (True,  False),
-        "pr-B"    : (False, True),
-        "pr-AB"   : (True,  True),
-    }
-    for name, (active_norm, balance) in expected.items():
-        assert plans[name]["loss.use_active_normalization"] is active_norm
-        assert plans[name]["loss.presence_balance"]         is balance
 
 
 def make_patch_planner(training: TrainingQueueConfig | None = None, **overrides) -> PatchSizeTrialPlanner:
@@ -150,163 +92,6 @@ def test_patch_planner_summary_reports_one_batch_without_the_budget():
     assert planner.summary()["Batch size / LR reference"] == "32 / 64 in every trial (constant pixel budget off)"
 
 
-def test_secondary_consecutive_blocks():
-    trials  = SecondaryTrialsConfig(strategy="consecutive", n_secondaries=2, block_step=1)
-    planner = SecondaryTrialPlanner(trials, CANDIDATES)
-
-    plans = planner.plan()
-
-    assert len(plans) == len(CANDIDATES) - 1
-
-    name, overrides = plans[0]
-    assert overrides["paths.secondary_labels"] == ("CH01", "CH02")
-    assert name.startswith("sec-consecutive-t00")
-
-
-def test_secondary_spaced_picks_strided_labels():
-    trials  = SecondaryTrialsConfig(strategy="spaced", n_secondaries=2, block_step=1, spacing=2)
-    planner = SecondaryTrialPlanner(trials, CANDIDATES)
-
-    plans = planner.plan()
-
-    assert plans[0][1]["paths.secondary_labels"] == ("CH01", "CH03")
-
-
-def test_secondary_uniform_produces_distinct_trials():
-    trials  = SecondaryTrialsConfig(strategy="uniform", n_secondaries=2, n_trials=4, seed=0)
-    planner = SecondaryTrialPlanner(trials, CANDIDATES)
-
-    plans = planner.plan()
-
-    selections = [overrides["paths.secondary_labels"] for _, overrides in plans]
-
-    assert len(plans) == 4
-    assert len(set(selections)) == 4
-
-
-def test_secondary_exhaustive_enumerates_all_combinations_of_exact_size():
-    trials  = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=2)
-    planner = SecondaryTrialPlanner(trials, CANDIDATES)
-
-    plans      = planner.plan()
-    selections = [overrides["paths.secondary_labels"] for _, overrides in plans]
-
-    assert len(plans) == 15
-    assert len(set(selections)) == len(selections)
-    assert all(len(selection) == 2 for selection in selections)
-    assert selections[0]  == ("CH01", "CH02")
-    assert selections[-1] == ("CH05", "CH06")
-    assert planner.summary()["Total runs"] == 15
-
-
-def test_secondary_exhaustive_full_stack_yields_the_single_full_selection():
-    trials  = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=len(CANDIDATES))
-    planner = SecondaryTrialPlanner(trials, CANDIDATES)
-
-    plans = planner.plan()
-
-    assert len(plans) == 1
-    assert plans[-1][1]["paths.secondary_labels"] == tuple(CANDIDATES)
-
-
-def test_secondary_exhaustive_pairs_one_fixed_channel_with_every_other_candidate():
-    trials  = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=1, fixed=("CH03",))
-    planner = SecondaryTrialPlanner(trials, CANDIDATES)
-
-    plans      = planner.plan()
-    selections = [overrides["paths.secondary_labels"] for _, overrides in plans]
-
-    assert len(plans) == len(CANDIDATES) - 1
-    assert selections[0] == ("CH01", "CH03")
-    assert selections[2] == ("CH03", "CH04")
-    assert all("CH03" in selection and len(selection) == 2 for selection in selections)
-    assert planner.summary()["Total runs"] == len(CANDIDATES) - 1
-
-
-def test_secondary_fixed_channels_leave_the_swept_pool():
-    trials  = SecondaryTrialsConfig(strategy="consecutive", n_secondaries=2, block_step=1, fixed=("CH01", "CH06"))
-    planner = SecondaryTrialPlanner(trials, CANDIDATES)
-
-    selections = [overrides["paths.secondary_labels"] for _, overrides in planner.plan()]
-
-    assert planner.pool == ["CH02", "CH03", "CH04", "CH05"]
-    assert len(selections) == 3
-    assert selections[0] == ("CH01", "CH02", "CH03", "CH06")
-    assert all(len(selection) == 4 for selection in selections)
-
-
-def test_secondary_exhaustive_never_pairs_a_channel_with_itself():
-    trials  = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=3)
-    planner = SecondaryTrialPlanner(trials, CANDIDATES)
-
-    selections = [overrides["paths.secondary_labels"] for _, overrides in planner.plan()]
-
-    assert all(len(set(selection)) == 3 for selection in selections)
-    assert len({frozenset(selection) for selection in selections}) == len(selections) == 20
-
-
-def test_input_planner_default_catalog_covers_the_stack_grid():
-    planner = InputTrialPlanner(TrialCatalog.input_trials(), CANDIDATES)
-
-    plans = dict(planner.plan())
-
-    bases = ["amp-allsec-noderived", "noamp-allsec-derived", "amp-allsec-derived", "amp-redsec-derived", "amp-redsec-noderived", "noamp-redsec-derived"]
-    assert list(plans) == [f"in-{base}-{aux}" for base in bases for aux in ("noaux", "aux")]
-
-    amp_all = plans["in-amp-allsec-noderived-noaux"]
-    assert amp_all["input.use_primary"]        is True
-    assert amp_all["input.use_secondaries"]    is True
-    assert amp_all["input.use_derived"] is False
-    assert amp_all["input.use_aux"]            is False
-    assert amp_all["paths.secondary_labels"]   == tuple(CANDIDATES)
-
-    derived_all = plans["in-noamp-allsec-derived-noaux"]
-    assert derived_all["input.use_primary"]     is False
-    assert derived_all["input.use_secondaries"] is False
-    assert derived_all["input.use_derived"]     is True
-    assert derived_all["input.use_aux"]         is False
-    assert derived_all["paths.secondary_labels"] == tuple(CANDIDATES)
-
-    full_all = plans["in-amp-allsec-derived-aux"]
-    assert full_all["input.use_primary"]        is True
-    assert full_all["input.use_secondaries"]    is True
-    assert full_all["input.use_derived"] is True
-    assert full_all["input.use_aux"]            is True
-    assert full_all["paths.secondary_labels"]   == tuple(CANDIDATES)
-
-    reduced = plans["in-noamp-redsec-derived-aux"]
-    assert reduced["input.use_primary"]        is False
-    assert reduced["input.use_secondaries"]    is False
-    assert reduced["input.use_derived"] is True
-    assert reduced["input.use_aux"]            is True
-
-
-def test_input_planner_default_catalog_pairs_every_base_with_and_without_aux():
-    plans = dict(InputTrialPlanner(TrialCatalog.input_trials(), CANDIDATES).plan())
-
-    for base in TrialCatalog.INPUT_TRIAL_BASES:
-        noaux = dict(plans[f"in-{base}-noaux"])
-        aux   = dict(plans[f"in-{base}-aux"])
-
-        assert noaux.pop("input.use_aux") is False
-        assert aux.pop("input.use_aux")   is True
-        assert noaux == aux
-
-
-def test_input_planner_scopes_tracks_per_variant():
-    trials  = {"a": {"tracks": "all", "use_derived": False}, "b": {"tracks": "reduced", "use_aux": True}}
-    planner = InputTrialPlanner(trials, CANDIDATES)
-
-    plans = dict(planner.plan())
-
-    assert set(plans) == {"in-a", "in-b"}
-    assert plans["in-a"]["paths.secondary_labels"] == tuple(CANDIDATES)
-    assert "paths.secondary_labels" not in plans["in-b"]
-    assert "input.tracks"           not in plans["in-a"]
-    assert "input.tracks"           not in plans["in-b"]
-    assert planner.summary() == {"Input variants": 2, "Tracks": f"1 all ({len(CANDIDATES)} secondaries), 1 reduced (configured selection)"}
-
-
 REGISTRY_NAMES = ("pixel_mlp", "local_cnn", "unet", "resunet")
 
 
@@ -355,12 +140,12 @@ def test_context_default_rungs_are_size_matched_at_constant_depth():
 
     from models import get_backbone
 
-    unet, _ = get_backbone("unet", in_channels=9, out_channels=6)
+    unet, _ = get_backbone("unet", in_channels=4, out_channels=2)
     target  = sum(p.numel() for p in unet.parameters())
 
     for trial in TrialCatalog.context_trials():
         overrides = {key: value for key, value in trial.items() if key not in ("label", "backbone")}
-        model, _  = get_backbone(trial["backbone"], in_channels=9, out_channels=6, **overrides)
+        model, _  = get_backbone(trial["backbone"], in_channels=4, out_channels=2, **overrides)
 
         params = sum(p.numel() for p in model.parameters())
         convs  = sum(1 for m in model.trunk.modules() if isinstance(m, nn.Conv2d))
@@ -385,7 +170,7 @@ def _reach_config(**overrides) -> ReachTrialsConfig:
 
 
 def test_reach_planner_pins_every_arm_to_the_same_patch():
-    planner = ReachTrialPlanner(_reach_config(), REGISTRY_NAMES, "conv", 9, 6)
+    planner = ReachTrialPlanner(_reach_config(), REGISTRY_NAMES, "conv", 2)
 
     plans = planner.plan()
 
@@ -399,7 +184,7 @@ def test_reach_default_arms_are_size_matched_and_reach_the_whole_patch():
     from models import BACKBONE_CONFIG_REGISTRY
 
     trials  = ReachTrialsConfig()
-    planner = ReachTrialPlanner(trials, tuple(BACKBONE_CONFIG_REGISTRY), "set_pred", 9, 6)
+    planner = ReachTrialPlanner(trials, tuple(BACKBONE_CONFIG_REGISTRY), "conv", 2)
 
     counts    = planner.parameter_counts
     deviation = (max(counts.values()) - min(counts.values())) / min(counts.values())
@@ -414,34 +199,16 @@ def test_reach_default_arms_are_size_matched_and_reach_the_whole_patch():
     assert all(field >= size for size in trials.patch_size)
 
 
-def test_reach_planner_counts_the_arms_at_the_configured_gaussian_count():
+def test_reach_planner_counts_the_arms_at_the_dataset_target_channel_count():
     rungs = [
         {"label" : "a", "backbone" : "local_cnn", "features" : [8] * 2},
         {"label" : "b", "backbone" : "local_cnn", "features" : [8] * 2},
     ]
 
-    two_slots  = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, "set_pred", 9, 6)
-    five_slots = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, "set_pred", 9, 15)
+    two_targets  = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, "conv", 2)
+    five_targets = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, "conv", 5)
 
-    assert five_slots.parameter_counts["a"] > two_slots.parameter_counts["a"]
-
-
-HEAD_NAMES     = ("conv", "multihead", "per_gaussian", "set_pred")
-MATCHING_NAMES = ("hungarian", "sorted_gt")
-
-
-def test_head_matching_planner_default_crosses_heads_and_matchings():
-    planner = HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
-
-    plans = planner.plan()
-
-    assert plans == [
-        ("hm-conv-sorted_gt",     {"backbone_name": "unet", "backbone_head": "conv",     "loss.param_matching": "sorted_gt"}),
-        ("hm-conv-hungarian",     {"backbone_name": "unet", "backbone_head": "conv",     "loss.param_matching": "hungarian"}),
-        ("hm-set_pred-sorted_gt", {"backbone_name": "unet", "backbone_head": "set_pred", "loss.param_matching": "sorted_gt"}),
-        ("hm-set_pred-hungarian", {"backbone_name": "unet", "backbone_head": "set_pred", "loss.param_matching": "hungarian"}),
-    ]
-    assert planner.summary() == {"Backbone": "unet", "Heads": ["conv", "set_pred"], "Matchings": ["sorted_gt", "hungarian"], "Total runs": 4}
+    assert five_targets.parameter_counts["a"] > two_targets.parameter_counts["a"]
 
 
 def test_augmentation_planner_default_walks_the_ladder():
@@ -499,260 +266,3 @@ def test_augmentation_planner_paths_are_entry_config_leaves():
             section, leaf = path.split(".")
             assert hasattr(getattr(config, section), leaf), path
 
-
-def test_clamp_planner_default_walks_the_ladder():
-    planner = ClampTrialPlanner(ClampTrialsConfig())
-
-    plans = dict(planner.plan())
-
-    assert list(plans) == ["clamp-0-none", "clamp-1-hard", "clamp-2-leaky-s0.1"]
-    assert planner.summary()["Total runs"] == 3
-
-    assert plans["clamp-0-none"] == {
-        "normalization.clamp_output"            : False,
-        "normalization.clamp_leaky_slope"       : 0.0,
-        "normalization.param_clamp_leaky_slope" : 0.0,
-    }
-    assert plans["clamp-1-hard"] == {
-        "normalization.clamp_output"            : True,
-        "normalization.clamp_leaky_slope"       : 0.0,
-        "normalization.param_clamp_leaky_slope" : 0.0,
-    }
-    assert plans["clamp-2-leaky-s0.1"] == {
-        "normalization.clamp_output"            : True,
-        "normalization.clamp_leaky_slope"       : 0.1,
-        "normalization.param_clamp_leaky_slope" : 0.1,
-    }
-
-
-def test_clamp_planner_plans_one_leaky_rung_per_slope_pair():
-    planner = ClampTrialPlanner(ClampTrialsConfig(leaky_slopes=[0.1, 0.3], param_leaky_slopes=[0.1, 0.05]))
-
-    plans = dict(planner.plan())
-
-    assert list(plans) == ["clamp-0-none", "clamp-1-hard", "clamp-2-leaky-s0.1", "clamp-2-leaky-s0.3"]
-    assert planner.summary()["Total runs"] == 4
-
-    assert plans["clamp-2-leaky-s0.3"] == {
-        "normalization.clamp_output"            : True,
-        "normalization.clamp_leaky_slope"       : 0.3,
-        "normalization.param_clamp_leaky_slope" : 0.05,
-    }
-
-
-def test_clamp_planner_paths_are_entry_config_leaves():
-    config = BackboneEntryConfig()
-
-    for _, overrides in ClampTrialPlanner(ClampTrialsConfig()).plan():
-        for path, value in overrides.items():
-            section, leaf = path.split(".")
-            assert hasattr(getattr(config, section), leaf), path
-
-
-def test_pair_planner_crosses_components_and_weights():
-    trials  = PairTrialsConfig(base_component="param_l1", components=["cosine_curve", "moments"], weights=[0.01, 0.05], include_baseline=False)
-    planner = PairLossTrialPlanner(trials)
-
-    plans = planner.plan()
-    names = [name for name, _ in plans]
-
-    assert len(plans) == 4
-    assert names == [
-        "pair-cosine_curve-w0.01",
-        "pair-cosine_curve-w0.05",
-        "pair-moments-w0.01",
-        "pair-moments-w0.05",
-    ]
-    assert planner.summary()["Total runs"] == 4
-    assert planner.summary()["Base"]       == "param_l1 @ 1"
-
-    overrides = dict(plans)["pair-cosine_curve-w0.05"]
-    assert overrides["loss.use_param_l1"]        is True
-    assert overrides["loss.weight_param_l1"]     == 1.0
-    assert overrides["loss.use_cosine_curve"]    is True
-    assert overrides["loss.weight_cosine_curve"] == 0.05
-
-
-def test_pair_planner_neutralizes_every_other_term():
-    trials  = PairTrialsConfig(base_component="param_l1", components=["moments"], weights=[0.1], include_baseline=False)
-    planner = PairLossTrialPlanner(trials)
-
-    overrides = planner.plan()[0][1]
-    enabled   = [path for path, value in overrides.items() if path.startswith("loss.use_") and value is True]
-
-    assert sorted(enabled) == ["loss.use_moments", "loss.use_param_l1"]
-    assert overrides["loss.use_cosine_curve"]       is False
-    assert overrides["loss.weight_cosine_curve"]    == 0.0
-    assert overrides["loss.use_total_power"]        is False
-    assert overrides["loss.weight_total_power"]     == 0.0
-
-
-def test_pair_planner_uses_catalog_flags_for_irregular_names():
-    trials  = PairTrialsConfig(base_component="param_l1", components=["total_power_relerr"], weights=[0.1], include_baseline=False)
-    planner = PairLossTrialPlanner(trials)
-
-    name, overrides = planner.plan()[0]
-
-    assert name == "pair-total_power_relerr-w0.1"
-    assert overrides["loss.use_total_power"]    is True
-    assert overrides["loss.weight_total_power"] == 0.1
-
-
-def test_pair_planner_prepends_base_only_baseline():
-    trials  = PairTrialsConfig(base_component="cosine_curve", base_weight=0.5, components=["param_l1"], weights=[0.01], include_baseline=True)
-    planner = PairLossTrialPlanner(trials)
-
-    plans = planner.plan()
-
-    assert [name for name, _ in plans] == ["pair-baseline", "pair-param_l1-w0.01"]
-
-    baseline = dict(plans)["pair-baseline"]
-    enabled  = [path for path, value in baseline.items() if path.startswith("loss.use_") and value is True]
-
-    assert enabled == ["loss.use_cosine_curve"]
-    assert baseline["loss.weight_cosine_curve"] == 0.5
-
-
-def test_pair_planner_default_config_targets_param_l1_partners():
-    planner = PairLossTrialPlanner(PairTrialsConfig())
-
-    plans = planner.plan()
-
-    assert len(plans) == 10
-    assert "pair-baseline" in dict(plans)
-    assert "pair-moments-w0.05" in dict(plans)
-
-
-def test_pair_plan_round_trips_through_config_cli():
-    trials  = PairTrialsConfig(base_component="param_l1", components=["cosine_curve"], weights=[0.05], include_baseline=True)
-    planner = PairLossTrialPlanner(trials)
-
-    def _apply(overrides: dict):
-        cli   = ConfigCli(BackboneEntryConfig())
-        trial = cli.apply(ConfigCli.to_argv(overrides) + ["--trial"])
-        return trial
-
-    plans = dict(planner.plan())
-
-    baseline = _apply({**plans["pair-baseline"], "run_name": "pair-baseline", "logdir": "/tmp/pair"})
-    assert baseline.loss.use_param_l1     is True
-    assert baseline.loss.use_cosine_curve is False
-    assert baseline.loss.use_moments      is False
-
-    tested = _apply({**plans["pair-cosine_curve-w0.05"], "run_name": "pair-cosine_curve-w0.05", "logdir": "/tmp/pair"})
-    assert tested.loss.use_param_l1        is True
-    assert tested.loss.weight_param_l1     == 1.0
-    assert tested.loss.use_cosine_curve    is True
-    assert tested.loss.weight_cosine_curve == 0.05
-    assert tested.loss.use_moments         is False
-
-
-def test_pair_planner_paths_are_entry_config_leaves():
-    planner = PairLossTrialPlanner(PairTrialsConfig())
-    leaves  = {path for path, _ in ConfigCli._leaves(BackboneEntryConfig())}
-
-    unknown = [path for _, overrides in planner.plan() for path in overrides if path not in leaves]
-
-    assert unknown == []
-
-
-def test_log_energy_planner_sweeps_weights_with_baseline():
-    trials  = LogEnergyTrialsConfig(weights=[0.05, 0.5], include_baseline=True)
-    planner = LogEnergyTrialPlanner(trials)
-
-    plans = planner.plan()
-
-    assert [name for name, _ in plans] == ["logE-baseline", "logE-w0.05", "logE-w0.5"]
-    assert planner.summary()["Total runs"] == 3
-
-    tested = dict(plans)["logE-w0.5"]
-    assert tested["loss.use_log_energy_curve"]    is True
-    assert tested["loss.weight_log_energy_curve"] == 0.5
-
-    baseline = dict(plans)["logE-baseline"]
-    assert baseline["loss.use_log_energy_curve"]    is False
-    assert baseline["loss.weight_log_energy_curve"] == 0.0
-    assert "loss.use_moments" not in baseline
-
-
-def test_log_energy_planner_replace_covariance_strips_it_from_every_arm():
-    trials  = LogEnergyTrialsConfig(weights=[0.05], replace_covariance=True, include_baseline=True)
-    planner = LogEnergyTrialPlanner(trials)
-
-    for _name, overrides in planner.plan():
-        assert overrides["loss.use_moments"]    is False
-        assert overrides["loss.weight_moments"] == 0.0
-
-
-def test_log_energy_plan_round_trips_through_config_cli():
-    trials  = LogEnergyTrialsConfig(weights=[0.25], include_baseline=True)
-    planner = LogEnergyTrialPlanner(trials)
-
-    def _apply(overrides: dict):
-        cli   = ConfigCli(BackboneEntryConfig())
-        trial = cli.apply(ConfigCli.to_argv(overrides) + ["--trial"])
-        return trial
-
-    plans = dict(planner.plan())
-
-    baseline = _apply({**plans["logE-baseline"], "run_name": "logE-baseline", "logdir": "/tmp/logE"})
-    assert baseline.loss.use_log_energy_curve is False
-    assert baseline.loss.use_cosine_curve     is True
-    assert baseline.loss.weight_cosine_curve  == FullModel.COSINE_WEIGHT
-
-    tested = _apply({**plans["logE-w0.25"], "run_name": "logE-w0.25", "logdir": "/tmp/logE"})
-    assert tested.loss.use_log_energy_curve    is True
-    assert tested.loss.weight_log_energy_curve == 0.25
-
-
-def test_log_energy_planner_paths_are_entry_config_leaves():
-    planner = LogEnergyTrialPlanner(LogEnergyTrialsConfig(replace_covariance=True))
-    leaves  = {path for path, _ in ConfigCli._leaves(BackboneEntryConfig())}
-
-    unknown = [path for _, overrides in planner.plan() for path in overrides if path not in leaves]
-
-    assert unknown == []
-
-
-def test_input_from_dataset_uses_full_stack(tmp_path):
-    planner = InputTrialPlanner.from_dataset(TrialCatalog.input_trials(), _dataset(tmp_path, ["CH00", "S1", "S2", "S3", "S4"]))
-
-    plans = dict(planner.plan())
-
-    assert len(plans) == 12
-    assert planner.candidates == ["S1", "S2", "S3", "S4"]
-
-    overrides = plans["in-amp-allsec-noderived-noaux"]
-    assert overrides["input.use_derived"] is False
-    assert overrides["paths.secondary_labels"] == ("S1", "S2", "S3", "S4")
-
-    assert "paths.secondary_labels" not in plans["in-amp-redsec-derived-aux"]
-
-
-def test_secondary_from_dataset_loads_candidates(tmp_path):
-    trials  = SecondaryTrialsConfig(strategy="consecutive", n_secondaries=2, block_step=1)
-    planner = SecondaryTrialPlanner.from_dataset(trials, _dataset(tmp_path, ["CH00", "S1", "S2", "S3", "S4"]))
-
-    plans = planner.plan()
-
-    assert planner.candidates == ["S1", "S2", "S3", "S4"]
-    assert len(plans) >= 1
-    assert all("paths.secondary_labels" in overrides for _, overrides in plans)
-
-
-@pytest.mark.parametrize("mode", ("input", "secondary"))
-def test_scheduler_planners_take_candidates_from_the_dataset_not_the_configured_selection(tmp_path, mode):
-    config                        = BackboneEntryConfig()
-    config.logdir                 = tmp_path / "runs"
-    config.trials_mode            = mode
-    config.paths.dataset_path     = _dataset(tmp_path / "dataset", ["CH00", *CANDIDATES])
-    config.paths.secondary_labels = ("CH02",)
-
-    planner = TrainScheduler(config=config, cli_overrides={}, entry_script=Path("/entry/train_backbone.py")).planner()
-
-    assert planner.candidates == CANDIDATES
-
-    if mode == "input":
-        plans = dict(planner.plan())
-        assert plans["in-amp-allsec-noderived-noaux"]["paths.secondary_labels"] == tuple(CANDIDATES)
-        assert "paths.secondary_labels" not in plans["in-amp-redsec-noderived-noaux"]

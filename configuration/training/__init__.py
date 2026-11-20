@@ -1,4 +1,3 @@
-
 from configuration.training.general import (
     OptimizerConfig,
     SchedulerConfig,
@@ -9,14 +8,10 @@ from configuration.training.general import (
     TrainingLoopConfig,
     MemoryConfig,
     LossConfig,
-    ParamMatching,
+    LossKind,
 )
 from configuration.training.backbone import (
-    default_loss,
-    PairTrialsConfig,
-    LogEnergyTrialsConfig,
     PatchTrialsConfig,
-    SecondaryTrialsConfig,
     BackboneTrainerConfig,
     BackboneEntryConfig,
 )

@@ -1,202 +1,171 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib     import Path
-from typing      import Optional, Tuple
+from typing      import Optional
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
 from configuration.dataset                      import DatasetConfig
-from configuration.dataset.gaussian             import GaussianConfig
-from tools.data.gaussians                       import GaussianAxis
-from tools.data.regions                         import CropRegion
 from models                                     import get_backbone
 from pipelines.backbone.dataset.datasets        import PatchDataset
-from pipelines.shared.model.model_builder       import ModelBuilder
 from pipelines.backbone.dataset.normalizer      import Normalizer
+from pipelines.backbone.dataset.spatial         import GridInfo, Patcher
 from pipelines.backbone.dataset.stats           import Stats
-from pipelines.backbone.dataset.spatial         import GridInfo
 from pipelines.backbone.inference.model_wrapper import ModelWrapper
 from pipelines.shared.config.config_persistence import BackboneModelConfigIO
+from pipelines.shared.dataset.dataset_files     import DatasetFiles
 from pipelines.shared.inference.metadata        import TargetDataset
-from pipelines.shared.inference.run_artifacts   import RunArtifactLoader
+from pipelines.shared.model.model_builder       import ModelBuilder
+from tools.data.io                              import FileIO
+from tools.data.regions                         import CropRegion
+from tools.monitoring.logger                    import Logger
 
 
 @dataclass
 class Run:
 
-    model              : object
-    backbone_name      : str
-    in_channels        : int
-    out_channels       : int
-    z_axis             : np.ndarray
-    x_axis_length      : int
-    n_gaussians        : int
-    activity_threshold : float
-    dataset_config     : DatasetConfig
-    training_dataset   : Path
-    target             : TargetDataset | None
-    split_name         : str
-    split_region       : CropRegion
-    core_region        : CropRegion | None
-    global_crop        : CropRegion
-    grid               : GridInfo
-    dataset            : PatchDataset
-    loader             : DataLoader
-    checkpoint_meta    : dict
-    full_curves        : np.ndarray | None
-    complex_inputs     : np.ndarray | None = None
-    n_secondaries      : int               = 0
-    secondary_labels   : list | None       = None
+    model            : ModelWrapper
+    backbone_name    : str
+    input_channels   : list[str]
+    target_channels  : list[str]
+    dataset_config   : DatasetConfig
+    training_dataset : Path
+    target           : TargetDataset | None
+    split_name       : str
+    split_region     : CropRegion
+    core_region      : CropRegion | None
+    grid             : GridInfo
+    dataset          : PatchDataset
+    loader           : DataLoader
+    checkpoint_meta  : dict
+    inputs           : np.ndarray
+    targets          : np.ndarray
+
+    @property
+    def in_channels(self) -> int:
+        return len(self.input_channels)
+
+    @property
+    def out_channels(self) -> int:
+        return len(self.target_channels)
 
 
-class RunLoader(RunArtifactLoader):
+class RunLoader:
 
-    PARAMS_PER_GAUSSIAN = 3
+    def __init__(self, run_directory: Path, logger: Logger) -> None:
+        self.run_directory  = Path(run_directory)
+        self.logger         = logger
+        self.meta_directory = self.run_directory / "meta"
 
-    def _persisted_n_gaussians(self, run_summary: dict) -> int:
-        return int(run_summary["n_gaussians"])
+    def _read_json(self, name: str) -> dict:
+        return FileIO.load_json(self.meta_directory / name)
 
-    def _build_model(self, backbone_name: str, in_channels: int, out_channels: int, patch_size: Tuple[int, int]):
+    def _dataset_config(self, batch_size: Optional[int], num_workers: int) -> DatasetConfig:
+        config             = DatasetConfig.from_dict(self._read_json("dataset_creation_config.json"))
+        config.batch_size  = batch_size if batch_size is not None else config.batch_size
+        config.num_workers = int(num_workers)
+
+        return config
+
+    def _build_model(self, backbone_name: str, in_channels: int, out_channels: int, patch_size, device: str) -> torch.nn.Module:
         model_config, _ = BackboneModelConfigIO.load(self.meta_directory)
-        self.model_head = model_config.head
 
         overrides = {"in_channels": in_channels, "out_channels": out_channels}
         overrides.update(ModelBuilder.image_size_override(backbone_name, patch_size))
 
         model, _ = get_backbone(backbone_name, config=model_config, **overrides)
 
-        return model
+        return model.to(device)
 
-    def _wrap_model(self, model, device: str, norm_stats: Stats, z_axis: np.ndarray, amp_max: float | None) -> ModelWrapper:
-        return ModelWrapper(
-            model               = model,
-            device              = device,
-            params_per_gaussian = self.PARAMS_PER_GAUSSIAN,
-            normalizer          = Normalizer(norm_stats),
-            z_axis              = torch.from_numpy(z_axis),
-            amp_max             = amp_max,
-        )
+    def _load_checkpoint(self, model: torch.nn.Module, checkpoint_path: Path, device: str) -> dict:
+        checkpoint = torch.load(str(checkpoint_path), map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint["params"])
+        model.eval()
 
-    def load(
-        self,
-        *,
-        split           : str,
-        batch_size      : Optional[int],
-        num_workers     : int,
-        device          : str,
-        checkpoint_name : str,
-        load_cube       : bool = True,
-        region_override : Optional[CropRegion] = None,
-        target          : Optional[TargetDataset] = None,
-    ) -> Run:
+        return {
+            "epoch"         : int(checkpoint["epoch"]),
+            "best_val_loss" : float(checkpoint["best_val_loss"]),
+            "best_epoch"    : int(checkpoint["best_epoch"]),
+        }
+
+    def _region(self, dataset_config: DatasetConfig, split: str, region_override: Optional[CropRegion]) -> tuple[CropRegion, Optional[CropRegion]]:
+        regions = dataset_config.split_regions.regions(split)
+
+        if region_override is None:
+            return regions[0], None
+
+        return region_override, next(stored for stored in regions if region_override.contains(stored))
+
+    def load(self, *, split: str, batch_size: Optional[int], num_workers: int, device: str, checkpoint_name: str, region_override: Optional[CropRegion] = None, target: Optional[TargetDataset] = None) -> Run:
         self.logger.section("[Inference: Load Run]")
         self.logger.subsection(f"Run Directory : {self.run_directory} \n")
 
-        run_summary = self._read_json("run_summary.json")
-
-        trained_config = self._build_dataset_config(
-            payload     = self._read_json("dataset_creation_config.json"),
-            batch_size  = batch_size,
-            num_workers = num_workers,
-        )
+        run_summary    = self._read_json("run_summary.json")
+        trained_config = self._dataset_config(batch_size, num_workers)
         dataset_config = trained_config if target is None else target.dataset_config(trained_config)
 
-        backbone_name = str(run_summary["model_name"])
-        in_channels   = int(run_summary["in_channels"])
-        out_channels  = int(run_summary["out_channels"])
-        n_gaussians   = self._persisted_n_gaussians(run_summary)
+        backbone_name   = str(run_summary["model_name"])
+        input_channels  = list(run_summary["input_channels"])
+        target_channels = list(run_summary["target_channels"])
+        checkpoint_path = self.run_directory / checkpoint_name
 
-        gaussian           = GaussianConfig.from_dataset(dataset_config.preprocessing_run_directory, dataset_config.parameters_path)
-        activity_threshold = gaussian.activity_threshold
+        model           = self._build_model(backbone_name, len(input_channels), len(target_channels), dataset_config.patch.size, device)
+        checkpoint_meta = self._load_checkpoint(model, checkpoint_path, device)
+        normalizer      = Normalizer(Stats.load(self.meta_directory, self.logger))
 
-        ckpt_path = self.run_directory / checkpoint_name
-        model     = self._build_model(backbone_name, in_channels, out_channels, dataset_config.patch.size)
-        model     = model.to(device)
+        region, core_region = self._region(dataset_config, split, region_override)
 
-        ckpt, z_axis, ckpt_meta = self._load_checkpoint(ckpt_path, device)
-        model.load_state_dict(ckpt["params"])
+        files   = DatasetFiles.read(dataset_config.dataset_directory)
+        inputs  = DatasetFiles.crop(files.inputs(), region)
+        targets = DatasetFiles.crop(files.targets(), region)
 
-        model.eval()
-        norm_stats = Stats.load(self.run_directory / "meta", self.logger)
-        model      = self._wrap_model(model, device, norm_stats, z_axis, norm_stats.clamp.amp_max if norm_stats.clamp.enabled else None)
-
-        dataset, grid, region, layout, arrays = self._build_dataset(
-            dataset_config  = dataset_config,
-            split_name      = split,
-            n_gaussians     = n_gaussians,
-            norm_stats      = norm_stats,
-            load_cube       = load_cube,
-            region_override = region_override,
+        patcher = Patcher.build(
+            spatial_size          = (region.row_size, region.col_size),
+            patch_size            = dataset_config.patch.size,
+            stride                = dataset_config.patch.stride,
+            use_symmetric_padding = dataset_config.patch.use_symmetric_padding,
         )
 
-        dataset_axis = GaussianAxis.build(gaussian.x_min, gaussian.x_max, layout.profile_length)
-
-        core_region = None
-        if region_override is not None:
-            core_region = next(stored for stored in dataset_config.split_regions.regions(split) if region_override.contains(stored))
-
-        loader = DataLoader(
-            dataset,
-            batch_size  = dataset_config.batch_size,
-            shuffle     = False,
-            num_workers = dataset_config.num_workers,
-            pin_memory  = True,
-            drop_last   = False,
-        )
+        dataset = PatchDataset(inputs, targets, patcher, normalizer, count_once=True)
+        loader  = DataLoader(dataset, batch_size=dataset_config.batch_size, shuffle=False, num_workers=dataset_config.num_workers, pin_memory=True, drop_last=False)
 
         self.logger.section(f"[Model]         : '{backbone_name}'")
         self.logger.kv_table({
-            "Checkpoint":          ckpt_path,
-            "Checkpoint epoch":    f"{ckpt_meta['epoch'] + 1} (best epoch {ckpt_meta['best_epoch'] + 1}, best val loss {ckpt_meta['best_val_loss']:.6g})",
-            "Head":                self.model_head,
-            "In channels":         in_channels,
-            "Out channels":        out_channels,
-            "K gaussians":         n_gaussians,
-            "Activity thr":        f"{activity_threshold:g}",
-            "Z axis (checkpoint)": self._axis_label(z_axis),
-            "Z axis (dataset)":    self._axis_label(dataset_axis),
+            "Checkpoint"       : checkpoint_path,
+            "Checkpoint epoch" : f"{checkpoint_meta['epoch'] + 1} (best epoch {checkpoint_meta['best_epoch'] + 1}, best val loss {checkpoint_meta['best_val_loss']:.6g})",
+            "Input channels"   : ", ".join(input_channels),
+            "Target channels"  : ", ".join(target_channels),
         })
 
         self.logger.section(f"[Split]         : '{split}'")
         self.logger.kv_table({
-            "Scored dataset": dataset_config.preprocessing_run_directory if target is None else f"target {target.describe()}",
-            "Trained on":     trained_config.preprocessing_run_directory,
-            "Patches":        grid.grid.number_of_patches,
-            "Row size":       region.row_size,
-            "Col size":       region.col_size,
-            "Z axis length":  z_axis.size,
-            "Region":         region.as_tuple(),
-            "Region source":  ("stored split region" if core_region is None else f"region override; stored core region {core_region.as_tuple()}") if target is None else "target crop",
-            "Batch size":     f"{dataset_config.batch_size} (from training)" if batch_size is None else dataset_config.batch_size,
-            "Loader workers": dataset_config.num_workers,
+            "Scored dataset" : dataset_config.dataset_directory if target is None else f"target {target.describe()}",
+            "Trained on"     : trained_config.dataset_directory,
+            "Region"         : region.as_tuple(),
+            "Region source"  : "stored split region" if core_region is None else f"region override; stored core region {core_region.as_tuple()}",
+            "Patches"        : patcher.grid.number_of_patches,
+            "Batch size"     : f"{dataset_config.batch_size} (from training)" if batch_size is None else dataset_config.batch_size,
+            "Loader workers" : dataset_config.num_workers,
         })
 
         return Run(
-            model              = model,
-            backbone_name      = backbone_name,
-            in_channels        = in_channels,
-            out_channels       = out_channels,
-            z_axis             = z_axis,
-            x_axis_length      = int(z_axis.size),
-            n_gaussians        = n_gaussians,
-            activity_threshold = activity_threshold,
-            dataset_config     = dataset_config,
-            training_dataset   = Path(trained_config.preprocessing_run_directory),
-            target             = target,
-            split_name         = split,
-            split_region       = region,
-            core_region        = core_region,
-            global_crop        = layout.global_crop,
-            grid               = grid.grid,
-            dataset            = dataset,
-            loader             = loader,
-            checkpoint_meta    = ckpt_meta,
-            complex_inputs     = arrays["inputs"],
-            n_secondaries      = arrays["n_secondaries"],
-            secondary_labels   = arrays["secondary_labels"],
-            full_curves        = arrays["cube"] if load_cube else None,
+            model            = ModelWrapper(model, device, normalizer),
+            backbone_name    = backbone_name,
+            input_channels   = input_channels,
+            target_channels  = target_channels,
+            dataset_config   = dataset_config,
+            training_dataset = Path(trained_config.dataset_directory),
+            target           = target,
+            split_name       = split,
+            split_region     = region,
+            core_region      = core_region,
+            grid             = patcher.grid,
+            dataset          = dataset,
+            loader           = loader,
+            checkpoint_meta  = checkpoint_meta,
+            inputs           = inputs,
+            targets          = targets,
         )

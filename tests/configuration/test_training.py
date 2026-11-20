@@ -18,18 +18,14 @@ from configuration.training.general.runtime import (
     TrainingLoopConfig,
     MemoryConfig,
 )
-from configuration.training.general.loss import LossConfig
+from configuration.training.general.loss import LossConfig, LossKind
 
 from configuration.training.backbone import (
-    default_loss,
     PatchTrialsConfig,
-    SecondaryTrialsConfig,
     BackboneTrainerConfig,
     BackboneEntryConfig,
 )
 from configuration.inference.general import InferenceConfig
-
-from tests.configuration._helpers import make_gaussian
 
 
 SIMPLE_DEFAULT_CONFIGS = [
@@ -44,7 +40,7 @@ SIMPLE_DEFAULT_CONFIGS = [
     ResourceConfig,
     LossConfig,
     PatchTrialsConfig,
-    SecondaryTrialsConfig,
+    BackboneTrainerConfig,
     BackboneEntryConfig,
 ]
 
@@ -53,14 +49,6 @@ SIMPLE_IDS = [c.__name__ for c in SIMPLE_DEFAULT_CONFIGS]
 @pytest.mark.parametrize("config_cls", SIMPLE_DEFAULT_CONFIGS, ids=SIMPLE_IDS)
 def test_default_config_instantiates(config_cls):
     instance = config_cls()
-    assert dataclasses.is_dataclass(instance)
-
-
-def test_trainer_config_requires_gaussian():
-    with pytest.raises(TypeError):
-        BackboneTrainerConfig()
-
-    instance = BackboneTrainerConfig(gaussian=make_gaussian())
     assert dataclasses.is_dataclass(instance)
 
 
@@ -96,16 +84,10 @@ def test_early_stopping_patience_positive():
     assert cfg.patience > 0
 
 
-def test_loss_config_weight_used_directly():
-    cfg = LossConfig(weight_mse_curve=2.0, weight_param_l1=3.0)
-    assert cfg.weight_mse_curve == pytest.approx(2.0)
-    assert cfg.weight_param_l1  == pytest.approx(3.0)
-
-
-def test_loss_config_param_weights_tuple():
+def test_loss_config_defaults_to_an_unweighted_mean_squared_error():
     cfg = LossConfig()
-    assert isinstance(cfg.param_weights, tuple)
-    assert len(cfg.param_weights) == 3
+    assert cfg.kind is LossKind.MSE
+    assert cfg.channel_weights == []
 
 
 def test_backbone_entry_default_subconfigs():
@@ -115,13 +97,8 @@ def test_backbone_entry_default_subconfigs():
     assert isinstance(cfg.inference, InferenceConfig)
 
 
-def test_backbone_entry_default_loss_trains_the_parameter_l1_term():
-    assert default_loss().use_param_l1 is True
-    assert BackboneEntryConfig().loss == default_loss()
-
-
 def test_backbone_trainer_subconfig_factories():
-    cfg = BackboneTrainerConfig(gaussian=make_gaussian())
+    cfg = BackboneTrainerConfig()
     assert isinstance(cfg.optimizer, OptimizerConfig)
     assert isinstance(cfg.scheduler, SchedulerConfig)
     assert isinstance(cfg.gradient_clipper, GradientClipperConfig)

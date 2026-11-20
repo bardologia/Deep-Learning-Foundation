@@ -114,10 +114,10 @@ def test_the_same_root_is_recorded_once(roots, tmp_path):
 
 def _fake_stamp(root: Path, group: str, run: str, stamp: str, extras: tuple = ()) -> Path:
     stamp_dir = root / group / run / "inference" / stamp
-    cubes     = stamp_dir / "cubes"
-    cubes.mkdir(parents=True)
+    maps      = stamp_dir / "maps"
+    maps.mkdir(parents=True)
 
-    (cubes / "pred_curves.npy").write_bytes(b"x")
+    (maps / "predictions.npy").write_bytes(b"x")
     for rel in extras:
         target = stamp_dir / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -152,10 +152,10 @@ def test_stamp_scan_groups_and_sorts_newest_first(tmp_path):
 
 
 def test_stamp_scan_drops_entries_missing_required_files(tmp_path):
-    complete = _fake_stamp(tmp_path, "g", "full", "s1", extras=("metrics.json", "cubes/pixel_mse.npy"))
+    complete = _fake_stamp(tmp_path, "g", "full", "s1", extras=("metrics.json", "maps/targets.npy"))
     _fake_stamp(tmp_path, "g", "bare", "s2")
 
-    out = RunScanner(CatalogRoots()).stamps(str(tmp_path), required=("metrics.json", "cubes/pixel_mse.npy"))
+    out = RunScanner(CatalogRoots()).stamps(str(tmp_path), required=("metrics.json", "maps/targets.npy"))
 
     assert [entry["id"] for entry in out["entries"]] == [str(complete)]
 

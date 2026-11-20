@@ -8,47 +8,38 @@ from torch.utils.data import DataLoader, TensorDataset
 from models                              import get_backbone
 from pipelines.backbone.training.trainer import Trainer
 
-from tests.backbone_training._helpers import identity_normalizer, tiny_trainer_config, x_axis_numpy
+from tests.backbone_training._helpers import TARGET_CHANNELS, batch_tensors, tiny_trainer_config
 
 from tools.monitoring.logger import Logger
 
 
 NEW_BACKBONES = {
-    "pixel_mlp"        : ("pixel_mlp", {"features": [16, 16]}),
-    "local_cnn"        : ("local_cnn", {"features": [8, 8], "dropout": 0.0}),
-    "nafnet"           : ("nafnet",    {"width": 8, "enc_blocks": [1, 1], "middle_blocks": 1, "dec_blocks": [1, 1], "dropout": 0.0}),
-    "unet-set_pred"    : ("unet",      {"head": "set_pred", "features": [8, 16], "bottleneck_factor": 1, "dropout": 0.0, "normalization": "instance"}),
-    "resunet-set_pred" : ("resunet",   {"head": "set_pred", "features": [8, 16], "bottleneck_factor": 1, "dropout": 0.0, "normalization": "instance"}),
+    "pixel_mlp" : ("pixel_mlp", {"features": [16, 16]}),
+    "local_cnn" : ("local_cnn", {"features": [8, 8], "dropout": 0.0}),
+    "nafnet"    : ("nafnet",    {"width": 8, "enc_blocks": [1, 1], "middle_blocks": 1, "dec_blocks": [1, 1], "dropout": 0.0}),
+    "unet"      : ("unet",      {"features": [8, 16], "bottleneck_factor": 1, "dropout": 0.0, "normalization": "instance"}),
+    "resunet"   : ("resunet",   {"features": [8, 16], "bottleneck_factor": 1, "dropout": 0.0, "normalization": "instance"}),
 }
 
 
-def _loader(n: int = 6, hw: int = 16) -> DataLoader:
-    gen  = torch.Generator().manual_seed(0)
-    imgs = torch.randn(n, 2, hw, hw, generator=gen)
-    tgt  = torch.randn(n, 6, hw, hw, generator=gen)
-
-    tgt[:, 0::3] = tgt[:, 0::3].abs() + 1.0
-    tgt[:, 1::3] = 20.0 + 10.0 * tgt[:, 1::3].clamp(-1.5, 1.5)
-    tgt[:, 2::3] = tgt[:, 2::3].abs() + 2.0
-
-    return DataLoader(TensorDataset(imgs, tgt), batch_size=2)
+def _loader(n: int = 6) -> DataLoader:
+    return DataLoader(TensorDataset(*batch_tensors(n=n)), batch_size=2)
 
 
 def _build_trainer(tmp_path, name: str, reserve_vram: bool = False) -> Trainer:
     backbone_name, overrides = NEW_BACKBONES[name]
-    model, model_cfg         = get_backbone(backbone_name, in_channels=2, out_channels=6, **overrides)
+    model, model_cfg         = get_backbone(backbone_name, in_channels=2, out_channels=2, **overrides)
 
-    config = tiny_trainer_config(n_gaussians=2, epochs=1)
+    config = tiny_trainer_config(epochs=1)
     config.training.use_ema      = True
     config.training.ema_decay    = 0.5
     config.warmup.warmup_enabled = True
     config.warmup.warmup_fraction = 0.1
     config.memory.reserve_vram   = reserve_vram
 
-    logger     = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level="ERROR")
-    norm_stats = identity_normalizer(6)
+    logger = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level="ERROR")
 
-    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=norm_stats, emit_docs=False)
+    trainer = Trainer(model, model_cfg, TARGET_CHANNELS, config, tmp_path, logger, emit_docs=False)
     trainer.warmup.resolve(200)
     return trainer
 

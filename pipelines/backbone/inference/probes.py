@@ -4,8 +4,6 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from tools.data.gaussians import GaussianReconstructor
-
 
 class ModelDevice:
 
@@ -33,29 +31,10 @@ class ProbeWindows:
 
     def assemble(self, centers: list[tuple[int, int]]) -> torch.Tensor:
         half    = self.window // 2
-        aux     = self.run.dataset.aux
         windows = []
 
         for row, col in centers:
-            row0, col0       = row - half, col - half
-            complex_window = self.run.complex_inputs[:, row0:row0 + self.window, col0:col0 + self.window]
-            aux_window     = aux[row0:row0 + self.window, col0:col0 + self.window] if aux is not None else None
-            windows.append(self.run.dataset.assemble_window(complex_window, aux_window))
+            row0, col0 = row - half, col - half
+            windows.append(self.run.dataset.window(self.run.inputs[:, row0:row0 + self.window, col0:col0 + self.window]))
 
         return torch.from_numpy(np.stack(windows)).float()
-
-
-class PredictionCurves:
-
-    def __init__(self, n_gaussians: int, z_axis: np.ndarray) -> None:
-        self.n_gaussians = int(n_gaussians)
-        self.z_axis      = np.asarray(z_axis, dtype=np.float32)
-
-    def render(self, params: np.ndarray) -> np.ndarray:
-        n_K        = self.n_gaussians
-        B, _, H, W = params.shape
-
-        x     = self.z_axis.reshape(1, 1, -1, 1, 1)
-        gauss = params[:, :n_K * 3].reshape(B, n_K, 3, H, W).astype(np.float32)
-
-        return GaussianReconstructor.reconstruct_batch(gauss, x)

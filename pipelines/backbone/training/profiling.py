@@ -9,7 +9,6 @@ import torch
 import torch.nn.functional as functional
 from torch.utils.data import Dataset
 
-from tools.data.gaussians             import GaussianAxis, GaussianHead
 from tools.diagnostics.step_profiler  import StepProfiler
 from tools.runtime.run_tag            import RunTag
 
@@ -59,41 +58,29 @@ class FeedAdapter:
         from pipelines.backbone.dataset.pipeline  import DatasetPipeline
         from pipelines.shared.model.model_builder import ModelBuilder
 
-        dataset_config = factory.training_dataset_config()
-        gaussian_cfg   = factory.training_trainer_config(logdir=self.work_dir).gaussian
-
-        dataset_config.n_gaussians = gaussian_cfg.n_default_gaussians
-
+        dataset_config           = factory.training_dataset_config()
         name, _head              = ModelBuilder.split_key(self.model_name)
         patch                    = dataset_config.patch
         patch.size, patch.stride = ModelBuilder.square_patch(name, patch.size, patch.stride)
 
-        dataset_pipeline = DatasetPipeline(dataset_config, self.work_dir, activity_threshold=gaussian_cfg.activity_threshold, logger=self.logger, seed=self.config.seed)
-        profile_length   = dataset_pipeline.profile_length
+        _train_loader, _val_loader, _test_loader, datasets, _normalizer = DatasetPipeline(dataset_config, self.work_dir, logger=self.logger, seed=self.config.seed).run()
 
-        dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, profile_length)
+        return datasets["train"], dataset_config
 
-        _train_loader, _val_loader, _test_loader, datasets = dataset_pipeline.run()
-
-        return datasets["train"], dataset_config, gaussian_cfg
-
-    def _model(self, dataset, dataset_config, gaussian_cfg):
+    def _model(self, dataset, dataset_config):
         from models                               import BACKBONE_CONFIG_REGISTRY, get_backbone
         from pipelines.shared.model.model_builder import ModelBuilder
 
-        name, head   = ModelBuilder.split_key(self.model_name)
-        in_channels  = dataset.input_channels
-        out_channels = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, gaussian_cfg.n_default_gaussians)
-
-        overrides = {"in_channels": in_channels, "out_channels": out_channels, "head": head}
+        name, head = ModelBuilder.split_key(self.model_name)
+        overrides  = {"in_channels": dataset.input_channels, "out_channels": dataset.target_channels, "head": head}
         overrides.update(ModelBuilder.image_size_override(name, dataset_config.patch.size))
 
         model, _ = get_backbone(name, config=BACKBONE_CONFIG_REGISTRY[name](), **overrides)
-        return model, in_channels
+        return model
 
     def build(self) -> FeedTarget:
-        dataset, dataset_config, gaussian_cfg = self._dataset(self._config_factory())
-        model, input_channels                 = self._model(dataset, dataset_config, gaussian_cfg)
+        dataset, dataset_config = self._dataset(self._config_factory())
+        model                   = self._model(dataset, dataset_config)
 
         sample = np.asarray(dataset[0][0])
 
@@ -103,7 +90,7 @@ class FeedAdapter:
             to_model_input = self.to_model_input,
             forward_loss   = self.forward_loss,
             model_name     = self.model_name,
-            sample_text    = f"patches {tuple(sample.shape)}, {len(dataset):,} samples, {input_channels} channels",
+            sample_text    = f"patches {tuple(sample.shape)}, {len(dataset):,} samples, {dataset.input_channels} input channels",
         )
 
 

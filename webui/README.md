@@ -2,7 +2,7 @@
 
 A single-page web console for the ML Template project. It documents the model zoo,
 launches and supervises the `main/` entry points, and browses everything those runs
-produce: metrics, reports, figures, prediction cubes and TensorBoard curves.
+produce: metrics, reports, figures, prediction maps and TensorBoard curves.
 
 ## Run
 
@@ -26,7 +26,7 @@ them in the facts rail.
 
 The HTTP transport is standard library only (`http.server` plus server-sent events), but
 the console itself needs the project environment. `web_ui_server.py` imports the
-model probe, A/B autopsy and system monitor at boot, and those pull numpy, matplotlib, scipy, torch, scikit-image,
+model probe, A/B autopsy and system monitor at boot, and those pull numpy, matplotlib, scipy, torch,
 tensorboard and psutil. On a bare interpreter the server fails with an ImportError before
 it binds the port, which is why `run.sh` starts from the interpreter the profile records.
 
@@ -99,14 +99,11 @@ contract and never writes to a config file.
   widget each one gets. It is the single source of truth for the form and refuses to build
   a section containing a field it does not claim, so a new config field surfaces as a loud
   failure rather than a silently missing control. `config_descriptions.json` supplies the
-  per-field help text under the same strictness. The secondary-channel field of every
-  training form is a picker fed by `/api/fs/secondaries`, which reads the selected
-  dataset's channel labels from its `data/dataset.json`; the standard channels of the
-  training paths default are flagged and a Standard button restores them.
-  An `arch_overrides` panel reads its model field from one path (`modelFrom`).
-  Fields measured in seconds (`gif_duration`, the extraction's resource poll interval)
-  use a seconds widget with presets, and the tune form groups its study switches under
-  Search groups and its plateau and time-budget rules under Stop rules.
+  per-field help text under the same strictness. The dataset field of every training form
+  is a picker over the folders that hold a `dataset.json`, badged with their input and
+  target channel counts. An `arch_overrides` panel reads its model field from one path
+  (`modelFrom`), and the tune form groups its study switches under Search groups and its
+  plateau and time-budget rules under Stop rules.
 - **Overrides.** Edited fields are appended to the command as `--<dotted.path> <value>`,
   which `ConfigCli` coerces to the field's type. The command preview always shows exactly
   what will run.
@@ -216,9 +213,9 @@ from one autopilot on the mast, so both answer the same pointer; any header with
 The stock `drawer`, `terminal` (turned to face right), `plug`, `riffle`, `loupe`, `sieve`,
 `elevator`, `slow`, `cabinet`, `router`, `patch` and `phosphor` come from the package;
 `hairline_project` draws the project's own on a shared `HairlineFigureBase`:
-`folds`, `slots`, `gpus`, `guard`, `backbone` (the backbone zoo as a
+`folds`, `gpus`, `guard`, `backbone` (the backbone zoo as a
 bench of swappable cartridges), `landscape`,
-`surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
+`surface` (two bumps riding a straight track across a ridgeline surface),
 `balance`, `podium`, `tiles`, `film`, `tray`, `shelf`, `dial`, `scheduler`, `sampler`, `feed`, `field`,
 `watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `guillotine`, `chips`, `calendar` and
 `hourglass`. Fourteen of them take `state`: `gpus` (`{devices: [{holder, util}]}`),
@@ -238,7 +235,7 @@ is given.
 Every page shows at least one figure, and the element remounts when its `name` changes,
 so a page can swap it with what is on screen: Results through `ResultsView.FIGURES` (folder `tray`, all plots `film`,
 compare `tiles`) and Launch through `LaunchView.FIGURES`, a pattern table over script
-keys (for example `infer_*` `shelf`, `generate_dataset` `slots`, `tune` `dial`, `measure_receptive_field`
+keys (for example `infer_*` `shelf`, `tune` `dial`, `measure_receptive_field`
 `field`; a generic `train_*` script and an unmatched key show `surface`). Standard pages
 carry the figure in a `page__head--figure` header, Launch puts it at the end of its top
 bar, and Configuration (`sampler`) and TensorBoard (`landscape`) at the end of their row

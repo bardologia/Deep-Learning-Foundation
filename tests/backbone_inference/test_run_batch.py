@@ -115,8 +115,8 @@ def test_replacing_an_unfinished_result_says_so(tmp_path):
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_activation_xray_pass_on_a_real_run_is_stamped(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+def test_activation_xray_pass_on_a_real_run_is_stamped(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
     config  = ActivationXrayConfig(batch_size=2, max_batches=1, make_plots=False)
 
     outcome = ActivationXrayRun(run_dir, config, RecordingLogger()).run()

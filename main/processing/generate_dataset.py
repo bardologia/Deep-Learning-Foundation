@@ -5,18 +5,18 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from _bootstrap import EnvironmentPinner
 
-from configuration.synthesis  import GenerateDatasetEntryConfig
+from configuration.generation import GenerateDatasetEntryConfig
 from tools.runtime.config_cli import ConfigCli
 
 
 def main() -> None:
-    config = ConfigCli(GenerateDatasetEntryConfig(), description="Generate a synthetic Gaussian-mixture dataset with the on-disk layout the training and inference pipelines expect").apply()
+    config = ConfigCli(GenerateDatasetEntryConfig(), description="Generate the synthetic dense regression dataset: smooth input fields and target fields given by a known nonlinear, spatially local function of them").apply()
 
     EnvironmentPinner.threads()
 
-    from pipelines.processing.synthesis.pipeline import SyntheticDatasetSession
+    from pipelines.processing.generation import GenerateDatasetSession
 
-    SyntheticDatasetSession(config).execute()
+    GenerateDatasetSession(config).execute()
 
 
 if __name__ == "__main__":

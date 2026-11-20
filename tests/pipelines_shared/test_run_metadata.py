@@ -6,7 +6,6 @@ from unittest.mock import Mock
 
 import pytest
 
-from configuration.dataset.gaussian       import GaussianConfig
 from configuration.training               import BackboneTrainerConfig
 from pipelines.shared.config.run_metadata import RunDirectoryLeftovers, TrainingRunMetadata
 from tools.monitoring.logger              import Logger
@@ -14,9 +13,7 @@ from tools.runtime.completion             import CompletionMarker
 
 
 def _trainer_config() -> BackboneTrainerConfig:
-    gaussian = GaussianConfig(n_default_gaussians=5, x_min=-20.0, x_max=80.0, activity_threshold=1e-4)
-
-    return BackboneTrainerConfig(gaussian=gaussian)
+    return BackboneTrainerConfig()
 
 
 def _logger(tmp_path) -> Logger:
@@ -57,7 +54,7 @@ def test_save_trainer_config_roundtrip(tmp_path):
 
         assert out_path == meta.docs_directory / "trainer_config.json"
         assert "writer" not in payload["io"]
-        assert payload["gaussian"]["n_default_gaussians"] == 5
+        assert payload["loss"]["kind"] == "mse"
     finally:
         meta.close()
 
@@ -66,14 +63,15 @@ def test_save_run_summary_payload(tmp_path):
     meta = TrainingRunMetadata(_trainer_config(), "swin", tmp_path, run_name="run_sum", logger=_logger(tmp_path))
 
     try:
-        out_path = meta.save_run_summary("swin", in_channels=9, out_channels=15, x_axis_length=150)
+        out_path = meta.save_run_summary("swin", input_channels=["x0", "x1", "x2"], target_channels=["y"])
         payload  = json.loads(out_path.read_text())
 
-        assert payload["model_name"]    == "swin"
-        assert payload["in_channels"]   == 9
-        assert payload["out_channels"]  == 15
-        assert payload["x_axis_length"] == 150
-        assert payload["run_directory"] == str(meta.run_directory)
+        assert payload["model_name"]      == "swin"
+        assert payload["in_channels"]     == 3
+        assert payload["out_channels"]    == 1
+        assert payload["input_channels"]  == ["x0", "x1", "x2"]
+        assert payload["target_channels"] == ["y"]
+        assert payload["run_directory"]   == str(meta.run_directory)
     finally:
         meta.close()
 
@@ -182,8 +180,8 @@ def test_run_summary_records_the_patch_geometry(tmp_path):
     geometry = {"configured_size": [64, 32], "configured_stride": [32, 16], "size": [64, 64], "stride": [32, 32], "squared": True}
 
     try:
-        with_patch = json.loads(meta.save_run_summary("unet", 2, 15, 170, patch_geometry=geometry).read_text())
-        without    = json.loads(meta.save_run_summary("unet", 2, 15, 170).read_text())
+        with_patch = json.loads(meta.save_run_summary("unet", ["x0", "x1"], ["y"], patch_geometry=geometry).read_text())
+        without    = json.loads(meta.save_run_summary("unet", ["x0", "x1"], ["y"]).read_text())
     finally:
         meta.close()
 
@@ -194,7 +192,7 @@ def test_run_summary_records_the_patch_geometry(tmp_path):
 def test_run_summary_records_provenance(tmp_path):
     meta = TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_prov", logger=_logger(tmp_path))
     try:
-        path    = meta.save_run_summary("unet", 2, 15, 170, n_gaussians=5, seed=1)
+        path    = meta.save_run_summary("unet", ["x0", "x1"], ["y"], seed=1)
         payload = json.loads(path.read_text())
     finally:
         meta.close()

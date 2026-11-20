@@ -23,7 +23,7 @@ from tools.runtime.run_tag                      import RunTag
 
 class TuningScheduler:
 
-    STUDY_KEYS      = ("heads", "skip_models", "tuning", "loss", "paths.dataset_path", "paths.parameters_path", "paths.secondary_labels")
+    STUDY_KEYS      = ("heads", "skip_models", "tuning", "loss", "paths.dataset_path")
     MUTABLE_KEYS    = ("tuning.n_trials", "tuning.plateau_patience", "tuning.plateau_min_delta", "tuning.time_budget_h")
     LAUNCH_KEYS     = (*TuningResumedRun.LAUNCH_FIELDS, *TuningResumedRun.LOCATION_FIELDS, "n_workers")
     HISTORY_DIR     = "config_history"

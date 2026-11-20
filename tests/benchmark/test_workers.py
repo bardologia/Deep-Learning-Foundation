@@ -1,16 +1,10 @@
 
 from __future__ import annotations
 
-
 import pytest
 
+from configuration.benchmark     import BenchmarkConfig
 from pipelines.benchmark.workers import BenchmarkWorker
-from configuration.benchmark import BenchmarkConfig
-from tools.data.io           import FileIO
-from configuration.synthesis import SynthesisConfig
-
-
-SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
 
 
 @pytest.fixture
@@ -21,28 +15,25 @@ def config(tmp_path):
 
 
 @pytest.mark.dataset
-def test_run_name_encodes_model_head_matching_gaussians_aug_presence_component_and_seed(config, test_data_dir, params_dir):
+def test_run_name_encodes_model_head_loss_kind_augmentation_and_seed(config, test_data_dir):
     from pipelines.shared.training.run_naming import RunNaming
 
-    config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = params_dir / "parameters.npy"
+    config.paths.dataset_path = test_data_dir
 
     worker = BenchmarkWorker(config, "tag")
-    tag    = RunNaming.benchmark_unit("unet", None, config.loss, SynthesisConfig().k_max, config.augmentation)
+    tag    = RunNaming.benchmark_unit("unet", config.loss, config.augmentation)
 
-    assert worker._run_name("unet", None, None)       == tag
-    assert worker._run_name("unet", None, 5)          == f"{tag}/seed5"
-    assert worker._run_name("unet", "param_l1", None) == f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1"
-    assert worker._run_name("unet", "param_l1", 5)    == f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed5"
-    assert tag.startswith(f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB-param_l1_1")
+    assert worker._run_name("unet", "mse", None) == tag
+    assert worker._run_name("unet", "mse", 5)    == f"{tag}/seed5"
+    assert worker._run_name("unet", "l1", None)  == "unet-conv-l1-hv"
+    assert tag == "unet-conv-mse-hv"
 
 
 @pytest.mark.dataset
-def test_training_worker_trains_with_the_configured_batch_size(config, test_data_dir, params_dir, monkeypatch):
+def test_training_worker_trains_with_the_configured_batch_size(config, test_data_dir, monkeypatch):
     from pipelines.benchmark.workers import TrainingWorker
 
-    config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = params_dir / "parameters.npy"
+    config.paths.dataset_path = test_data_dir
     config.training.train_rows   = (1000, 1400)
     config.training.val_rows     = (1400, 1700)
     config.training.test_rows    = (1700, 2000)
@@ -60,19 +51,18 @@ def test_training_worker_trains_with_the_configured_batch_size(config, test_data
 
     monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)
 
-    worker.run("resunet-conv")
+    worker.run("resunet-conv", loss_component="mse")
 
     assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / config.training.lr_reference_batch_size)
     assert captured["dataset_config"].batch_size         == 500
 
 
 @pytest.mark.dataset
-def test_training_worker_leaves_a_finished_unit_alone(config, test_data_dir, params_dir, monkeypatch):
+def test_training_worker_leaves_a_finished_unit_alone(config, test_data_dir, monkeypatch):
     from pipelines.benchmark.workers import TrainingWorker
     from tools.runtime.completion    import CompletionMarker
 
-    config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = params_dir / "parameters.npy"
+    config.paths.dataset_path = test_data_dir
 
     worker = TrainingWorker(config, "tag")
     unit   = worker.run_dir / "training" / "renamed/seed3"
@@ -82,30 +72,29 @@ def test_training_worker_leaves_a_finished_unit_alone(config, test_data_dir, par
     trained = []
     monkeypatch.setattr(TrainingWorker, "_run_backbone", lambda self, model_name, run_name, seed, loss_component: trained.append(run_name), raising=True)
 
-    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+    worker.run("unet", seed=3, loss_component="mse", run_name="renamed/seed3")
 
     assert trained == []
 
 
 @pytest.mark.dataset
-def test_training_worker_writes_the_unit_manifest_into_the_handed_over_directory(config, test_data_dir, params_dir, monkeypatch):
+def test_training_worker_writes_the_unit_manifest_into_the_handed_over_directory(config, test_data_dir, monkeypatch):
     from pipelines.benchmark.stages                   import BenchmarkUnitManifest
     from pipelines.benchmark.workers                  import TrainingWorker
     from pipelines.shared.orchestration.unit_manifest import UnitManifest
 
-    config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = params_dir / "parameters.npy"
+    config.paths.dataset_path = test_data_dir
 
     seen = {}
     monkeypatch.setattr(TrainingWorker, "_run_backbone", lambda self, model_name, run_name, seed, loss_component: seen.update(run_name=run_name), raising=True)
 
     worker = TrainingWorker(config, "tag")
-    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+    worker.run("unet", seed=3, loss_component="mse", run_name="renamed/seed3")
 
     manifest = UnitManifest.read(worker.run_dir / "training" / "renamed/seed3")
     assert seen["run_name"] == "renamed/seed3"
     assert manifest["kind"] == BenchmarkUnitManifest.KIND
-    assert BenchmarkUnitManifest.identity(manifest) == ("unet", "param_l1", 3)
+    assert BenchmarkUnitManifest.identity(manifest) == ("unet", "mse", 3)
     assert manifest["unit"] == "renamed/seed3"
 
 
@@ -118,7 +107,7 @@ def test_training_worker_trains_an_unfinished_unit_when_resume_is_off(config, mo
     trained = []
     monkeypatch.setattr(TrainingWorker, "_run_backbone", lambda self, model_name, run_name, seed, loss_component: trained.append(run_name), raising=True)
 
-    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+    worker.run("unet", seed=3, loss_component="mse", run_name="renamed/seed3")
 
     assert trained == ["renamed/seed3"]
 
@@ -154,7 +143,7 @@ def test_inference_worker_reuses_a_completed_inference_on_resume(config, monkeyp
     torn.mkdir(parents=True)
     CompletionMarker.stamp(done, {"stage": "inference", "split": config.inference.split})
 
-    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+    worker.run("unet", seed=3, loss_component="mse", run_name="renamed/seed3")
 
     log = (unit / "logs" / "unit_resume.log").read_text()
     assert ran == []
@@ -175,7 +164,7 @@ def test_inference_worker_scores_a_unit_without_a_completed_inference_for_the_sp
     other.mkdir(parents=True)
     CompletionMarker.stamp(other, {"stage": "inference", "split": "train"})
 
-    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+    worker.run("unet", seed=3, loss_component="mse", run_name="renamed/seed3")
 
     assert ran == [unit]
 
@@ -192,6 +181,6 @@ def test_inference_worker_rescores_a_completed_unit_when_resume_is_off(config, m
     done.mkdir(parents=True)
     CompletionMarker.stamp(done, {"stage": "inference", "split": config.inference.split})
 
-    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+    worker.run("unet", seed=3, loss_component="mse", run_name="renamed/seed3")
 
     assert ran == [unit]

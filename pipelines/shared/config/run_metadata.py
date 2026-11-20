@@ -138,18 +138,14 @@ class TrainingRunMetadata:
 
         return path
 
-    def save_dataset_fingerprint(self, dataset_path, parameters_path, enabled: bool = True) -> Path | None:
+    def save_dataset_fingerprint(self, dataset_path, enabled: bool = True) -> Path | None:
         if not enabled:
             return None
 
         dataset_path = Path(dataset_path)
-        files        = sorted(path for path in (dataset_path / "data").iterdir() if path.is_file())
-
-        if parameters_path is not None:
-            files.append(Path(parameters_path))
-
-        payload  = DatasetFingerprint.compute(dataset_path, files)
-        out_path = self.metadata_directory / "dataset_fingerprint.json"
+        files        = sorted(path for path in dataset_path.iterdir() if path.is_file())
+        payload      = DatasetFingerprint.compute(dataset_path, files)
+        out_path     = self.metadata_directory / "dataset_fingerprint.json"
 
         FileIO.save_json(payload, out_path)
         self.logger.info(f"Dataset fingerprint saved: {out_path}")
@@ -177,25 +173,25 @@ class TrainingRunMetadata:
 
         return out_path
 
-    def save_run_summary(self, model_name: str, in_channels: int, out_channels: int, x_axis_length: int, n_gaussians: int = 0, seed: int = 0, patch_geometry: dict | None = None) -> Path:
+    def save_run_summary(self, model_name: str, input_channels: list[str], target_channels: list[str], seed: int = 0, patch_geometry: dict | None = None) -> Path:
         out_path  = self.metadata_directory / "run_summary.json"
         n_devices = torch.cuda.device_count() if torch.cuda.is_available() else 0
 
         payload  = {
-            "model_name"     : model_name,
-            "in_channels"    : in_channels,
-            "out_channels"   : out_channels,
-            "x_axis_length"  : x_axis_length,
-            "run_directory"  : str(self.run_directory),
-            "framework"      : "pytorch",
-            "n_devices"      : n_devices,
-            "n_gaussians"    : n_gaussians,
-            "seed"           : seed,
-            "patch_geometry" : patch_geometry,
-            "git_commit"     : self.git_commit,
-            "git_diff"       : str(self.git_diff) if self.git_diff is not None else None,
-            "cudnn"          : torch.backends.cudnn.version() if n_devices else None,
-            "provenance"     : self.provenance,
+            "model_name"      : model_name,
+            "in_channels"     : len(input_channels),
+            "out_channels"    : len(target_channels),
+            "input_channels"  : list(input_channels),
+            "target_channels" : list(target_channels),
+            "run_directory"   : str(self.run_directory),
+            "framework"       : "pytorch",
+            "n_devices"       : n_devices,
+            "seed"            : seed,
+            "patch_geometry"  : patch_geometry,
+            "git_commit"      : self.git_commit,
+            "git_diff"        : str(self.git_diff) if self.git_diff is not None else None,
+            "cudnn"           : torch.backends.cudnn.version() if n_devices else None,
+            "provenance"      : self.provenance,
         }
 
         FileIO.save_json(payload, out_path)

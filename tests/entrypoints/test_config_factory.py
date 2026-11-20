@@ -5,19 +5,15 @@ from __future__ import annotations
 import pytest
 
 from configuration.benchmark                import BenchmarkConfig
-from configuration.dataset                  import Representation
 from configuration.inference                import InferenceConfig
 from configuration.training                 import BackboneTrainerConfig
 from pipelines.shared.config.config_factory import ConfigFactory
-from tools.data.regions                     import CropRegion
-from configuration.training.general.run     import DEFAULT_PARAMS_RUN
 
 
 @pytest.fixture
 def factory(test_data_dir):
-    config                       = BenchmarkConfig()
-    config.paths.dataset_path    = str(test_data_dir)
-    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
+    config                    = BenchmarkConfig()
+    config.paths.dataset_path = test_data_dir
     return ConfigFactory(config)
 
 
@@ -26,61 +22,12 @@ def bare_factory():
     return ConfigFactory(BenchmarkConfig())
 
 
-def test_secondary_labels_returns_tuple(bare_factory):
-    labels = bare_factory._secondary_labels()
-
-    assert isinstance(labels, tuple)
-    assert all(isinstance(label, str) for label in labels)
-
-
-def test_secondary_labels_none_when_empty():
-    config = BenchmarkConfig()
-    config.paths.secondary_labels = ()
-
-    assert ConfigFactory(config)._secondary_labels() is None
-
-
-def test_benchmark_input_config_uses_expected_representations(bare_factory):
-    input_config = bare_factory.benchmark_input_config()
-
-    assert input_config.use_primary        is True
-    assert input_config.use_secondaries    is True
-    assert input_config.use_derived is True
-    assert input_config.primary_representation        == Representation.MAG_ONLY
-    assert input_config.secondaries_representation    == Representation.MAG_ONLY
-    assert input_config.derived_representation == Representation.ANGLE_ONLY
-
-
 @pytest.mark.dataset
-def test_global_crop_reads_dataset_json(factory, dataset_json):
-    crop = factory.global_crop()
-
-    assert isinstance(crop, CropRegion)
-    assert list(crop.as_tuple()) == dataset_json["global_crop"]
-
-
-@pytest.mark.dataset
-def test_training_dataset_config_uses_global_crop_range(factory, dataset_json):
-    dataset_config = factory.training_dataset_config()
-    crop           = dataset_json["global_crop"]
-
-    train = dataset_config.split_regions.train
-    assert train.col_start == crop[2]
-    assert train.col_end   == crop[3]
-
-
-@pytest.mark.dataset
-def test_training_dataset_config_rows_from_training(factory):
-    training       = factory.config.training
+def test_training_dataset_config_takes_the_splits_from_the_dataset(factory, dataset_json, test_data_dir):
     dataset_config = factory.training_dataset_config()
 
-    train = dataset_config.split_regions.train
-    val   = dataset_config.split_regions.val
-    test  = dataset_config.split_regions.test
-
-    assert (train.row_start, train.row_end) == tuple(training.train_rows)
-    assert (val.row_start,   val.row_end)   == tuple(training.val_rows)
-    assert (test.row_start,  test.row_end)  == tuple(training.test_rows)
+    assert dataset_config.dataset_directory      == test_data_dir
+    assert dataset_config.split_regions.bounds() == dataset_json["splits"]
 
 
 @pytest.mark.dataset
@@ -124,15 +71,7 @@ def test_inference_config_propagates_inference_fields(bare_factory, tmp_path):
     assert config.split           == inference.split
     assert config.num_workers     == inference.num_workers
     assert config.stitch_window   == inference.stitch_window
-    assert config.gif_axes        == list(inference.gif_axes)
-
-
-def test_inference_config_forwards_the_cube_ssim_switch(bare_factory, tmp_path):
-    assert bare_factory.inference_config(tmp_path / "run").compute_cube_ssim is False
-
-    bare_factory.config.inference.compute_cube_ssim = True
-
-    assert bare_factory.inference_config(tmp_path / "run").compute_cube_ssim is True
+    assert config.save_maps       == inference.save_maps
 
 
 @pytest.mark.dataset

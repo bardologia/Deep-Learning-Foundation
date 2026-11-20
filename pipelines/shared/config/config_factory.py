@@ -3,13 +3,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from configuration.benchmark            import BenchmarkConfig
-from configuration.dataset             import DatasetConfig, InputConfig, OutputConfig, PatchConfig, SplitRegions
-from configuration.inference           import InferenceConfig
-from configuration.training            import default_loss, EarlyStoppingConfig, GradientClipperConfig, MemoryConfig, OptimizerConfig, SchedulerConfig, WarmupConfig, IOConfig, TrainingLoopConfig, BackboneTrainerConfig
-from configuration.dataset.gaussian import GaussianConfig
-from tools.data.io                     import FileIO
-from tools.data.regions                import CropRegion
+from configuration.benchmark                import BenchmarkConfig
+from configuration.dataset                  import DatasetConfig, PatchConfig
+from configuration.inference                import InferenceConfig
+from configuration.training                 import EarlyStoppingConfig, GradientClipperConfig, MemoryConfig, OptimizerConfig, SchedulerConfig, WarmupConfig, IOConfig, TrainingLoopConfig, BackboneTrainerConfig
+from pipelines.shared.dataset.dataset_files import DatasetFiles
+from tools.data.regions                     import SplitRegions
 
 
 class ConfigFactory:
@@ -17,61 +16,29 @@ class ConfigFactory:
     def __init__(self, config: BenchmarkConfig) -> None:
         self.config = config
 
-    def _secondary_labels(self) -> tuple | None:
-        labels = self.config.paths.secondary_labels
-        return tuple(labels) if labels else None
-
-    def global_crop(self) -> CropRegion:
-        layout_path = Path(self.config.paths.dataset_path) / "data" / "dataset.json"
-        layout      = FileIO.load_json(layout_path)
-
-        return CropRegion(*layout["global_crop"])
-
-    def benchmark_input_config(self) -> InputConfig:
-        return InputConfig.full_stack()
-
-    def _output_config(self) -> OutputConfig:
-        norm = self.config.normalization
-        return OutputConfig(output_strategies={key: norm.strategy("output", key) for key in ("out/amp", "out/mu", "out/sigma")})
-
     def split_regions(self) -> SplitRegions:
-        crop     = self.global_crop()
-        training = self.config.training
-
-        return SplitRegions(
-            train = CropRegion(training.train_rows[0], training.train_rows[1], crop.col_start, crop.col_end),
-            val   = CropRegion(training.val_rows[0],   training.val_rows[1],   crop.col_start, crop.col_end),
-            test  = CropRegion(training.test_rows[0],  training.test_rows[1],  crop.col_start, crop.col_end),
-        )
+        return DatasetFiles.read(self.config.paths.dataset_path).splits
 
     def training_dataset_config(self) -> DatasetConfig:
         training = self.config.training
 
         return DatasetConfig(
-            preprocessing_run_directory = self.config.paths.dataset_path,
-            parameters_path             = self.config.paths.parameters_path,
-            split_regions               = self.split_regions(),
-            secondary_labels            = self._secondary_labels(),
-            patch                       = PatchConfig(size=training.patch_size, stride=training.patch_stride, use_symmetric_padding=training.use_symmetric_padding),
-            input_config                = self.benchmark_input_config(),
-            output_config               = self._output_config(),
-            normalization               = self.config.normalization,
-            augmentation                = self.config.augmentation,
-            batch_size                  = training.batch_size,
-            num_workers                 = training.num_workers,
-            prefetch_factor             = training.prefetch_factor,
-            shuffle_train               = True,
-            pin_memory                  = True,
-            fingerprint_dataset         = self.config.paths.fingerprint_dataset,
+            dataset_directory   = self.config.paths.dataset_path,
+            split_regions       = self.split_regions(),
+            patch               = PatchConfig(size=training.patch_size, stride=training.patch_stride, use_symmetric_padding=training.use_symmetric_padding),
+            normalization       = self.config.normalization,
+            augmentation        = self.config.augmentation,
+            batch_size          = training.batch_size,
+            num_workers         = training.num_workers,
+            prefetch_factor     = training.prefetch_factor,
+            shuffle_train       = True,
+            pin_memory          = True,
+            fingerprint_dataset = self.config.paths.fingerprint_dataset,
         )
-
-    def gaussian_config(self) -> GaussianConfig:
-        return GaussianConfig.from_dataset(self.config.paths.dataset_path, self.config.paths.parameters_path)
 
     def _base_trainer_kwargs(self, logdir: Path) -> dict:
         training = self.config.training
         return {
-            "gaussian"         : self.gaussian_config(),
             "gradient_clipper" : GradientClipperConfig(clip_mode=training.clip_mode.value, max_grad_norm=training.max_grad_norm, adaptive_window=training.clip_adaptive_window, adaptive_percentile=training.clip_adaptive_percentile, adaptive_mean_std_k=training.clip_adaptive_mean_std_k),
             "io"               : IOConfig(logdir=str(logdir)),
         }
@@ -99,7 +66,6 @@ class ConfigFactory:
                 channels_last               = training.channels_last,
                 activation_checkpointing    = tuple(training.activation_checkpointing),
                 gradient_accumulation_steps = training.gradient_accumulation_steps,
-                log_all_losses              = training.log_all_losses,
                 log_debug                   = training.log_debug,
                 abort_on_nonfinite_loss     = training.abort_on_nonfinite_loss,
                 use_ema                     = training.use_ema,
@@ -111,48 +77,27 @@ class ConfigFactory:
                 snapshot_every_n_epochs     = training.snapshot_every_n_epochs,
             ),
 
-            loss = default_loss(),
+            loss = self.config.loss,
         )
 
     def inference_config(self, run_directory: Path) -> InferenceConfig:
         inference = self.config.inference
 
         return InferenceConfig(
-            run_directory            = run_directory,
-            output_subdir            = None,
-            device                   = "cuda",
-            seed                     = inference.seed,
-            checkpoint_name          = inference.checkpoint_name,
-            split                    = inference.split,
-            batch_size               = inference.batch_size,
-            num_workers              = inference.num_workers,
-            stitch_window            = inference.stitch_window,
-            cube_dtype               = inference.cube_dtype,
-            save_cubes               = inference.save_cubes,
-            save_plots               = inference.save_plots,
-            save_animations          = inference.save_animations,
-            compute_cube_ssim        = inference.compute_cube_ssim,
-            compute_flip_consistency = inference.compute_flip_consistency,
-            compute_stratified       = inference.compute_stratified,
-            n_best_profiles          = inference.n_best_profiles,
-            n_worst_profiles         = inference.n_worst_profiles,
-            n_random_profiles        = inference.n_random_profiles,
-            profile_seed             = inference.profile_seed,
-            n_col_slices           = inference.n_col_slices,
-            n_row_slices         = inference.n_row_slices,
-            n_z_slices       = inference.n_z_slices,
-            gif_axes                 = list(inference.gif_axes),
-            gif_fps                  = inference.gif_fps,
-            gif_duration             = inference.gif_duration,
-            gif_max_frames           = inference.gif_max_frames,
-            gif_dpi                  = inference.gif_dpi,
-            gif_separate_panels      = inference.gif_separate_panels,
-            cmap_intensity           = inference.cmap_intensity,
-            cmap_error               = inference.cmap_error,
-            normalize_intensity      = inference.normalize_intensity,
-            fig_dpi                  = inference.fig_dpi,
-            save_dpi                 = inference.save_dpi,
-            figure_style             = inference.figure_style,
-            cpu_workers              = inference.cpu_workers,
-            gif_workers              = inference.gif_workers,
+            run_directory   = run_directory,
+            output_subdir   = None,
+            device          = "cuda",
+            seed            = inference.seed,
+            checkpoint_name = inference.checkpoint_name,
+            split           = inference.split,
+            batch_size      = inference.batch_size,
+            num_workers     = inference.num_workers,
+            stitch_window   = inference.stitch_window,
+            save_maps       = inference.save_maps,
+            save_plots      = inference.save_plots,
+            cmap            = inference.cmap,
+            cmap_error      = inference.cmap_error,
+            fig_dpi         = inference.fig_dpi,
+            save_dpi        = inference.save_dpi,
+            figure_style    = inference.figure_style,
         )

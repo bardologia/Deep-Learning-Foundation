@@ -681,7 +681,7 @@ def test_tuner_objective_materializes_trial_config(fake_logger, tune_cfg, tmp_pa
 
     assert captured["backbone_name"] == "unet"
     assert captured["seed"]          == tune_cfg.base_seed + 0
-    assert captured["run_name"]      == "unet-conv-hungarian-K_3-hv-none-param_l1_0.1_trial_0000"
+    assert captured["run_name"]      == "unet-conv-mse-hv_trial_0000"
     assert captured["emit_docs"]     is True
     assert captured["trial"].number  == 0
 
@@ -723,7 +723,6 @@ class _FakeOptimizer:
 
 class _FakeTrainerConfig:
     def __init__(self):
-        from configuration.dataset.gaussian import GaussianConfig
         from configuration.training import LossConfig
 
         self.training       = _FakeTrainingLoop()
@@ -731,8 +730,7 @@ class _FakeTrainerConfig:
         self.early_stopping = _FakeEarlyStop()
         self.io             = _FakeIO()
         self.optimizer      = _FakeOptimizer()
-        self.loss           = LossConfig(use_param_l1=True)
-        self.gaussian       = GaussianConfig(n_default_gaussians=3, x_min=-20.0, x_max=80.0, activity_threshold=1e-4)
+        self.loss           = LossConfig()
 
 
 class _FakeDatasetConfig:

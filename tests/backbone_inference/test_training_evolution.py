@@ -41,8 +41,8 @@ def test_snapshots_are_discovered_in_epoch_order(tmp_path):
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_evolution_pass_announces_tracks_and_times_replay_and_frames(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+def test_evolution_pass_announces_tracks_and_times_replay_and_frames(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
     (run_dir / "checkpoints").mkdir()
     for epoch in (1, 2):
         shutil.copy(run_dir / "best_model.pt", run_dir / "checkpoints" / f"epoch_{epoch:04d}.pt")

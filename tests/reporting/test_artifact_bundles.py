@@ -30,13 +30,12 @@ def _write(path, payload):
 
 def _write_dataset(root, name):
     dataset_dir = root / name
+    layout      = {"name": name, "input_channels": ["x0", "x1", "x2", "x3"], "target_channels": ["pointwise", "neighbourhood"], "rows": 64, "cols": 64, "splits": {"train": [[0, 40, 0, 64]], "val": [[40, 52, 0, 64]], "test": [[52, 64, 0, 64]]}, "generator": {"seed": 0}}
 
-    _write(dataset_dir / "data" / "dataset.json", json.dumps({"dataset_type": "synthetic", "channel_labels": ["CH00", "CH01"]}))
-    _write(dataset_dir / "data" / "cube_full.npy", b"\x00" * 4096)
-    _write(dataset_dir / "data" / "primary.npy", b"\x00" * 1024)
-    _write(dataset_dir / "meta" / "config_state.json", json.dumps({"crop": {"row_start": 0, "row_end": 64, "col_start": 0, "col_end": 64}}))
-    _write(dataset_dir / "meta" / "environment.json", json.dumps({"python": "3.11", "torch": "2.11", "numpy": "2.4"}))
-    _write(dataset_dir / "logs" / "generate_dataset.log", "scene synthesised, arrays written, layout saved\n")
+    _write(dataset_dir / "dataset.json", json.dumps(layout, indent=4))
+    _write(dataset_dir / "inputs.npy", b"\x00" * 4096)
+    _write(dataset_dir / "targets.npy", b"\x00" * 1024)
+    _write(dataset_dir / "logs" / "generate_dataset.log", "fields drawn, targets computed, dataset written, layout saved last\n")
 
     return dataset_dir
 
@@ -53,9 +52,9 @@ def _write_run(run_dir, inferred=True):
     if inferred:
         stamp = run_dir / "inference" / "20260101_000000"
         _write(stamp / "report.md", "# Report\n")
-        _write(stamp / "metrics.json", json.dumps({"curve_rmse_gt": 0.5}))
+        _write(stamp / "metrics.json", json.dumps({"rmse_mean": 0.5}))
         _write(stamp / "figures" / "map.png", PNG_BYTES)
-        _write(stamp / "cubes" / "pred_curves.npy", b"\x00" * 2048)
+        _write(stamp / "maps" / "predictions.npy", b"\x00" * 2048)
         _write(stamp / "animations" / "walk_z.gif", b"\x00" * 6000)
 
     return run_dir
@@ -110,10 +109,8 @@ def test_dataset_bundle_packs_the_layout_metadata_and_logs(entry_config, dataset
     assert [path.name for path in archives] == ["datasets__ds_alpha.zip"]
     assert archives[0].parent == entry_config.staging_dir / "datasets" / "ds_alpha"
     assert _archived_names(archives[0]) == [
-        "datasets/ds_alpha/data/dataset.json",
+        "datasets/ds_alpha/dataset.json",
         "datasets/ds_alpha/logs/generate_dataset.log",
-        "datasets/ds_alpha/meta/config_state.json",
-        "datasets/ds_alpha/meta/environment.json",
     ]
 
 
@@ -132,7 +129,7 @@ def test_dataset_bundle_warns_for_a_missing_optional_path(entry_config, datasets
     warnings = [message for level, message in logger.messages if level == "warning"]
 
     assert [message for message in warnings if "'docs'" in message]
-    assert "datasets/ds_beta/data/dataset.json" in _archived_names(archives[0])
+    assert "datasets/ds_beta/dataset.json" in _archived_names(archives[0])
 
 
 def test_bundle_splits_into_numbered_volumes_over_the_cap(entry_config, datasets_dir):
@@ -147,10 +144,8 @@ def test_bundle_splits_into_numbered_volumes_over_the_cap(entry_config, datasets
     assert [path.name for path in archives] == [f"datasets__ds_alpha_{index:02d}of{len(archives):02d}.zip" for index in range(1, len(archives) + 1)]
     assert len(packed) == len(set(packed))
     assert sorted(packed) == [
-        "datasets/ds_alpha/data/dataset.json",
+        "datasets/ds_alpha/dataset.json",
         "datasets/ds_alpha/logs/generate_dataset.log",
-        "datasets/ds_alpha/meta/config_state.json",
-        "datasets/ds_alpha/meta/environment.json",
     ]
 
 
@@ -234,7 +229,7 @@ def test_run_bundle_packs_everything_the_run_holds(entry_config, runs_dir):
     ]
 
 
-def test_run_bundle_leaves_the_checkpoints_and_cubes_out(entry_config, runs_dir):
+def test_run_bundle_leaves_the_checkpoints_and_maps_out(entry_config, runs_dir):
     logger   = RecordingLogger()
     config   = entry_config.to_run_config(runs_dir / "backbone" / "unet_a")
     archives = RunContentBundle(config, logger).stage()
@@ -243,7 +238,7 @@ def test_run_bundle_leaves_the_checkpoints_and_cubes_out(entry_config, runs_dir)
     titles = [message for level, message in logger.messages if level == "metrics_table"]
 
     assert not [name for name in packed if name.endswith((".pt", ".npy"))]
-    assert not [name for name in packed if "/checkpoints/" in name or "/cubes/" in name]
+    assert not [name for name in packed if "/checkpoints/" in name or "/maps/" in name]
     assert any(title.startswith("Left out of") for title in titles)
 
 
@@ -275,7 +270,7 @@ def test_run_bundle_mails_a_run_that_was_never_inferred(entry_config, runs_dir):
 def test_excluded_content_names_the_rule_that_dropped_each_file(runs_dir):
     run_dir  = runs_dir / "backbone" / "unet_a"
     paths    = sorted(path for path in run_dir.rglob("*") if path.is_file())
-    excluded = ExcludedContent(run_dir, ["cubes"], [".pt"], 5000, RecordingLogger())
+    excluded = ExcludedContent(run_dir, ["maps"], [".pt"], 5000, RecordingLogger())
 
     kept  = excluded.filter(paths)
     rules = {str(relative): rule for relative, _size, rule in excluded.dropped}
@@ -283,7 +278,7 @@ def test_excluded_content_names_the_rule_that_dropped_each_file(runs_dir):
     assert rules == {
         "best_model.pt"                                   : "suffix .pt",
         "checkpoints/last.pt"                             : "suffix .pt",
-        "inference/20260101_000000/cubes/pred_curves.npy" : "path cubes",
+        "inference/20260101_000000/maps/predictions.npy"  : "path maps",
         "inference/20260101_000000/animations/walk_z.gif" : "over 0.0 MB",
     }
     assert len(kept) == len(paths) - len(rules)
@@ -293,7 +288,7 @@ def test_excluded_content_names_the_files_the_size_cap_dropped(runs_dir):
     run_dir  = runs_dir / "backbone" / "unet_a"
     paths    = sorted(path for path in run_dir.rglob("*") if path.is_file())
     logger   = RecordingLogger()
-    excluded = ExcludedContent(run_dir, ["cubes"], [".pt"], 5000, logger)
+    excluded = ExcludedContent(run_dir, ["maps"], [".pt"], 5000, logger)
 
     excluded.filter(paths)
 

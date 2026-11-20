@@ -148,7 +148,7 @@ class InferenceScheduler:
             logger.section("Inference")
 
             run_dirs = self._run_dirs(logger)
-            scored   = f"'{self.split}'" if self.target is None else f"the target {self.target.name} (same labels, secondary channels and crop)"
+            scored   = f"'{self.split}'" if self.target is None else f"the target {self.target.name} ({self.target.describe()})"
 
             logger.kv_table({
                 "Split"          : self.split,

@@ -182,12 +182,7 @@ class ResultsView {
       this._renderGroupHead("Datasets", datasets.items.length);
       if (datasets.error && this.sources.datasets) this._renderNote(datasets.error, true);
       if (!datasets.error && !datasets.items.length) this._renderNote("no datasets found", false);
-      datasets.items.forEach((dataset) => {
-        this._renderEntry(dataset.name, dataset.path, "preprocess", 0);
-
-        const active = this.root && (this.root.root === dataset.path || dataset.params.some((param) => param.path === this.root.root));
-        if (active) dataset.params.forEach((param) => this._renderEntry(param.name, param.path, "params", 1));
-      });
+      datasets.items.forEach((dataset) => this._renderEntry(dataset.name, dataset.path, "dataset", 0));
 
       const runs = this.catalog.runs;
       this._renderGroupHead("Runs", runs.items.length);

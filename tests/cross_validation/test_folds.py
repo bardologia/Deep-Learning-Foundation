@@ -279,13 +279,11 @@ def factory_config(test_data_dir: Path, n_folds: int = 5, row_start: int = 1000,
 
 
 @pytest.mark.dataset
-def test_factory_planner_reads_global_crop_range(test_data_dir):
-    factory = FoldConfigFactory(factory_config(test_data_dir))
-    planner = factory.planner()
+def test_factory_planner_spans_every_dataset_column(test_data_dir, dataset_json):
+    planner = FoldConfigFactory(factory_config(test_data_dir)).planner()
 
-    crop = factory.global_crop()
-    assert planner.col_start == crop.col_start
-    assert planner.col_end   == crop.col_end
+    assert planner.col_start == 0
+    assert planner.col_end   == dataset_json["cols"]
 
 
 @pytest.mark.dataset
@@ -296,17 +294,16 @@ def test_factory_planner_is_cached(test_data_dir):
 
 
 @pytest.mark.dataset
-def test_factory_fold_inference_config_sets_split_and_region(test_data_dir):
+def test_factory_fold_inference_config_sets_split_and_region(test_data_dir, dataset_json):
     factory   = FoldConfigFactory(factory_config(test_data_dir))
     run_dir   = Path("/tmp/cv_run/folds/fold_0")
 
     inference = factory.fold_inference_config(run_dir, "test", fold_index=0)
 
-    crop = factory.global_crop()
     assert inference.split           == "test"
     assert inference.output_subdir   is None
     assert inference.run_directory   == run_dir
-    assert inference.region_override == [1000, 1102, crop.col_start, crop.col_end]
+    assert inference.region_override == [1000, 1102, 0, dataset_json["cols"]]
 
 
 def stamp_inference(base: Path, name: str, split: str) -> Path:

@@ -1,140 +1,64 @@
-
 from __future__ import annotations
 
 from pathlib import Path
 from types   import SimpleNamespace
 
-import numpy as np
 import pytest
 
-from configuration.dataset                           import DatasetConfig, InputConfig, PatchConfig, SplitRegions
+from configuration.dataset                           import DatasetConfig, PatchConfig
 from configuration.inference                         import InferenceConfig, TargetDatasetConfig
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.shared.inference.inference_scheduler  import InferenceScheduler
 from pipelines.shared.inference.metadata             import CompletedInference, TargetDataset
 from pipelines.shared.inference.run_classifier       import InferenceLayout, RunArtifacts
 from tools.data.io                                   import FileIO
-from tools.data.regions                              import CropRegion
+from tools.data.regions                              import CropRegion, SplitRegions
 from tools.runtime.completion                        import CompletionMarker
 
 from tests.conftest import SilentLogger
 
 
-GLOBAL_CROP = [1000, 2000, 500, 1000]
-CHANNELS    = ["CH05", "CH06"]
+TARGET_SPLITS = {"train": [[0, 40, 0, 32]], "val": [[40, 48, 0, 32]], "test": [[48, 64, 0, 32]]}
 
 
-def _target_dataset(root: Path, name: str = "scene_a") -> tuple[Path, Path]:
-    dataset    = root / name
-    parameters = dataset / "params" / "params_k2" / "parameters.npy"
+def _target_dataset(root: Path, name: str = "scene_a") -> Path:
+    dataset = root / name
+    FileIO.save_json({"name": name, "input_channels": ["x0"], "target_channels": ["y"], "rows": 64, "cols": 32, "splits": TARGET_SPLITS, "generator": {}}, dataset / "dataset.json")
 
-    FileIO.save_json({"global_crop": GLOBAL_CROP}, dataset / "data" / "dataset.json")
-    parameters.parent.mkdir(parents=True)
-    np.save(parameters, np.zeros((6, 4, 4), dtype=np.float32))
-
-    return dataset, parameters
+    return dataset
 
 
-def _config(dataset: Path, parameters: Path, crop=(1200, 1296, 600, 696), channels=CHANNELS, **overrides) -> InferenceConfig:
-    target = TargetDatasetConfig(
-        enabled          = True,
-        dataset_path     = dataset,
-        parameters_path  = parameters,
-        secondary_labels = list(channels),
-        row_start        = crop[0],
-        row_end          = crop[1],
-        col_start        = crop[2],
-        col_end          = crop[3],
-    )
-    return InferenceConfig(run_directory=Path("."), target=target, **overrides)
+def _config(dataset: Path, **overrides) -> InferenceConfig:
+    return InferenceConfig(run_directory=Path("."), target=TargetDatasetConfig(enabled=True, dataset_path=dataset), **overrides)
 
 
 def test_a_disabled_target_scores_the_run_on_its_own_split():
     assert TargetDataset.of(InferenceConfig(run_directory=Path("."))) is None
 
 
-def test_an_enabled_target_resolves_its_scene_labels_channels_and_crop(tmp_path):
-    dataset, parameters = _target_dataset(tmp_path)
+def test_an_enabled_target_names_its_dataset(tmp_path):
+    target = TargetDataset.of(_config(_target_dataset(tmp_path)))
 
-    target = TargetDataset.of(_config(dataset, parameters))
-
-    assert target.name             == "scene_a"
-    assert target.parameters_path  == parameters
-    assert target.secondary_labels == tuple(CHANNELS)
-    assert target.region           == CropRegion(1200, 1296, 600, 696)
-
-
-def test_empty_target_channels_feed_the_full_target_stack(tmp_path):
-    dataset, parameters = _target_dataset(tmp_path)
-
-    assert TargetDataset.of(_config(dataset, parameters, channels=[])).secondary_labels is None
-
-
-def test_a_target_without_a_dataset_layout_is_refused(tmp_path):
-    with pytest.raises(FileNotFoundError, match="dataset.json"):
-        TargetDataset.of(_config(tmp_path / "missing", tmp_path / "missing" / "params" / "p" / "parameters.npy"))
-
-
-def test_target_labels_outside_the_target_dataset_are_refused(tmp_path):
-    dataset, _      = _target_dataset(tmp_path, "scene_a")
-    _, other_labels = _target_dataset(tmp_path, "scene_b")
-
-    with pytest.raises(ValueError, match="must live inside"):
-        TargetDataset.of(_config(dataset, other_labels))
-
-
-@pytest.mark.parametrize("crop, expected", [
-    ((0, 0, 0, 0),       (1000, 2000, 500, 1000)),
-    ((1200, 1296, 0, 0), (1200, 1296, 500, 1000)),
-    ((0, 0, 600, 696),   (1000, 2000, 600, 696)),
-])
-def test_zero_bounds_span_the_whole_target_crop_along_their_axis(tmp_path, crop, expected):
-    dataset, parameters = _target_dataset(tmp_path)
-
-    assert TargetDataset.of(_config(dataset, parameters, crop=crop)).region == CropRegion(*expected)
+    assert target.name    == "scene_a"
+    assert target.payload() == {"dataset_path": str(tmp_path / "scene_a")}
+    assert "test split" in target.describe()
 
 
 def test_the_dataset_config_moves_onto_the_target_and_keeps_the_runs_geometry(tmp_path):
-    dataset, parameters = _target_dataset(tmp_path)
-    target              = TargetDataset.of(_config(dataset, parameters))
+    dataset = _target_dataset(tmp_path)
+    trained = DatasetConfig(dataset_directory=tmp_path / "trained", split_regions=SplitRegions(train=CropRegion(0, 8, 0, 8), val=CropRegion(8, 16, 0, 8), test=CropRegion(16, 24, 0, 8)), patch=PatchConfig(size=(16, 16), stride=(8, 8)), batch_size=7)
 
-    trained = DatasetConfig(
-        preprocessing_run_directory = tmp_path / "training_scene",
-        parameters_path             = tmp_path / "training_scene" / "params" / "p" / "parameters.npy",
-        split_regions               = SplitRegions(train=CropRegion(0, 10, 0, 10), val=CropRegion(10, 20, 0, 10), test=CropRegion(20, 30, 0, 10)),
-        secondary_labels            = ("CH01", "CH02"),
-        patch                       = PatchConfig(size=(64, 64), stride=(32, 32), use_symmetric_padding=True),
-        input_config                = InputConfig(),
-        batch_size                  = 4,
-        n_gaussians                 = 2,
-    )
+    moved = TargetDataset.of(_config(dataset)).dataset_config(trained)
 
-    moved = target.dataset_config(trained)
-
-    assert moved.preprocessing_run_directory    == dataset
-    assert moved.parameters_path                == parameters
-    assert moved.secondary_labels               == tuple(CHANNELS)
-    assert moved.split_regions.regions("test")  == [CropRegion(1200, 1296, 600, 696)]
-    assert moved.split_regions.regions("train") == []
-    assert moved.split_regions.regions("val")   == []
-    assert moved.patch                          == trained.patch
-    assert moved.input_config                   == trained.input_config
-    assert moved.batch_size                     == trained.batch_size
-    assert moved.n_gaussians                    == trained.n_gaussians
-
-
-def test_the_payload_names_the_scene_labels_channels_and_crop(tmp_path):
-    dataset, parameters = _target_dataset(tmp_path)
-
-    payload = TargetDataset.of(_config(dataset, parameters)).payload()
-
-    assert payload == {"dataset_path": str(dataset), "parameters_path": str(parameters), "secondary_labels": CHANNELS, "region": [1200, 1296, 600, 696]}
+    assert moved.dataset_directory      == dataset
+    assert moved.split_regions.bounds() == TARGET_SPLITS
+    assert moved.patch                  == trained.patch
+    assert moved.batch_size             == 7
 
 
 def test_target_stamps_are_written_under_the_runs_cross_dataset_tree(tmp_path):
-    dataset, parameters  = _target_dataset(tmp_path)
     run_dir              = tmp_path / "run"
-    config               = _config(dataset, parameters, output_subdir="stamp")
+    config               = _config(_target_dataset(tmp_path), output_subdir="stamp")
     config.run_directory = run_dir
 
     meta = InferenceMetadata(config, TargetDataset.of(config))
@@ -170,24 +94,23 @@ def _scheduler(runs: Path, block: InferenceConfig) -> InferenceScheduler:
 
 
 def test_the_scheduler_skips_only_runs_scored_on_the_same_target(tmp_path):
-    dataset, parameters = _target_dataset(tmp_path)
-    block               = _config(dataset, parameters)
-    target              = TargetDataset.of(block)
-    runs                = tmp_path / "runs"
+    block  = _config(_target_dataset(tmp_path))
+    target = TargetDataset.of(block)
+    runs   = tmp_path / "runs"
 
-    own_only   = _run(runs / "own_only")
-    other_crop = _run(runs / "other_crop")
-    scored     = _run(runs / "scored")
+    own_only    = _run(runs / "own_only")
+    other_scene = _run(runs / "other_scene")
+    scored      = _run(runs / "scored")
 
     own_stamp = InferenceLayout.base(own_only) / "20260101_000000"
     own_stamp.mkdir(parents=True)
     CompletionMarker.stamp(own_stamp, {"split": "test", CompletedInference.CHECKPOINT_KEY: {"name": "best_model.pt"}})
 
-    _target_stamp(other_crop, target, "20260101_000000", payload={**target.payload(), "region": [1300, 1396, 600, 696]})
+    _target_stamp(other_scene, target, "20260101_000000", payload={"dataset_path": str(tmp_path / "elsewhere")})
     _target_stamp(scored, target, "20260101_000000")
 
     scheduler = _scheduler(runs, block)
     remaining = sorted(directory.name for directory in scheduler._run_dirs(SilentLogger()))
 
-    assert remaining                                           == ["other_crop", "own_only"]
+    assert remaining                                           == ["other_scene", "own_only"]
     assert [directory.name for directory in scheduler.skipped] == ["scored"]

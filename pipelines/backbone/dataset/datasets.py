@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import bisect
@@ -7,7 +6,6 @@ from typing import Optional
 import numpy as np
 from torch.utils.data import Dataset
 
-from configuration.dataset                   import InputConfig, OutputConfig
 from pipelines.backbone.dataset.augmentation import SpatialAugmenter
 from pipelines.backbone.dataset.normalizer   import Normalizer
 from pipelines.backbone.dataset.spatial      import Patcher
@@ -15,111 +13,43 @@ from pipelines.backbone.dataset.spatial      import Patcher
 
 class PatchDataset(Dataset):
 
-    def __init__(
-        self,
-        inputs        : np.ndarray,
-        gt_parameters : np.ndarray,
-        grid          : Patcher,
-        input_config  : InputConfig,
-        output_config : OutputConfig,
-        split_name    : str,
-        n_secondaries : int,
-        n_derived     : int,
-        n_primary     : int                        = 1,
-        normalizer    : Optional[Normalizer]       = None,
-        n_gaussians   : int                        = 1,
-        augmenter     : Optional[SpatialAugmenter] = None,
-        aux           : Optional[np.ndarray]       = None,
-    ) -> None:
-        self.inputs        = inputs
-        self.gt_parameters = gt_parameters
-        self.grid          = grid
-        self.input_config  = input_config
-        self.output_config = output_config
-        self.split_name    = split_name
-        self.normalizer    = normalizer
-        self.n_gaussians   = n_gaussians
-        self.augmenter     = augmenter
-        self.aux           = aux
-        self.input_layers  = int(inputs.shape[0])
+    def __init__(self, inputs: np.ndarray, targets: np.ndarray, patcher: Patcher, normalizer: Normalizer, count_once: bool, augmenter: Optional[SpatialAugmenter] = None) -> None:
+        self.inputs     = inputs
+        self.targets    = targets
+        self.patcher    = patcher
+        self.normalizer = normalizer
+        self.count_once = bool(count_once)
+        self.augmenter  = augmenter
+        self.weight_map = patcher.weight_map(self.count_once)
 
-        self.n_primary     = n_primary
-        self.n_secondaries = n_secondaries
-        self.n_derived     = n_derived
+        self.input_channels  = int(inputs.shape[0])
+        self.target_channels = int(targets.shape[0])
 
-        self.input_channels = input_config.total_channels(n_secondaries, n_derived)
+    @property
+    def nbytes(self) -> int:
+        return int(self.inputs.nbytes + self.targets.nbytes + self.weight_map.nbytes)
 
-        self.output_channel_indices = output_config.selected_indices(n_gaussians = n_gaussians)
-        self.gt_channels            = len(self.output_channel_indices)
-
-        self.gt_selected = self._select_gt_channels(gt_parameters)
-
-    def _select_gt_channels(self, gt_parameters: np.ndarray) -> np.ndarray:
-        return gt_parameters[:self.gt_channels]
-
-    def _build_input_tensor(self, complex_patch: np.ndarray, aux_patch: Optional[np.ndarray] = None) -> np.ndarray:
-        derived_offset          = self.n_primary + self.n_secondaries
-
-        primary_data     = complex_patch[               : self.n_primary                        ]
-        secondaries_data = complex_patch[self.n_primary : derived_offset                            ]
-        derived_data     = complex_patch[derived_offset     : derived_offset + self.n_derived    ]
-
-        p_h, p_w     = complex_patch.shape[-2], complex_patch.shape[-1]
-        input_tensor = np.empty((self.input_channels, p_h, p_w), dtype=np.float32)
-
-        offset = 0
-
-        if self.input_config.use_primary:
-            n = self.input_config.primary_channels_per_source
-            self.input_config.primary_representation.convert_into(input_tensor[offset:offset + n], primary_data)
-            offset += n
-
-        if self.input_config.use_secondaries:
-            n = self.n_secondaries * self.input_config.secondaries_channels_per_source
-            self.input_config.secondaries_representation.convert_into(input_tensor[offset:offset + n], secondaries_data)
-            offset += n
-
-        if self.input_config.use_derived:
-            n = self.n_derived * self.input_config.derived_channels_per_source
-            self.input_config.derived_representation.convert_into(input_tensor[offset:offset + n], derived_data)
-            offset += n
-
-        if self.input_config.use_aux:
-            input_tensor[offset] = aux_patch
-            offset += 1
-
-        return input_tensor
-
-    def _normalize_input_tensor(self, input_tensor: np.ndarray) -> np.ndarray:
-        return self.normalizer.normalize_input(input_tensor)
-
-    def _normalize_gt_params(self, gt_params: np.ndarray) -> np.ndarray:
-        return self.normalizer.normalize_output(gt_params)
-
-    def assemble_window(self, complex_window: np.ndarray, aux_window: Optional[np.ndarray] = None) -> np.ndarray:
-        input_tensor = self._build_input_tensor(complex_window, aux_window)
-        return self._normalize_input_tensor(input_tensor)
+    def window(self, inputs_window: np.ndarray) -> np.ndarray:
+        return self.normalizer.normalize_input(inputs_window)
 
     def __len__(self) -> int:
-        return self.grid.grid.number_of_patches
+        return self.patcher.grid.number_of_patches
 
     def __getitem__(self, idx: int):
-        complex_patch = self.grid.extract(self.inputs, idx)
-        aux_patch     = self.grid.extract(self.aux, idx) if self.input_config.use_aux else None
-        input_tensor  = self._build_input_tensor(complex_patch, aux_patch)
+        inputs  = self.patcher.extract(self.inputs, idx)
+        targets = self.patcher.extract(self.targets, idx)
+        weights = self.patcher.cut_weights(self.weight_map, idx)
 
-        gt_params = self.grid.extract(self.gt_selected, idx).astype(np.float32, copy=False)
+        if self.augmenter is not None:
+            inputs, targets, weights = self.augmenter(inputs, targets, weights)
 
-        if self.augmenter is not None and self.split_name == "train":
-            input_tensor, gt_params = self.augmenter(input_tensor, gt_params)
+        inputs  = self.normalizer.normalize_input(inputs)
+        targets = self.normalizer.normalize_target(targets)
 
-        input_tensor = self._normalize_input_tensor(input_tensor)
-        gt_params    = self._normalize_gt_params(gt_params)
+        if self.augmenter is not None:
+            inputs = self.augmenter.add_noise(inputs)
 
-        if self.augmenter is not None and self.split_name == "train":
-            input_tensor = self.augmenter.add_noise(input_tensor)
-
-        return input_tensor, gt_params
+        return inputs, targets, weights
 
 
 class MultiRegionDataset(Dataset):
@@ -134,28 +64,12 @@ class MultiRegionDataset(Dataset):
             total += len(part)
         self.total = total
 
-        first = parts[0]
-
-        self.input_config           = first.input_config
-        self.output_config          = first.output_config
-        self.split_name             = first.split_name
-        self.n_gaussians            = first.n_gaussians
-        self.input_layers           = first.input_layers
-        self.n_primary              = first.n_primary
-        self.n_secondaries          = first.n_secondaries
-        self.n_derived              = first.n_derived
-        self.input_channels         = first.input_channels
-        self.output_channel_indices = first.output_channel_indices
-        self.gt_channels            = first.gt_channels
+        self.input_channels  = parts[0].input_channels
+        self.target_channels = parts[0].target_channels
 
     @property
-    def normalizer(self):
+    def normalizer(self) -> Normalizer:
         return self.parts[0].normalizer
-
-    @normalizer.setter
-    def normalizer(self, normalizer) -> None:
-        for part in self.parts:
-            part.normalizer = normalizer
 
     def __len__(self) -> int:
         return self.total

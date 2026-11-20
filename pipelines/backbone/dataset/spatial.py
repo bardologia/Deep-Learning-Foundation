@@ -1,146 +1,10 @@
-
 from __future__ import annotations
 
 import math
-import time
 from dataclasses import dataclass
-from typing      import Optional, Tuple
+from typing      import Tuple
 
 import numpy as np
-
-from tools.data.regions      import CropRegion, SplitRegions
-from tools.monitoring.logger import Logger
-
-from pipelines.shared.dataset.dataset_spatial import Layout
-
-
-class Cropper:
-
-    def __init__(self, layout: Layout, split_regions: SplitRegions, logger: Logger, secondary_labels=None, input_config=None) -> None:
-        self.layout            = layout
-        self.split_regions     = split_regions
-        self.logger            = logger
-        self.input_config      = input_config
-        self.secondary_indices = layout.secondary_indices(secondary_labels)
-        self.secondary_labels  = self._resolve_labels(secondary_labels)
-
-        self.logger.section("[Cropper Initialized]")
-        self.logger.subsection(f"Secondary selection : {', '.join(self.secondary_labels) if self.secondary_labels else 'all channels'}")
-        self.logger.metrics_table(split_regions.region_rows(), ["Split", "Crop", "Rows", "Cols"])
-
-    def _resolve_labels(self, secondary_labels) -> list | None:
-        if self.secondary_indices is None:
-            return None
-        secondaries = self.layout.channel_labels[1:]
-        return [secondaries[index] for index in self.secondary_indices]
-
-    def _to_local_slices(self, region: CropRegion) -> Tuple[slice, slice]:
-        return region.local_slices(self.layout.global_crop)
-
-    def _select_channels(self, array: np.ndarray, row_slice: slice, col_slice: slice) -> np.ndarray:
-        if self.secondary_indices is None:
-            return array[..., row_slice, col_slice]
-
-        return np.stack([array[index, row_slice, col_slice] for index in self.secondary_indices])
-
-    def _group_enabled(self, flag: str) -> bool:
-        return getattr(self.input_config, flag) if self.input_config is not None else True
-
-    def _group_view(self, artifact: str, flag: str, row_slice: slice, col_slice: slice) -> Optional[np.ndarray]:
-        if not self._group_enabled(flag):
-            return None
-
-        array = np.load(str(self.layout.artifact_path(artifact)), mmap_mode="r", allow_pickle=False)
-
-        return self._select_channels(array, row_slice, col_slice)
-
-    def _stack_inputs(self, row_slice: slice, col_slice: slice) -> Tuple[np.ndarray, int, int, int]:
-        n_primary = 1 if self._group_enabled("use_primary") else 0
-        if n_primary:
-            primary      = np.load(str(self.layout.artifact_path("primary")), mmap_mode="r", allow_pickle=False)
-            primary_view = primary[..., row_slice, col_slice]
-        else:
-            primary_view = None
-
-        secondaries_view = self._group_view("secondaries", "use_secondaries", row_slice, col_slice)
-        derived_view     = self._group_view("derived",     "use_derived",     row_slice, col_slice)
-
-        n_secondaries = secondaries_view.shape[0] if secondaries_view is not None else 0
-        n_derived     = derived_view.shape[0]     if derived_view     is not None else 0
-
-        n_channels = n_primary + n_secondaries + n_derived
-
-        if n_channels == 0:
-            return np.empty((0, row_slice.stop - row_slice.start, col_slice.stop - col_slice.start), dtype=np.complex64), 0, 0, 0
-
-        reference_view = next(view for view in (primary_view, secondaries_view, derived_view) if view is not None)
-        row_size       = reference_view.shape[-2]
-        col_size       = reference_view.shape[-1]
-
-        inputs_split = np.empty((n_channels, row_size, col_size), dtype=reference_view.dtype)
-
-        if n_primary:
-            inputs_split[0] = primary_view
-
-        if secondaries_view is not None:
-            inputs_split[n_primary:n_primary + n_secondaries] = secondaries_view
-
-        if derived_view is not None:
-            inputs_split[n_primary + n_secondaries:] = derived_view
-
-        return inputs_split, n_primary, n_secondaries, n_derived
-
-    def _load_targets(self, row_slice: slice, col_slice: slice) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-        parameters       = np.load(str(self.layout.artifact_path("parameters")), mmap_mode="r", allow_pickle=False)
-        parameters_split = np.ascontiguousarray(parameters[..., row_slice, col_slice])
-
-        if not self._group_enabled("use_aux"):
-            return parameters_split, None
-
-        aux       = np.load(str(self.layout.artifact_path("aux_full")), mmap_mode="r", allow_pickle=False)
-        aux_split = np.ascontiguousarray(aux[row_slice, col_slice].astype(np.float32))
-
-        return parameters_split, aux_split
-
-    def _load_cube(self, row_slice: slice, col_slice: slice) -> np.ndarray:
-        cube = np.load(str(self.layout.artifact_path("cube_full")), mmap_mode="r", allow_pickle=False)
-        return np.ascontiguousarray(np.abs(cube[:, row_slice, col_slice]).astype(np.float32))
-
-    def _log_crop(self, region: CropRegion, label: Optional[str], read_seconds: float, inputs_split: np.ndarray, aux_split: Optional[np.ndarray], parameters_split: np.ndarray, cube_split: Optional[np.ndarray], n_primary: int, n_secondaries: int, n_derived: int) -> None:
-        self.logger.section("[Crop Loaded]" if label is None else f"[Crop Loaded: {label}]")
-        self.logger.kv_table({
-            "Region"           : f"row {region.row_start}:{region.row_end}, col {region.col_start}:{region.col_end}",
-            "Read time"        : f"{read_seconds:.1f}s",
-            "Primary"          : inputs_split[:n_primary].shape,
-            "Secondaries"      : inputs_split[n_primary:n_primary + n_secondaries].shape,
-            "Derived"          : inputs_split[n_primary + n_secondaries:].shape,
-            "Selection"        : ", ".join(self.secondary_labels) if self.secondary_labels else "all channels",
-            "Inputs (stacked)" : f"{inputs_split.shape}  ({inputs_split.nbytes/1e9:.2f} GB)  [{n_primary} primary + {n_secondaries} secondaries + {n_derived} derived]",
-            "Aux"              : f"{aux_split.shape}  ({aux_split.nbytes/1e6:.2f} MB)" if aux_split is not None else "not loaded",
-            "Parameters"       : f"{parameters_split.shape}  ({parameters_split.nbytes/1e9:.2f} GB)",
-            "Full cube"        : f"{cube_split.shape}  ({cube_split.nbytes/1e9:.2f} GB)" if cube_split is not None else "not loaded",
-        })
-
-    def load_split(self, region: CropRegion, load_cube: bool = False, label: Optional[str] = None) -> dict[str, np.ndarray]:
-        row_slice, col_slice = self._to_local_slices(region)
-        start                = time.perf_counter()
-
-        inputs_split, n_primary, n_secondaries, n_derived = self._stack_inputs(row_slice, col_slice)
-        parameters_split, aux_split                       = self._load_targets(row_slice, col_slice)
-        cube_split                                        = self._load_cube(row_slice, col_slice) if load_cube else None
-
-        self._log_crop(region, label, time.perf_counter() - start, inputs_split, aux_split, parameters_split, cube_split, n_primary, n_secondaries, n_derived)
-
-        return {
-            "inputs"           : inputs_split,
-            "aux"              : aux_split,
-            "parameters"       : parameters_split,
-            "cube"             : cube_split,
-            "n_primary"        : n_primary,
-            "n_secondaries"    : n_secondaries,
-            "n_derived"        : n_derived,
-            "secondary_labels" : self.secondary_labels,
-        }
 
 
 @dataclass
@@ -173,6 +37,28 @@ class GridInfo:
     def padded_size(self) -> Tuple[int, int]:
         H, W = self.spatial_size
         return (H + self.padding_vertical, W + self.padding_horizontal)
+
+    def patch_origin(self, idx: int) -> Tuple[int, int]:
+        row, column = divmod(idx, self.n_h)
+        return row * self.stride[0], column * self.stride[1]
+
+    @staticmethod
+    def _axis_coverage(n_patches: int, patch: int, stride: int, padded: int, pad_before: int, size: int) -> np.ndarray:
+        counts = np.zeros(padded, dtype=np.int64)
+
+        for index in range(n_patches):
+            counts[index * stride:index * stride + patch] += 1
+
+        return counts[pad_before:pad_before + size]
+
+    def coverage(self) -> np.ndarray:
+        H, W               = self.spatial_size
+        padded_h, padded_w = self.padded_size
+
+        rows    = self._axis_coverage(self.n_v, self.patch_size[0], self.stride[0], padded_h, self.pad_top,  H)
+        columns = self._axis_coverage(self.n_h, self.patch_size[1], self.stride[1], padded_w, self.pad_left, W)
+
+        return np.outer(rows, columns)
 
     def as_dict(self) -> dict:
         return {
@@ -262,3 +148,18 @@ class Patcher:
             sub       = np.pad(sub, pad_width, mode=mode)
 
         return sub
+
+    def weight_map(self, count_once: bool) -> np.ndarray:
+        grid = self.grid
+        H, W = grid.spatial_size
+
+        weights = np.zeros(grid.padded_size, dtype=np.float32)
+        weights[grid.pad_top:grid.pad_top + H, grid.pad_left:grid.pad_left + W] = 1.0 / grid.coverage() if count_once else 1.0
+
+        return weights
+
+    def cut_weights(self, weight_map: np.ndarray, idx: int) -> np.ndarray:
+        v0, h0           = self.grid.patch_origin(idx)
+        patch_h, patch_w = self.grid.patch_size
+
+        return np.ascontiguousarray(weight_map[None, v0:v0 + patch_h, h0:h0 + patch_w])

@@ -62,13 +62,11 @@ class SpatialAugmenter:
         self.seed = int(seed)
         self._rng = np.random.default_rng(self.seed)
 
-    def __call__(self, input_tensor: np.ndarray, gt_params: np.ndarray):
-        tensors = [input_tensor, gt_params]
+    def __call__(self, *tensors: np.ndarray) -> tuple:
+        tensors = list(tensors)
 
         tensors = self._flip_horizontal(tensors)
         tensors = self._flip_vertical(tensors)
         tensors = self._rotate90(tensors)
 
-        tensors = [np.ascontiguousarray(tensor) for tensor in tensors]
-
-        return tensors[0], tensors[1]
+        return tuple(np.ascontiguousarray(tensor) for tensor in tensors)

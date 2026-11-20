@@ -44,8 +44,6 @@ class DatasetRouter(SubRouter):
         table.add("GET", "/api/fs/runs",         self.runs)
         table.add("GET", "/api/fs/run_groups",   self.run_groups)
         table.add("GET", "/api/fs/experiments",  self.experiments)
-        table.add("GET", "/api/fs/params",       self.params)
-        table.add("GET", "/api/fs/secondaries",  self.secondaries)
 
     def dataset_roots(self, exchange: HttpExchange) -> None:
         exchange.send_result(self.datasets.datasets(exchange.text("base")))
@@ -58,9 +56,3 @@ class DatasetRouter(SubRouter):
 
     def experiments(self, exchange: HttpExchange) -> None:
         exchange.send_result(self.datasets.experiments(exchange.text("base"), exchange.text("marker")))
-
-    def params(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.datasets.params(exchange.text("dataset")))
-
-    def secondaries(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.datasets.secondaries(exchange.text("dataset")))

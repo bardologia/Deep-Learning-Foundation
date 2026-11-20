@@ -21,8 +21,8 @@ from configuration.cross_validation.general import CrossValidationConfig
 from configuration.diagnostics              import ReportCollectionEntryConfig, ReportMailEntryConfig, TensorboardExportEntryConfig
 from configuration.inference                import BackboneInferenceEntryConfig
 from configuration.training                 import BackboneEntryConfig
+from configuration.training.general.loss    import LossKind
 from configuration.tuning.general           import TuningEntryConfig
-from pipelines.backbone.training.loss_terms import LossComponentCatalog
 from tests.webui.conftest import WEBUI_ROOT
 
 _TRAINING_PAGES = [
@@ -71,28 +71,12 @@ def test_every_widget_reference_names_a_real_field(key, flow_config):
         assert target in paths, f"{key}: {field} reads {reference} from '{target}', which is not a field of {flow_config.__name__}"
 
 
-@pytest.mark.parametrize("key, flow_config", _TRAINING_PAGES)
-def test_secondary_labels_pick_secondaries_from_the_page_dataset(key, flow_config):
-    paths = {path for path, _value in ConfigCli._leaves(flow_config())}
-    if "paths.secondary_labels" not in paths:
-        return
-
-    layout = LaunchLayout().build(key, [{"path": path} for path in paths])
-    widget = layout["widgets"]["paths.secondary_labels"]
-    assert widget["mode"] == "secondaries"
-    assert widget["multi"] is True
-    assert widget["datasetFrom"] in paths
-
-
 @pytest.mark.parametrize("key, flow_config", [("infer_backbone", BackboneInferenceEntryConfig)])
-def test_the_target_dataset_pickers_read_the_target_scene(key, flow_config):
+def test_the_target_dataset_is_picked_from_the_dataset_folders(key, flow_config):
     paths   = [path for path, _value in ConfigCli._leaves(flow_config())]
     widgets = LaunchLayout().build(key, [{"path": path} for path in paths])["widgets"]
 
-    assert widgets["inference.target.parameters_path"]["mode"]         == "params"
-    assert widgets["inference.target.parameters_path"]["datasetFrom"]  == "inference.target.dataset_path"
-    assert widgets["inference.target.secondary_labels"]["mode"]        == "secondaries"
-    assert widgets["inference.target.secondary_labels"]["datasetFrom"] == "inference.target.dataset_path"
+    assert widgets["inference.target.dataset_path"] == LaunchLayout.PICK_DATASET
 
 
 @pytest.mark.parametrize("key, flow_config", [("train_backbone", BackboneEntryConfig)])
@@ -121,30 +105,10 @@ def test_every_script_layout_builds_against_its_entry_config(key):
     LaunchLayout().build(key, leaves)
 
 
-@pytest.mark.parametrize("key", sorted(ProjectPaths.SCRIPT_DIRS))
-def test_second_valued_fields_render_with_the_seconds_widget(key):
-    entry   = ScriptConfigResolver(ProjectPaths()).entry_config(key)
-    config  = getattr(import_module(entry["module"]), entry["class"])()
-    leaves  = [{"path": path} for path, _value in ConfigCli._leaves(config)]
-    layout  = LaunchLayout().build(key, leaves)
-    seconds = [leaf["path"] for leaf in leaves if leaf["path"].endswith(("gif_duration", "resources.poll_interval_sec"))]
+def test_sweep_loss_choices_match_the_loss_kinds():
+    choices = {choice["value"] for choice in LaunchLayout.MULTI_LOSS_KINDS["choices"]}
 
-    for path in seconds:
-        assert layout["widgets"][path] == LaunchLayout.NUM_SECONDS, path
-
-
-def test_sweep_loss_choices_match_the_component_catalog():
-    choices = {choice["value"] for choice in LaunchLayout.MULTI_SWEEP_LOSSES["choices"]}
-
-    assert choices == set(LossComponentCatalog.names())
-
-
-def test_pair_components_in_experiment_builder_match_the_catalog():
-    js    = (WEBUI_ROOT / "static" / "js" / "experiment_builder.js").read_text()
-    block = js.split("static PAIR_COMPONENTS = [", 1)[1].split("];", 1)[0]
-    names = set(re.findall(r'"([a-z0-9_]+)"', block))
-
-    assert names == set(LossComponentCatalog.names())
+    assert choices == {kind.value for kind in LossKind}
 
 
 def test_experiment_panel_claims_every_trial_field_of_its_entry():
@@ -275,7 +239,7 @@ def test_loader_worker_fields_keep_their_own_bounds_apart_from_the_tuning_widget
     leaves  = [{"path": path} for path, _value in ConfigCli._leaves(TuningEntryConfig())]
     tune    = LaunchLayout().build("tune", leaves)
 
-    for path in ("training.num_workers", "inference.num_workers", "inference.cpu_workers", "inference.gif_workers"):
+    for path in ("training.num_workers", "inference.num_workers"):
         assert train["widgets"][path]["max"] == 64
         assert 32 in train["widgets"][path]["presets"]
     assert tune["widgets"]["n_workers"]["max"] == 32

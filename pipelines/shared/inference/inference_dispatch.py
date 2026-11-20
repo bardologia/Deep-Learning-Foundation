@@ -37,7 +37,7 @@ class SplitRegionLoop:
     def _stored_regions(self) -> list[CropRegion]:
         payload = FileIO.load_json(self.config.run_directory / "meta" / "dataset_creation_config.json")
 
-        return SplitRegions.from_payload(payload["split_regions"]).regions(self.config.split)
+        return SplitRegions.from_bounds(payload["split_regions"]).regions(self.config.split)
 
     def _passes(self) -> list[tuple[object, RegionPass | None]]:
         if self.config.region_override:

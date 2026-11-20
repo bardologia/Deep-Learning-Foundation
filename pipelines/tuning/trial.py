@@ -36,16 +36,15 @@ class TrialPipeline(TrainingPipeline):
         self._emit_docs = emit_docs
         super().__init__(*args, **kwargs)
 
-    def _make_trainer(self, model, model_cfg, z_axis, norm_stats, run_dir, logger, emit_docs=True, writer=None):
+    def _make_trainer(self, model, model_cfg, target_channels, run_dir, logger, emit_docs=True, writer=None):
         return TrialTrainer(
-            model      = model,
-            model_cfg  = model_cfg,
-            z_axis     = z_axis,
-            config     = self.trainer_config,
-            run_dir    = run_dir,
-            logger     = logger,
-            norm_stats = norm_stats,
-            trial      = self._trial,
-            emit_docs  = emit_docs and self._emit_docs,
-            writer     = writer,
+            model           = model,
+            model_cfg       = model_cfg,
+            target_channels = target_channels,
+            config          = self.trainer_config,
+            run_dir         = run_dir,
+            logger          = logger,
+            trial           = self._trial,
+            emit_docs       = emit_docs and self._emit_docs,
+            writer          = writer,
         )

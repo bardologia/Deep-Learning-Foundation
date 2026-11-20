@@ -8,17 +8,11 @@ from typing      import Tuple
 class CropRegion:
     row_start : int
     row_end   : int
-    col_start   : int
-    col_end     : int
+    col_start : int
+    col_end   : int
 
     def as_tuple(self) -> Tuple[int, int, int, int]:
         return (self.row_start, self.row_end, self.col_start, self.col_end)
-
-    def as_identifier_string(self) -> str:
-        return "a".join(str(value) for value in self.as_tuple())
-
-    def as_labeled_string(self) -> str:
-        return f"row{self.row_start}-{self.row_end}_col{self.col_start}-{self.col_end}"
 
     @property
     def row_size(self) -> int:
@@ -28,31 +22,10 @@ class CropRegion:
     def col_size(self) -> int:
         return self.col_end - self.col_start
 
-    def overlaps(self, other: "CropRegion") -> bool:
-        row_overlap = self.row_start < other.row_end and other.row_start < self.row_end
-        col_overlap = self.col_start < other.col_end and other.col_start < self.col_end
-        return row_overlap and col_overlap
-
     def contains(self, other: "CropRegion") -> bool:
         row_inside = self.row_start <= other.row_start and other.row_end <= self.row_end
         col_inside = self.col_start <= other.col_start and other.col_end <= self.col_end
         return row_inside and col_inside
-
-    def local_slices(self, global_crop: "CropRegion") -> Tuple[slice, slice]:
-        row_slice = slice(self.row_start - global_crop.row_start, self.row_end - global_crop.row_start)
-        col_slice = slice(self.col_start - global_crop.col_start, self.col_end - global_crop.col_start)
-        return row_slice, col_slice
-
-    def subdivide_by_rows(self, max_width: int) -> list["CropRegion"]:
-        subsections = []
-        current     = self.row_start
-
-        while current < self.row_end:
-            next_row = min(current + max_width, self.row_end)
-            subsections.append(CropRegion(current, next_row, self.col_start, self.col_end))
-            current = next_row
-
-        return subsections
 
 
 @dataclass
@@ -68,14 +41,11 @@ class SplitRegions:
         return [value]
 
     @classmethod
-    def from_payload(cls, payload: dict) -> "SplitRegions":
-        return cls(train=cls._parse(payload["train"]), val=cls._parse(payload["val"]), test=cls._parse(payload["test"]))
+    def from_bounds(cls, payload: dict) -> "SplitRegions":
+        return cls(train=[CropRegion(*bounds) for bounds in payload["train"]], val=[CropRegion(*bounds) for bounds in payload["val"]], test=[CropRegion(*bounds) for bounds in payload["test"]])
 
-    @staticmethod
-    def _parse(value):
-        if isinstance(value, list):
-            return [CropRegion(**region) for region in value]
-        return CropRegion(**value)
+    def bounds(self) -> dict:
+        return {name: [list(region.as_tuple()) for region in regions] for name, regions in self.region_lists()}
 
     def items(self):
         return [("train", self.train), ("val", self.val), ("test", self.test)]

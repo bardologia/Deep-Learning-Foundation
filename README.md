@@ -5,11 +5,12 @@ codebase. It carries the configuration layer, the dataset, training and inferenc
 pipelines, the experiment and analysis entry points, a local web console and about 6700
 tests. The domain code is gone; what is left is the machinery around a model.
 
-The example task is per-pixel Gaussian-mixture estimation along a z axis from a stack of
-co-registered 2-D channels, and it comes with its own dataset generator. It is there so
-that every part of the skeleton runs end to end on a fresh clone with no external data,
-and so that each piece has a concrete thing to point at. Replacing it is the subject of
-`ADAPTING.md`.
+The example task is dense per-pixel regression on a 2-D grid: a few float input channels
+in, a few float target channels out, every target pixel a known nonlinear and spatially
+local function of the inputs around it. It comes with its own dataset generator, so that
+every part of the skeleton runs end to end on a fresh clone with no external data and
+each piece has a concrete thing to point at. Replacing it with your own data is the
+subject of `ADAPTING.md`.
 
 This file is the setup guide. The quick start is enough for most people; the numbered
 sections explain what the installer does, for anyone who prefers to do it by hand or has
@@ -100,41 +101,36 @@ root on `sys.path`, so run scripts from the repository root and imports resolve.
 python main/processing/generate_dataset.py
 ```
 
-Five seconds of CPU work and about 100 MB on disk. It writes `datasets/synthetic_small/`:
+Under a second of CPU work and about 1.5 MB on disk. It writes `datasets/synthetic/`, a
+directory in the dataset contract every pipeline reads:
 
 ```
-data/primary.npy        (rows, cols)                complex64
-data/secondaries.npy    (n_secondaries, rows, cols) complex64
-data/derived.npy        (n_secondaries, rows, cols) complex64
-data/aux_full.npy       (rows, cols)                float32
-data/cube_full.npy      (n_z, rows, cols)           complex64
-data/dataset.json       the layout that names those files
-meta/config_state.json  the crop, the z axis and the config that produced them
-params/params_k2/       parameters.npy, fit_diagnostics.npz, param_extraction_meta.json
-docs/                   resolved_entry_config.json and provenance.json of the generating run
+dataset.json   name, input and target channel names, grid size, split regions, generator provenance
+inputs.npy     (input_channels, rows, cols)   float32
+targets.npy    (target_channels, rows, cols)  float32
+docs/          resolved_entry_config.json and provenance.json of the generating run
 ```
+
+The split regions are lists of `[row_start, row_end, col_start, col_end]` per split, in
+dataset pixels. The generator draws `generation.input_channels` smooth random fields
+(white noise under a Gaussian filter of `generation.smoothing_pixels`, standardized, plus
+`generation.input_noise`) and computes two targets from them: `pointwise`, equal to
+tanh(x0 x1) + 0.5 x2, and `neighbourhood`, the mean of x3 squared minus the mean of x0
+over a square window of `generation.neighbourhood` pixels. Both carry
+`generation.target_noise`. Only x0 to x3 enter the targets, so any further input channel
+is a distractor. The train, validation and test splits are row bands of
+`generation.val_fraction` and `generation.test_fraction` at the bottom of the grid.
 
 Everything downstream reads that directory, so this is the first thing to run on a fresh
-clone. The tests are the exception: they synthesize their own copy of the scene into a
-temporary directory, so they pass before you ever run the generator.
+clone. The tests are the exception: they generate their own small copy into a temporary
+directory, so they pass before you ever run the generator.
 
-The generator refuses an output directory that already holds a finished dataset (a
-`data/dataset.json`, a `docs/resolved_entry_config.json` or any parameter run under
-`params/`); delete the directory to generate it again. It writes `dataset.json` last and
-records the generating commit in `dataset.json`, `meta/config_state.json` and the
-parameter run's metadata. Only once the dataset is complete does it record the resolved
-entry config under `docs/`, so a failed run leaves nothing for the console's Copy
-configs control to offer, and a finished dataset can be copied from on the
-`generate_dataset` launch page.
-
-The parameter run also fixes the activity threshold, the amplitude above which a
-Gaussian slot counts as active. It is chosen once, by `SynthesisConfig.activity_threshold`
-when the generator writes the labels or by `fit_activity_threshold` when `extract_params`
-fits them (1e-3 by default in both), and recorded in `param_extraction_meta.json`.
-Training (loss masks, slot matching, slot diagnostics, output normalization statistics),
-inference, the seed comparison and the console all read it from
-there, and none of them has a threshold setting of its own. A slot is active only when
-its amplitude is strictly above the threshold.
+`pipelines/shared/dataset/dataset_files.py` holds the contract: `DatasetFiles.read`
+reads `dataset.json` strictly, and a missing key stops the reader. The generator refuses
+an output directory that already exists; delete it to generate again. It writes
+`dataset.json` after the two arrays, and only once the dataset is complete does it
+record the resolved entry config under `docs/`, so a failed run leaves nothing for the
+console's Copy configs control to offer.
 
 ## 3. Run the tests
 
@@ -169,8 +165,8 @@ fail rather than skip. Check `nvidia-smi` before believing a red run.
 
 The defaults in `configuration/` describe the checkout itself: every path default is
 relative to the repository root and sits below one of the roots named in
-`configuration/reference_layout.py` (`datasets/`, `runs/`, `results/`, the example
-dataset and its parameter run), the GPU lists name device 0, and the worker counts are
+`configuration/reference_layout.py` (`datasets/`, `runs/`, `results/` and the example
+dataset), the GPU lists name device 0, and the worker counts are
 plain numbers. On any machine where the data or the runs should live elsewhere, the
 installer's machine profile retargets them.
 
@@ -181,8 +177,7 @@ suite does; a value naming a file that does not exist stops the entry point with
 the profile before parsing any flag: path defaults below a reference root are rebased
 onto the profile's root, the most specific root winning, so a default such as
 `runs/benchmark` becomes `<your runs root>/benchmark` with no per-field bookkeeping;
-`gpus`, `gpu_device_ids` and `gpu` take the profile's GPU pool; `cpu_workers` and
-`gif_workers` take the profile's values; loader worker counts are
+`gpus` and `gpu` take the profile's GPU pool; loader worker counts are
 capped at its limit; the report-mail identity follows it too. A `config_overrides`
 section of the form `{"ClassName.field": value}` handles anything else.
 `--help-config` marks every rewritten default with `[machine profile]`, and the
@@ -231,8 +226,9 @@ python main/training/train_backbone.py \
   --gpu 0
 ```
 
-The defaults are sized for the bundled scene: `training.batch_size` is 64, which fits
-the 209-patch training split of `datasets/synthetic_small`, and `gpus` is `[0]`. The
+The defaults are sized for the bundled scene: `training.batch_size` is 64 with 32 x 32
+patches at stride 16, which the 165-patch training split of `datasets/synthetic` fills,
+and `gpus` is `[0]`. The
 seed override exists because this is a shortened demonstration run:
 
 - `--seeds "[0]"` trains one model. The default is `[0, 1]`, which fans one job per seed
@@ -252,10 +248,10 @@ python main/training/train_backbone.py \
 Runs land under `--logdir`, default `runs/backbone`. The directory name is composed from
 the configuration by `RunNaming` in `pipelines/shared/training/run_naming.py`, so a run
 carries its own settings:
-`resunet-set_pred-hungarian-K_2-hv-AB-param_l1_1-cosine_curve_0.05_20260805_004432`. It
-holds `best_model.pt`, `last.pt`, `complete.json`, TensorBoard events, the resolved entry
-config and model documentation under `docs/`, and the crop, patch, normalization and
-metric metadata under `meta/`. With `--training.use_swa True` the last quarter of
+`resunet-conv-mse-hv_20260805_004432` (model, head, loss kind, augmentation). It holds
+`best_model.pt`, `last.pt`, `complete.json`, TensorBoard events, the resolved entry
+config and model documentation under `docs/`, and the dataset configuration, patch grid,
+normalization statistics and run summary (input and target channel names) under `meta/`. With `--training.use_swa True` the last quarter of
 training (configurable) is additionally averaged into `swa_model.pt`, scored on
 validation with refreshed batch-norm statistics.
 
@@ -287,10 +283,16 @@ or from a state saved before the geometry was recorded, is refused. A state that
 already stopped early goes straight to the final checkpoint, the best-weight restore and
 the test evaluation.
 
-The loss refuses a configuration with no enabled term or with weights summing to zero,
-warns about enabled terms of weight zero, and refuses a z axis with fewer than two
-samples. The normalization fit refuses a non-finite location or scale. Attention
-backbones run torch's fused `scaled_dot_product_attention`.
+The loss (`loss.kind`: `mse`, `l1` or `huber`) is computed on the normalized target
+channels, weighted per channel by `loss.channel_weights` (empty weighs every channel 1)
+and per pixel by the weight map each patch carries: padding weighs 0, a training pixel 1
+for every patch covering it, and a validation or test pixel 1 over the number of patches
+covering it, so every scored pixel counts once. Each loss is the weighted sum over the
+weight sum, and a split pools its batches the same way, so the validation and test
+losses are per-pixel means over the whole split. The inputs and the targets are each
+normalized per channel with a method fitted on the train split (`normalization.inputs`,
+`normalization.targets`: `zscore`, `robust_iqr` or `min_max`). Attention backbones run
+torch's fused `scaled_dot_product_attention`.
 
 ### Finishing a run that broke
 
@@ -385,8 +387,7 @@ Each selected run travels whole, packed into zip volumes that each stay under th
 attachment cap: the configuration and metadata it recorded, its logs and docs, the
 TensorBoard events, and every report and figure its inference wrote. What is too heavy to
 mail is named by `run_excluded_paths`, `run_excluded_suffixes` and `run_max_file_mb`,
-whose defaults leave the checkpoints, the reconstructed cubes and the walk animations
-behind; a warning lists the files the size cap left out, largest first. Unpacking every
+whose defaults leave the checkpoints and the saved prediction maps behind; a warning lists the files the size cap left out, largest first. Unpacking every
 volume of a run into one directory rebuilds its tree.
 
 Every mailing logs its effective settings and writes `mail_<target>_<tag>.json` into
@@ -405,33 +406,22 @@ The entry walks `--runs_dir` at any depth, finds every backbone run under it and
 dispatches one inference job per run across the GPU pool. Each job writes an
 `inference/<timestamp>/` directory into the run: `metrics.json`, `report.md`,
 `inference_config.json` with the resolved settings and region override, the stitched
-prediction cubes under `cubes/`, plus figures, animations and its own `complete.json`,
-which records the scored checkpoint (name, epoch, best epoch and best validation loss).
-`metrics.json` carries the checkpoint name, its one-based epoch, the code commit and the
-activity threshold it scored with. Those directories are what the console's results
-and autopsy tabs read.
+predicted and target maps under `maps/` (`predictions.npy` and `targets.npy`, in target
+units), one target, prediction and absolute-error map per target channel under
+`figures/<channel>/`, and its own `complete.json`, which records the scored checkpoint
+(name, epoch, best epoch and best validation loss). `metrics.json` holds the RMSE, MAE,
+bias and R2 of every target channel and their means, with the checkpoint name, its
+one-based epoch and the code commit. R2 is NaN for a channel whose targets are constant
+over the region. Those directories are what the console's results tab reads.
 
+The predictor runs every patch of the split region through the model, inverts the target
+normalization and overlap-adds the patches with a tapering window
+(`--inference.stitch_window`: `hann`, `uniform` or `triangular`).
 `--inference.device` defaults to `cuda` and is used as given, so without a GPU the job
 fails with `No CUDA GPUs are available`. Pass `--inference.device cpu` on a machine
-without one. Add `--inference.save_animations False` if you do not want to wait for the
-GIFs, which are the slowest part of a small run. `--inference.gif_duration` sets the
-total playback length of each GIF and overrides `gif_fps`, and
-`--inference.gif_separate_panels True` also writes each cube as its own single-panel GIF;
-the benchmark's inference block has both fields too.
-
-The loader refuses a checkpoint whose z axis differs from the dataset's and logs the
-checkpoint epoch, both axes, the region and where the region came from. The metrics count
-what they leave out: pixel R² is NaN where the reference profile is constant and those
-pixels are counted, pixels with an empty ground truth are counted and left out of the
-cosine and peak errors (the `*_nonempty` statistics), the SSIM means record how many
-slices they scored, and the normalization audit and the stratification tables record
-non-finite inputs and dropped bins.
-
-`--inference.compute_cube_ssim True` also scores the prediction against the raw cube with
-the same slice SSIM the headline runs against the labels, in raw intensity
-(`ssim_cube_*`) and unit area (`ssim_cube_norm_*`), and adds a report subsection. It is
-off by default because it runs two more full sweeps; the benchmark's inference block has
-the switch too.
+without one. `--inference.target.enabled True --inference.target.dataset_path <dir>`
+scores the run on the test split of another dataset with the same channels and writes
+the stamp under `<run>/cross_dataset/<dataset>/`.
 
 ## 7. Start the web console
 
@@ -443,18 +433,18 @@ webui/run.sh 9000     # different port
 `run.sh` reads the interpreter, bind address and port from the machine profile's shell
 twin (`~/.config/ml-template/machine.env`) and refuses to start without one, pointing at
 `./install.sh`. The HTTP layer is standard library only, but the console runs inside the
-project environment: the model probe is imported at boot, so numpy, matplotlib, scipy, torch, scikit-image, tensorboard and
+project environment: the model probe is imported at boot, so numpy, matplotlib, scipy, torch, tensorboard and
 psutil all have to be there, which is why the profile records the project environment's
 interpreter. Each launch page also has an interpreter picker filled from the conda envs
 the server discovers, with the profile's environment preselected.
 
-The console lists the 37 `main/` entry points, renders each one's configuration fields as
+The console lists the 24 `main/` entry points, renders each one's configuration fields as
 typed controls with the profile's values already in place, shows the exact command it
 will run, and streams the output back live. A launch page stores its configuration as a
 saved run to launch later, or as a named config template under `logs/config_templates/`
 whose overrides import into the form of any entry point from the Templates tab or the
-launch rail. It also carries the results and cube browsers, the fit
-lab, the model microscope and server telemetry; the browse roots of the results tabs
+launch rail. It also carries the results browser, the model microscope and server
+telemetry; the browse roots of the results tabs
 start at the profile's data and runs roots. `webui/README.md` documents every tab.
 
 The console uses one dark theme. Every wait on the backend shows a short status line, and
@@ -466,9 +456,9 @@ history, jobs, the GPU guard, the server log and a 30-day GPU heatmap. Its watch
 holds the kill front end button, which stops every console server on the same project
 root; running and detached jobs survive it and are adopted again on the next start.
 
-On the launch pages the secondary-channel field is a picker filled from the selected
-dataset's channel labels, and the cross-validation form shows the architecture
-fields of the selected backbone. An ended job's console tile has a Retry
+On the launch pages the dataset field is a picker over the dataset folders that hold a
+`dataset.json`, badged with their input and target channel counts, and the
+cross-validation form shows the architecture fields of the selected backbone. An ended job's console tile has a Retry
 button that reopens the launch page with the job's overrides, interpreter and finalize
 switches. A dropped job stream reconnects and replays from its last event. TensorBoard
 runs are picked from a folder tree.
@@ -482,11 +472,10 @@ works, with plain text where the architecture notes' equations would be.
 ## 8. Experiments and analysis
 
 Three experiment entries under `main/experiments/` wrap the training loop:
-`benchmark.py` sweeps models, heads and losses; `cross_validate.py` runs k-fold over the
-scene; `tune.py` drives an Optuna study. Patch-shape sweeps run through the
+`benchmark.py` sweeps models, heads and loss kinds; `cross_validate.py` runs k-fold over
+the dataset rows; `tune.py` drives an Optuna study. Patch-shape sweeps run through the
 training entries themselves as `trials_mode=patch`, alongside the other fan-out modes
-(presence, pair, log-energy, secondary, input, context, reach, head,
-augmentation, clamp, stability, EMA and AMP ladders). The patch sweep report
+(context, reach, augmentation, stability, EMA and AMP ladders). The patch sweep report
 follows the planned seeds and names the seeds a trial mean drops.
 
 `benchmark.py` refuses a `skip_models` entry that matches no model key and no backbone
@@ -530,8 +519,7 @@ Every per-run analysis pass writes `analysis_config.json`, `analysis_provenance.
 and a completion marker into its output subdirectory and warns before it replaces an
 earlier result; a batch closes with a summary table of its runs. The seed comparison,
 the paper figure pack and the result-table export read only completed inference stamps
-of their `split` (default `test`), and `compare_runs.py` takes `--inference_split`. The
-seed comparison refuses seeds scored at different activity thresholds. Trial comparisons
+of their `split` (default `test`), and `compare_runs.py` takes `--inference_split`. Trial comparisons
 write `comparison_summary.json` and state their split, seed means show the seeds they
 cover as used/total, and leaderboards name the smallest p-value the seed count allows.
 The weight x-ray records its checkpoint entry, thresholds and provenance and reads
@@ -559,33 +547,16 @@ logs/           entry-point logs and console state, gitignored
 ## Making it your own
 
 `ADAPTING.md` is the guide for turning this into a real project: the dataset contract
-your importer has to emit, how to change the target specification and the loss to match
-it, where the normalization strategies live, the strict gates that will fail loudly if
+your importer has to emit, how to change the loss and the metrics to match your targets,
+where the normalization methods live, the strict gates that will fail loudly if
 you add a config field or an entry point without wiring it up, the rename checklist, and
 where the console's figures and palette live.
 
 ## Artifacts from older checkouts
 
-Formats change without migration scripts; artifacts written by an older checkout are
-regenerated, not converted. These changes, made in October 2026, affect existing files:
-
-- Trainer states saved before `last.pt` recorded the batch geometry cannot be resumed.
-  Retrain them.
-- Inference stamps scored before `metrics.json` recorded the activity threshold are
-  refused by the seed comparison, and
-  stamps without a completion marker are ignored by the split-aware readers. Metric
-  values moved too: slot activity is strict, scoring uses the label run's threshold
-  where it used a fixed 1e-4, and pixel R² is NaN at constant references. Run inference
-  again before comparing old and new runs. Attention backbones now run on the fused
-  attention kernel, so their GPU results differ from older runs at noise level.
-- Saved launch configs, config templates and sequence plans that set `amp_zero_thr`,
-  `active_amp_thr` or `col_chunk` are rejected by `ConfigCli`, and so is a command line
-  that writes a list as space-separated values.
-- Tuning runs from an older checkout cannot be resumed, because their recorded
-  configuration lacks the new study keys, and an older `tuning_results.json` is refused.
-  Start a new run tag.
-- The mailer's reused seed aggregates need `seed_runs` and `seed_inference` records in
-  their `metrics.json`; pass `--regenerate_reports true` to rewrite older ones.
+Formats change without migration scripts. Datasets, runs and inference stamps written by
+an older checkout are regenerated, not converted: the readers are strict and stop on the
+first missing or renamed field.
 
 ## Housekeeping
 

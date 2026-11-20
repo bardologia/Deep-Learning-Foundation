@@ -238,80 +238,6 @@ class CvFoldsFigure extends HairlineFigureBase {
   }
 }
 
-class GaussianSlotsFigure extends HairlineFigureBase {
-  static RANGE     = [6, 12, 20];
-  static AMPLITUDE = [26, 0, 15];
-  static SIGMA     = [0.9, 1.4, 2.0];
-  static FINS      = 7;
-  static FIN_PITCH = 2.6;
-  static FIN_WIDTH = 1.5;
-  static TRAY      = 21;
-  static TRAY_GAP  = 5;
-  static FLOOR     = 2.2;
-  static STAGGER   = 45;
-  static REST      = 1;
-
-  constructor({ stage, svg }, value) {
-    super(svg, value, 3.6);
-    this.length = 8 + 3 * GaussianSlotsFigure.TRAY + 2 * GaussianSlotsFigure.TRAY_GAP;
-    this._camera(this._extent(), 170);
-    this._plinth(0, 0, this.length, 20, 6, 4);
-    this._buildSlots();
-    this._start(stage, svg);
-  }
-
-  _extent() {
-    const length = this.length;
-    const top    = GaussianSlotsFigure.FLOOR + Math.max(...GaussianSlotsFigure.AMPLITUDE) + GaussianSlotsFigure.RANGE[2] + 1;
-    return [[0, 0, -4], [length, 0, -4], [0, 20, -4], [length, 20, -4], [length * 0.25, 10, top], [length * 0.75, 10, 30]];
-  }
-
-  _buildSlots() {
-    this.fins  = [];
-    this.slots = GaussianSlotsFigure.AMPLITUDE.map((amplitude, k) => {
-      const x0            = 4 + k * (GaussianSlotsFigure.TRAY + GaussianSlotsFigure.TRAY_GAP);
-      const [ring, inner] = HL.rings(x0, 4, x0 + GaussianSlotsFigure.TRAY, 16, 2.4, 1);
-      const tray          = HL.solid(this.g);
-      HL.put(tray, HL.prism(this.P, this.front, ring, inner, 0, GaussianSlotsFigure.FLOOR));
-      tray.sil.classList.toggle("hi", k === GaussianSlotsFigure.REST);
-      const centre = x0 + GaussianSlotsFigure.TRAY / 2;
-      for (let j = 0; j < GaussianSlotsFigure.FINS; j++) this.fins.push(this._fin(k, j, centre, amplitude));
-      return { k, tray, restX: this.P(centre, 10, 0)[0] };
-    });
-  }
-
-  _fin(k, j, centre, amplitude) {
-    const half          = GaussianSlotsFigure.FIN_WIDTH / 2;
-    const x             = centre + (j - (GaussianSlotsFigure.FINS - 1) / 2) * GaussianSlotsFigure.FIN_PITCH;
-    const [ring, inner] = HL.rings(x - half, 6.5, x + half, 13.5, 0.7, 0.3);
-    const offset        = j - (GaussianSlotsFigure.FINS - 1) / 2;
-    const shape         = Math.exp(-((offset / GaussianSlotsFigure.SIGMA[k]) ** 2));
-    return { k, offset, shape, ring, inner, el: HL.solid(this.g), tw: HL.tween(amplitude * shape), drawn: NaN };
-  }
-
-  _tick(dt, now) {
-    return this._advance(this.fins, now);
-  }
-
-  _draw(fin, height) {
-    HL.put(fin.el, HL.prism(this.P, this.front, fin.ring, fin.inner, 0, GaussianSlotsFigure.FLOOR + 0.8 + height));
-  }
-
-  _move(p) {
-    this._choose(HairlineFigureBase.nearest(this.slots.map((slot) => slot.restX), p[0]));
-  }
-
-  _retarget(now) {
-    const lit = this.chosen === null ? GaussianSlotsFigure.REST : this.chosen;
-    for (const fin of this.fins) {
-      const amplitude = GaussianSlotsFigure.AMPLITUDE[fin.k] + (fin.k === this.chosen ? this.amount : 0);
-      HL.tset(fin.tw, amplitude * fin.shape, now, Math.abs(fin.offset) * GaussianSlotsFigure.STAGGER);
-    }
-    for (const slot of this.slots) slot.tray.sil.classList.toggle("hi", slot.k === lit);
-    this.loop.wake();
-  }
-}
-
 class GpuShelfFigure extends HairlineFigureBase {
   static RANGE     = [8, 14, 22];
   static THICK     = 4;
@@ -995,7 +921,7 @@ class LossLandscapeFigure extends HairlineFigureBase {
   }
 }
 
-class GaussianSurfaceFigure extends HairlineFigureBase {
+class SurfaceFigure extends HairlineFigureBase {
   static RANGE   = [20, 30, 42];
   static LX      = 96;
   static LY      = 64;
@@ -1010,12 +936,12 @@ class GaussianSurfaceFigure extends HairlineFigureBase {
 
   constructor({ stage, svg }, value) {
     super(svg, value, 2.45);
-    this.dy     = GaussianSurfaceFigure.LY / (GaussianSurfaceFigure.SLICES - 1);
-    this.pos    = GaussianSurfaceFigure.REST.map((s) => HL.spring(s, { k: 26, c: 8, eps: 0.0005 }));
+    this.dy     = SurfaceFigure.LY / (SurfaceFigure.SLICES - 1);
+    this.pos    = SurfaceFigure.REST.map((s) => HL.spring(s, { k: 26, c: 8, eps: 0.0005 }));
     this.drawn  = [NaN, NaN, NaN];
     this.chosen = null;
     this._camera(this._extent(), 168);
-    this._plinth(-6, -6, GaussianSurfaceFigure.LX + 6, GaussianSurfaceFigure.LY + 6, 6, 4);
+    this._plinth(-6, -6, SurfaceFigure.LX + 6, SurfaceFigure.LY + 6, 6, 4);
     this._buildSlices();
     this._buildPeaks();
     this._start(stage, svg);
@@ -1023,15 +949,15 @@ class GaussianSurfaceFigure extends HairlineFigureBase {
   }
 
   _extent() {
-    const [a, b] = GaussianSurfaceFigure.TRACK;
-    const top    = GaussianSurfaceFigure.FLOOR + GaussianSurfaceFigure.RANGE[2];
-    const lx     = GaussianSurfaceFigure.LX + 6;
-    const ly     = GaussianSurfaceFigure.LY + 6;
-    return [[-6, -6, -4], [lx, ly, -4], [lx, -6, -4], [-6, ly, -4], [a[0], a[1], top], [b[0], b[1], top], [0, 0, GaussianSurfaceFigure.FLOOR], [GaussianSurfaceFigure.LX, GaussianSurfaceFigure.LY, GaussianSurfaceFigure.FLOOR]];
+    const [a, b] = SurfaceFigure.TRACK;
+    const top    = SurfaceFigure.FLOOR + SurfaceFigure.RANGE[2];
+    const lx     = SurfaceFigure.LX + 6;
+    const ly     = SurfaceFigure.LY + 6;
+    return [[-6, -6, -4], [lx, ly, -4], [lx, -6, -4], [-6, ly, -4], [a[0], a[1], top], [b[0], b[1], top], [0, 0, SurfaceFigure.FLOOR], [SurfaceFigure.LX, SurfaceFigure.LY, SurfaceFigure.FLOOR]];
   }
 
   _buildSlices() {
-    this.slices = Array.from({ length: GaussianSurfaceFigure.SLICES }, (_, k) => {
+    this.slices = Array.from({ length: SurfaceFigure.SLICES }, (_, k) => {
       const group = HL.mk("g", {}, this.g);
       const fill  = HL.mk("path", { class: "fo" }, group);
       const line  = HL.mk("path", { class: "nf" }, group);
@@ -1041,19 +967,19 @@ class GaussianSurfaceFigure extends HairlineFigureBase {
   }
 
   _buildPeaks() {
-    this.peaks = GaussianSurfaceFigure.PEAKS.map(() => HL.flatDot(this.g, this.C, 1.2, "dot m"));
+    this.peaks = SurfaceFigure.PEAKS.map(() => HL.flatDot(this.g, this.C, 1.2, "dot m"));
   }
 
   _centre(s) {
-    const [a, b] = GaussianSurfaceFigure.TRACK;
+    const [a, b] = SurfaceFigure.TRACK;
     return [HL.lerp(a[0], b[0], s), HL.lerp(a[1], b[1], s)];
   }
 
   _height(x, y, centres) {
-    let h = GaussianSurfaceFigure.FLOOR;
+    let h = SurfaceFigure.FLOOR;
     centres.forEach(([cx, cy], j) => {
-      const sigma = GaussianSurfaceFigure.SIGMA[j];
-      h += this.amount * GaussianSurfaceFigure.PEAKS[j] * Math.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * sigma * sigma));
+      const sigma = SurfaceFigure.SIGMA[j];
+      h += this.amount * SurfaceFigure.PEAKS[j] * Math.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * sigma * sigma));
     });
     return h;
   }
@@ -1069,22 +995,22 @@ class GaussianSurfaceFigure extends HairlineFigureBase {
 
   _drawSurface() {
     const centres = this.pos.map((sp) => this._centre(sp.x));
-    const n       = GaussianSurfaceFigure.SAMPLES;
-    const [a, b]  = GaussianSurfaceFigure.TRACK;
+    const n       = SurfaceFigure.SAMPLES;
+    const [a, b]  = SurfaceFigure.TRACK;
     const lead    = this._lead();
 
     for (const slice of this.slices) {
       const top = [];
       for (let i = 0; i <= n; i++) {
-        const x = (i / n) * GaussianSurfaceFigure.LX;
+        const x = (i / n) * SurfaceFigure.LX;
         top.push(this.P(x, slice.y, this._height(x, slice.y, centres)));
       }
-      const base = [this.P(GaussianSurfaceFigure.LX, slice.y, 0), this.P(0, slice.y, 0)];
+      const base = [this.P(SurfaceFigure.LX, slice.y, 0), this.P(0, slice.y, 0)];
       slice.fill.setAttribute("d", HL.poly(top.concat(base)));
       slice.line.setAttribute("d", HL.open(top));
 
       const y0 = slice.y;
-      const y1 = Math.min(GaussianSurfaceFigure.LY, slice.y + this.dy);
+      const y1 = Math.min(SurfaceFigure.LY, slice.y + this.dy);
       const t0 = HL.clamp((y0 - a[1]) / (b[1] - a[1]), 0, 1);
       const t1 = HL.clamp((y1 - a[1]) / (b[1] - a[1]), 0, 1);
       const pts = [];
@@ -1099,7 +1025,7 @@ class GaussianSurfaceFigure extends HairlineFigureBase {
     }
 
     centres.forEach(([cx, cy], j) => {
-      const k     = HL.clamp(Math.floor(cy / this.dy), 0, GaussianSurfaceFigure.SLICES - 1);
+      const k     = HL.clamp(Math.floor(cy / this.dy), 0, SurfaceFigure.SLICES - 1);
       const group = this.slices[k].group;
       if (this.peaks[j].parentNode !== group) group.appendChild(this.peaks[j]);
       HL.place(this.peaks[j], this.P(cx, cy, this._height(cx, cy, centres)));
@@ -1115,7 +1041,7 @@ class GaussianSurfaceFigure extends HairlineFigureBase {
   }
 
   _along(p) {
-    const [a, b] = GaussianSurfaceFigure.TRACK;
+    const [a, b] = SurfaceFigure.TRACK;
     const [x, y] = HL.unproj(this.C, p[0], p[1], 0);
     const dx     = b[0] - a[0];
     const dy     = b[1] - a[1];
@@ -1136,11 +1062,11 @@ class GaussianSurfaceFigure extends HairlineFigureBase {
 
   _retarget() {
     if (this.chosen === null) {
-      this.pos.forEach((sp, j) => { sp.t = GaussianSurfaceFigure.REST[j]; });
+      this.pos.forEach((sp, j) => { sp.t = SurfaceFigure.REST[j]; });
     } else {
       const { j, s } = this.chosen;
       const other    = 1 - j;
-      const space    = GaussianSurfaceFigure.SPACE;
+      const space    = SurfaceFigure.SPACE;
       this.pos[j].t  = s;
       const side     = this.pos[other].x >= s ? 1 : -1;
       let away       = s + side * space;
@@ -4413,12 +4339,11 @@ class ProjectFigures {
 
   static CATALOG = {
     folds:      ProjectFigures.entry(CvFoldsFigure, "A drum cut into five cross-validation folds, each numbered with dots. The pointer's angle picks a fold and it slides out as the held-out one."),
-    slots:      ProjectFigures.entry(GaussianSlotsFigure, "Three Gaussian slots, each a tray of fins tracing one component; the middle slot has collapsed flat. The pointer picks a slot and its component rises."),
     gpus:       ProjectFigures.entry(GpuShelfFigure, "Six GPU cards standing in a chassis, each with two fans and a status light. The pointer picks a card and it rises out of its slot."),
     guard:      ProjectFigures.entry(GpuGuardFigure, "A fenced yard of GPU card slots with a gate in the front fence. Another user's process, a puck, patrols the path outside and bumps the shut gate; during an intrusion the gate swings open and the puck rolls in to the card it invaded. The pointer picks a card and it rises."),
-    backbone:   ProjectFigures.entry(BackboneBenchFigure, "A test bench for the backbone zoo: an input patch, a socket and an output dish of Gaussian-slot pins on the front lane, and one cartridge per family on the shelf behind (a U block, a grid of tokens, a pyramid, a ridged slab, a single column). The pointer picks a cartridge, it hops into the socket, and the output pins settle to what it predicts."),
+    backbone:   ProjectFigures.entry(BackboneBenchFigure, "A test bench for the backbone zoo: an input patch, a socket and an output dish of pins on the front lane, and one cartridge per family on the shelf behind (a U block, a grid of tokens, a pyramid, a ridged slab, a single column). The pointer picks a cartridge, it hops into the socket, and the output pins settle to what it predicts."),
     landscape:  ProjectFigures.entry(LossLandscapeFigure, "A loss surface of pillars with a ball resting in its minimum. The ball follows the pointer across the surface and rolls back down to the minimum when it leaves."),
-    surface:    ProjectFigures.entry(GaussianSurfaceFigure, "A surface drawn as ridgelines with two Gaussian bumps, one tall and narrow, one low and wide, riding a dashed straight track across it. The pointer pulls the nearer bump along the track and the other keeps its distance."),
+    surface:    ProjectFigures.entry(SurfaceFigure, "A surface drawn as ridgelines with two bumps, one tall and narrow, one low and wide, riding a dashed straight track across it. The pointer pulls the nearer bump along the track and the other keeps its distance."),
     balance:    ProjectFigures.entry(BalanceFigure, "A balance weighing run A against run B, its pans numbered with dots. The pointer's side tips the beam, and the heavier pan lights."),
     podium:     ProjectFigures.entry(PodiumFigure, "A podium of five ranks, each step numbered with dots. The pointer picks a step and it rises with its neighbours."),
     tiles:      ProjectFigures.entry(MetricTilesFigure, "A metric map as a field of tiles with a hot spot and a fold seam. The pointer picks a tile and the region around it rises."),

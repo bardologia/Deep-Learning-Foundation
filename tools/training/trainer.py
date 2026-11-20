@@ -29,7 +29,7 @@ class BaseTrainer:
     stage_name    = "Training"
     section_title = "[Training Loop]"
 
-    def __init__(self, model, config, run_dir, logger, z_axis, writer=None):
+    def __init__(self, model, config, run_dir, logger, writer=None):
         self.logger = logger
         self.config = config
 
@@ -42,8 +42,7 @@ class BaseTrainer:
         self.checkpoint_path = self.run_dir / "best_model.pt"
         self.tracker         = Tracker(writer=writer, debug=config.training.log_debug)
 
-        self.model  = model.to(self.device)
-        self.z_axis = torch.tensor(z_axis, device=self.device, dtype=torch.float32)
+        self.model = model.to(self.device)
 
         self.channels_last = config.training.channels_last
         if self.channels_last:
@@ -96,8 +95,6 @@ class BaseTrainer:
         self.val_losses   = []
 
         self._ema_decay_logged = None
-
-        self._gt_occupancy_logged = set()
 
         self._update_optimizer(self.lr_scheduler.effective_lrs())
         self._log_loop_configuration()
@@ -200,13 +197,7 @@ class BaseTrainer:
     def _before_training(self, train_loader: DataLoader) -> None:
         pass
 
-    def _before_validation(self, epoch: int, val_loader: DataLoader) -> None:
-        pass
-
     def _after_eval(self, val_loss: float, epoch: int) -> None:
-        pass
-
-    def _log_train_epoch_extra(self, avg_loss: float, epoch: int) -> None:
         pass
 
     def _build_optimizer(self, param_groups: list[dict]):
@@ -258,7 +249,6 @@ class BaseTrainer:
         return {
             "epoch"  : epoch,
             "params" : self.model.state_dict(),
-            "z_axis" : self.z_axis.cpu().numpy(),
         }
 
     def _apply_memory_format(self, batch):
@@ -273,7 +263,7 @@ class BaseTrainer:
         with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.use_amp):
             loss_dict = self._compute_loss(batch)
 
-        loss = loss_dict["total_loss"] / window_len
+        loss = loss_dict["total_loss"].value / window_len
 
         if not torch.isfinite(loss):
             return loss_dict, float("nan")
@@ -295,9 +285,9 @@ class BaseTrainer:
         self._set_train_mode()
         self.optimizer.zero_grad(set_to_none=True)
 
-        loss_sum, n = 0.0, 0
-        aggregator  = MetricAggregator()
-        n_batches   = len(loader)
+        n          = 0
+        aggregator = MetricAggregator()
+        n_batches  = len(loader)
 
         window_has_grads = False
         nonfinite_count  = 0
@@ -323,7 +313,6 @@ class BaseTrainer:
                 if math.isfinite(scaled):
                     window_has_grads = True
 
-                    loss_sum += scaled * window_len
                     n += 1
                     aggregator.add(loss_dict)
 
@@ -352,13 +341,12 @@ class BaseTrainer:
 
         epoch_time = time.perf_counter() - epoch_start
 
-        avg = loss_sum / n if n > 0 else float("nan")
+        avg = aggregator.reduce_total() if n > 0 else float("nan")
         self.tracker.log_scalar("loss/train", avg, epoch)
         self._log_epoch_metrics("train", aggregator, epoch)
         self._log_throughput(epoch_time, data_wait, sample_count, nonfinite_count, epoch)
 
         self.tracker.log_memory(self.global_step)
-        self._log_train_epoch_extra(avg, epoch)
         return avg
 
     def _log_throughput(self, epoch_time: float, data_wait: float, sample_count: int, nonfinite_count: int, epoch: int) -> None:
@@ -377,7 +365,7 @@ class BaseTrainer:
     def evaluate(self, loader: DataLoader, epoch: int, stage="val"):
         self.model.eval()
 
-        loss_sum, batch_count, sample_count = 0.0, 0, 0
+        batch_count, sample_count = 0, 0
 
         aggregator = MetricAggregator()
 
@@ -389,11 +377,10 @@ class BaseTrainer:
 
                 with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.use_amp):
                     loss_dict = self._eval_step(batch)
-                loss = loss_dict["total_loss"]
+                loss = loss_dict["total_loss"].value
 
                 if torch.isfinite(loss):
                     batch_samples = self._batch_size(batch)
-                    loss_sum     += loss.item() * batch_samples
                     batch_count  += 1
                     sample_count += batch_samples
                     aggregator.add(loss_dict)
@@ -409,36 +396,18 @@ class BaseTrainer:
         if sample_count == 0:
             self.logger.warning(f"{self.stage_name} {stage} epoch {epoch + 1}: no finite batch out of {len(loader)}; the {stage} loss is NaN")
 
-        avg = loss_sum / sample_count if sample_count > 0 else float("nan")
+        avg = aggregator.reduce_total() if sample_count > 0 else float("nan")
         self._log_epoch_metrics(stage, aggregator, epoch)
 
         return {"avg_loss": avg, "num_batches": int(batch_count), "num_samples": int(sample_count)}
 
     def _nonfinite_detail(self, loss_dict: dict, batch) -> str:
-        bad = [name for name, value in loss_dict["components"].items() if not torch.isfinite(torch.as_tensor(value)).all()]
+        bad = [name for name, mean in loss_dict["channels"].items() if not torch.isfinite(mean.value)]
 
-        return f"; non-finite terms: {bad if bad else 'none (every weighted term is finite)'}"
+        return f"; non-finite target channels: {bad if bad else 'none (every channel loss is finite)'}"
 
     def _log_epoch_metrics(self, stage: str, aggregator: MetricAggregator, epoch: int) -> None:
-        self.tracker.log_staged("loss_terms", aggregator.reduce_components(), stage, epoch)
-
-        monitor = aggregator.reduce_monitor()
-        if monitor:
-            self.tracker.log_staged("loss_monitor", monitor, stage, epoch)
-
-        occupancy = aggregator.reduce_occupancy()
-        if occupancy:
-            gt_stats  = {k: v for k, v in occupancy.items() if k.startswith("gt_")}
-            pred_side = {k: v for k, v in occupancy.items() if not k.startswith("gt_")}
-            self.tracker.log_staged("occupancy", pred_side, stage, epoch)
-
-            if gt_stats and stage not in self._gt_occupancy_logged:
-                self._gt_occupancy_logged.add(stage)
-                self.logger.kv_table({k: f"{v:.4f}" for k, v in gt_stats.items()}, title=f"GT Occupancy ({stage}, dataset constants)")
-
-        physical = aggregator.reduce_physical()
-        if physical:
-            self.tracker.log_staged("param_error", physical, stage, epoch)
+        self.tracker.log_staged("loss_channels", aggregator.reduce_channels(), stage, epoch)
 
     def _maybe_snapshot(self, epoch: int) -> None:
         every = self.config.training.snapshot_every_n_epochs
@@ -555,7 +524,6 @@ class BaseTrainer:
 
                         do_eval = (epoch_num % self.validation_frequency == 0) or (epoch_num == self.epochs)
                         if do_eval:
-                            self._before_validation(epoch, val_loader)
                             with self.ema.applied(self.model):
                                 val      = self.evaluate(val_loader, epoch, stage="val")
                                 val_loss = val["avg_loss"]

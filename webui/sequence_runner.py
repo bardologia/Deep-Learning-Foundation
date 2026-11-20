@@ -223,17 +223,9 @@ class SequenceRunner:
             return None, {}
 
         leaves = {leaf["path"]: str(leaf["value"]) for leaf in resolved["leaves"]}
-        params = entry["dataset"]["parameters_path"]
 
-        if dataset:
-            if "paths.dataset_path" in leaves:
-                overrides["paths.dataset_path"] = dataset
-            if "paths.parameters_path" in leaves and params:
-                overrides["paths.parameters_path"] = params
-            if "dataset_base_path" in leaves:
-                overrides["dataset_base_path"] = str(Path(dataset).parent)
-            if "dataset_filter" in leaves:
-                overrides["dataset_filter"] = Path(dataset).name
+        if dataset and "paths.dataset_path" in leaves:
+            overrides["paths.dataset_path"] = dataset
 
         if run_dir:
             if "paths.log_base_dir" in leaves:

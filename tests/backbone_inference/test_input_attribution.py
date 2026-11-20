@@ -167,8 +167,8 @@ def test_channel_groups_partition_the_stack():
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_attribution_pass_tracks_the_occlusion_and_times_both_stages(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+def test_attribution_pass_tracks_the_occlusion_and_times_both_stages(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
     config  = InputAttributionConfig(window=32, n_row_probes=2, n_col_probes=2, batch_size=2, max_batches=1)
     logger  = StageLogger()
 

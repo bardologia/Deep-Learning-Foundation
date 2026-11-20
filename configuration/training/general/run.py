@@ -8,10 +8,6 @@ from configuration.reference_layout              import ReferenceLayout
 from configuration.training.general.optimization import ClipMode, OptimizerType, SchedulerType, WarmupMode
 
 
-DEFAULT_DATASET_DIR = ReferenceLayout.DATASET_DIR
-DEFAULT_PARAMS_RUN  = ReferenceLayout.PARAMS_RUN
-
-
 def standard_seeds() -> list[int]:
     return [0, 1]
 
@@ -19,10 +15,8 @@ def standard_seeds() -> list[int]:
 @dataclass
 class TrainingPathsConfig:
 
-    dataset_path        : Path  = DEFAULT_DATASET_DIR
-    parameters_path     : Path  = DEFAULT_DATASET_DIR / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
-    secondary_labels    : tuple = ("CH01", "CH02", "CH03", "CH04")
-    fingerprint_dataset : bool  = True
+    dataset_path        : Path = ReferenceLayout.DATASET_DIR
+    fingerprint_dataset : bool = True
 
 
 @dataclass
@@ -43,7 +37,6 @@ class TrainingQueueConfig:
     eta_min              : float      = 1e-6
     early_stop_patience  : int        = 30
     early_stop_min_delta : float      = 0.0
-    log_all_losses       : bool       = False
     log_debug            : bool       = False
 
     use_amp                     : bool  = False
@@ -88,13 +81,9 @@ class TrainingQueueConfig:
     clip_adaptive_percentile : float    = 95.0
     clip_adaptive_mean_std_k : float    = 2.0
 
-    patch_size            : tuple[int, int] = (64, 32)
-    patch_stride          : tuple[int, int] = (32, 16)
+    patch_size            : tuple[int, int] = (32, 32)
+    patch_stride          : tuple[int, int] = (16, 16)
     use_symmetric_padding : bool            = True
-
-    train_rows : tuple[int, int] = (1000, 1358)
-    val_rows   : tuple[int, int] = (1358, 1434)
-    test_rows  : tuple[int, int] = (1434, 1512)
 
     def lr_scale(self, batch_size: int | None = None) -> float:
         batch = self.batch_size if batch_size is None else batch_size

@@ -1,8 +1,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-from pathlib     import Path
+from pathlib import Path
 
 import pytest
 
@@ -18,7 +17,6 @@ from pipelines.cross_validation.stages import (
 from pipelines.cross_validation.workers import FoldTrainingWorker
 from tools.data.io                      import FileIO
 from tools.runtime.completion           import CompletionMarker
-from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
 from tests.conftest import make_file_logger
 
@@ -36,7 +34,6 @@ def stage_config(tmp_path: Path, resume: bool = False) -> CrossValidationConfig:
 def data_config(tmp_path: Path, test_data_dir: Path, resume: bool = False) -> CrossValidationConfig:
     config                       = stage_config(tmp_path, resume)
     config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     return config
 
 
@@ -78,7 +75,7 @@ def build_finished_run(root: Path, run_tag: str, n_folds: int = 3, splits: tuple
             (unit_dir / "meta").mkdir(parents=True)
             FileIO.save_json({}, unit_dir / "meta" / "model_config.json")
             FileIO.save_json({"model_name": config.backbone_name, "in_channels": 4, "out_channels": 6}, unit_dir / "meta" / "run_summary.json")
-            FileIO.save_json({"split_regions": asdict(planner.plan(index).split_regions)}, unit_dir / "meta" / "dataset_creation_config.json")
+            FileIO.save_json({"split_regions": planner.plan(index).split_regions.bounds()}, unit_dir / "meta" / "dataset_creation_config.json")
 
             torch.save({"best_val_loss": 0.1 * (index + 1), "best_epoch": 3, "epoch": 5}, unit_dir / "best_model.pt")
             CompletionMarker.stamp(unit_dir, {"stage": "training", "epochs_completed": 5})
@@ -442,7 +439,7 @@ def test_fold_tree_survey_reads_model_splits_and_plan(tmp_path):
     assert first == run_dir / "folds" / "resunet_fold_0"
     assert survey.model_name(first) == "resunet"
     assert survey.splits(fold_runs) == ["test", "val"]
-    assert [plan.split_regions for plan in survey.planner(fold_runs).plans()] == [plan.split_regions for plan in expected.plans()]
+    assert [plan.split_regions.bounds() for plan in survey.planner(fold_runs).plans()] == [plan.split_regions.bounds() for plan in expected.plans()]
 
 
 def test_stored_fold_planner_follows_the_planner_block_convention():

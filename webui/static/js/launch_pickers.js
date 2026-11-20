@@ -4,12 +4,11 @@ class DatasetPicker {
   static CUSTOM = "__custom__";
 
   static MULTI_MODES = {
-    datasets:     { endpoint: "/api/fs/datasets", key: "datasets", noun: "datasets", hint: "nothing selected = every dataset is processed", badge: (d) => (d.has_params ? null : { text: "no params", tone: "warn" }) },
+    datasets:     { endpoint: "/api/fs/datasets", key: "datasets", noun: "datasets", hint: "nothing selected = every dataset is processed", badge: (d) => (d.is_dataset ? { text: `${d.inputs} in, ${d.targets} out`, tone: "ok" } : { text: "no dataset.json", tone: "warn" }) },
     runs:         { endpoint: "/api/fs/runs",     key: "runs",     noun: "runs",     hint: "nothing selected = every run is processed",     badge: (d) => (d.n_seeds ? (d.own_inference ? { text: "seed report", tone: "ok" } : { text: "no seed report", tone: "warn" }) : !d.has_checkpoint ? { text: "no checkpoint", tone: "warn" } : d.has_inference ? { text: "inferred", tone: "ok" } : null) },
     runs_compare: { endpoint: "/api/fs/runs",     key: "runs",     noun: "runs",     hint: "select 2 or more runs to compare",            params: "units=1", badge: (d) => (d.n_seeds ? { text: `${d.n_seeds} seed${d.n_seeds > 1 ? "s" : ""}`, tone: d.has_inference ? "ok" : "warn" } : d.has_inference ? { text: "inferred", tone: "ok" } : { text: "no inference", tone: "warn" }) },
     run_groups:   { endpoint: "/api/fs/run_groups", key: "groups", noun: "groups",   hint: "nothing selected = runs_dir itself is treated as one seed group", badge: (d) => ({ text: `${d.n_runs} runs`, tone: d.n_runs >= 2 ? "ok" : "warn" }) },
     experiments:  { endpoint: "/api/fs/experiments", key: "experiments", noun: "experiments", hint: "nothing selected = every experiment found is mailed; missing seed aggregates and comparisons are written first", badge: (d) => ({ text: `${d.kind} · ${d.n_trials} trial${d.n_trials === 1 ? "" : "s"} · ${d.n_comparisons ? `${d.n_comparisons} comparison${d.n_comparisons === 1 ? "" : "s"}` : "no comparison yet"}`, tone: d.n_comparisons >= 1 ? "ok" : "warn" }) },
-    secondaries:  { endpoint: "/api/fs/secondaries", key: "secondaries", noun: "secondaries", hint: "nothing selected = every secondary channel (full stack)", query: "dataset", none: (n) => `none of ${n} secondaries`, badge: (d) => (d.standard ? { text: "standard", tone: "ok" } : null) },
   };
 
   constructor(view, leaf, spec) {
@@ -31,7 +30,6 @@ class DatasetPicker {
     this.stale = [];
     this.reloadTimer = null;
     this.baseLabel = "";
-    this.standard = [];
     this.multiLoadSeq = 0;
   }
 
@@ -56,10 +54,6 @@ class DatasetPicker {
     if (this.spec.multi) this._buildMulti();
     else this._buildSingle();
 
-    if (this.spec.datasetFrom) {
-      this.view._onDependency(this.spec.datasetFrom, () => (this.spec.multi ? this._scheduleReload() : this._scheduleSingleReload()));
-    }
-
     return { el: this.el, input: this.select, reset: () => this._reset() };
   }
 
@@ -81,7 +75,6 @@ class DatasetPicker {
       this.custom.classList.toggle("is-dirty", this.custom.value !== this.leaf.value);
       this.view._setValue(this.leaf, this.custom.value);
       this.view._fireDependents(this.leaf.path, this.custom.value);
-      this._paintAnalysisWarning();
     });
 
     this.el.appendChild(this.select);
@@ -118,11 +111,6 @@ class DatasetPicker {
   async _loadSingle() {
     const seq = (this.singleLoadSeq = (this.singleLoadSeq || 0) + 1);
 
-    if (this.spec.mode === "params") {
-      const dataset = this.view._effective(this.view._leafByPath(this.spec.datasetFrom));
-      await this._fetchParams(dataset, seq);
-      return;
-    }
     if (this.spec.mode === "runs") {
       await this._fetchRuns(this._base(), seq);
       return;
@@ -190,45 +178,7 @@ class DatasetPicker {
     }
     const items = (res.datasets || []).filter((d) => (this.spec.validOnly ? d.is_dataset : true));
     this.note.textContent = items.length ? `${items.length} in ${res.base}` : `no datasets in ${res.base}`;
-    this._renderSingleOptions(items.map((d) => ({ value: d.path, label: d.name + (d.has_params ? "" : "  (no params)") })));
-  }
-
-  async _fetchParams(dataset, seq) {
-    if (!dataset) {
-      this._clearAnalysisState();
-      this.note.textContent = "select a dataset first";
-      this._renderSingleOptions([]);
-      return;
-    }
-    this.note.innerHTML = SharedCharts.waitLine("listing…");
-    const res = await Api.get(`/api/fs/params?dataset=${encodeURIComponent(dataset)}`);
-    if (this._singleStale(seq)) return;
-    if (!res.ok) {
-      this._clearAnalysisState();
-      this.note.textContent = res.error || "could not list params";
-      this._renderSingleOptions([]);
-      return;
-    }
-    const items = res.files || [];
-    this.unanalysed = new Set(items.filter((f) => f.analysed === false).map((f) => f.path));
-    this.noteBase = items.length ? `${items.length} under ${res.params_root}` : "no extracted params yet";
-    this.note.textContent = this.noteBase;
-    this._renderSingleOptions(items.map((f) => ({ value: f.path, label: f.name + (this.spec.warnUnanalysed && f.analysed === false ? "  (not analysed)" : "") })));
-    this._paintAnalysisWarning();
-  }
-
-  _clearAnalysisState() {
-    this.unanalysed = null;
-    this.noteBase = "";
-    this.note.classList.remove("is-warn");
-  }
-
-  _paintAnalysisWarning() {
-    if (!this.spec.warnUnanalysed || !this.unanalysed) return;
-    const flagged = this.unanalysed.has(String(this.view._effective(this.leaf) || ""));
-    this.note.classList.toggle("is-warn", flagged);
-    if (flagged) this.note.textContent = "no resolution curves in this run: run Param inference (analyze_param_extraction) on it first, or the launch will abort";
-    else this.note.textContent = this.noteBase || "";
+    this._renderSingleOptions(items.map((d) => ({ value: d.path, label: d.name })));
   }
 
   _renderSingleOptions(items) {
@@ -258,14 +208,12 @@ class DatasetPicker {
       this.custom.focus();
       this.view._setValue(this.leaf, this.custom.value);
       this.view._fireDependents(this.leaf.path, this.custom.value);
-      this._paintAnalysisWarning();
       return;
     }
     this.custom.hidden = true;
     this.select.classList.toggle("is-dirty", this.select.value !== this.leaf.value);
     this.view._setValue(this.leaf, this.select.value);
     this.view._fireDependents(this.leaf.path, this.select.value);
-    this._paintAnalysisWarning();
   }
 
   _buildMulti() {
@@ -304,11 +252,6 @@ class DatasetPicker {
       const seeds = window.LaunchWidgetDom.mini("Seeds", () => this._setSeeds());
       seeds.title = "select only multi-seed run groups";
       head.appendChild(seeds);
-    }
-    if (this.spec.standardButton) {
-      const standard = window.LaunchWidgetDom.mini("Standard", () => this._setStandard());
-      standard.title = "select exactly the standard secondaries every training config starts from";
-      head.appendChild(standard);
     }
     head.appendChild(window.LaunchWidgetDom.mini("Reload", () => this._loadMulti()));
 
@@ -351,28 +294,15 @@ class DatasetPicker {
     }
   }
 
-  _datasetQuery() {
-    const source = this.view._leafByPath(this.spec.datasetFrom);
-    return source ? String(this.view._effective(source) || "") : "";
-  }
-
   async _loadMulti() {
     const mode  = DatasetPicker.MULTI_MODES[this.spec.mode];
-    const bases = mode.query === "dataset" ? [this._datasetQuery()] : this._baseList();
+    const bases = this._baseList();
     const seq   = ++this.multiLoadSeq;
 
     this.count.innerHTML = SharedCharts.waitLine("listing…");
     this.hint.textContent = "";
 
-    if (mode.query === "dataset" && !bases[0]) {
-      this.items = [];
-      this.standard = [];
-      this.count.textContent = `no ${mode.noun}`;
-      this.body.innerHTML = `<p class="picker__empty">select a dataset first</p>`;
-      return;
-    }
-
-    const parts = (bases.length ? bases : [""]).map((b) => `${mode.query || "base"}=${encodeURIComponent(b)}`);
+    const parts = (bases.length ? bases : [""]).map((b) => `base=${encodeURIComponent(b)}`);
     if (mode.params) parts.push(mode.params);
     else if (this.spec.units) parts.push("units=1");
     if (this.spec.markerFrom) {
@@ -394,8 +324,7 @@ class DatasetPicker {
       return;
     }
 
-    this.baseLabel = res.base || res.dataset || bases.join(", ");
-    this.standard  = res.standard || [];
+    this.baseLabel = res.base || bases.join(", ");
 
     this.items = (res[mode.key] || []).filter((d) => (this.spec.validOnly ? d.is_dataset : true));
 
@@ -504,17 +433,6 @@ class DatasetPicker {
     this._commitMulti();
   }
 
-  _setStandard() {
-    const standard = new Set(this.standard);
-    this.stale = [];
-    this.items.forEach((d) => {
-      if (standard.has(d.name)) this.selected.add(d.name);
-      else this.selected.delete(d.name);
-    });
-    this._renderItems();
-    this._commitMulti();
-  }
-
   _dropStale() {
     if (!this.stale.length) return;
 
@@ -550,7 +468,6 @@ class DatasetPicker {
     this.custom.value = "";
     this.custom.classList.remove("is-dirty");
     this._renderSingleOptions(this.options);
-    if (this.spec.mode === "params") this._loadSingle();
   }
 
   _option(value, label) {
@@ -591,7 +508,7 @@ class EntryFormControl {
 }
 
 class RunConfigCopy extends EntryFormControl {
-  static DATASET_ENTRIES = ["generate_dataset", "extract_params"];
+  static DATASET_ENTRIES = ["generate_dataset"];
 
   constructor(view) {
     super(view);

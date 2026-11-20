@@ -6,6 +6,7 @@ from pathlib import Path
 from typing  import List, Tuple
 
 from configuration.diagnostics                 import ArtifactMailConfig
+from pipelines.shared.dataset.dataset_files    import DatasetFiles
 from pipelines.shared.inference.run_classifier import RunDirectoryWalk
 from tools.data.archives                       import ArchivePacker
 from tools.runtime.run_selector                import RunSelector
@@ -13,28 +14,25 @@ from tools.runtime.run_selector                import RunSelector
 
 class DatasetSelector(RunSelector):
 
-    LAYOUT_RELPATH = "data/dataset.json"
-    PARAMS_DIRNAME = "params"
-
     def __init__(self, datasets_dir: Path, logger) -> None:
-        super().__init__(datasets_dir, self.LAYOUT_RELPATH, logger, action="mail")
+        super().__init__(datasets_dir, DatasetFiles.LAYOUT, logger, action="mail")
 
     def _discover(self) -> list[Path]:
-        datasets = sorted(child for child in self.runs_dir.iterdir() if child.is_dir() and (child / self.marker).is_file())
-
-        return datasets
+        return sorted(child for child in self.runs_dir.iterdir() if child.is_dir() and (child / self.marker).is_file())
 
     def _present(self, run_dirs: list[Path]) -> None:
         rows = []
         for index, dataset_dir in enumerate(run_dirs, start=1):
-            params = dataset_dir / self.PARAMS_DIRNAME
+            files = DatasetFiles.read(dataset_dir)
             rows.append({
                 "#"       : index,
                 "Dataset" : dataset_dir.name,
-                "Params"  : str(sum(1 for child in params.iterdir() if child.is_dir()) if params.is_dir() else 0),
+                "Grid"    : f"{files.rows} x {files.cols}",
+                "Inputs"  : str(len(files.input_channels)),
+                "Targets" : str(len(files.target_channels)),
             })
 
-        self.logger.metrics_table(rows, columns=["#", "Dataset", "Params"], title=f"Datasets under {self.runs_dir}")
+        self.logger.metrics_table(rows, columns=["#", "Dataset", "Grid", "Inputs", "Targets"], title=f"Datasets under {self.runs_dir}")
 
 
 class RunContentSelector(RunSelector):

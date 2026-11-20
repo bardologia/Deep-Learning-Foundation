@@ -12,12 +12,12 @@ from web_logger         import WebLogger
 
 
 LEAVES = {
-    "train_backbone"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "training.seed": "0", "training.use_ema": "False", "trials_mode": "presence", "paths.log_base_dir": "runs/benchmark", "logdir": "runs/backbone"},
-    "infer_backbone"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "runs_dir": "runs"},
-    "benchmark"        : {"dataset_base_path": "/data", "dataset_filter": "", "training.seed": "0"},
+    "train_backbone"   : {"paths.dataset_path": "/data/default", "model_overrides": "{}", "training.seed": "0", "training.use_ema": "False", "trials_mode": "augmentation", "paths.log_base_dir": "runs/benchmark", "logdir": "runs/backbone"},
+    "infer_backbone"   : {"paths.dataset_path": "/data/default", "runs_dir": "runs"},
+    "benchmark"        : {"paths.dataset_path": "/data/default", "training.seed": "0"},
     "generate_dataset" : {"runs_dir": "datasets"},
-    "cross_validate"   : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "run_tag": "None", "paths.log_base_dir": "runs/cross_validation", "training.batch_size": "256", "loss.use_param_l1": "True"},
-    "tune"             : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "run_tag": "None", "paths.log_base_dir": "runs/tuning", "training.batch_size": "256", "loss.use_param_l1": "True"},
+    "cross_validate"   : {"paths.dataset_path": "/data/default", "model_overrides": "{}", "run_tag": "None", "paths.log_base_dir": "runs/cross_validation", "training.batch_size": "256", "loss.kind": "mse"},
+    "tune"             : {"paths.dataset_path": "/data/default", "run_tag": "None", "paths.log_base_dir": "runs/tuning", "training.batch_size": "256", "loss.kind": "mse"},
 }
 
 
@@ -65,7 +65,7 @@ def _block(block_id: str, script: str = "train_backbone", predecessors: list | N
 
 
 def _definition(blocks: list, **extra) -> dict:
-    return {"name": "seq", "dataset": {"dataset_path": "", "parameters_path": ""}, "detach": True, "isolate": False, "blocks": blocks, **extra}
+    return {"name": "seq", "dataset": {"dataset_path": ""}, "detach": True, "isolate": False, "blocks": blocks, **extra}
 
 
 def test_create_writes_one_json_file_with_an_empty_graph(store):
@@ -77,7 +77,7 @@ def test_create_writes_one_json_file_with_an_empty_graph(store):
     assert result["ok"]
     assert saved["name"] == "my sweep"
     assert saved["blocks"] == []
-    assert saved["dataset"] == {"dataset_path": "", "parameters_path": ""}
+    assert saved["dataset"] == {"dataset_path": ""}
     assert saved["isolate"] is True
 
 

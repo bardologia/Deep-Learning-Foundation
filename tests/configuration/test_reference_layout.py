@@ -10,7 +10,7 @@ import pytest
 
 import configuration
 from configuration.reference_layout     import ReferenceLayout
-from configuration.training.general.run import DEFAULT_DATASET_DIR, DEFAULT_PARAMS_RUN
+from configuration.training.general.run import TrainingPathsConfig
 from tools.runtime.config_cli           import ConfigCli
 from tools.runtime.machine_profile      import MachineProfile
 
@@ -18,7 +18,7 @@ ROOTS = (str(ReferenceLayout.DATA_ROOT), str(ReferenceLayout.RUNS_ROOT), str(Ref
 
 ALL_ROOTS_PROFILE = {
     "roots"   : {"repo": "/local/repo", "data": "/local/data", "runs": "/local/runs", "results": "/local/results"},
-    "dataset" : {"path": "/local/data/scene", "parameters_path": "/local/data/scene/params/run/parameters.npy"},
+    "dataset" : {"path": "/local/data/scene"},
 }
 
 
@@ -52,9 +52,7 @@ def _below_a_root(text: str) -> bool:
 
 
 def test_the_default_dataset_constants_come_from_the_reference_layout():
-    assert DEFAULT_DATASET_DIR == ReferenceLayout.DATASET_DIR
-    assert DEFAULT_PARAMS_RUN  == ReferenceLayout.PARAMS_RUN
-    assert ReferenceLayout.PARAMETERS == ReferenceLayout.DATASET_DIR / "params" / ReferenceLayout.PARAMS_RUN / "parameters.npy"
+    assert TrainingPathsConfig().dataset_path == ReferenceLayout.DATASET_DIR
     assert not ReferenceLayout.DATA_ROOT.is_absolute()
     assert not ReferenceLayout.RUNS_ROOT.is_absolute()
     assert not ReferenceLayout.RESULTS_ROOT.is_absolute()

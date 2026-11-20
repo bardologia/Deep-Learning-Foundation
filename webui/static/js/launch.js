@@ -72,11 +72,11 @@ class LaunchView extends ConfigForm {
 
   static BACKBONE_MEANING = {
     title  : "Backbone",
-    summary: "Supervised regression that maps the input channel stack straight to the Gaussian-mixture profile parameters.",
+    summary: "Supervised dense regression that maps every pixel's input channels to its target channels.",
     flow   : [
-      { kind: "input",  glyph: "stack",  label: "Image stack",  sub: "primary · secondaries · derived" },
-      { kind: "model",  glyph: "net",    label: "Backbone",     sub: "supervised network" },
-      { kind: "output", glyph: "params", label: "Params array", sub: "amp, μ, σ, amp, μ, σ, …" },
+      { kind: "input",  glyph: "stack", label: "Input maps",  sub: "input channels" },
+      { kind: "model",  glyph: "net",   label: "Backbone",    sub: "supervised network" },
+      { kind: "output", glyph: "stack", label: "Target maps", sub: "target channels" },
     ],
   };
 
@@ -91,12 +91,12 @@ class LaunchView extends ConfigForm {
     tune           : LaunchView.BACKBONE_MEANING,
     infer: {
       title  : "Inference",
-      summary: "Runs a trained model over the image stack with a sliding window, stitches the predicted cube, and renders reports.",
+      summary: "Runs a trained model over a split region with a sliding window, stitches the predicted target maps, and scores them against the targets.",
       flow   : [
-        { kind: "input",  glyph: "run",    label: "Trained run",      sub: "checkpoint + image stack" },
-        { kind: "model",  glyph: "net",    label: "Predict",          sub: "sliding window" },
-        { kind: "calc",   glyph: "cube",   label: "Stitched cube",    sub: "predicted profiles" },
-        { kind: "output", glyph: "report", label: "Reports & figures", sub: "metrics · plots · animations" },
+        { kind: "input",  glyph: "run",    label: "Trained run",       sub: "checkpoint + input maps" },
+        { kind: "model",  glyph: "net",    label: "Predict",           sub: "sliding window" },
+        { kind: "calc",   glyph: "stack",  label: "Stitched maps",     sub: "predicted targets" },
+        { kind: "output", glyph: "report", label: "Reports & figures", sub: "metrics · maps" },
       ],
     },
   };
@@ -106,7 +106,6 @@ class LaunchView extends ConfigForm {
   static FIGURES = [
     [/^train(_|$)/, "surface"],
     [/^(infer(_|$)|export_onnx$)/, "shelf"],
-    [/^generate_dataset$/, "slots"],
     [/^benchmark$/, "podium"],
     [/^cross_validate$/, "folds"],
     [/^tune$/, "dial"],
@@ -429,59 +428,6 @@ class LaunchView extends ConfigForm {
       rows.forEach((ly) => rows.forEach((ry) => { lines += `<line x1="${lx}" y1="${ly}" x2="${rx}" y2="${ry}" stroke="#fff" stroke-width="0.8" opacity="0.32"/>`; }));
       rows.forEach((ry) => { dots += `<circle cx="${lx}" cy="${ry}" r="4" fill="#fff"/><circle cx="${rx}" cy="${ry}" r="4" fill="#fff"/>`; });
       return `<g><rect x="${x}" y="${y}" width="${s}" height="${s}" rx="11" fill="${color}"/>${lines}${dots}</g>`;
-    }
-
-    if (glyph === "encoder" || glyph === "decoder") {
-      const hw = 36, lh = glyph === "encoder" ? 44 : 18, rh = glyph === "encoder" ? 18 : 44;
-      const pts = `${cx - hw},${cy - lh} ${cx + hw},${cy - rh} ${cx + hw},${cy + rh} ${cx - hw},${cy + lh}`;
-      let dots = "";
-      [-14, 0, 14].forEach((dx) => { dots += `<circle cx="${cx + dx}" cy="${cy}" r="3.4" fill="#fff" opacity="0.85"/>`; });
-      return `<g><polygon points="${pts}" fill="${color}"/>${dots}</g>`;
-    }
-
-    if (glyph === "vector") {
-      const w = 32, h = 88, x = cx - w / 2, y = cy - h / 2, cells = 5, ch = h / cells;
-      let segs = "";
-      for (let k = 1; k < cells; k++) segs += `<line x1="${x}" y1="${y + ch * k}" x2="${x + w}" y2="${y + ch * k}" stroke="${color}" stroke-width="1" opacity="0.5"/>`;
-      return `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${tint}" stroke="${color}" stroke-width="1.6"/>${segs}</g>`;
-    }
-
-    if (glyph === "params") {
-      const cw = 15, h = 34, y = cy - h / 2, xs = [0, 18, 36, 61, 79, 97].map((o) => cx - 56 + o), op = [1, 0.7, 0.45, 1, 0.7, 0.45];
-      let cells = "";
-      xs.forEach((x, k) => { cells += `<rect x="${x}" y="${y}" width="${cw}" height="${h}" rx="3" fill="${color}" opacity="${op[k]}"/>`; });
-      cells += `<text x="${cx + 64}" y="${cy + 6}" font-family="JetBrains Mono, monospace" font-size="18" fill="${color}">…</text>`;
-      return `<g>${cells}</g>`;
-    }
-
-    if (glyph === "curve") {
-      const ax = cx - 38, ay0 = cy - 32, ay1 = cy + 28, axr = cx + 38;
-      const axis  = `<path d="M${ax} ${ay0} L${ax} ${ay1} L${axr} ${ay1}" fill="none" stroke="${color}" stroke-width="1.2" opacity="0.4"/>`;
-      const curve = `<path d="M${ax + 4} ${ay1 - 2} C ${cx - 16} ${ay1 - 2}, ${cx - 11} ${cy - 30}, ${cx} ${cy - 30} C ${cx + 11} ${cy - 30}, ${cx + 16} ${ay1 - 2}, ${axr - 4} ${ay1 - 2} Z" fill="${tint}" stroke="${color}" stroke-width="2"/>`;
-      return `<g>${axis}${curve}</g>`;
-    }
-
-    if (glyph === "cube") {
-      const u = 26;
-      const top   = `<polygon points="${cx},${cy - 28} ${cx + u},${cy - 13} ${cx},${cy + 2} ${cx - u},${cy - 13}" fill="${color}" opacity="0.20"/>`;
-      const left  = `<polygon points="${cx - u},${cy - 13} ${cx},${cy + 2} ${cx},${cy + 32} ${cx - u},${cy + 17}" fill="${color}" opacity="0.11"/>`;
-      const right = `<polygon points="${cx + u},${cy - 13} ${cx},${cy + 2} ${cx},${cy + 32} ${cx + u},${cy + 17}" fill="${color}" opacity="0.05"/>`;
-      return `<g stroke="${color}" stroke-width="1.5" stroke-linejoin="round">${top}${left}${right}</g>`;
-    }
-
-    if (glyph === "beam") {
-      const s = 84;
-      let arcs = "";
-      [16, 28, 40].forEach((r, k) => { arcs += `<path d="M${cx - 24} ${cy - r} A ${r} ${r} 0 0 1 ${cx - 24} ${cy + r}" fill="none" stroke="#fff" stroke-width="1.6" opacity="${0.5 - k * 0.12}"/>`; });
-      return `<g><rect x="${cx - s / 2}" y="${cy - s / 2}" width="${s}" height="${s}" rx="11" fill="${color}"/>${arcs}<circle cx="${cx - 24}" cy="${cy}" r="3.2" fill="#fff"/></g>`;
-    }
-
-    if (glyph === "fit") {
-      const s = 84;
-      const curve = `<path d="M${cx - 28} ${cy + 22} C ${cx - 12} ${cy + 22}, ${cx - 8} ${cy - 20}, ${cx} ${cy - 20} C ${cx + 8} ${cy - 20}, ${cx + 12} ${cy + 22}, ${cx + 28} ${cy + 22}" fill="none" stroke="#fff" stroke-width="1.8" opacity="0.9"/>`;
-      let dots = "";
-      [[-16, 8], [-4, -12], [9, -7], [19, 12]].forEach(([dx, dy]) => { dots += `<circle cx="${cx + dx}" cy="${cy + dy}" r="2.2" fill="#fff" opacity="0.85"/>`; });
-      return `<g><rect x="${cx - s / 2}" y="${cy - s / 2}" width="${s}" height="${s}" rx="11" fill="${color}"/>${curve}${dots}</g>`;
     }
 
     if (glyph === "run") {

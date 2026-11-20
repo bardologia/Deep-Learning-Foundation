@@ -337,7 +337,6 @@ class PatchTrialsReport:
             "Model"          : self.model_label,
             "Dataset"        : Path(self.config.paths.dataset_path).name,
             "Dataset path"   : str(self.config.paths.dataset_path),
-            "Secondaries"    : ", ".join(self.config.paths.secondary_labels),
             "Patch step"     : self.planner.patch_step(),
             "Row sizes"  : row_sizes,
             "Range sizes"    : col_sizes,

@@ -19,8 +19,6 @@ from pipelines.cross_validation.workers import (
 from tools.data.io                      import FileIO
 from tools.data.regions                 import SplitRegions
 from tools.runtime.completion           import CompletionMarker
-from configuration.synthesis            import SynthesisConfig
-from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
 
 from tests.conftest import RecordingLogger, make_file_logger
@@ -29,7 +27,6 @@ from tests.conftest import RecordingLogger, make_file_logger
 def worker_config(test_data_dir: Path) -> CrossValidationConfig:
     config                       = CrossValidationConfig()
     config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     config.folds                 = FoldConfig(n_folds=5, row_start=1000, row_end=1512)
     return config
 
@@ -283,7 +280,7 @@ def test_inference_worker_builds_run_directory(test_data_dir, tmp_path, monkeypa
     assert captured["config"].run_directory == expected_dir
     assert expected_dir.name.endswith("_fold_1")
     assert expected_dir.name.startswith(f"{worker.config.backbone_name}-{worker.config.backbone_head}-")
-    assert "-K_" in expected_dir.name
+    assert "-mse-" in expected_dir.name
     assert captured["config"].split         == "test"
     assert captured["config"].output_subdir is None
 
@@ -362,13 +359,10 @@ def test_backbone_fold_trainer_uses_the_entry_loss(test_data_dir, tmp_path, monk
 
     trainer_config = captured["trainer_config"]
     assert trainer_config.loss is config.loss
-    assert trainer_config.loss.use_param_l1 is True
     from pipelines.shared.training.run_naming import RunNaming
 
-    run_tag = RunNaming.tag(config.backbone_name, config.backbone_head, config.loss, SynthesisConfig().k_max, config.augmentation)
+    run_tag = RunNaming.tag(config.backbone_name, config.backbone_head, config.loss, config.augmentation)
     assert captured["run_name"] == f"{run_tag}_fold_1/seed7"
-
-    assert captured["dataset_config"].input_config is config.input
 
 
 def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_path):

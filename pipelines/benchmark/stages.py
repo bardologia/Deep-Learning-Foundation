@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
+from dataclasses import replace
+from pathlib     import Path
 
 from configuration.benchmark                       import BenchmarkConfig
-from configuration.dataset.gaussian                import GaussianConfig
+from configuration.training.general.loss           import LossKind
 from pipelines.benchmark.results                   import BenchmarkSeedCollector
 from pipelines.shared.comparison.comparison_report import ComparisonReport
 from pipelines.shared.orchestration.unit_manifest  import UnidentifiedRuns, UnitLedger, UnitManifest
@@ -39,26 +40,13 @@ class BenchmarkUnitManifest:
 
 class SeedExpandedStage:
 
-    _N_GAUSSIANS : dict = {}
+    @classmethod
+    def components(cls, config: BenchmarkConfig) -> list[str]:
+        return list(config.sweep_loss_kinds)
 
     @classmethod
-    def components(cls, config: BenchmarkConfig) -> list[str | None]:
-        components = list(config.sweep_loss_components)
-
-        return components
-
-    @classmethod
-    def n_gaussians(cls, config: BenchmarkConfig) -> int:
-        key = (str(config.paths.dataset_path), str(config.paths.parameters_path))
-
-        if key not in cls._N_GAUSSIANS:
-            cls._N_GAUSSIANS[key] = GaussianConfig.from_dataset(config.paths.dataset_path, config.paths.parameters_path).n_default_gaussians
-
-        return cls._N_GAUSSIANS[key]
-
-    @classmethod
-    def unit_base(cls, config: BenchmarkConfig, model: str, component: str | None) -> str:
-        return RunNaming.benchmark_unit(model, component, config.loss, cls.n_gaussians(config), config.augmentation)
+    def unit_base(cls, config: BenchmarkConfig, model: str, component: str) -> str:
+        return RunNaming.benchmark_unit(model, replace(config.loss, kind=LossKind(component)), config.augmentation)
 
     @classmethod
     def planned_units(cls, config: BenchmarkConfig, models: list[str]) -> list[tuple[str, tuple]]:

@@ -22,7 +22,6 @@ class TrainingLoopConfig:
     activation_checkpointing    : tuple = ()
     gradient_accumulation_steps : int   = 1
     log_debug                   : bool  = False
-    log_all_losses              : bool  = False
     abort_on_nonfinite_loss     : bool  = True
     use_ema                     : bool  = False
     ema_decay                   : float = 0.999

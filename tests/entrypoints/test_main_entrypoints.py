@@ -52,7 +52,7 @@ CLI_MODULES = (
 
 ENTRY_CONFIGS = {
     "infer_backbone"           : ("configuration.inference",        "BackboneInferenceEntryConfig"),
-    "generate_dataset"         : ("configuration.synthesis",        "GenerateDatasetEntryConfig"),
+    "generate_dataset"         : ("configuration.generation",       "GenerateDatasetEntryConfig"),
     "tune"                     : ("configuration.tuning",           "TuningEntryConfig"),
     "profile_training"         : ("configuration.diagnostics",      "TrainingProfileEntryConfig"),
     "benchmark"                : ("configuration.benchmark",        "BenchmarkConfig"),
@@ -166,7 +166,7 @@ def test_train_main_defers_heavy_imports(tmp_path):
     assert result.stdout.strip() == "[]"
 
 
-@pytest.mark.parametrize("module_path", ("pipelines.processing.synthesis.pipeline",))
+@pytest.mark.parametrize("module_path", ("pipelines.processing.generation",))
 def test_processing_pipeline_loads_no_torch(module_path, tmp_path):
     code   = f"import sys; sys.path.insert(0, {str(_MAIN_DIR.parent)!r}); import {module_path}; print(sorted(module for module in sys.modules if module.split('.')[0] == 'torch'))"
     result = subprocess.run([sys.executable, "-u", "-c", code], cwd=str(tmp_path), capture_output=True, text=True, timeout=180)

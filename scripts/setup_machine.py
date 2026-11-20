@@ -250,10 +250,8 @@ class MachineSetup:
 
         datasets  = self._datasets_under(Path(data_root))
         dataset   = self.prompter.choose("dataset_path", "Default dataset for training and analysis", datasets, self._previous("dataset", "path", datasets[0] if datasets else ""), "Pick a detected dataset, type a path, or leave empty until you have generated one.")
-        params    = self._parameter_files(Path(dataset)) if dataset else []
-        parameter = self.prompter.choose("parameters_path", "Default Gaussian parameter file for that dataset", params, self._previous("dataset", "parameters_path", params[0] if params else ""), "Written by extract_params; leave empty if you have not run it yet.")
 
-        self.profile.data["dataset"] = {"path": dataset, "parameters_path": parameter}
+        self.profile.data["dataset"] = {"path": dataset}
         self.profile.data.setdefault("roots", {})["data"] = data_root
 
     @staticmethod
@@ -261,14 +259,10 @@ class MachineSetup:
         found = []
 
         for child in sorted(root.iterdir()) if root.is_dir() else []:
-            if (child / "data" / "dataset.json").is_file():
+            if (child / "dataset.json").is_file():
                 found.append(str(child))
 
         return found
-
-    @staticmethod
-    def _parameter_files(dataset: Path) -> list[str]:
-        return sorted(str(path) for path in dataset.glob("params/*/parameters.npy"))
 
     def choose_runs(self) -> None:
         self._step(5, "outputs")
@@ -295,11 +289,9 @@ class MachineSetup:
         else:
             pool = []
 
-        cpu_workers = self.prompter.ask("cpu_workers", "CPU workers for inference post-processing", str(previous.get("cpu_workers") or cpus), f"{cpus} CPUs detected.", Validators.positive_int)
-        gif_workers = self.prompter.ask("gif_workers", "CPU workers for animation rendering", str(previous.get("gif_workers") or max(1, cpus // 2)), "", Validators.positive_int)
-        max_workers = self.prompter.ask("max_workers", "Upper limit for data-loader workers", str(previous.get("max_workers") or cpus), "Defaults above this are lowered to it.", Validators.positive_int)
+        max_workers = self.prompter.ask("max_workers", "Upper limit for data-loader workers", str(previous.get("max_workers") or cpus), f"{cpus} CPUs detected; defaults above this are lowered to it.", Validators.positive_int)
 
-        self.profile.data["hardware"] = {"gpu_pool": pool, "cpu_workers": int(cpu_workers), "gif_workers": int(gif_workers), "max_workers": int(max_workers)}
+        self.profile.data["hardware"] = {"gpu_pool": pool, "max_workers": int(max_workers)}
 
     def choose_notifications(self) -> None:
         self._step(7, "notifications (optional)")

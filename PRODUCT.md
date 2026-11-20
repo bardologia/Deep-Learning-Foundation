@@ -10,7 +10,7 @@ A single ML researcher (and occasional colleagues) operating a shared multi-GPU 
 
 ## Product Purpose
 
-Local control room for the ML-Template codebase: launch and monitor training/inference runs, inspect configs, browse results and cubes, and watch live server telemetry (GPU/CPU/RAM/disk/processes) with watchdog and neighbour-impact guards.
+Local control room for the ML-Template codebase: launch and monitor training/inference runs, inspect configs, browse results, and watch live server telemetry (GPU/CPU/RAM/disk/processes) with watchdog and neighbour-impact guards.
 
 ## Brand Personality
 

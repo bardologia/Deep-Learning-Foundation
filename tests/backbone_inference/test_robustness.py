@@ -205,8 +205,8 @@ def test_planned_sweep_counts_match_the_sweeps_run():
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_robustness_pass_plans_tracks_and_times_every_stress(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+def test_robustness_pass_plans_tracks_and_times_every_stress(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
     config  = RobustnessConfig(batch_size=2, max_batches=1, noise_sigmas=[0.0, 0.5], noise_draws=1, gain_factors=[0.5], shift_pixels=[1], draws_per_count=1)
     logger  = StageLogger()
 

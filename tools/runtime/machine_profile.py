@@ -33,8 +33,8 @@ class MachineProfile:
         "machine"  : {"hostname": "", "conda_root": "", "env_name": "Dune", "interpreter": "", "torch_index": "", "driver": "", "cpu_count": 0, "ram_gb": 0.0, "gpus": []},
         "console"  : {"host": ReferenceLayout.CONSOLE_HOST, "port": ReferenceLayout.CONSOLE_PORT},
         "roots"    : {"repo": "", "data": "", "runs": "", "results": ""},
-        "dataset"  : {"path": "", "parameters_path": ""},
-        "hardware" : {"gpu_pool": [], "cpu_workers": 0, "gif_workers": 0, "max_workers": 0},
+        "dataset"  : {"path": ""},
+        "hardware" : {"gpu_pool": [], "max_workers": 0},
         "mail"     : {"sender": "", "recipient": "", "smtp_host": "smtp.gmail.com", "smtp_port": 465},
         "ntfy"     : {"enabled": False, "topic": "", "server": "https://ntfy.sh"},
     }
@@ -156,7 +156,6 @@ class MachineProfile:
         roots   = self.roots
         dataset = self.dataset
         pairs   = [
-            (str(ReferenceLayout.PARAMETERS),   dataset["parameters_path"]),
             (str(ReferenceLayout.DATASET_DIR),  dataset["path"]),
             (str(ReferenceLayout.DATA_ROOT),    roots["data"]),
             (str(ReferenceLayout.RUNS_ROOT),    roots["runs"]),
@@ -186,17 +185,11 @@ class MachineProfile:
         rules    = []
 
         if pool:
-            rules.append(FieldRule("gpus",           "set", list(pool), expects=list))
-            rules.append(FieldRule("gpu_device_ids", "set", list(pool), expects=list))
-            rules.append(FieldRule("gpu",            "set", pool[0],    expects=int))
+            rules.append(FieldRule("gpus", "set", list(pool), expects=list))
+            rules.append(FieldRule("gpu",  "set", pool[0],    expects=int))
 
-        if hardware["cpu_workers"]:
-            rules.append(FieldRule("cpu_workers", "set", int(hardware["cpu_workers"]), expects=int))
-        if hardware["gif_workers"]:
-            rules.append(FieldRule("gif_workers", "set", int(hardware["gif_workers"]), expects=int))
         if hardware["max_workers"]:
-            for name in ("num_workers", "parameter_workers"):
-                rules.append(FieldRule(name, "cap", int(hardware["max_workers"]), expects=int))
+            rules.append(FieldRule("num_workers", "cap", int(hardware["max_workers"]), expects=int))
 
         for name in ("sender", "recipient", "smtp_host", "smtp_port"):
             if mail[name]:

@@ -1,7 +1,7 @@
 {
   "sections": {
-    "normalization": "The stage that standardizes network inputs and outputs, mapping heavy-tailed input channels and Gaussian parameters onto stable numeric ranges for training and inference. It fits per-channel location/scale transforms from pixel statistics, persists them, and bounds predicted outputs to a physically valid range. The configs here control per-channel normalization recipes, per-slot strategy selection for input and output channels, runtime output clamping, and the persisted fitted statistics applied at train and inference time.",
-    "dataset": "The stage that assembles trainable examples from a preprocessed dataset run. It selects input and target channels, tiles cropped scenes into overlapping patches, applies augmentation, and builds the train/val/test dataloaders. The configs here control which stack channels and Aux form the input, which per-Gaussian parameters are predicted, patch tiling and augmentation, and the parallel assembly of the image-patch datasets.",
+    "normalization": "The stage that standardizes network inputs and targets so that every channel trains on a comparable numeric range. It fits one location and scale per channel on the train split, persists them with the run, and inverts the target transform when predictions are scored. The configs here choose the fitting method for the inputs and for the targets and describe the persisted per-channel statistics.",
+    "dataset": "The stage that turns a dataset directory into trainable examples. It crops every split region from the input and target arrays, tiles the regions into overlapping patches with a per-pixel weight map, applies augmentation to the train split and builds the train, validation and test dataloaders. The configs here control patch tiling, augmentation, normalization and the loaders.",
     "architectures": "The stage that defines the backbone architectures. Each config specifies one model variant's layer geometry, output-head structure, and per-group optimizer settings. The configs here cover U-Net and transformer backbones predicting per-pixel Gaussian-mixture parameters.",
     "training": "The stage that optimizes the backbone. It binds architecture, loss, optimization, scheduling, and runtime sub-configs into one resolved run and manages queuing and sweeps. The configs here control loss term weighting, optimizer, scheduler, warmup, early-stopping and gradient-clipping policy, filesystem layout, VRAM reservation and resource monitoring, and the trainer and entry configs.",
     "resources": "Host and device sampling settings shared by every training family: whether the resource monitor runs, how often it samples CPU, RAM, shared memory and GPU memory, whether samples go to TensorBoard, and the utilisation levels that raise a warning in the run log. They live outside the training package so that a long-running processing entry can carry them without importing torch.",
@@ -11,85 +11,23 @@
     "tuning": "The stage that searches hyperparameter spaces with Optuna to improve a chosen backbone. It wires the search budget, pruning, and resources to a nested training configuration and swaps in per-trial hyperparameter samples. The configs here control the Optuna search controls and artifact emission, and the entry point binding resources and data to the search.",
     "comparison": "The stage that rebuilds side-by-side comparisons across completed runs and trials without re-running training or inference. It aggregates existing inference or preprocessing outputs into a single report grouped by the varied factor. The configs here control comparison of backbone inference runs, of preprocessing trials differing by multilook window, of Gaussian-fit extraction trials grouped by component count, and the standalone rebuild of an existing benchmark comparison report.",
     "diagnostics": "The stage that inspects completed training runs independently of any data run. The weight-xray diagnostic classifies each checkpoint tensor against numeric thresholds and emits a per-run report and plots; the tensorboard export renders every logged scalar series as a publication-quality figure inside the run directory, pairing train and validation series of the same metric in one shared figure. The configs here control the pathology classification thresholds, the single-run diagnostics and their report and plot outputs, and the batch webui entries that select runs and build a per-run configuration.",
-    "synthesis": "The stage that generates the bundled example dataset, so the template runs end to end without external data. It draws smooth per-pixel Gaussian-mixture parameter fields, renders them into z profiles, derives a multi-channel input stack with a matching Aux, and writes the dataset, its parameter run and the metadata the downstream stages expect. The configs here control the scene extent and z axis, the mixture statistics, the channel synthesis and noise levels, the fit metadata written alongside the parameters, and the entry point that runs the generator."
+    "generation": "The stage that writes the bundled example dataset, so the template runs end to end without external data. It draws a few smooth random input fields with noise, computes target fields from them with a known nonlinear and spatially local function, splits the grid into train, validation and test row bands, and writes dataset.json, inputs.npy and targets.npy. The configs here control the grid size, the number of input channels, the smoothness and neighbourhood of the fields, the noise levels and the split fractions."
   },
   "configs": {
-    "normalization/general::ChannelStrategy": {
-      "summary": "Per-channel normalization recipe: fits a location/scale pair from pixel statistics, or returns a fixed constant for fixed_div_pi",
-      "fields": {
-        "norm_method": "Statistic used to fit offset/scale: min_max_p999, robust_iqr, or zscore fitted from data; fixed_div_pi is a data-free constant",
-        "apply_log1p": "Whether to log1p-compress non-negative values before fitting and before applying the location-scale statistics, default False"
-      }
-    },
-    "normalization/general::OutputClampConfig": {
-      "summary": "Runtime clamp bundle bounding predicted Gaussian outputs to a valid physical range",
-      "fields": {
-        "enabled": "Gates only the floor/ceil clamp applied when decompressing log1p output channels (out/amp, out/sigma by default); the amp/mu/sigma physical-range clamp in GaussianClamp always applies regardless, default True",
-        "floor": "Lower bound of the physical value used when decompressing log1p-transformed output channels (out/amp, out/sigma by default), active only when enabled is True, default 0.0",
-        "ceil": "Upper bound of the physical value used when decompressing log1p-transformed output channels (out/amp, out/sigma by default), active only when enabled is True, default 200.0",
-        "leaky_slope": "Leak slope of the normalization decompress/compress clamps in the loss path so gradients survive saturation, default 0.1",
-        "param_leaky_slope": "Leak slope of the GaussianClamp physical parameter-bounds clamp, kept separate from leaky_slope so the stacked below-floor gradient (leaky_slope squared times param_leaky_slope) stays controllable, default 0.1",
-        "amp_max": "Physical amplitude ceiling applied by GaussianClamp in the loss path and at inference, default 200.0"
-      }
-    },
     "normalization/general::NormalizationConfig": {
-      "summary": "Selects per-slot normalization strategies for input/output channels and output clamping",
+      "summary": "Fitting method of the per-channel normalization of the inputs and of the targets",
       "fields": {
-        "input_strategy": "Global input preset name applied to every input channel group, or per_slot for the built-in slot-specific defaults",
-        "output_strategy": "Global output preset name applied to every output channel, or per_slot for the built-in slot-specific defaults",
-        "chan_mag": "Override preset for the per-channel magnitude slot; default keeps the input_strategy/per_slot choice",
-        "channel_phase": "Override preset for the per-channel phase slot; default keeps the input_strategy/per_slot choice",
-        "derived_mag": "Override preset for the derived magnitude channel; default keeps the input_strategy/per_slot choice",
-        "derived_phase": "Override preset for the derived phase channel; default keeps the input_strategy/per_slot choice",
-        "out_amp": "Override preset for the output Gaussian amplitude channel; default keeps the output_strategy/per_slot choice",
-        "out_mu": "Override preset for the output Gaussian mean/z channel; default keeps the output_strategy/per_slot choice",
-        "out_sigma": "Override preset for the output Gaussian width channel; default keeps the output_strategy/per_slot choice",
-        "aux": "Override preset for the Aux z channel; default keeps the input_strategy/per_slot choice",
-        "clamp_output": "Gates the whole output clamping stack: the clamp_floor/clamp_ceil bound on log1p decompression, the barrier clamp on non-log clampable channels, and the GaussianClamp amp/mu/sigma physical-range clamp in both the training loss and the inference wrapper; False leaves predictions fully unconstrained, default True",
-        "clamp_floor": "Lower bound of the physical value used when decompressing log1p-transformed output channels (out/amp, out/sigma by default), active only when clamp_output is True, default 0.0",
-        "clamp_ceil": "Upper bound of the physical value used when decompressing log1p-transformed output channels (out/amp, out/sigma by default), active only when clamp_output is True, default 200.0",
-        "clamp_leaky_slope": "Leak slope of the normalization decompress/compress clamps in the loss path (denormalize floor/ceil, renormalize floor) so gradients survive saturation; inference always hard-clamps; default 0.1",
-        "param_clamp_leaky_slope": "Leak slope of the Gaussian physical parameter-bounds clamp in the loss path, separate from clamp_leaky_slope so the stacked below-floor gradient (clamp_leaky_slope squared times param_clamp_leaky_slope) stays controllable, default 0.1",
-        "amp_max": "Physical amplitude ceiling of the Gaussian parameter clamp, applied in the loss and at inference, default 200.0"
+        "inputs": "method fitted on every input channel of the train split: zscore (mean and standard deviation), robust_iqr (median and interquartile range) or min_max (0.1 and 99.9 percentiles)",
+        "targets": "method fitted on every target channel of the train split, with the same choices; predictions are inverted with it before they are scored"
       }
     },
     "normalization/general::ChannelStats": {
-      "summary": "Persisted fitted normalization statistics per channel for applying transforms at train/inference time",
+      "summary": "Persisted per-channel normalization statistics applied at training and inference time",
       "fields": {
-        "loc": "Per-channel offset subtracted during normalization: a low percentile, the median, the mean, or 0.0, depending on the fitted norm_method",
-        "scale": "Per-channel divisor (std, IQR, range, or pi) applied during normalization",
-        "names": "Optional per-channel slot labels aligned with loc/scale entries",
-        "strategies": "Optional per-channel ChannelStrategy recording the fitting method (norm_method, apply_log1p) used",
-        "clampable": "Per-channel flag marking physical values bounded by the output clamp on denormalization; true for out/amp and out/sigma, false for out/mu and all input channels"
-      }
-    },
-    "dataset/gaussian::GaussianConfig": {
-      "summary": "Gaussian-mixture head geometry: component count and z-axis bounds for the cube profile",
-      "fields": {
-        "n_default_gaussians": "Number of Gaussian components (K) predicted per pixel, derived from param_extraction_meta.json k_max and propagated to dataset_config.n_gaussians and out_channels",
-        "x_min": "Lower bound of the z axis, taken from the dataset's cube_config.z_range and used to build the GaussianAxis for curve synthesis",
-        "x_max": "Upper bound of the z axis, taken from the dataset's cube_config.z_range and used to build the GaussianAxis for curve synthesis",
-        "activity_threshold": "Physical amplitude above which a Gaussian slot counts as active (a strict comparison shared by every stage through GaussianActivity.is_active), read from param_extraction_meta.json activity_threshold of the label run; it is chosen once at extraction or synthesis and every training, inference and analysis stage reads it from here instead of asking again",
-        "params_per_gaussian": "Number of predicted parameters per Gaussian component (amplitude, mean, sigma = 3); out_channels must be an exact multiple of it"
-      }
-    },
-    "dataset/general/dataset::InputConfig": {
-      "summary": "Selects which stack channels and Aux feed the network input and their per-channel channel encoding",
-      "fields": {
-        "use_primary": "include the primary reference channel in the input stack",
-        "primary_representation": "channel encoding of the primary channel: real_imag, mag_real_imag, mag_angle, mag_ri_angle, angle_only, or mag_only",
-        "use_secondaries": "include secondary channels, requires the dataset stack to actually contain secondaries or the dataset build raises",
-        "secondaries_representation": "channel encoding applied to each secondary channel: real_imag, mag_real_imag, mag_angle, mag_ri_angle, angle_only, or mag_only",
-        "use_derived": "include primary-secondary derived channels, requires the dataset stack to contain derived or the dataset build raises",
-        "derived_representation": "channel encoding applied to each derived: real_imag, mag_real_imag, mag_angle, mag_ri_angle, angle_only, or mag_only",
-        "use_aux": "append a single Aux z channel to the input, requires the cropper to supply a Aux array or the dataset build raises"
-      }
-    },
-    "dataset/general/dataset::OutputConfig": {
-      "summary": "Fixed per-Gaussian parameter layout the backbone predicts and the normalization strategy of each role",
-      "fields": {
-        "ROLE_NAMES": "Class-level fixed per-Gaussian parameter layout a, mu, sig, matching the three channels the Gaussian head emits and the ground-truth stack stores",
-        "output_strategies": "per-role ChannelStrategy (norm method plus optional log1p) for the out/amp, out/mu, out/sigma channels, defaults to per-slot presets and rebuilt from NormalizationConfig by the config factory"
+        "names": "channel names, in the order of the array channels",
+        "method": "fitting method the statistics came from",
+        "loc": "per-channel offset subtracted during normalization",
+        "scale": "per-channel divisor applied during normalization, floored at 1e-8"
       }
     },
     "dataset/general/dataset::PatchConfig": {
@@ -111,25 +49,19 @@
       }
     },
     "dataset/general/dataset::DatasetConfig": {
-      "summary": "Assembles the patch dataset and dataloaders from a preprocessed dataset run for backbone training and inference",
+      "summary": "Assembles the patch datasets and dataloaders from a dataset directory for backbone training and inference",
       "fields": {
-        "preprocessing_run_directory": "path to the preprocessed run directory whose stack, parameters, and metadata the Layout loads from",
-        "fingerprint_dataset": "whether the training run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance; propagated from paths.fingerprint_dataset by the config factory",
-        "split_regions": "SplitRegions of train/val/test CropRegion(s) partitioning the scene spatially before patching",
-        "parameters_path": "optional override path to the run's extracted acquisition parameters file, left None it is never auto-derived from preprocessing_run_directory and Layout will fail to resolve it",
-        "secondary_labels": "ordered tuple of secondary-channel identifiers to select from the stack, None keeps all available channels",
+        "dataset_directory": "dataset directory holding dataset.json, inputs.npy and targets.npy",
+        "split_regions": "SplitRegions of train, validation and test regions [row_start, row_end, col_start, col_end] in dataset pixels; the config factory reads them from dataset.json",
         "patch": "PatchConfig sub-config for patch size, stride, and border-padding mode",
-        "input_config": "InputConfig sub-config selecting which channel groups (primary, secondaries, derived, Aux) and encodings feed the network",
-        "output_config": "OutputConfig sub-config selecting which Gaussian parameters (amplitude, mu, sigma) are predicted and their normalization strategies",
-        "normalization": "NormalizationConfig sub-config selecting per-slot channel normalization strategies (percentile, robust-IQR, zscore, fixed-div-pi, optional log1p) for chan/derived/Aux/output channels plus the output clamp floor, ceil, and leaky slopes",
+        "normalization": "NormalizationConfig sub-config choosing the per-channel normalization of the inputs and the targets",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
         "batch_size": "number of patches per optimization step in the dataloader",
         "num_workers": "number of dataloader worker processes used for parallel patch loading",
         "prefetch_factor": "number of batches each dataloader worker prefetches ahead of consumption",
         "shuffle_train": "shuffle patch order every epoch for the training split only",
         "pin_memory": "pin host memory in the dataloader for faster host-to-GPU transfer",
-        "z_axis": "z sampling grid for the Gaussian mixture, populated at launch via GaussianAxis.build from the gaussian config's x_min/x_max and profile length",
-        "n_gaussians": "number of Gaussian components in the mixture output, set at launch from the gaussian config's n_default_gaussians and driving out_channels and selected_indices"
+        "fingerprint_dataset": "whether the training run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance; propagated from paths.fingerprint_dataset by the config factory"
       }
     },
     "architectures/backbone::UNetConfig": {
@@ -647,44 +579,12 @@
         "shape_logger_types": "Module types the shape logger hooks into when tracing tensor shapes through the network; excluded from config persistence"
       }
     },
-    "training/backbone::HeadMatchingTrialsConfig": {
-      "summary": "Grid crossing output heads with parameter-matching strategies on one fixed backbone for the head-and-matching trial planner",
-      "fields": {
-        "heads": "Output heads to cross, each trained once per matching strategy: conv, multihead, per_gaussian, or set_pred",
-        "matchings": "Parameter-matching strategies applied to the loss, each crossed with every head: sorted_gt or hungarian"
-      }
-    },
-    "training/backbone::PairTrialsConfig": {
-      "summary": "Sweep pairing one fixed base loss component with each candidate second component and weight",
-      "fields": {
-        "base_component": "Loss component held in every run of the pair sweep, by catalog name (e.g. param_l1, cosine_curve); every other term is disabled",
-        "base_weight": "Weight of the base component in every run, must be positive",
-        "components": "Candidate second components tested one at a time next to the base component, each crossed with every weight as one training run",
-        "weights": "Candidate loss weights applied to the tested second component, all must be positive",
-        "include_baseline": "Prepend one run that trains the base component alone, as the reference for the sweep"
-      }
-    },
-    "training/backbone::LogEnergyTrialsConfig": {
-      "summary": "Weight sweep of the log-energy curve term on top of the standard loss for the log-energy trial planner",
-      "fields": {
-        "weights": "Candidate log-energy weights, one training run each; the term accompanies the cosine term from epoch 0, all must be positive and unique",
-        "replace_covariance": "Disable moments in both stages of every arm including the baseline, so the sweep tests log-energy as the replacement for the covariance tail repair rather than an addition",
-        "include_baseline": "Prepend one run of the standard loss without the log-energy term, as the reference for the sweep"
-      }
-    },
     "training/backbone::AugmentationTrialsConfig": {
       "summary": "Cumulative augmentation ladder for the augmentation trial planner: rung 0 trains without augmentation, rung 1 adds horizontal flips, rung 2 adds vertical flips, and one final rung per noise strength adds additive Gaussian input noise on top of both flips; rot90 stays off in every rung",
       "fields": {
         "flip_probability": "Probability of each enabled flip on the flip and noise rungs, valid range (0, 1]",
         "noise_probability": "Probability of injecting the additive Gaussian noise on the noise rungs, valid range (0, 1]",
         "noise_stds": "Noise standard deviations in normalised input units, one noise rung each on top of both flips; all must be positive and unique"
-      }
-    },
-    "training/backbone::ClampTrialsConfig": {
-      "summary": "Output-clamp ladder for the clamp trial planner: rung 0 disables the output clamp, rung 1 clamps hard with both leak slopes at zero, then one leaky rung per configured slope pair; the clamp floor, ceiling and amplitude bound stay at the run's normalization config in every rung",
-      "fields": {
-        "leaky_slopes": "Leak slopes kept outside the clamp bounds for curve outputs, one leaky rung each; all must be positive and unique so every rung differs from the hard clamp",
-        "param_leaky_slopes": "Leak slopes kept outside the clamp bounds for Gaussian parameter outputs, paired with leaky_slopes by position; must match its length and stay positive"
       }
     },
     "training/backbone::EmaTrialsConfig": {
@@ -715,31 +615,16 @@
     "training/backbone::ReachTrialsConfig": {
       "summary": "Size-matched architecture comparison at a fixed spatial reach: every rung trains on the same patch with the same parameter budget, so the only free variable left is the architecture",
       "fields": {
-        "rungs": "Architectures compared one run each, every rung a dict of label, backbone and optional model-config overrides; defaults pair an eight-block local_cnn (3x3 ConvBlocks give a 4n+1 = 33x33 receptive field, width 479) against a default unet, both about 31.0 M parameters on the 32x32 patch that a 33x33 receptive field fully covers, with dropout and trunk weight decay pinned to the unet regime (0.15 / 1e-4) on both arms so regularization cannot confound the architecture comparison. Every backbone must exist in the backbone registry and the rungs must stay size matched to within match_tolerance",
+        "rungs": "Architectures compared one run each, every rung a dict of label, backbone and optional model-config overrides; defaults pair an eight-block local_cnn (3x3 ConvBlocks give a 4n+1 = 33x33 receptive field, width 478) against a default unet, both about 31.0 M parameters on the 32x32 patch that a 33x33 receptive field fully covers, with dropout and trunk weight decay pinned to the unet regime (0.15 / 1e-4) on both arms so regularization cannot confound the architecture comparison. Every backbone must exist in the backbone registry and the rungs must stay size matched to within match_tolerance",
         "patch_size": "Patch size (rows, cols) in pixels shared by every rung, deliberately square and no larger than the local rung's receptive field so all arms reach the whole patch and reach cannot confound the architecture comparison",
         "patch_stride": "Patch stride (rows, cols) in pixels shared by every rung; half of patch_size gives 50% overlap",
-        "in_channels": "Input channel count the planner builds each rung at when it counts parameters; validated loudly against the channels the input configuration and secondary selection actually produce, because training builds every arm at the dataset width and a mismatch would make the capacity check count the wrong first layer",
+        "in_channels": "Input channel count the planner builds each rung at when it counts parameters; training builds every arm at the dataset's input channel count",
         "match_tolerance": "Largest fractional spread in parameter count tolerated across the rungs; the planner counts every rung at the configured head before launching and refuses the sweep beyond this, because an unmatched arm turns an architecture result into a capacity result"
-      }
-    },
-    "training/backbone::SecondaryTrialsConfig": {
-      "summary": "Controls how secondary-channel combinations are sampled for the secondary-selection trial sweep",
-      "fields": {
-        "strategy": "Secondary-channel sampling scheme: uniform, gaussian, consecutive, spaced, or exhaustive (every combination of exactly n_secondaries channels)",
-        "n_secondaries": "Number of secondary channels the strategy picks per trial on top of the fixed ones (exact set size for the exhaustive strategy), must be between 1 and the swept candidate count",
-        "fixed": "Channel labels pinned into every trial and removed from the swept pool, so one fixed channel with n_secondaries 1 under the exhaustive strategy pairs that channel with each remaining secondary in turn",
-        "n_trials": "Number of distinct secondary-channel draws to generate, required (>=1) for uniform and gaussian strategies",
-        "mean": "Mean index of the gaussian strategy's normal draw over the secondary-channel list; required (not None) when strategy is gaussian",
-        "sigma": "Standard deviation of the gaussian strategy's normal draw over the secondary-channel list; required (not None) when strategy is gaussian",
-        "block_step": "Step between successive window start indices, used by the consecutive and spaced strategies, must be >= 1",
-        "spacing": "Index gap between selected channels within one window, used by the spaced strategy only, must be >= 1",
-        "seed": "Random seed for the uniform and gaussian sampling draws, making the trial set reproducible"
       }
     },
     "training/backbone::BackboneTrainerConfig": {
       "summary": "Aggregates the resolved component configs the Trainer consumes for one backbone training run",
       "fields": {
-        "gaussian": "GaussianConfig describing the default Gaussian count and z-axis bounds (x_min, x_max) derived from the dataset",
         "early_stopping": "EarlyStoppingConfig sub-config setting patience, min-delta, and best-checkpoint restore for training",
         "warmup": "WarmupConfig sub-config for the initial learning-rate warmup (steps, start factor, mode, poly power)",
         "scheduler": "SchedulerConfig sub-config selecting the LR schedule type and its parameters (epochs, eta_min, step size, gamma, power)",
@@ -767,25 +652,17 @@
         "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation",
         "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-channel labels",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
-        "input": "InputConfig sub-config selecting which channel groups (primary, secondaries, derived, Aux) feed the network, defaults to the full stack",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
         "infer_after": "Run the InferencePipeline automatically on the trained checkpoint once training completes",
         "infer_at_end": "Hold all inference until every training job of the fan-out has finished, then run one inference job per completed run through the same GPU queue; keeps the GPUs saturated with training first, mutually exclusive with infer_after",
         "inference": "InferenceConfig sub-config used to run inference automatically after training when infer_after or infer_at_end is set",
         "trials_enabled": "Enable the multi-trial GPU sweep (TrainScheduler) instead of a single training run",
-        "trials_mode": "Sweep dimension the trial scheduler varies: presence, physics, pair, log_energy, secondary, patch, input, context, reach, head, augmentation, clamp, stability, ema or amp",
-        "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, every trial repeated across the seeds list",
-        "pair_trials": "PairTrialsConfig sub-config for the loss-pair sweep pairing one fixed base component with each candidate second component and weight",
-        "log_energy_trials": "LogEnergyTrialsConfig sub-config for the log-energy weight sweep adding the term to the standard loss, one run per weight",
-        "secondary_trials": "SecondaryTrialsConfig sub-config for the secondary-channel selection sweep (strategy, count, sampling seed)",
+        "trials_mode": "Sweep dimension the trial scheduler varies: patch, context, reach, augmentation, stability, ema or amp",
         "patch_trials": "PatchTrialsConfig sub-config for the rectangular patch-shape grid sweep under a constant pixel budget",
-        "input_trials": "Named input-channel presets (use_primary/use_secondaries/use_derived/use_aux) each scoped by a mandatory tracks key: all expands the secondary list to every channel of the dataset, reduced keeps the configured secondary selection; defaults cover the full grid of channel-amplitude-only, derived-phase-only and the combined stack on both scopes, every base variant duplicated as an explicit no-aux (-noaux) and with-aux (-aux) version",
         "context_trials": "Rungs trained one run each, walking the spatial-context ladder at constant depth; every rung is a dict of label, backbone and model overrides (default a pixel_mlp rung of twenty 1x1 layers at width 1277 plus four local_cnn rungs of ten blocks, RF 1/9/29/41 via block_kernels mixes of 3x3 and 1x1, widths 1277/848/502/426, each within 0.5% of the default unet's parameters), and every backbone must exist in the registry",
         "reach_trials": "ReachTrialsConfig sub-config for the size-matched architecture comparison at fixed reach, pairing a 33x33 local_cnn against a unet on a shared 32x32 patch at equal parameter count",
-        "head_trials": "HeadMatchingTrialsConfig sub-config for the head-and-matching grid crossing every selected head with every selected parameter-matching strategy on one fixed backbone",
         "augmentation_trials": "AugmentationTrialsConfig sub-config for the cumulative augmentation ladder: no augmentation, then + horizontal flip, then + vertical flip, then + input noise at each configured strength",
-        "clamp_trials": "ClampTrialsConfig sub-config for the output-clamp ladder: no clamp, hard clamp, leaky clamp",
         "stability_trials": "StabilityTrialsConfig sub-config for the training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction, then gradient clipping alone per norm, then the first fraction paired with each norm",
         "ema_trials": "EmaTrialsConfig sub-config for the weight-EMA arms: EMA off, then per configured decay one rung with the plain decay and one with the decay warmup ramp; the amp mode reuses the base config unchanged and needs no sub-config",
         "gpus": "List of GPU device indices across which queued runs are distributed and launched in parallel; feeds the trials fan-out when trials are enabled and the per-seed fan-out of a plain multi-seed run otherwise",
@@ -795,45 +672,11 @@
       }
     },
     "training/general/loss::LossConfig": {
-      "summary": "Enables and weights every term of the cube reconstruction training loss",
+      "summary": "Per-pixel training loss on the normalized target channels, weighted per channel and pooled over every evaluated pixel",
       "fields": {
-        "use_mse_curve": "Enable mean-squared-error term comparing reconstructed and target reflectivity curves",
-        "weight_mse_curve": "Relative weight of the MSE curve term in the normalized weighted-average loss",
-        "use_l1_curve": "Enable L1 (mean absolute error) term on the reflectivity curve",
-        "weight_l1_curve": "Relative weight of the L1 curve term in the weighted-average loss",
-        "use_huber_curve": "Enable Huber term on the reflectivity curve, robust to profile outliers",
-        "weight_huber_curve": "Relative weight of the Huber curve term in the weighted-average loss",
-        "huber_delta": "Transition threshold between quadratic and linear regimes of the Huber curve loss",
-        "use_charbonnier_curve": "Enable Charbonnier (smooth robust-L1) term on the reflectivity curve",
-        "weight_charbonnier_curve": "Relative weight of the Charbonnier curve term in the weighted-average loss",
-        "charbonnier_eps": "Smoothing epsilon inside the Charbonnier square root near zero residual",
-        "use_cosine_curve": "Enable cosine-similarity term matching predicted and target curve shape along z",
-        "weight_cosine_curve": "Relative weight of the cosine-similarity curve term in the weighted-average loss",
-        "use_log_energy_curve": "Enable L1 term on the log ratio of predicted to target per-pixel curve energy, restoring the amplitude supervision the scale-invariant cosine term lacks; pixels with target norm below 1e-3 are excluded like in the cosine term",
-        "weight_log_energy_curve": "Relative weight of the log-energy curve term in the weighted-average loss",
-        "use_param_l1": "Enable L1 loss on matched, normalized Gaussian mixture parameters",
-        "weight_param_l1": "Relative weight of the parameter L1 term in the weighted-average loss",
-        "use_param_huber": "Enable Huber loss on matched, normalized Gaussian mixture parameters",
-        "weight_param_huber": "Relative weight of the parameter Huber term in the weighted-average loss",
-        "param_huber_delta": "Transition threshold between quadratic and linear regimes of the parameter Huber loss",
-        "use_param_mse": "Enable MSE loss on matched, normalized Gaussian mixture parameters",
-        "weight_param_mse": "Relative weight of the parameter MSE term in the weighted-average loss",
-        "param_weights": "Per-parameter weights for amplitude, mean, sigma; length must equal params_per_gaussian",
-        "param_matching": "Slot assignment before parameter losses: hungarian (permutes predictions to best GT match) or sorted_gt (positional, GT sorted only)",
-        "use_active_normalization": "Normalize parameter loss by summed slot weights instead of plain mean, avoiding dilution by empty slots",
-        "presence_balance": "Auto-balance active/inactive weights per Gaussian slot by inverse frequency of that slot's batch active fraction (clamped to [1e-3, 1-1e-3]), overriding active_weight and inactive_weight",
-        "active_weight": "Loss multiplier for slots with GT amplitude above the label run's activity threshold; ignored when presence_balance is on",
-        "inactive_weight": "Loss multiplier for slots with GT amplitude at or below the label run's activity threshold; ignored when presence_balance is on",
-        "amp_focal_gamma": "Focal exponent upweighting hard amplitude errors; 0 disables focal weighting entirely",
-        "amp_focal_delta": "Denominator offset controlling how fast the amplitude focal weighting saturates; only active when amp_focal_gamma>0",
-        "use_smoothness_tv": "Enable total-variation penalty on normalized parameter maps across spatial neighbors",
-        "weight_smoothness_tv": "Relative weight of the spatial total-variation smoothness term in the weighted-average loss",
-        "use_total_power": "Enable relative-error term matching integrated total power of predicted vs target curves",
-        "weight_total_power": "Relative weight of the total-power term in the weighted-average loss",
-        "use_moments": "Enable term matching mass, mean, and spread moments of the curves",
-        "weight_moments": "Relative weight of the moments term in the weighted-average loss",
-        "moments_weights": "Per-moment sub-weights for mass, mean, and spread combined in the moments loss",
-        "power_floor": "Integrated target power a pixel must exceed to enter the total-power and moments terms; pixels at or below it are masked out, the share kept is logged as loss_monitor/moment_valid_frac, and a batch with none contributes 0.0 and is flagged in loss_monitor/moment_empty_batch; also floors those terms' power-normalization denominators"
+        "kind": "elementwise loss: mse, l1 or huber",
+        "huber_delta": "transition point between the quadratic and the linear regime of the huber loss, in normalized target units",
+        "channel_weights": "one weight per target channel, in dataset order; empty weighs every channel 1, and the total is divided by the weight sum"
       }
     },
     "training/general/optimization::OptimizerConfig": {
@@ -890,11 +733,9 @@
       }
     },
     "training/general/run::TrainingPathsConfig": {
-      "summary": "Filesystem locations for a training run's dataset, ground-truth parameters, and secondary channels",
+      "summary": "Filesystem location of a training run's dataset",
       "fields": {
-        "dataset_path": "root directory of the preprocessed channel-stack dataset (dataset.json, layout, geometry field)",
-        "parameters_path": "path to the .npy Gaussian ground-truth parameters produced by parameter extraction",
-        "secondary_labels": "tuple of secondary-channel labels (e.g. CH01) selecting which channels join the primary channel; empty/None uses all channels",
+        "dataset_path": "dataset directory holding dataset.json, inputs.npy and targets.npy",
         "fingerprint_dataset": "whether the run hashes every dataset artifact (sha256) into meta/dataset_fingerprint.json, so the exact data behind a result stays provable after the generator is re-run; costs one linear read of the dataset at run start"
       }
     },
@@ -916,7 +757,6 @@
         "eta_min": "minimum learning-rate floor the scheduler decays toward",
         "early_stop_patience": "epochs without validation improvement before training stops early",
         "early_stop_min_delta": "minimum validation-loss improvement required to reset early-stopping patience",
-        "log_all_losses": "log every individual loss component term to TensorBoard, not just the total",
         "log_debug": "enable the tracker's debug mode, adding gradient NaN/Inf checks and extra diagnostic logging",
         "use_amp": "autocast the forward/loss pass to bfloat16; raises at startup if the GPU lacks bf16 support",
         "compile_model": "compile the model forward with torch.compile before training; the first step pays a compilation delay, later steps run the optimized kernels, and saved checkpoints stay byte-identical to an uncompiled run",
@@ -955,9 +795,6 @@
         "patch_size": "z and width in pixels of training patches cropped from the input stack, (H, W) may be rectangular for fully-convolutional backbones",
         "patch_stride": "per-axis (vertical, horizontal) pixel stride between overlapping extracted patches",
         "use_symmetric_padding": "pad scene borders with symmetric (mirror) padding instead of zero (constant) padding so edge patches stay fully covered",
-        "train_rows": "row line range (start, end) assigned to the training split, paired with the dataset's full range extent",
-        "val_rows": "row line range (start, end) assigned to the validation split, paired with the dataset's full range extent",
-        "test_rows": "row line range (start, end) assigned to the test split, paired with the dataset's full range extent",
         "snapshot_every_n_epochs": "Save a weights-only epoch snapshot to checkpoints/epoch_<N>.pt every N epochs (EMA weights when EMA is on); 0 disables. Snapshots feed the training-evolution animation and cost one state_dict write each"
       }
     },
@@ -979,7 +816,6 @@
         "activation_checkpointing": "fnmatch patterns of dotted submodule names to wrap in gradient checkpointing (e.g. encoder*); wrapped activations are recomputed in backward, trading compute for activation memory; empty disables it, a pattern matching nothing fails loudly",
         "gradient_accumulation_steps": "Number of batches accumulated into one optimizer step before weights update",
         "log_debug": "Enable per-step NaN/Inf sanity checks (gradients via GradientClipper, plus inputs/predictions in trainers that opt in) via the Tracker debug flag, not general verbose logging",
-        "log_all_losses": "Log every individual loss component in addition to the total, passed through to the Loss module",
         "abort_on_nonfinite_loss": "Raise and stop training on a NaN/infinite loss; when False, only warn and skip that batch",
         "use_ema": "Maintain a WeightEma shadow copy of model weights, decayed by ema_decay, for evaluation/checkpointing",
         "use_swa": "maintain an equal-weight stochastic average of the model weights from the SWA start epoch on; at the end of training the averaged model gets its batch-norm statistics refreshed, is scored on validation and saved as swa_model.pt",
@@ -1025,69 +861,41 @@
       "summary": "Names of output subdirectories and result filenames written under an inference run's output directory",
       "fields": {
         "figures_subdir": "Subdirectory name under the inference output directory for static figure PNGs",
-        "animations_subdir": "Subdirectory name under the inference output directory for walk-GIF animations",
         "logs_subdir": "Subdirectory name under the inference output directory for the run log file",
-        "cubes_subdir": "Subdirectory name under the inference output directory for exported curve, parameter, pixel-metric, and physics-error .npy arrays",
+        "maps_subdir": "Subdirectory name under the inference output directory for the saved predicted and target maps",
         "metrics_filename": "Filename of the JSON global-metrics summary written at the output directory root",
         "report_filename": "Filename of the Markdown run report written at the output directory root"
       }
     },
     "inference/general::TargetDatasetConfig": {
-      "summary": "Scores a trained run on a dataset it was never trained on: the checkpoint, patch geometry, input channels and training normalization statistics stay, the scene, its labels, the secondary channels and the scored crop change",
+      "summary": "Scores a trained run on the test split of a dataset it was never trained on: the checkpoint, patch geometry and training normalization statistics stay, the dataset changes",
       "fields": {
-        "enabled": "Score the run on the target dataset below instead of its own split; the split must stay 'test' and region_override unset",
-        "dataset_path": "Dataset directory of the target scene; its z axis must match the run's",
-        "parameters_path": "Gaussian label cube (parameters.npy) of a parameter run inside the target dataset, extracted at the same K the run predicts; every metric is scored against it",
-        "secondary_labels": "Secondary channels of the target scene fed to the model, as many as the run was trained with; empty feeds every secondary channel of the target stack",
-        "row_start": "First row of the scored crop of the target scene, inclusive, inside its global crop; with row_end also 0 the whole row extent is scored",
-        "row_end": "Last row of the scored crop of the target scene, exclusive",
-        "col_start": "First col of the scored crop of the target scene, inclusive, inside its global crop; with col_end also 0 the whole col extent is scored",
-        "col_end": "Last col of the scored crop of the target scene, exclusive"
+        "enabled": "whether to score on the target dataset instead of the run's own split",
+        "dataset_path": "dataset directory of the target; it must carry the same input and target channels as the training dataset"
       }
     },
     "inference/general::InferenceConfig": {
-      "summary": "Drives a full backbone cube inference run: loading, prediction, physics evaluation, plotting, and reporting",
+      "summary": "Drives one backbone inference run: loading, sliding-window prediction, stitching, per-channel metrics, figures and the report",
       "fields": {
         "run_directory": "Path to the trained run directory holding the checkpoint, dataset config, and training metadata",
         "output_subdir": "Optional name for this inference's output subfolder under run_directory/inference; None auto-generates a timestamped tag via RunTag",
         "device": "Torch compute device string passed to torch.device, e.g. cuda or cpu",
-        "seed": "Random seed applied via np.random.seed at inference setup, controlling any stochastic pixel/profile selection",
+        "seed": "Random seed applied via np.random.seed at inference setup",
         "log_level": "Logging verbosity passed to the inference Logger, one of DEBUG, INFO, WARNING, ERROR, CRITICAL",
         "split": "Dataset partition to run inference on: train, val, or test",
-        "region_override": "Optional [row_start, az_end, col_start, rg_end] crop replacing the stored split region; it must contain that region and only widens the inferred area, which cross-validation uses to cover the guard stripes around each fold block",
-        "checkpoint_name": "Filename of the model weights loaded from run_directory, defaulting to best_model.pt (best validation loss); final_model.pt holds the final-epoch weights, which legacy mode selects because the masked legacy loss makes early best-by-loss checkpoints misleading",
+        "region_override": "Optional [row_start, row_end, col_start, col_end] crop replacing the stored split region; it must contain that region and only widens the inferred area, which cross-validation uses to cover the guard stripes around each fold block",
+        "checkpoint_name": "Filename of the model weights loaded from run_directory, defaulting to best_model.pt (best validation loss); final_model.pt holds the final-epoch weights",
         "batch_size": "Inference dataloader batch size; None reuses the batch_size recorded in the training run's saved dataset config",
         "num_workers": "Dataloader worker processes used when loading the inference split",
-        "cpu_workers": "CPU process count for every parallel inference stage: the ProcessPoolExecutor that reconstructs curves and per-patch metrics from predicted Gaussian parameters, the post-stitch SSIM pool (capped at the machine core count), and the peak-initialiser pool inside curve parameter extraction",
-        "gif_workers": "Worker processes rendering individual walk-GIF frames in parallel during animation",
-        "save_plots": "Whether to render and write static diagnostic figures (profiles, slices, SSIM, param plots)",
-        "save_animations": "Whether to render walk-GIF animations sweeping the axes in gif_axes",
-        "save_cubes": "Whether to export the stitched predicted/GT/reduced curve cubes, parameter cubes, pixel-metric maps, and physics error maps as .npy files under cubes_subdir",
-        "stitch_window": "Per-patch tapering window used by CubeStitcher when overlap-adding patches into the full scene: hann, uniform, or triangular",
-        "cube_dtype": "Numpy dtype string the stitched curve/parameter cubes and exported .npy arrays are cast to, e.g. float32",
-        "n_best_profiles": "Count of lowest-curve-MSE pixel profiles plotted in the best profile figures",
-        "n_worst_profiles": "Count of highest-curve-MSE pixel profiles plotted in the worst profile figures",
-        "n_random_profiles": "Count of randomly sampled pixel profiles plotted, drawn with profile_seed",
-        "profile_seed": "Seed for the random pixel selection used by n_random_profiles",
-        "n_col_slices": "Number of range-axis cross-section slices plotted, equally spaced across the 10-90 percent span of the range extent",
-        "n_row_slices": "Number of row-axis cross-section slices plotted, equally spaced across the 10-90 percent span of the row extent",
-        "n_z_slices": "Number of z-axis (z) cross-section slices plotted, equally spaced across the 10-90 percent span of the z extent",
-        "gif_axes": "Axes swept to produce walk-GIF animations, chosen from z, col, row",
-        "gif_fps": "Animation playback rate in frames per second for exported walk GIFs, used when gif_duration is empty",
-        "gif_duration": "Total playback length of each walk GIF in seconds; the per-frame delay becomes duration over frame count, overriding gif_fps. Leave empty to let gif_fps govern",
-        "gif_max_frames": "Cap on the number of frames rendered per walk-GIF animation",
-        "gif_dpi": "Resolution of rendered animation frames in dots per inch",
-        "gif_separate_panels": "Also write one single-panel GIF per cube (prediction, GT, raw cube) next to the composite, with the figure sized to the slice aspect ratio so the image is not stretched",
-        "cmap_intensity": "Matplotlib colormap name used for intensity/reflectivity figures and animation frames",
+        "stitch_window": "Per-patch tapering window used when overlap-adding patches into the full region: hann, uniform, or triangular",
+        "save_maps": "Whether to save the stitched predicted and target maps as maps/predictions.npy and maps/targets.npy",
+        "save_plots": "Whether to render the per-channel target, prediction and error maps",
+        "cmap": "Matplotlib colormap of the target and prediction maps",
         "cmap_error": "Matplotlib colormap name used for error, MSE, and physics-consistency maps",
-        "normalize_intensity": "Whether the Plotter rescales intensity/error figures by the GT-peak value before rendering, instead of using raw intensity units",
         "fig_dpi": "On-screen/report figure resolution in dots per inch",
         "save_dpi": "Saved figure file resolution in dots per inch",
         "figure_style": "Figure style preset: report for on-screen PNG reports, paper for print-ready NeurIPS figures (9pt fonts, Okabe-Ito colors, 300 DPI, vector PDF for non-image plots)",
         "paths": "InferencePaths sub-config naming the output subdirectories and result filenames under the run's inference output directory",
-        "compute_cube_ssim": "Whether to run the standard SSIM sweep (every z, col and row slice, window up to 7, dynamic range from the reference slice, as in the headline SSIM against the labels) of the prediction against the raw cube, in raw intensity and unit area, adding the ssim_cube_* and ssim_cube_norm_* keys to metrics and a report subsection",
-        "compute_flip_consistency": "Also run the model on row- and column-flipped inputs, unflip the predictions, and stitch the per-pixel curve disagreement into a flip-equivariance map: a label-free confidence signal saved as a cube, figure, and flip_* metrics (roughly triples the forward-pass cost)",
-        "compute_stratified": "Also stratify the per-pixel curve MSE by scene covariates (GT active count, primary amplitude, aux gradient, label fit R²): binned median curves with IQR bands as figures plus strat_* rank-correlation metrics",
         "target": "Foreign dataset the run is scored on instead of its own split (off by default); the stamps land under <run>/cross_dataset/<dataset name>/, apart from the run's own inference"
       }
     },
@@ -1098,33 +906,12 @@
         "checkpoint_name": "filename of the checkpoint to load for inference, defaulting to best_model.pt",
         "batch_size": "inference batch size; None reuses the batch size recorded in the training run's own config",
         "num_workers": "number of dataloader worker processes used for parallel batch assembly during inference",
-        "cpu_workers": "CPU process count each worker run uses for every parallel inference stage: curve reconstruction and per-sample metrics before stitching, the post-stitch SSIM pool (capped at the machine core count), and the peak-initialiser pool inside curve parameter extraction",
-        "gif_workers": "worker processes rendering individual walk-GIF frames in parallel during animation",
         "seed": "random seed applied via np.random.seed at inference setup, controlling any stochastic pixel/profile selection",
-        "save_plots": "whether to write per-sample static diagnostic profile/slice plot images to disk during inference",
-        "save_animations": "whether to render GIF animations sweeping the profile cube along the gif_axes",
-        "save_cubes": "whether to persist reconstructed 3D reflectivity/parameter cubes to disk",
         "stitch_window": "window function blending overlapping inference tiles back into the full scene: hann, uniform, or triangular",
-        "cube_dtype": "numpy dtype string the stitched curve/parameter cubes and exported .npy arrays are cast to, e.g. float32",
-        "compute_cube_ssim": "whether each benchmarked run scores its prediction against the raw cube with the standard SSIM sweep (every slice of each axis, window up to 7, dynamic range from the reference slice), in raw intensity and unit area, adding the ssim_cube_* and ssim_cube_norm_* keys to metrics and a report subsection",
-        "compute_flip_consistency": "also run each model on row- and col-flipped inputs, unflip the predictions, and stitch the per-pixel curve disagreement into a flip-equivariance map: a label-free confidence signal saved as a cube, figure, and flip_* metrics (roughly triples the forward-chan cost)",
-        "compute_stratified": "also stratify the per-pixel curve MSE by scene covariates (GT active count, primary amplitude, mean coherence, Aux slope, label fit R²): binned median curves with IQR bands as figures plus strat_* rank-correlation metrics",
-        "n_best_profiles": "count of profiles with the lowest pixel MSE selected for diagnostic plotting",
-        "n_worst_profiles": "count of profiles with the highest pixel MSE selected for diagnostic plotting",
-        "n_random_profiles": "count of randomly sampled profiles selected for diagnostic plotting",
-        "profile_seed": "seed for the random pixel selection used by n_random_profiles",
-        "n_col_slices": "number of evenly spaced column-axis cross-section slices plotted for ground truth, prediction, and error",
-        "n_row_slices": "number of evenly spaced row-axis cross-section slices plotted for ground truth, prediction, and error",
-        "n_z_slices": "number of evenly spaced z-axis cross-section slices plotted for ground truth, prediction, and error",
-        "gif_axes": "axes swept when rendering profile walk-animation frames, e.g. z",
-        "gif_fps": "playback speed of rendered GIF animations in frames per second, used when gif_duration is empty",
-        "gif_duration": "total playback length of each GIF in seconds, overriding gif_fps when set",
-        "gif_max_frames": "cap on the number of frames written per animation, truncating longer sweeps",
-        "gif_dpi": "resolution of rendered animation frames in dots per inch",
-        "gif_separate_panels": "also write one single-panel GIF per cube (prediction, GT, raw cube) sized to the slice aspect ratio",
-        "cmap_intensity": "matplotlib colormap name used for intensity/reflectivity figures and animation frames",
+        "save_maps": "whether to save the stitched predicted and target maps as maps/predictions.npy and maps/targets.npy",
+        "save_plots": "whether to render the per-channel target, prediction and error maps",
+        "cmap": "matplotlib colormap of the target and prediction maps",
         "cmap_error": "matplotlib colormap name used for error, MSE, and physics-consistency maps",
-        "normalize_intensity": "whether the Plotter rescales intensity/error figures by the GT-peak value before rendering, instead of using raw intensity units",
         "fig_dpi": "on-screen/report figure resolution in dots per inch",
         "save_dpi": "saved figure file resolution in dots per inch",
         "figure_style": "figure style preset: report for on-screen PNG reports, paper for print-ready NeurIPS figures (9pt fonts, Okabe-Ito colors, 300 DPI, vector PDF for non-image plots)"
@@ -1137,14 +924,13 @@
       }
     },
     "benchmark/general::BenchmarkConfig": {
-      "summary": "Top-level settings orchestrating a multi-model benchmark sweep through size-matching, training, inference, and comparison stages",
+      "summary": "Top-level settings orchestrating a multi-model benchmark sweep through training, inference, and comparison stages",
       "fields": {
         "stage": "portion of the pipeline to run: full does everything, prepare stops after size match and max batch, compare runs the comparison report only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
         "paths": "RunPathsConfig sub-config holding the dataset, extracted-parameters, and benchmark run/output directories",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every model in the sweep",
         "inference": "InferenceQueueConfig sub-config for batched inference and diagnostic-artifact output",
         "comparison": "ComparisonReportConfig sub-config controlling the cross-model comparison report",
-        "input": "InputConfig sub-config selecting the input channel stack fed to each model, defaults to the full stack (primary+secondaries+derived, Aux off)",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
         "loss": "LossConfig base loss-term weights that each swept loss component is layered onto",
@@ -1158,8 +944,8 @@
         "seed": "base random seed used for the max-batch probe and as the default per-unit seed when seeds is empty",
         "seeds": "List of seeds expanded across every (model, loss-component) pair, one run per seed nested as seed<N> inside each unit directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "poll_interval_s": "seconds between polls of queued job status while waiting for GPUs or completed jobs",
-        "sweep_loss_components": "loss component names from LossComponentCatalog, one training run launched per component layered onto loss, must be non-empty and valid",
-        "resume_from": "Path at or inside an existing benchmark run to finish (the run directory, its pipeline, training or one unit run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every model x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference passes run. Empty starts a fresh run"
+        "resume_from": "Path at or inside an existing benchmark run to finish (the run directory, its pipeline, training or one unit run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every model x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference passes run. Empty starts a fresh run",
+        "sweep_loss_kinds": "loss kinds (mse, l1, huber), one training run per kind with the rest of the loss config unchanged; must be non-empty"
       }
     },
     "cross_validation/general::FoldConfig": {
@@ -1183,7 +969,6 @@
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every fold's training job",
         "inference": "InferenceQueueConfig sub-config governing the queue that runs per-fold inference jobs after training",
         "comparison": "ComparisonReportConfig sub-config controlling the cross-fold comparison report generated once all folds finish",
-        "input": "InputConfig sub-config selecting the input channel stack every fold trains on, defaults to the full stack (primary+secondaries+derived, Aux off)",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping, shared across folds' datasets",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to every fold's training patches",
         "inference_splits": "Dataset splits inference is run on per fold, e.g. val and test; an empty list skips the inference stage and leaves the folds compared on their training checkpoints alone",
@@ -1416,7 +1201,7 @@
         "embed_images": "embed referenced images as base64 data URIs so each gathered report is fully self-contained instead of linking back to the original figures by absolute path",
         "runs_dir": "path searched for training runs at or below it, a whole runs tree, one family directory, a sweep or a single run; a run is recognised by the meta directory it holds and is never descended into, so the seed runs of a trial are offered as the separate runs they are",
         "run_filter": "run paths relative to runs_dir, or run names, restricting the mailing; empty triggers interactive selection on a tty, else every run found",
-        "run_excluded_paths": "globs of a run's content never mailed, matched against a file's path relative to the run, against each of its parent directories and against the bare name of each of them; the default drops the checkpoints directory and every cubes directory, wherever they sit",
+        "run_excluded_paths": "globs of a run's content never mailed, matched against a file's path relative to the run, against each of its parent directories and against the bare name of each of them; the default drops the checkpoints directory and every maps directory, wherever they sit",
         "run_excluded_suffixes": "file extensions of a run's content never mailed; the default drops the checkpoints (.pt, .pth, .ckpt) and the arrays (.npy, .npz, .h5, .pkl), which is everything that runs to hundreds of megabytes",
         "run_max_file_mb": "upper bound of one mailed file of a run in megabytes, above which it is left out and named in the left-out table; the default of 5 keeps every figure and leaves the walk animations behind, and zero mails every file the two exclusion lists keep",
         "datasets_dir": "root directory holding one folder per generated dataset; only direct children carrying a data/dataset.json layout are offered",
@@ -1622,45 +1407,27 @@
         "output_dir": "directory receiving one timestamped profile directory per run"
       }
     },
-    "synthesis::SynthesisConfig": {
-      "summary": "Generator settings for the bundled synthetic dataset: scene extent, z axis, mixture statistics, channel synthesis and output tags",
+    "generation::GenerationConfig": {
+      "summary": "Shape of the synthetic dense regression dataset: grid size, input channels, field smoothness, the neighbourhood of the local target, noise levels and the split fractions",
       "fields": {
-        "output_directory": "Directory the generated dataset is written to, holding the data, meta and params subdirectories",
-        "global_crop": "Scene extent as (row_start, row_end, col_start, col_end) in pixels, recorded in the dataset layout so downstream splits address the same grid",
-        "profile_length": "Number of bins sampling the z axis of every rendered profile; must be at least 4",
-        "z_range": "Lower and upper bound of the z axis in z units, written to the dataset metadata and used to place every Gaussian",
-        "k_max": "Number of Gaussian slots generated per pixel, mirrored into the parameter run metadata as the K the models predict",
-        "params_run_name": "Name of the parameter run directory created under params/, referenced by the training path defaults",
-        "primary_label": "Label of the reference channel whose amplitude forms the primary input channel",
-        "secondary_labels": "Labels of the secondary channels, one amplitude channel and one derived channel each",
-        "field_smoothing_pixels": "Gaussian smoothing width in pixels applied to the random parameter fields, setting how slowly the scene varies spatially",
-        "phase_smoothing_pixels": "Gaussian smoothing width in pixels applied to the synthetic derived-channel phase fields",
-        "amplitude_range": "Lower and upper bound of the per-slot Gaussian amplitude drawn across the scene",
-        "sigma_range": "Lower and upper bound of the per-slot Gaussian width in z units; must be resolvable on the sampled z axis and no wider than half its span",
-        "slot_band_margin": "Fraction of the z span kept free at each end of a slot's band, so slot means stay separated and inside the axis",
-        "empty_pixel_fraction": "Fraction of pixels generated with no active Gaussian at all, giving the models genuine background",
-        "dropped_slot_fraction": "Fraction of the remaining pixels where one slot is switched off, so slot occupancy varies across the scene",
-        "sensitivity_width_fraction": "Width of the per-channel z sensitivity window as a fraction of the z span, deciding how much of a profile each channel sees",
-        "channel_phase_rates": "One phase rate per secondary channel, converting position along z into derived-channel phase; must list exactly as many entries as secondary_labels",
-        "cube_noise_fraction": "Relative noise added to the rendered profile volume, as a fraction of its scale",
-        "channel_noise_fraction": "Relative noise added to the synthesised primary, secondary and derived channels, as a fraction of their scale",
-        "aux_range": "Lower and upper bound of the smooth scalar field written as the auxiliary channel",
-        "lambda_k": "Model-order penalty recorded in the parameter run metadata, matching the field the extraction stage writes",
-        "activity_threshold": "Amplitude above which a generated slot counts as active, recorded in param_extraction_meta.json as the activity_threshold every training, inference and analysis stage reads for this dataset's labels",
-        "threshold_factor": "Relative profile threshold recorded in the parameter run metadata; zero because generated profiles need no pre-cleaning",
-        "truncation_index": "Z-axis truncation index recorded in the parameter run metadata for compatibility with the extraction stage",
-        "dataset_type": "Dataset type tag written into the dataset metadata",
-        "cube_tag": "Tag identifying the profile volume in the dataset metadata",
-        "parameter_tag": "Prefix of the generated parameter run, combined with params_run_name",
-        "max_amplitude_clip": "Upper clip applied to the synthesised channel amplitudes, recorded in the dataset metadata",
-        "seed": "Seed of the random generator, so a dataset is reproducible from its config alone"
+        "output_directory": "directory the dataset is written into; it must not exist yet, so a finished dataset is never overwritten",
+        "rows": "number of grid rows",
+        "cols": "number of grid columns",
+        "input_channels": "number of input fields x0, x1, ...; the targets read x0 to x3, so at least four are needed and any further channel is a pure distractor",
+        "smoothing_pixels": "standard deviation in pixels of the Gaussian filter that turns white noise into each smooth input field",
+        "neighbourhood": "side in pixels of the square window the neighbourhood target averages over, which sets the receptive field a model needs to predict it",
+        "input_noise": "standard deviation of the white noise added to every standardized input field",
+        "target_noise": "standard deviation of the white noise added to every target field",
+        "val_fraction": "share of the rows held out as the validation band, below the training band",
+        "test_fraction": "share of the rows held out as the test band, at the bottom of the grid",
+        "seed": "seed of the random generator drawing every field and noise sample"
       }
     },
-    "synthesis::GenerateDatasetEntryConfig": {
-      "summary": "Entry config that generates the bundled synthetic dataset in one run",
+    "generation::GenerateDatasetEntryConfig": {
+      "summary": "Entry config of generate_dataset: the generation settings and the log directory",
       "fields": {
-        "synthesis": "Generator settings deciding the scene, the mixture statistics and the written artifacts",
-        "log_dir": "Directory the run log is written to"
+        "generation": "GenerationConfig describing the grid, the fields and the splits",
+        "log_dir": "directory the generation log is written into"
       }
     }
   }

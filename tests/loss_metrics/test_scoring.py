@@ -163,14 +163,6 @@ def test_relative_improvement_percent_string():
     assert RelativeImprovement.percent(0.0, 1.0, empty="-") == "-"
 
 
-@pytest.mark.dataset
-def test_r2_on_scene_cube_self_is_one(cube_full):
-    win  = np.abs(np.asarray(cube_full[:16, :8, :8])).astype(np.float64)
-    pred = win.copy()
-    out  = R2.pixel_map(pred, win, axis=0)
-    assert np.allclose(out, 1.0, atol=1e-5)
-
-
 def test_rank_correlation_averages_tied_ranks():
     assert RankCorrelation.ranks(np.array([1.0, 1.0, 2.0])).tolist() == [0.5, 0.5, 2.0]
     assert RankCorrelation.ranks(np.array([[3.0, 1.0], [1.0, 7.0]])).tolist() == [2.0, 0.5, 0.5, 3.0]

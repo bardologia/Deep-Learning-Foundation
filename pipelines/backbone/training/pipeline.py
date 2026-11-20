@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
-
 from configuration.dataset                         import DatasetConfig
 from configuration.training                        import BackboneTrainerConfig
 from models                                        import get_backbone
@@ -13,7 +11,6 @@ from pipelines.backbone.training.trainer           import Trainer
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
 from pipelines.shared.config.run_metadata          import TrainingRunMetadata
 from pipelines.shared.model.model_builder          import ModelBuilder
-from tools.data.gaussians                          import GaussianAxis, GaussianHead
 from tools.runtime.reproducibility                 import Reproducibility
 
 
@@ -41,8 +38,6 @@ class TrainingPipeline:
         self.patch_size          = patch.size
 
         Reproducibility.seed_everything(self.seed)
-
-        self.dataset_config.n_gaussians = trainer_config.gaussian.n_default_gaussians
 
     @property
     def effective_patch(self) -> tuple[tuple[int, int], tuple[int, int]]:
@@ -72,22 +67,6 @@ class TrainingPipeline:
             "squared"           : self.patch_squared,
         }
 
-    def _build_dataset_pipeline(self, run_directory: Path, logger) -> DatasetPipeline:
-        gaussian_cfg = self.trainer_config.gaussian
-
-        dataset_pipeline = DatasetPipeline(
-            config                 = self.dataset_config,
-            training_run_directory = Path(run_directory),
-            activity_threshold     = gaussian_cfg.activity_threshold,
-            logger                 = logger,
-            seed                   = self.seed,
-            resume                 = self.trainer_config.training.resume,
-        )
-
-        self.dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, dataset_pipeline.layout.profile_length)
-
-        return dataset_pipeline
-
     def _build_model(self, in_channels: int, out_channels: int):
         model, model_cfg = get_backbone(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
 
@@ -111,17 +90,16 @@ class TrainingPipeline:
 
         return overrides
 
-    def _make_trainer(self, model, model_cfg, z_axis, norm_stats, run_dir: Path, logger, emit_docs: bool = True, writer=None):
+    def _make_trainer(self, model, model_cfg, target_channels, run_dir: Path, logger, emit_docs: bool = True, writer=None):
         return Trainer(
-            model      = model,
-            model_cfg  = model_cfg,
-            z_axis     = z_axis,
-            config     = self.trainer_config,
-            run_dir    = run_dir,
-            logger     = logger,
-            norm_stats = norm_stats,
-            emit_docs  = emit_docs,
-            writer     = writer,
+            model           = model,
+            model_cfg       = model_cfg,
+            target_channels = target_channels,
+            config          = self.trainer_config,
+            run_dir         = run_dir,
+            logger          = logger,
+            emit_docs       = emit_docs,
+            writer          = writer,
         )
 
     def run(self, resolved_entry_config=None):
@@ -140,46 +118,33 @@ class TrainingPipeline:
             if self.patch_squared:
                 self.logger.warning(f"{self.backbone_name} needs a square input: {self._patch_geometry_label()}; pixels per batch and patches per epoch differ from the configured geometry, and the resolved entry config keeps the configured values")
 
-            self.run_metadata.save_dataset_fingerprint(self.dataset_config.preprocessing_run_directory, self.dataset_config.parameters_path, enabled=self.dataset_config.fingerprint_dataset)
+            self.run_metadata.save_dataset_fingerprint(self.dataset_config.dataset_directory, enabled=self.dataset_config.fingerprint_dataset)
 
             self.logger.section("[PyTorch Training Pipeline Execution]")
             self.logger.kv_table({
                 "Seed"           : self.seed,
-                "Gaussian slots" : self.trainer_config.gaussian.n_default_gaussians,
-                "Z axis"         : f"[{self.trainer_config.gaussian.x_min:g}, {self.trainer_config.gaussian.x_max:g}] m (sample count set by the dataset profile length)",
                 "Patch geometry" : self._patch_geometry_label(),
             })
 
-            self.dataset_pipeline = self._build_dataset_pipeline(self.run_metadata.run_directory, self.logger)
+            self.dataset_pipeline = DatasetPipeline(self.dataset_config, self.run_metadata.run_directory, self.logger, seed=self.seed, resume=self.trainer_config.training.resume)
 
-            gaussian_cfg = self.trainer_config.gaussian
+            train_loader, val_loader, test_loader, _datasets, _normalizer = self.dataset_pipeline.run()
 
-            train_loader, val_loader, test_loader, datasets = self.dataset_pipeline.run()
-
-            train_dataset = datasets["train"]
-            in_channels   = train_dataset.input_channels
-            n_gaussians   = gaussian_cfg.n_default_gaussians
-            out_channels  = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, n_gaussians)
-            z_axis        = np.asarray(self.dataset_config.z_axis, dtype=np.float32)
-            x_axis_length = int(z_axis.size)
-
-            model, model_cfg = self._build_model(in_channels=in_channels, out_channels=out_channels)
+            files            = self.dataset_pipeline.files
+            model, model_cfg = self._build_model(in_channels=len(files.input_channels), out_channels=len(files.target_channels))
 
             self.run_metadata.save_trainer_config()
             self.run_metadata.save_model_config(model_cfg, self.backbone_name)
-
             self.run_metadata.save_run_summary(
-                model_name       = self.backbone_name,
-                in_channels      = in_channels,
-                out_channels     = out_channels,
-                x_axis_length    = x_axis_length,
-                n_gaussians      = n_gaussians,
-                seed             = self.seed,
-                patch_geometry   = self._patch_geometry_payload(),
+                model_name      = self.backbone_name,
+                input_channels  = files.input_channels,
+                target_channels = files.target_channels,
+                seed            = self.seed,
+                patch_geometry  = self._patch_geometry_payload(),
             )
             self.logger.ok(f"Run metadata saved : {self.run_metadata.run_directory}")
 
-            trainer = self._make_trainer(model, model_cfg, z_axis, train_dataset.normalizer, self.run_metadata.run_directory, self.logger, writer=self.run_metadata.writer)
+            trainer = self._make_trainer(model, model_cfg, files.target_channels, self.run_metadata.run_directory, self.logger, writer=self.run_metadata.writer)
 
             results = trainer.train(train_loader, val_loader, test_loader)
             self.run_metadata.save_test_metrics(trainer.test_metrics)

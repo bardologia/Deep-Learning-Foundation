@@ -60,7 +60,7 @@ class CatalogRoots:
 
 class RunScanner:
 
-    STAMP_MARKER = "inference/*/cubes/pred_curves.npy"
+    STAMP_MARKER = "inference/*/maps/predictions.npy"
 
     def __init__(self, roots: CatalogRoots) -> None:
         self.roots = roots

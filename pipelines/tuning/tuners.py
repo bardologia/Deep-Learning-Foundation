@@ -475,7 +475,7 @@ class Tuner:
         if SearchSpace.BATCH in sampled:
             self._apply_batch(trainer_cfg, dataset_cfg, sampled[SearchSpace.BATCH])
 
-        run_tag = RunNaming.tag(self.backbone_name, self.head, trainer_cfg.loss, trainer_cfg.gaussian.n_default_gaussians, dataset_cfg.augmentation)
+        run_tag = RunNaming.tag(self.backbone_name, self.head, trainer_cfg.loss, dataset_cfg.augmentation)
 
         pipeline = TrialPipeline(
             trainer_config = trainer_cfg,

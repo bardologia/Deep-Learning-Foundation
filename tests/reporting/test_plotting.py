@@ -334,16 +334,16 @@ def test_imshow_figure_saved_dpi(plotter, small_field, tmp_path):
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_imshow_scene_aux_window(plotter, aux_full, small_window, tmp_path):
-    window = np.asarray(aux_full[small_window], dtype=np.float32)
+def test_imshow_scene_input_window(plotter, inputs, tmp_path):
+    window = np.asarray(inputs[0, :32, :32], dtype=np.float32)
     out    = plotter._imshow_figure(
         window,
         x_label        = "col",
         y_label        = "row",
-        title          = "Aux window",
+        title          = "Input window",
         cmap           = plotter._cmap_with_bad("terrain"),
-        colorbar_label = "z",
-        path           = tmp_path / "aux.png",
+        colorbar_label = "x0",
+        path           = tmp_path / "input.png",
     )
     assert out.exists()
     assert out.stat().st_size > 0
@@ -351,27 +351,27 @@ def test_imshow_scene_aux_window(plotter, aux_full, small_window, tmp_path):
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_imshow_scene_parameter_window_with_clim(plotter, parameters, small_window, tmp_path):
-    window = np.asarray(parameters[0][small_window], dtype=np.float32)
+def test_imshow_scene_target_window_with_clim(plotter, targets, tmp_path):
+    window = np.asarray(targets[0, :32, :32], dtype=np.float32)
     lo, hi = plotter._shared_clim(window, q_low=2.0, q_high=98.0)
 
     out = plotter._imshow_figure(
         window,
         x_label = "col",
         y_label = "row",
-        title   = "param 0",
+        title   = "pointwise",
         cmap    = "viridis",
         vmin    = lo,
         vmax    = hi,
-        path    = tmp_path / "param.png",
+        path    = tmp_path / "target.png",
     )
     assert out.exists()
     assert out.stat().st_size > 0
 
 
 @pytest.mark.dataset
-def test_shared_clim_scene_cube_intensity(cube_full, small_window):
-    layer = np.abs(np.asarray(cube_full[0][small_window]))
+def test_shared_clim_scene_target(targets):
+    layer = np.asarray(targets[1, :32, :32])
     lo, hi = PlotBase._shared_clim(layer, q_low=5.0, q_high=95.0)
     assert lo <= hi
     assert np.isfinite(lo) and np.isfinite(hi)

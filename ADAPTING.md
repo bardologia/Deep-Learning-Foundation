@@ -1,209 +1,105 @@
 # Adapting the template
 
 `README.md` gets the template running on its own example task. This file is about
-replacing that task with yours: what the pipelines demand of a dataset, what has to
-change when the target is not a Gaussian mixture, where the normalization decisions live,
-which checks will stop you if you wire something up halfway, what to touch when you
-rename the project, and where the console's figures and palette live.
+replacing that task with yours: what the pipelines demand of a dataset, what to change
+when your targets need another loss or other metrics, where the normalization decisions
+live, which checks will stop you if you wire something up halfway, what to touch when
+you rename the project, and where the console's figures and palette live.
 
 Read it with the code open. Every claim below names the file it comes from.
 
 ## 1. Replace the data source
 
 Nothing downstream of the dataset knows where the arrays came from. What it knows is the
-on-disk layout, and the reader for it is `Layout` in
-`pipelines/shared/dataset/dataset_spatial.py`. Write an importer that produces this and
-the rest of the repository works unchanged:
+dataset contract, and the one reader and writer of it is `DatasetFiles` in
+`pipelines/shared/dataset/dataset_files.py`. Write an importer that produces this and the
+rest of the repository works unchanged:
 
 ```
 <dataset>/
-  data/
-    dataset.json
-    primary.npy        (rows, cols)                 complex64
-    secondaries.npy    (n_secondaries, rows, cols)  complex64
-    derived.npy        (n_secondaries, rows, cols)  complex64
-    aux_full.npy       (rows, cols)                 float32
-    cube_full.npy      (n_z, rows, cols)            complex64
-  meta/
-    config_state.json
-  params/<run name>/
-    parameters.npy               (3 * k_max, rows, cols)  float32
-    fit_diagnostics.npz
-    param_extraction_meta.json
+  dataset.json
+  inputs.npy     (input_channels, rows, cols)   float32
+  targets.npy    (target_channels, rows, cols)  float32
 ```
 
-`data/dataset.json` is the entry point. Four of its keys are read:
+`dataset.json` holds seven keys, and `DatasetFiles.read` reads every one of them, so a
+missing key stops the reader:
 
-- `global_crop`, four integers `[row_start, row_end, col_start, col_end]`. It is the
-  absolute position of this scene in whatever larger frame it was cut from, and
-  everything that names rows in absolute coordinates is measured against it:
-  `ConfigFactory.split_regions` in `pipelines/shared/config/config_factory.py` intersects
-  it with `training.train_rows` and its siblings, and the cube explorer subtracts it to
-  place an inference region back inside the full cube
-  (`webui/cube_explorer.py::_crop_bounds`). If your data has no such frame, write
-  `[0, rows, 0, cols]` and keep the split rows inside it.
-- `artifacts`, a map from artifact key to filename. The keys are fixed:
-  `primary`, `secondaries`, `derived`, `aux_full`, `cube_full`. `Layout.artifact_path`
-  resolves them, and the loaders in `pipelines/backbone/dataset/spatial.py` memory-map the
-  results, so shapes have to agree across files. The console's cube explorer
-  (`webui/cube_explorer.py`) reads `primary` for its map and refuses a dataset without
-  it; `aux_full` and `cube_full` add the aux overlay and the reference cube when they
-  are there.
-- `channel_labels`, the primary label first and one per secondary after it. Selecting
-  secondaries by label (`paths.secondary_labels`) resolves through this list, and
-  `Layout.secondary_indices` raises if it is empty. The input and secondary trial sweeps
-  take their candidates from it through `Layout.secondary_channel_labels`, so
-  `tracks=all` and the sampled subsets reach every secondary the dataset records, not
-  only the configured selection. The console reads the same list
-  (`/api/fs/secondaries`, `DatasetBrowser.secondaries` in `webui/dataset_browser.py`) to
-  offer the selected dataset's secondaries in the launch pages' picker, so write a label
-  for every channel your importer emits.
-- `cube_tag`, a free string, logged with the layout.
+- `name`, a free string, usually the directory name.
+- `input_channels` and `target_channels`, one name per channel of the two arrays, in
+  array order. The backbone is built with as many input and output channels as these
+  lists hold; the names label the normalization statistics, the per-channel losses in
+  TensorBoard, the inference metrics and the figure folders.
+- `rows` and `cols`, the grid size both arrays share.
+- `splits`, a map from `train`, `val` and `test` to a list of regions
+  `[row_start, row_end, col_start, col_end]` in dataset pixels. A split may hold several
+  disjoint regions; every region of a split is cut into patches on its own. The config
+  factory (`pipelines/shared/config/config_factory.py`) takes the splits from here, and
+  cross-validation replaces them with its fold blocks.
+- `generator`, a free mapping recording how the dataset was made. The bundled generator
+  writes its configuration and the run provenance; an importer can write anything.
 
-`dataset_type`, `parameter_tag`, `max_amplitude_clip` and `provenance` (the generating
-commit) are written by the bundled generator and read by nothing. Keep or drop them.
+`DatasetFiles.write` is the writer: it creates the directory, which must not exist yet,
+saves the two arrays as float32 and writes `dataset.json` last. Use it from your importer,
+so that a half-written dataset never has a layout file.
 
-`meta/config_state.json` carries the z axis: `cube_config.z_range` (two floats) and
-`cube_config.n_z`. `GaussianConfig.from_dataset` in `configuration/dataset/gaussian.py`
-reads the range, and `ExtractParamsEntryConfig` in `configuration/param_extraction.py`
-falls back to it when no range is given on the command line. The same file also holds
-`crop`, the same bounds as `global_crop` in record form.
-
-The parameter run is the supervision. `parameters.npy` is `(3 * k_max, rows, cols)`,
-interleaved as amplitude, mean, width per slot, sorted by mean, with unused slots zeroed.
-`param_extraction_meta.json` sitting beside it is not optional:
-`GaussianConfig.from_dataset` reads `k_max` and `activity_threshold` from it and raises
-`FileNotFoundError` if the file is missing (and `KeyError` if either key is absent),
-which is what stops a parameter file from being separated from its own description. A
-dataset can hold several parameter runs side by side under `params/`;
-`paths.parameters_path` picks one.
-
-`activity_threshold` is the amplitude above which a slot counts as active, and an
-importer has to write it. Every later stage reads it from this file and from nowhere
-else: the loss masks and the slot matcher, the slot diagnostics, the output
-normalization statistics, inference scoring, the seed comparison and the console. A slot is active only when its amplitude is strictly above the
-threshold (`GaussianActivity.is_active` in `tools/data/gaussians.py`), so 0.0 means any
-positive amplitude and a slot stored at exactly zero is never active.
-
-The channels themselves are complex because the example task treats magnitude and phase
-as separate input channels. `InputConfig` in `configuration/dataset/general/dataset.py`
-turns each source into channels through `Representation`
-(`tools/data/representation.py`): magnitude only, angle only, real and imaginary, and so
-on. If your data is real, store it as complex with a zero imaginary part or narrow
-`Representation` to the real cases and adjust `InputConfig.channel_group_keys`, which is
-what names the normalization slot of every produced channel.
+If your data has invalid pixels, the contract has no mask: fill them with values the loss
+can take, or extend `PatchDataset` in `pipelines/backbone/dataset/datasets.py` to multiply
+its weight map by a mask you store beside the arrays. The weight map is the one place a
+pixel's contribution to the loss is decided.
 
 Once your importer exists, the bundled generator can go: `main/processing/generate_dataset.py`,
-`pipelines/processing/synthesis/`, `configuration/synthesis.py`. Deleting it is not a
-one-file job, because the console and the tests both know about it. Section 4 lists the
+`pipelines/processing/generation.py` and `configuration/generation.py`. Deleting it is not
+a one-file job, because the console and the tests both know about it. Section 4 lists the
 checks that will fail, and section 6 lists the registration sites in reverse. One of them
-is easy to miss: `tests/conftest.py` builds the scene every fixture depends on by calling
-`SyntheticDatasetPipeline` into a temporary directory. Point that fixture at your own data
-or at a small generator of your own before you delete this one, or the suite loses its
-input.
+is easy to miss: `tests/conftest.py` builds the small scene every dataset fixture depends
+on by calling `DatasetGenerator` into a temporary directory. Point that fixture at a small
+copy of your own data, or at a generator of your own, before you delete this one, or the
+suite loses its input.
 
-## 2. Change the target specification
+## 2. Change the loss and the metrics
 
-The example target is `k_max` Gaussians per pixel, three numbers each, evaluated on a z
-axis of `n_z` samples. Three things define it: the axis and slot count, the roles that are
-supervised, and the head that emits them.
+The backbone ends in a 1x1 convolution to as many channels as the dataset has targets, and
+predicts every target channel at every pixel in normalized units. `Loss` in
+`pipelines/backbone/training/loss.py` compares the prediction with the normalized targets
+elementwise, with the kind chosen by `loss.kind` (`mse`, `l1` or `huber`, with
+`loss.huber_delta`), averages every channel over the pixel weights of its patch and
+combines the channels with `loss.channel_weights` (empty weighs every channel 1). It
+returns a `WeightedMean` per channel and for the total (`tools/training/aggregation.py`),
+which is what lets a whole split be pooled as one per-pixel mean.
 
-`GaussianConfig` (`configuration/dataset/gaussian.py`) holds `n_default_gaussians`,
-`x_min`, `x_max`, `activity_threshold` and `params_per_gaussian`. It is built by
-`ConfigFactory.gaussian_config()` from the dataset, never by hand, so the slot count and
-the threshold follow the parameter run and the axis follows the dataset metadata.
-Widening the axis or changing K is a matter of writing a different parameter run, not of
-editing code.
+To add a loss kind, add the value to `LossKind` in `configuration/training/general/loss.py`
+and its elementwise formula to `Loss.elementwise`; the launch forms, the benchmark sweep
+choices (`LaunchLayout.MULTI_LOSS_KINDS`) and the description file follow the enum. A loss
+that is not elementwise, for example one on spatial gradients, belongs in `Loss.__call__`
+next to the channel means, returning its own `WeightedMean` so the pooling stays exact.
 
-Which of the three roles are supervised is `OutputConfig` in
-`configuration/dataset/general/dataset.py`, through `use_amplitude`, `use_mu` and `use_sigma`,
-and `selected_indices` turns them into column indices into `parameters.npy`. The dataset
-(`pipelines/backbone/dataset/datasets.py`) and the statistics computer
-(`pipelines/backbone/dataset/stats_computer.py`) are the only readers. Note the asymmetry
-before you use it: `GaussianConfig.params_per_gaussian` stays at 3, and the loss indexes
-each slot positionally as amplitude, mean, width (`_param_term` and `_physical_errors` in
-`pipelines/backbone/training/loss.py`). Dropping a role from `OutputConfig` therefore also
-means setting `params_per_gaussian` to match and rewriting those two methods.
+Inference scores the stitched prediction in target units. `Metrics` in
+`pipelines/backbone/inference/metrics.py` computes the RMSE, MAE, bias and R2 of every
+target channel and their means; add a metric there and give its key an orientation
+(section 4) so the comparison reports can rank it.
 
-The head that emits the parameters is chosen with `--backbone_head`, and
-`models/blocks.py::OutputHeadsMixin` builds all four:
+## 3. Normalization
 
-- `conv`, a single 1x1 convolution to `out_channels`. It imposes no slot structure and is
-  the only head that does not require `out_channels` to divide by `params_per_gaussian`.
-- `multihead`, three pixel MLPs, one each for amplitude, mean and width, interleaved back
-  into slot order. It is written for three parameters per slot.
-- `per_gaussian`, one pixel MLP per slot emitting that slot's parameters.
-- `set_pred`, `per_gaussian` plus a sigmoid existence gate per slot that blends the
-  slot's amplitude toward a learned off value, so a slot can be switched off rather than
-  regressed to zero. This is the default.
-
-Slot order is a convention, not a fact, so the loss aligns the two sides before comparing
-them. `ParamMatcher.match` in `tools/loss/param_loss.py` runs on every backward pass of
-the backbone loss, under `loss.param_matching`: `sorted_gt` sorts the
-ground-truth slots by mean, active slots first, and leaves the prediction alone;
-`hungarian` sorts the ground truth and then assigns predicted slots to it by minimum
-cost. `match` takes the activity threshold as a required argument. The assignment is
-exhaustive over all `G!` permutations, which is why `ParamMatcher.MAX_GAUSSIANS` is 6 and
-why the class raises above that. At `K = 1` both choices are no-ops.
-
-If your target is plain dense regression, say one value per pixel or a fixed vector
-with no permutation freedom, the shape of the work is:
-
-1. Use the `conv` head with `out_channels` set to your channel count.
-2. Keep the curve terms and drop the parameter terms. The catalog in
-   `pipelines/backbone/training/loss_terms.py` splits exactly along that line: the terms
-   marked `denorm` (`mse_curve`, `l1_curve`, `huber_curve`, `charbonnier_curve`,
-   `cosine_curve`, `total_power_relerr`, `moments`) compare reconstructed curves; the ones
-   marked `norm` (`param_l1`, `param_huber`, `param_mse`, `smoothness_tv`) compare
-   parameters. Turn the `use_param_*` flags off in `loss`. `Loss` refuses a configuration
-   that enables no term or whose enabled weights sum to zero, so keep at least one curve
-   term on with a positive weight.
-3. Replace `Loss` in `pipelines/backbone/training/loss.py`. Turning the flags off is not
-   enough on its own: `Loss.__call__` reconstructs curves through `GaussianCurve`, calls
-   `_match_params`, and computes `amp_mae`, `mu_mae` and `sigma_mae` on every batch
-   regardless of which terms are active. That class is where the Gaussian assumption
-   really lives, and it is one file with one class.
-
-## 3. Normalization slots
-
-Every channel, in and out, is normalized by a strategy chosen from its slot key. The
-table is `_SLOT_STRATEGIES` at the bottom of `configuration/normalization/general.py`:
+Every input channel and every target channel is normalized with its own location and
+scale, fitted on the train split by `StatsComputer` in
+`pipelines/backbone/dataset/stats_computer.py`. `NormalizationConfig` in
+`configuration/normalization/general.py` chooses the method for each side:
+`normalization.inputs` and `normalization.targets`, each one of `NormMethod`:
 
 ```
-chan/mag           robust_iqr_log1p      derived/mag         robust_iqr_log1p
-chan/raw_re_im     zscore                derived/raw_re_im   zscore
-chan/norm_re_im    zscore                derived/norm_re_im  zscore
-chan/phase         zscore                derived/phase       fixed_div_pi
-out/amp            robust_iqr_log1p      aux/value           zscore
-out/mu             zscore
-out/sigma          robust_iqr_log1p
+zscore       mean and standard deviation
+robust_iqr   median and interquartile range
+min_max      0.1 and 99.9 percentiles
 ```
 
-Input slot keys are produced by `InputConfig.channel_group_keys`, one per emitted channel:
-the primary and the secondaries produce `chan/<kind>`, the derived products produce
-`derived/<kind>`, where the kind comes from the `Representation`, and the auxiliary field
-produces `aux/value`. The output keys are fixed at `out/amp`, `out/mu` and `out/sigma`.
-
-`NormalizationConfig` in the same file is the override surface.
-`input_strategy`/`output_strategy` set a single preset for the whole side, or `per_slot`
-to use the table. The per-slot fields (`chan_mag`, `channel_phase`, `derived_mag`,
-`derived_phase`, `out_amp`, `out_mu`, `out_sigma`, `aux`) override one slot each and take
-precedence; `SLOT_FIELDS` maps a slot key to its field. The presets are listed in
-`Presets.names()`.
-
-The fitted statistics land in `meta/normalization_stats.json` in the run directory, as
-`ChannelStats`: a location, a scale, a name, the strategy and a clampable flag per
-channel. Inference reloads them from there, so a run is self-contained. The fitting itself
-is `pipelines/backbone/dataset/stats_computer.py`, over the training split only; the
-output statistics pool a slot's values only where its amplitude is above the activity
-threshold. A fit that yields a non-finite location or scale raises, and
-`ChannelStats.from_dict` refuses a zero, negative or non-finite scale when the file is
-loaded.
-
-Adding a slot means three edits: emit its key from `channel_group_keys`, add an entry to
-`_SLOT_STRATEGIES`, and add a field plus a `SLOT_FIELDS` entry if it should be
-overridable from the command line. The third one drags the console gates in with it, which
-is the next section.
+The scale is floored at 1e-8, so a constant channel does not divide by zero. The fitted
+statistics land in `meta/normalization_stats.json` in the run directory, as one
+`ChannelStats` per side: the method, and a name, a location and a scale per channel.
+Inference reloads them from there, so a run is self-contained, and `Normalizer`
+(`pipelines/backbone/dataset/normalizer.py`) applies and inverts the affine transform on
+numpy arrays and torch tensors alike. A new method is a new `NormMethod` value with its
+fit in `NormMethod.fit`.
 
 ## 4. The gates you have to keep green
 
@@ -258,7 +154,7 @@ of every model in every registry, at every head.
 ### Every path default sits below a reference root
 
 `configuration/reference_layout.py` names the roots a checkout works from (`datasets/`,
-`runs/`, `results/`, the example dataset and its parameter run), and the machine profile
+`runs/`, `results/` and the example dataset), and the machine profile
 written by `./install.sh` retargets them: `ConfigCli` rebases every `Path` leaf, and every
 string leaf that equals a root or lies below one, onto the profile's root before any flag
 is parsed. A default written against one machine's filesystem escapes that rebase and
@@ -278,18 +174,11 @@ larger value is better, worse or neither, and the comparison reports and the A/B
 rank by it. A key that matches no declared rule raises `KeyError`
 instead of being ranked as an error by default.
 
-- Fails in: `tests/backbone_inference/test_pipeline_e2e.py::test_inference_pipeline_end_to_end`,
-  which resolves every numeric key the backbone inference writes to `metrics.json`, and
-  the `test_orientation_*` tests in `tests/loss_metrics/test_scoring.py` for the rules
-  themselves.
+- Fails in: the `test_orientation_*` tests in `tests/loss_metrics/test_scoring.py` for
+  the rules themselves.
 - Fix: name the key so an existing rule covers it, or add it to `_HIGHER_OVERRIDES` or
   to the neutral, lower or higher patterns. Counts, settings and spreads belong in the
   neutral pattern, so they are reported but never ranked.
-
-The metric code around it takes the run's logger: `Metrics` and `BoundedProcessPool` in
-`pipelines/backbone/inference/metrics.py` both need one. `R2.pixel_map` returns NaN where
-the reference profile is constant, and `R2.undefined_count` counts those pixels; report
-that count next to any mean you take over the map.
 
 ### Every figure a page names exists
 
@@ -393,9 +282,8 @@ version of such an entry. `StageLogger` in `tests/backbone_inference/_helpers.py
 records the timers and progress an analysis reports, for tests to assert on.
 
 Two shared settings have one home each. The resource monitor's settings are
-`ResourceConfig` in `configuration/resources.py`, outside the training package, so a
-long-running processing entry can carry a `resources` field without importing torch, as
-`extract_params` does. The batch-size learning-rate rule is
+`ResourceConfig` in `configuration/resources.py`, outside the training package, so an
+entry that does not train can carry a `resources` field without importing torch. The batch-size learning-rate rule is
 `TrainingQueueConfig.lr_scale(batch_size)` in `configuration/training/general/run.py`;
 `ConfigFactory` and the batch-size tuner both call it, and a new caller that changes the
 batch size should too.
@@ -441,10 +329,11 @@ Nothing derives the name at runtime, so it is spelled out in a handful of places
 
 ## 8. The console's figures and palette
 
-Every console page carries a line figure, and several of the project's own figures draw
-the example task: `slots` (three Gaussian slots), `voxels` (a pixel's profile cut into z
-bins) and `surface` (two Gaussian bumps on a ridgeline surface). They are classes in
-`webui/static/js/hairline_project.js`, registered in `ProjectFigures.CATALOG`; the stock
+Every console page carries a line figure, and the project's own figures draw its
+subjects: `surface` (a smooth field with two bumps on a ridgeline surface) for training
+and the dataset, `sampler` for the patch grid, `folds` for cross-validation and so on.
+They are classes in `webui/static/js/hairline_project.js`, registered in
+`ProjectFigures.CATALOG`; the stock
 figures come from the vendored bundle in `webui/static/vendor/hairline-figures.js`.
 Replace or add catalog entries for your own subject, then point the pages at them:
 
@@ -460,5 +349,4 @@ The palette is the `:root` block at the top of `webui/static/css/styles.css`: `-
 and `--surface` for the page and its panels, the `--ink*` tokens for text, the
 `--accent*` tokens, `--on-accent` for text on an accent fill, and `--frost` and
 `--frost-panel` for the blurred bars and popovers. Most canvas charts and diagrams set
-their own light series colours in their modules; the cube and slice views read their
-source and cut colours from the `--src-*` and `--cut-*` tokens further down the file.
+their own light series colours in their modules.

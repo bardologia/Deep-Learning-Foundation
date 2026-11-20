@@ -210,18 +210,18 @@ def test_grouper_section_order_follows_definition():
 
 
 @pytest.mark.dataset
-def test_report_assembly_with_scene_metadata(param_extraction_meta, tmp_path):
+def test_report_assembly_with_scene_metadata(dataset_json, tmp_path):
     assets = ReportAssets(base=tmp_path, timestamp="2026-01-01 00:00:00")
 
     fig = tmp_path / "figs" / "overview.png"
     fig.parent.mkdir(parents=True, exist_ok=True)
     fig.write_bytes(b"\x89PNG\r\n")
 
-    lines  = assets.header("Parameter Extraction Report")
+    lines  = assets.header("Dataset Report")
     lines += [""]
     lines += assets.image("Overview", fig)
 
-    records = [SimpleNamespace(metrics={k: v for k, v in param_extraction_meta.items() if isinstance(v, (int, float))})]
+    records = [SimpleNamespace(metrics={k: v for k, v in dataset_json.items() if isinstance(v, (int, float))})]
     keys    = MetricSectionGrouper.scalar_keys(records)
     for title, section_keys in MetricSectionGrouper().group(keys):
         lines += [f"## {title}", ""]
@@ -234,5 +234,5 @@ def test_report_assembly_with_scene_metadata(param_extraction_meta, tmp_path):
     assert out.exists()
     assert out.stat().st_size > 0
     content = out.read_text(encoding="utf-8")
-    assert content.startswith("# Parameter Extraction Report")
+    assert content.startswith("# Dataset Report")
     assert "![Overview](figs/overview.png)" in content

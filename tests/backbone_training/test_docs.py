@@ -9,9 +9,9 @@ from tests.backbone_training._helpers import tiny_model
 from tools.monitoring.logger          import Logger
 
 
-def _loader(in_channels: int = 2, n_gaussians: int = 2, hw: int = 16) -> DataLoader:
+def _loader(in_channels: int = 2, out_channels: int = 2, hw: int = 16) -> DataLoader:
     imgs = torch.randn(2, in_channels, hw, hw)
-    tgt  = torch.randn(2, n_gaussians * 3, hw, hw)
+    tgt  = torch.randn(2, out_channels, hw, hw)
     return DataLoader(TensorDataset(imgs, tgt), batch_size=1)
 
 

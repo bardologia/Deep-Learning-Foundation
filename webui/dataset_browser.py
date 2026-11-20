@@ -11,11 +11,7 @@ from web_logger import WebLogger
 class DatasetBrowser:
 
     SEED_DIR        = re.compile(r"seed\d+")
-    DATA_MARKER     = "data"
-    PARAMS_DIR      = "params"
-    PARAM_SUFFIX    = ".npy"
     LAYOUT_FILE     = "dataset.json"
-    MAX_DEPTH       = 3
     CHECKPOINT_NAME = "best_model.pt"
     INFERENCE_DIR   = "inference"
     RUN_MARKER      = "meta"
@@ -34,16 +30,15 @@ class DatasetBrowser:
             if not entry.is_dir() or entry.name.startswith("."):
                 continue
 
-            has_data   = (entry / self.DATA_MARKER).is_dir()
-            params_dir = entry / self.PARAMS_DIR
-            has_params = params_dir.is_dir() and self._has_param_files(params_dir)
+            layout = entry / self.LAYOUT_FILE
+            item   = {"name": entry.name, "path": str(entry), "is_dataset": layout.is_file()}
 
-            entries.append({
-                "name"       : entry.name,
-                "path"       : str(entry),
-                "is_dataset" : has_data,
-                "has_params" : has_params,
-            })
+            if item["is_dataset"]:
+                payload         = json.loads(layout.read_text(encoding="utf-8"))
+                item["inputs"]  = len(payload["input_channels"])
+                item["targets"] = len(payload["target_channels"])
+
+            entries.append(item)
 
         self.logger.info(f"datasets: listed {len(entries)} under {base}")
         return {"ok": True, "base": str(base), "datasets": entries}
@@ -151,47 +146,6 @@ class DatasetBrowser:
         self.logger.info(f"experiments: listed {len(entries)} at or below {base}")
         return {"ok": True, "base": str(base), "experiments": entries}
 
-    def params(self, raw_dataset: str) -> dict:
-        dataset = self._directory(raw_dataset)
-        if dataset is None:
-            return {"ok": False, "error": f"not a directory: {raw_dataset}"}
-
-        params_dir = dataset / self.PARAMS_DIR
-        if not params_dir.is_dir():
-            return {"ok": True, "dataset": str(dataset), "params_root": str(params_dir), "files": []}
-
-        files = []
-        for path in sorted(self._param_files(params_dir)):
-            files.append({
-                "name"     : str(path.relative_to(params_dir)),
-                "path"     : str(path),
-                "analysed" : (path.parent / "fit_metrics_summary.json").is_file(),
-            })
-
-        self.logger.info(f"params: found {len(files)} under {params_dir}")
-        return {"ok": True, "dataset": str(dataset), "params_root": str(params_dir), "files": files}
-
-    def secondaries(self, raw_dataset: str) -> dict:
-        from configuration.training.general.run import TrainingPathsConfig
-
-        dataset = self._directory(raw_dataset)
-        if dataset is None:
-            return {"ok": False, "error": f"not a directory: {raw_dataset}"}
-
-        layout_path = dataset / self.DATA_MARKER / self.LAYOUT_FILE
-        if not layout_path.is_file():
-            return {"ok": False, "error": f"no {self.DATA_MARKER}/{self.LAYOUT_FILE} under {dataset}"}
-
-        channel_labels = json.loads(layout_path.read_text(encoding="utf-8"))["channel_labels"]
-        if not channel_labels:
-            return {"ok": False, "error": f"{layout_path} records no channel labels; generate the dataset again"}
-
-        standard = list(TrainingPathsConfig().secondary_labels)
-        entries  = [{"name": label, "standard": label in standard} for label in channel_labels[1:]]
-
-        self.logger.info(f"secondaries: {len(entries)} of {dataset}, reference {channel_labels[0]}")
-        return {"ok": True, "dataset": str(dataset), "reference": channel_labels[0], "standard": standard, "secondaries": entries}
-
     def _run_dirs(self, base: Path):
         if (base / self.RUN_MARKER).is_dir():
             yield base
@@ -234,20 +188,3 @@ class DatasetBrowser:
 
         path = path.resolve()
         return path if path.is_dir() else None
-
-    def _has_param_files(self, params_dir: Path) -> bool:
-        for _ in self._param_files(params_dir):
-            return True
-        return False
-
-    def _param_files(self, params_dir: Path):
-        yield from self._walk(params_dir, 0)
-
-    def _walk(self, directory: Path, depth: int):
-        entries = sorted(directory.iterdir())
-
-        for entry in entries:
-            if entry.is_file() and entry.suffix.lower() == self.PARAM_SUFFIX:
-                yield entry
-            elif entry.is_dir() and not entry.name.startswith(".") and depth < self.MAX_DEPTH:
-                yield from self._walk(entry, depth + 1)

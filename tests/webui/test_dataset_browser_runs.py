@@ -140,23 +140,6 @@ def test_seed_units_absent_by_default_and_for_base_level_seeds(tmp_path):
     assert unit_names    == ["seed0", "trial_x", "trial_x/seed0"]
 
 
-def test_params_listing_flags_runs_without_metrics_summary(tmp_path):
-    analysed = tmp_path / "params" / "run_analysed"
-    fresh    = tmp_path / "params" / "run_fresh"
-    analysed.mkdir(parents=True)
-    fresh.mkdir(parents=True)
-
-    (analysed / "parameters.npy").write_text("x")
-    (analysed / "fit_metrics_summary.json").write_text("x")
-    (fresh / "parameters.npy").write_text("x")
-
-    result = DatasetBrowser(WebLogger()).params(str(tmp_path))
-    flags  = {entry["name"]: entry["analysed"] for entry in result["files"]}
-
-    assert result["ok"] is True
-    assert flags == {"run_analysed/parameters.npy": True, "run_fresh/parameters.npy": False}
-
-
 def test_run_groups_lists_parent_dirs_of_runs_with_counts(tmp_path):
     runs = tmp_path / "runs"
     _make_run(runs / "group_a" / "seed0")

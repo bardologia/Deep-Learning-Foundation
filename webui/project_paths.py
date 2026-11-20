@@ -14,7 +14,7 @@ class ProjectPaths:
 
     ENTRY_OVERRIDES = {
         "generate_dataset": {
-            "config_module" : "configuration.synthesis",
+            "config_module" : "configuration.generation",
             "config_class"  : "GenerateDatasetEntryConfig",
         },
         "train_backbone": {

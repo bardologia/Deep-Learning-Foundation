@@ -101,14 +101,10 @@ class _RecordingPipeline:
         pass
 
 
-def _write_split_regions(run: Path, test_regions) -> Path:
+def _write_split_regions(run: Path, test_regions: list) -> Path:
     (run / "meta").mkdir(parents=True)
 
-    split_regions = {
-        "train" : {"row_start": 0,   "row_end": 100, "col_start": 0, "col_end": 50},
-        "val"   : {"row_start": 100, "row_end": 150, "col_start": 0, "col_end": 50},
-        "test"  : test_regions,
-    }
+    split_regions = {"train": [[0, 100, 0, 50]], "val": [[100, 150, 0, 50]], "test": test_regions}
     (run / "meta" / "dataset_creation_config.json").write_text(json.dumps({"split_regions": split_regions}))
 
     return run
@@ -123,10 +119,7 @@ def test_backbone_runner_scores_each_stored_region_in_its_own_pass(tmp_path, mon
     monkeypatch.setattr(_RecordingPipeline, "passes", [])
     monkeypatch.setattr(_RecordingPipeline, "region_passes", [])
 
-    run = _write_split_regions(tmp_path / "run", [
-        {"row_start": 150, "row_end": 200, "col_start": 0, "col_end": 50},
-        {"row_start": 250, "row_end": 300, "col_start": 0, "col_end": 50},
-    ])
+    run = _write_split_regions(tmp_path / "run", [[150, 200, 0, 50], [250, 300, 0, 50]])
 
     dispatch.BackboneInferenceRunner(inference_configs.BackboneInferenceEntryConfig()).run(run)
 
@@ -146,10 +139,7 @@ def test_backbone_runner_scores_an_enabled_target_in_one_pass_without_the_stored
     monkeypatch.setattr(_RecordingPipeline, "passes", [])
     monkeypatch.setattr(_RecordingPipeline, "region_passes", [])
 
-    run = _write_split_regions(tmp_path / "run", [
-        {"row_start": 150, "row_end": 200, "col_start": 0, "col_end": 50},
-        {"row_start": 250, "row_end": 300, "col_start": 0, "col_end": 50},
-    ])
+    run = _write_split_regions(tmp_path / "run", [[150, 200, 0, 50], [250, 300, 0, 50]])
 
     entry                          = inference_configs.BackboneInferenceEntryConfig()
     entry.inference.target.enabled = True
@@ -173,10 +163,7 @@ def test_split_region_loop_scores_each_disjoint_region_in_its_own_pass(tmp_path,
     monkeypatch.setattr(_RecordingPipeline, "passes", [])
     monkeypatch.setattr(_RecordingPipeline, "region_passes", [])
 
-    run = _write_split_regions(tmp_path / "run", [
-        {"row_start": 150, "row_end": 200, "col_start": 0, "col_end": 50},
-        {"row_start": 250, "row_end": 300, "col_start": 0, "col_end": 50},
-    ])
+    run = _write_split_regions(tmp_path / "run", [[150, 200, 0, 50], [250, 300, 0, 50]])
 
     SplitRegionLoop(InferenceConfig(run_directory=run, split="test"), _RecordingPipeline).run()
 
@@ -197,7 +184,7 @@ def test_split_region_loop_scores_a_single_region_split_once(tmp_path, monkeypat
     monkeypatch.setattr(_RecordingPipeline, "passes", [])
     monkeypatch.setattr(_RecordingPipeline, "region_passes", [])
 
-    run    = _write_split_regions(tmp_path / "run", {"row_start": 150, "row_end": 200, "col_start": 0, "col_end": 50})
+    run    = _write_split_regions(tmp_path / "run", [[150, 200, 0, 50]])
     config = InferenceConfig(run_directory=run, split="test")
 
     SplitRegionLoop(config, _RecordingPipeline).run()

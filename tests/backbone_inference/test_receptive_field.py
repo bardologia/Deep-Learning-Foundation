@@ -161,9 +161,9 @@ def test_zero_gradient_probe_gets_nan_sigmas():
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_erf_pass_records_how_many_probes_entered_the_spread(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
-    config  = ReceptiveFieldConfig(window=32, n_row_probes=2, n_col_probes=2, mass_windows=[8, 16])
+def test_erf_pass_records_how_many_probes_entered_the_spread(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
+    config  = ReceptiveFieldConfig(window=12, n_row_probes=2, n_col_probes=2, mass_windows=[4, 8])
 
     outcome = RunReceptiveField(run_dir, config, RecordingLogger()).run()
     spread  = outcome.payload["probe_sigma_spread"]

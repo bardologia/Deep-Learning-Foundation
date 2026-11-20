@@ -31,265 +31,9 @@ class SeedAxisNote {
 }
 
 
-class WeightSweepPanel {
-
-  constructor(builder, spec) {
-    this.builder   = builder;
-    this.spec      = spec;
-    this.el        = null;
-    this.catalogEl = null;
-    this.weightsEl = null;
-    this.baseEl    = null;
-  }
-
-  get group() {
-    return this.builder[this.spec.group];
-  }
-
-  leaf(field) {
-    return this.group.get(field);
-  }
-
-  components() {
-    return this.builder._listOf(this.leaf("components"), (value) => typeof value === "string");
-  }
-
-  weights() {
-    return this.builder._numbersOf(this.leaf("weights"));
-  }
-
-  baselineOn() {
-    const leaf = this.leaf("include_baseline");
-    return leaf ? this.builder.view._effective(leaf) === "True" : false;
-  }
-
-  base() {
-    const leaf = this.leaf("base_component");
-    if (!leaf) return this.spec.base.fallback;
-
-    const value = this.builder.view._effective(leaf).replace(/^['"]|['"]$/g, "");
-    return this.spec.catalog.options.some((option) => option.key === value) ? value : this.spec.base.fallback;
-  }
-
-  emitComponents(components) {
-    const leaf = this.leaf("components");
-    if (!leaf) return;
-
-    this.builder.view._setValue(leaf, PythonLiteral.render(components));
-    this.repaint();
-  }
-
-  emitWeights(weights) {
-    const leaf = this.leaf("weights");
-    if (!leaf) return;
-
-    const clean = weights.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
-    this.builder.view._setValue(leaf, PythonLiteral.render(clean));
-    this.repaint();
-  }
-
-  setBase(name) {
-    const leaf = this.leaf("base_component");
-    if (!leaf) return;
-
-    this.builder.view._setValue(leaf, name);
-
-    const components = this.components().filter((value) => value !== name);
-    if (components.length) this.emitComponents(components);
-    else this.repaint();
-  }
-
-  toggleComponent(key) {
-    if (this.spec.base && key === this.base()) return;
-
-    const order = this.spec.catalog.options.map((option) => option.key);
-    this.builder._toggleInCatalog(order, this.components(), key, (components) => this.emitComponents(components));
-  }
-
-  _baseSelect(leaf) {
-    const select     = document.createElement("select");
-    select.className = "run-select exp-secondary__strategy";
-    select.title     = `${this.spec.base.title} (--${leaf.path})`;
-
-    this.spec.catalog.options.forEach((option) => {
-      const opt       = document.createElement("option");
-      opt.value       = option.key;
-      opt.textContent = option.key;
-      select.appendChild(opt);
-    });
-    select.addEventListener("change", () => this.setBase(select.value));
-
-    this.baseEl = select;
-    this.builder.view.controls[leaf.path] = { leaf, reset: () => this.repaint() };
-    return select;
-  }
-
-  _head() {
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">${this.spec.title}</span>`;
-
-    const baseLeaf = this.spec.base ? this.leaf("base_component") : null;
-    if (baseLeaf) head.appendChild(this._baseSelect(baseLeaf));
-
-    const baseWeightLeaf = this.spec.base && this.spec.base.weightField ? this.leaf(this.spec.base.weightField) : null;
-    if (baseWeightLeaf) head.appendChild(this.builder._sweepBaseWeight(baseWeightLeaf));
-
-    this.spec.flags.forEach((flag) => {
-      const leaf = this.leaf(flag.field);
-      if (leaf) head.appendChild(this.builder._patchFlag(leaf, flag.label, flag.hint));
-    });
-
-    head.appendChild(LaunchWidgetDom.mini("Add weight", () => {
-      const weights = this.weights();
-      weights.push(weights.length ? weights[weights.length - 1] : 0.05);
-      this.emitWeights(weights);
-    }));
-
-    return head;
-  }
-
-  _note() {
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = this.spec.note;
-    return note;
-  }
-
-  _catalogSection(panel) {
-    if (!this.spec.catalog) return;
-
-    const grid     = document.createElement("div");
-    grid.className = "exp-builder__names exp-presence__strategies";
-    this.catalogEl = grid;
-
-    panel.appendChild(this.builder._subHead(this.spec.catalog.head));
-    panel.appendChild(grid);
-
-    const leaf = this.leaf("components");
-    if (leaf) this.builder.view.controls[leaf.path] = { leaf, reset: () => this.repaint() };
-  }
-
-  _weightsSection(panel) {
-    const grid     = document.createElement("div");
-    grid.className = "exp-patch__sizes";
-    this.weightsEl = grid;
-
-    panel.appendChild(this.builder._subHead("weights"));
-    panel.appendChild(grid);
-
-    const leaf = this.leaf("weights");
-    if (leaf) this.builder.view.controls[leaf.path] = { leaf, reset: () => this.repaint() };
-  }
-
-  paint() {
-    if (!this.el) return;
-
-    const base = this.spec.base ? this.base() : null;
-    if (this.baseEl) this.baseEl.value = base;
-
-    if (this.catalogEl) {
-      this.catalogEl.innerHTML = "";
-      const active = this.components();
-      this.spec.catalog.options.forEach(({ key, label }) => {
-        if (key === base) return;
-        const chip = this.builder._toggleChip(label, active.includes(key), this.spec.catalog.onTitle, this.spec.catalog.offTitle, () => this.toggleComponent(key));
-        this.catalogEl.appendChild(chip);
-      });
-    }
-
-    const weights = this.weights();
-    this.weightsEl.innerHTML = "";
-    weights.forEach((weight, index) => this.weightsEl.appendChild(this.builder._weightChip(weight, index, weights, this.spec.weightTitle, (next) => this.emitWeights(next))));
-
-    this.builder.patchFlagPaints.forEach((paint) => paint());
-  }
-
-  repaint() {
-    this.paint();
-    this.builder._paintSummary();
-    this.builder._paintNames();
-  }
-
-  build() {
-    const panel     = document.createElement("div");
-    panel.className = this.spec.panelClass;
-
-    panel.appendChild(this._head());
-    panel.appendChild(this._note());
-    this._catalogSection(panel);
-    this._weightsSection(panel);
-
-    this.el = panel;
-    this.builder[this.spec.elProp] = panel;
-
-    this.paint();
-    return panel;
-  }
-}
-
-
 class ExperimentBuilder {
 
   static MODES = [
-    { group: "loss", key: "pair",       label: "loss pairs",  hint: "one base component plus one candidate second component per weight, one trial per pair plus an optional base-only baseline",
-      at        : 3,
-      el        : "pairEl",
-      available : (b) => b.pair.size > 0,
-      make      : (b) => b.sweeps.pair.build(),
-      paint     : (b) => b.sweeps.pair.paint(),
-      summary   : (b, gpus) => {
-        const nCand    = b.sweeps.pair.components().length;
-        const nWeight  = b.sweeps.pair.weights().length;
-        const baseline = b.sweeps.pair.baselineOn();
-        const total    = nCand * nWeight + (baseline ? 1 : 0);
-        return `${b.sweeps.pair.base()} + ${nCand} candidate${nCand === 1 ? "" : "s"} x ${nWeight} weight${nWeight === 1 ? "" : "s"}${baseline ? " + baseline" : ""} = ${total} trial${total === 1 ? "" : "s"}${b._seedsSuffix(total)}${gpus}`;
-      },
-      names     : (b, model) => {
-        const names = [];
-        if (b.sweeps.pair.baselineOn()) names.push(`${model}_pair-baseline`);
-        b.sweeps.pair.components().forEach((component) => {
-          b.sweeps.pair.weights().forEach((weight) => names.push(`${model}_pair-${component}-w${weight}`));
-        });
-        return names;
-      } },
-
-    { group: "loss", key: "log_energy", label: "log-energy",  hint: "the log-energy curve term swept across weights on top of the standard loss, one trial per weight plus an optional no-log-energy baseline",
-      at        : 13,
-      el        : "logEnergyEl",
-      available : (b) => b.logEnergy.size > 0,
-      make      : (b) => b.sweeps.log_energy.build(),
-      paint     : (b) => b.sweeps.log_energy.paint(),
-      summary   : (b, gpus) => {
-        const nWeight  = b.sweeps.log_energy.weights().length;
-        const baseline = b.sweeps.log_energy.baselineOn();
-        const total    = nWeight + (baseline ? 1 : 0);
-        return `${nWeight} weight${nWeight === 1 ? "" : "s"}${baseline ? " + baseline" : ""} = ${total} trial${total === 1 ? "" : "s"}${b._seedsSuffix(total)}${gpus}`;
-      },
-      names     : (b, model) => {
-        const names = [];
-        if (b.sweeps.log_energy.baselineOn()) names.push(`${model}_logE-baseline`);
-        b.sweeps.log_energy.weights().forEach((weight) => names.push(`${model}_logE-w${weight}`));
-        return names;
-      } },
-
-    { group: "data", key: "secondary",  label: "secondaries", hint: "one trial per secondary-track selection",
-      at        : 0,
-      el        : "secondaryEl",
-      available : (b) => b.secondary.size > 0,
-      make      : (b) => b._secondaryPanel(),
-      paint     : (b) => b._paintSecondary(),
-      summary   : (b, gpus) => {
-        const strategy = b._strategy();
-        const fixed    = b._secondaryFixed();
-        const held     = fixed.length ? ` + ${fixed.length} fixed (${fixed.join(", ")})` : "";
-        if (strategy === "exhaustive") return `exhaustive, all combinations of exactly ${b._secondaryEffective("n_secondaries")} secondaries${held}${b._seedsSuffix(null)}${gpus}`;
-        const sampled  = strategy === "uniform" || strategy === "gaussian";
-        const count    = sampled ? `${b._secondaryEffective("n_trials")} trials` : "trial count set by the stack";
-        return `${strategy}, ${b._secondaryEffective("n_secondaries")} secondaries${held}, ${count}${b._seedsSuffix(null)}${gpus}`;
-      },
-      pattern   : (b, model) => ({ text: `${model}_sec-${b._strategy()}-tNN_<labels>`, note: b._secondaryFixed().length ? "one per selection, labels resolved from the dataset stack, each name carrying the fixed channels too" : "one per selection, labels resolved from the dataset stack" }) },
-
     { group: "data", key: "patch",      label: "patch",       hint: "rectangular grid of (row x range) patch shapes, same model end to end, batch rescaled to a constant pixel budget",
       at        : 1,
       el        : "patchEl",
@@ -309,32 +53,6 @@ class ExperimentBuilder {
         const pad = (value) => String(value).padStart(3, "0");
         return grid.row.flatMap((row) => grid.range.map((col) => `${model}_p-${pad(row)}x${pad(col)}`));
       } },
-
-    { group: "arch", key: "presence",   label: "slot presence", hint: "active-normalization x presence-balance matrix (none, A, B, AB), one trial per cell",
-      at        : 4,
-      el        : "presenceEl",
-      available : (b) => Boolean(b.presenceTrialsLeaf),
-      make      : (b) => b._presencePanel(),
-      paint     : (b) => b._paintPresence(),
-      summary   : (b, gpus) => {
-        const n = b._presenceCells().length;
-        return `${n} presence cell${n === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
-      },
-      names     : (b, model) => b._presenceCells().map((cell) => `${model}_pr-${cell}`) },
-
-    { group: "data", key: "input",      label: "input channels", hint: "input-channel ablation, one trial per input variant on its own track scope (all tracks or the reduced selection), each variant in a no-Aux and a with-Aux version",
-      at        : 5,
-      el        : "inputEl",
-      available : (b) => Boolean(b.inputTrialsLeaf),
-      make      : (b) => b._inputPanel(),
-      paint     : (b) => b._paintInput(),
-      summary   : (b, gpus) => {
-        const trials = b._inputTrials();
-        const n      = Object.keys(trials).length;
-        const nAll   = Object.values(trials).filter((spec) => spec && spec.tracks === "all").length;
-        return `${n} input variant${n === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"} (${nAll} all tracks, ${n - nAll} reduced)${b._seedsSuffix(n)}${gpus}`;
-      },
-      names     : (b, model) => b._inputCells().map((cell) => `${model}_in-${cell}`) },
 
     { group: "arch", key: "context",    label: "context ladder", hint: "one trial per backbone architecture on the shared base config, walking the spatial-context ladder",
       at        : 6,
@@ -360,27 +78,6 @@ class ExperimentBuilder {
       },
       names     : (b) => b._reachRungs().map((rung) => `${rung.backbone}_reach-${rung.label}`) },
 
-    { group: "arch", key: "head",       label: "head x matching", hint: "one trial per output-head x parameter-matching pair on the backbone this entry names",
-      at        : 8,
-      el        : "headEl",
-      available : (b) => b.headTrials.size > 0,
-      make      : (b) => b._headPanel(),
-      paint     : (b) => b._paintHead(),
-      summary   : (b, gpus) => {
-        const nHeads     = b._headList("heads").length;
-        const nMatchings = b._headList("matchings").length;
-        const total      = nHeads * nMatchings;
-        return `${nHeads} head${nHeads === 1 ? "" : "s"} x ${nMatchings} matching${nMatchings === 1 ? "" : "s"} = ${total} trial${total === 1 ? "" : "s"} on ${b._headBackbone()}${b._seedsSuffix(total)}${gpus}`;
-      },
-      names     : (b) => {
-        const names    = [];
-        const backbone = b._headBackbone();
-        b._headList("heads").forEach((headKey) => {
-          b._headList("matchings").forEach((matching) => names.push(`${backbone}_hm-${headKey}-${matching}`));
-        });
-        return names;
-      } },
-
     { group: "data", key: "augmentation", label: "augmentation", hint: "cumulative augmentation ladder on the shared base config: no augmentation, then one rung per added augmentation, then + input noise at each configured strength",
       at        : 9,
       el        : "augEl",
@@ -392,18 +89,6 @@ class ExperimentBuilder {
         return `3 ladder rungs + ${b._augNoiseStds().length} noise rung${b._augNoiseStds().length === 1 ? "" : "s"} = ${n} trials${b._seedsSuffix(n)}${gpus}`;
       },
       names     : (b, model) => b._augNames().map((rung) => `${model}_${rung}`) },
-
-    { group: "training", key: "clamp", label: "output clamp", hint: "output-clamp ladder on the shared base config: no clamp, hard clamp, then one leaky rung per slope pair; the clamp bounds come from the run's normalization config",
-      at        : 10,
-      el        : "clampEl",
-      available : (b) => b.clampTrials.size > 0,
-      make      : (b) => b._clampPanel(),
-      paint     : (b) => b._paintClamp(),
-      summary   : (b, gpus) => {
-        const n = 2 + b._clampSlopes().length;
-        return `none + hard + ${b._clampSlopes().length} leaky = ${n} trials${b._seedsSuffix(n)}${gpus}`;
-      },
-      names     : (b, model) => b._clampNames().map((rung) => `${model}_${rung}`) },
 
     { group: "training", key: "stability", label: "stability", hint: "training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction of the total optimizer steps, then gradient clipping alone per norm threshold, then the first warmup fraction paired with each threshold",
       at        : 11,
@@ -441,7 +126,6 @@ class ExperimentBuilder {
   ];
 
   static MODE_GROUPS = [
-    { key: "loss",     label: "loss" },
     { key: "data",     label: "data" },
     { key: "arch",     label: "architecture" },
     { key: "training", label: "training" },
@@ -449,72 +133,6 @@ class ExperimentBuilder {
 
   static STABILITY_WARMUP_MODES = ["linear", "cosine", "exponential", "polynomial"];
   static STABILITY_CLIP_MODES   = ["fixed", "adaptive_percentile", "adaptive_mean_std"];
-
-  static HEAD_OPTIONS = [
-    { key: "conv",         label: "conv" },
-    { key: "multihead",    label: "multihead" },
-    { key: "per_gaussian", label: "per gaussian" },
-    { key: "set_pred",     label: "set pred" },
-  ];
-
-  static MATCHING_OPTIONS = [
-    { key: "sorted_gt", label: "sorted gt" },
-    { key: "hungarian", label: "hungarian" },
-  ];
-
-  static PAIR_COMPONENTS = [
-    "mse_curve", "l1_curve", "huber_curve", "charbonnier_curve", "cosine_curve", "log_energy_curve",
-    "total_power_relerr", "moments",
-    "param_huber", "param_mse", "smoothness_tv", "param_l1",
-  ];
-
-  static SWEEPS = {
-    log_energy: {
-      group       : "logEnergy",
-      elProp      : "logEnergyEl",
-      panelClass  : "exp-secondary exp-patch exp-physics",
-      title       : "log-energy weight sweep",
-      note        : "each weight trains the standard loss plus the log-energy curve term at that weight, so the energy supervision accompanies the cosine term from epoch 0",
-      flags       : [
-        { field: "include_baseline",   label: "baseline",           hint: "prepend one run of the plain standard loss without the log-energy term, as the reference" },
-        { field: "replace_covariance", label: "replace covariance", hint: "drop moments from every arm including the baseline, so the sweep tests log-energy as the replacement for the covariance tail repair rather than an addition" },
-      ],
-      catalog     : null,
-      weightTitle : "log-energy curve weight",
-      base        : null,
-    },
-    pair: {
-      group       : "pair",
-      elProp      : "pairEl",
-      panelClass  : "exp-secondary exp-patch exp-pair",
-      title       : "loss pair sweep",
-      note        : "each checked component joins the base component at each weight as a two-term loss with every other term disabled",
-      flags       : [{ field: "include_baseline", label: "baseline", hint: "prepend one run that trains the base component alone, as the reference" }],
-      catalog     : { head: "second components", options: ExperimentBuilder.PAIR_COMPONENTS.map((name) => ({ key: name, label: name })), onTitle: "Click to drop this component from the sweep", offTitle: "Click to test this component as the second term" },
-      weightTitle : "weight of the second component",
-      base        : { fallback: "param_l1", title: "base component held in every run", weightField: "base_weight" },
-    },
-  };
-
-  static STRATEGIES = [
-    { key: "uniform",     note: "each trial samples n_secondaries distinct tracks uniformly, n_trials distinct sets" },
-    { key: "gaussian",    note: "indices drawn from Normal(mean, sigma) over the secondary list, mean and sigma required" },
-    { key: "consecutive", note: "block of n_secondaries consecutive tracks, advanced block_step per trial until the stack ends" },
-    { key: "spaced",      note: "n_secondaries tracks spaced 'spacing' apart, advanced block_step per trial until the stack ends" },
-    { key: "exhaustive",  note: "brute force: every combination of exactly n_secondaries tracks, one run each; run count grows combinatorially with the stack" },
-  ];
-
-  static SECONDARY_FIELDS = [
-    { key: "n_secondaries", strategies: ["uniform", "gaussian", "consecutive", "spaced", "exhaustive"] },
-    { key: "fixed",         strategies: ["uniform", "gaussian", "consecutive", "spaced", "exhaustive"],
-      multi: { kind: "multi", wide: true, placeholder: "add channel label, Enter", empty: "no fixed channel, every secondary is swept" } },
-    { key: "n_trials",      strategies: ["uniform", "gaussian"] },
-    { key: "seed",          strategies: ["uniform", "gaussian"] },
-    { key: "mean",          strategies: ["gaussian"] },
-    { key: "sigma",         strategies: ["gaussian"] },
-    { key: "block_step",    strategies: ["consecutive", "spaced"] },
-    { key: "spacing",       strategies: ["spaced"] },
-  ];
 
   constructor(view, byPath) {
     this.view         = view;
@@ -524,79 +142,42 @@ class ExperimentBuilder {
     this.gpusLeaf     = byPath.get("gpus");
     this.seedsLeaf    = byPath.get("seeds");
 
-    this.presenceTrialsLeaf = byPath.get("presence_trials");
-
-    this.inputTrialsLeaf   = byPath.get("input_trials");
     this.contextTrialsLeaf = byPath.get("context_trials");
 
-    this.secondary       = new Map();
     this.patch           = new Map();
-    this.pair            = new Map();
-    this.logEnergy       = new Map();
     this.reach           = new Map();
-    this.headTrials      = new Map();
     this.augTrials       = new Map();
-    this.clampTrials     = new Map();
     this.stabilityTrials = new Map();
     this.emaTrials       = new Map();
     byPath.forEach((leaf) => {
-      if (leaf.section === "secondary_trials")     this.secondary.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "patch_trials")         this.patch.set(leaf.path.split(".").pop(), leaf);
-      if (leaf.section === "pair_trials")          this.pair.set(leaf.path.split(".").pop(), leaf);
-      if (leaf.section === "log_energy_trials")    this.logEnergy.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "reach_trials")         this.reach.set(leaf.path.split(".").pop(), leaf);
-      if (leaf.section === "head_trials")          this.headTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "augmentation_trials")  this.augTrials.set(leaf.path.split(".").pop(), leaf);
-      if (leaf.section === "clamp_trials")         this.clampTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "stability_trials")     this.stabilityTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "ema_trials")           this.emaTrials.set(leaf.path.split(".").pop(), leaf);
     });
 
     this.claimed = ["trials_enabled"];
     if (this.modeLeaf) this.claimed.push("trials_mode");
-    this.secondary.forEach((leaf) => this.claimed.push(leaf.path));
     this.patch.forEach((leaf) => this.claimed.push(leaf.path));
-    this.pair.forEach((leaf) => this.claimed.push(leaf.path));
-    this.logEnergy.forEach((leaf) => this.claimed.push(leaf.path));
     this.reach.forEach((leaf) => this.claimed.push(leaf.path));
-    this.headTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.augTrials.forEach((leaf) => this.claimed.push(leaf.path));
-    this.clampTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.stabilityTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.emaTrials.forEach((leaf) => this.claimed.push(leaf.path));
-    if (this.presenceTrialsLeaf)   this.claimed.push(this.presenceTrialsLeaf.path);
-    if (this.inputTrialsLeaf)      this.claimed.push(this.inputTrialsLeaf.path);
     if (this.contextTrialsLeaf)    this.claimed.push(this.contextTrialsLeaf.path);
 
-    this.terms          = this._termCatalog();
     this.summaryEl      = null;
     this.namesEl        = null;
     this.hintEl         = null;
     this.root           = null;
-    this.secondaryEl    = null;
-    this.strategySelect = null;
-    this.strategyNoteEl = null;
-    this.secondaryRows  = [];
     this.patchEl         = null;
     this.patchFlagPaints = [];
-    this.pairEl              = null;
-    this.logEnergyEl         = null;
-    this.sweeps              = {};
-    Object.entries(ExperimentBuilder.SWEEPS).forEach(([key, spec]) => { this.sweeps[key] = new WeightSweepPanel(this, spec); });
     this.warmupCustomEl      = null;
     this.warmupCustomHeadEl  = null;
-    this.presenceEl     = null;
-    this.inputEl        = null;
-    this.inputCellsEl   = null;
     this.contextEl      = null;
     this.contextCellsEl = null;
-    this.headEl          = null;
-    this.headHeadsEl     = null;
-    this.headMatchingsEl = null;
     this.augEl           = null;
     this.augStdsEl       = null;
-    this.clampEl         = null;
-    this.clampPairsEl    = null;
     this.stabilityEl     = null;
     this.stabilitySelects = new Map();
     this.stabilityStepsEl = null;
@@ -670,17 +251,10 @@ class ExperimentBuilder {
 
   _mode() {
     const modes = this._modes();
-    const first = modes.length ? modes[0].key : "presence";
+    const first = modes.length ? modes[0].key : "augmentation";
     if (!this.modeLeaf) return first;
     const value = this.view._effective(this.modeLeaf);
     return modes.some((mode) => mode.key === value) ? value : first;
-  }
-
-  _strategy() {
-    const leaf = this.secondary.get("strategy");
-    if (!leaf) return "consecutive";
-    const value = this.view._effective(leaf);
-    return ExperimentBuilder.STRATEGIES.some((strategy) => strategy.key === value) ? value : "consecutive";
   }
 
   _modePicker() {
@@ -724,103 +298,6 @@ class ExperimentBuilder {
     this.modeEl = wrap;
     this.view.controls[leaf.path] = { leaf, reset: () => this._paintMode() };
     return wrap;
-  }
-
-  _secondaryPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">secondary selection</span>`;
-
-    const strategyLeaf = this.secondary.get("strategy");
-    if (strategyLeaf) {
-      const select     = document.createElement("select");
-      select.className = "run-select exp-secondary__strategy";
-      select.title     = `--${strategyLeaf.path}`;
-      ExperimentBuilder.STRATEGIES.forEach((strategy) => {
-        const opt       = document.createElement("option");
-        opt.value       = strategy.key;
-        opt.textContent = strategy.key;
-        select.appendChild(opt);
-      });
-      select.addEventListener("change", () => this.view._setValue(strategyLeaf, select.value));
-      head.appendChild(select);
-
-      this.strategySelect = select;
-      this.view.controls[strategyLeaf.path] = { leaf: strategyLeaf, reset: () => this._paintSecondary() };
-    }
-
-    const note     = document.createElement("p");
-    note.className = "exp-secondary__note";
-    this.strategyNoteEl = note;
-
-    const grid     = document.createElement("div");
-    grid.className = "exp-secondary__grid";
-    ExperimentBuilder.SECONDARY_FIELDS.forEach((field) => {
-      const leaf = this.secondary.get(field.key);
-      if (leaf) grid.appendChild(field.multi ? this._secondaryFixedRow(field, leaf) : this._secondaryRow(field, leaf));
-    });
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(grid);
-    this.secondaryEl = panel;
-    return panel;
-  }
-
-  _secondaryRow(field, leaf) {
-    const row     = document.createElement("div");
-    row.className = "cfg-edit__row";
-    row.title     = `--${leaf.path}`;
-
-    const name     = document.createElement("div");
-    name.className = "cfg-edit__name";
-    name.innerHTML = `${field.key}<span>${leaf.type === "none" ? "float" : leaf.type}</span>`;
-
-    const input      = document.createElement("input");
-    input.className  = "cfg-edit__input";
-    input.type       = "number";
-    input.step       = leaf.type === "int" ? "1" : "any";
-    input.value      = this.view._effective(leaf) === "None" ? "" : this.view._effective(leaf);
-    input.spellcheck = false;
-    if (leaf.value === "None") input.placeholder = "required";
-    input.addEventListener("input", () => {
-      this.view.applyTypedInput(leaf, input);
-    });
-
-    row.appendChild(name);
-    row.appendChild(input);
-
-    this.secondaryRows.push({ strategies: field.strategies, row });
-    this.view.controls[leaf.path] = { leaf, reset: () => {
-      input.value = this.view._effective(leaf) === "None" ? "" : this.view._effective(leaf);
-      input.classList.toggle("is-dirty", this.view.dirty[leaf.path] !== undefined);
-    } };
-    return row;
-  }
-
-  _secondaryFixedRow(field, leaf) {
-    const row     = document.createElement("div");
-    row.className = "cfg-edit__row cfg-edit__row--board";
-    row.title     = `--${leaf.path}`;
-
-    const name     = document.createElement("div");
-    name.className = "cfg-edit__name";
-    name.innerHTML = `${field.key}<span>channels in every run</span>`;
-
-    const widget = new window.MultiValueField(this.view, leaf, field.multi).build();
-
-    row.appendChild(name);
-    row.appendChild(widget.el);
-
-    this.secondaryRows.push({ strategies: field.strategies, row });
-    this.view.controls[leaf.path] = { leaf, reset: () => {
-      widget.reset();
-      this._paintSecondary();
-    } };
-    return row;
   }
 
   _patchPanel() {
@@ -1002,205 +479,6 @@ class ExperimentBuilder {
 
   _paintPatch() {
     this.patchFlagPaints.forEach((paint) => paint());
-  }
-
-  _sweepBaseWeight(leaf) {
-    const wrap     = document.createElement("label");
-    wrap.className = "exp-patch__ratio";
-    wrap.title     = `weight of the base component in every run (--${leaf.path})`;
-    wrap.innerHTML = `<span>base weight</span>`;
-
-    const input      = document.createElement("input");
-    input.className  = "cfg-edit__input";
-    input.type       = "number";
-    input.step       = "any";
-    input.min        = "0";
-    input.spellcheck = false;
-    input.value      = this.view._effective(leaf);
-    input.addEventListener("input", () => {
-      this.view.applyTypedInput(leaf, input);
-    });
-
-    wrap.appendChild(input);
-    this.view.controls[leaf.path] = { leaf, reset: () => {
-      input.value = this.view._effective(leaf);
-      input.classList.toggle("is-dirty", this.view.dirty[leaf.path] !== undefined);
-    } };
-    return wrap;
-  }
-
-  _presenceDefaults() {
-    return this._defaultsDict(this.presenceTrialsLeaf);
-  }
-
-  _presenceTrials() {
-    return this._trialsDict(this.presenceTrialsLeaf);
-  }
-
-  _presenceCells() {
-    return Object.keys(this._presenceTrials());
-  }
-
-  _presencePanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">slot-presence ablation</span>`;
-    const reset    = LaunchWidgetDom.mini("reset matrix", () => this._resetPresence());
-    reset.classList.add("exp-presence__reset");
-    head.appendChild(reset);
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "Toggle cells of the active-normalization x presence-balance matrix; every cell repeats across the seeds list. Cell specs live in code (TrialCatalog.presence_trials); use reset matrix to restore the full 2x2.";
-
-    const cellHead       = document.createElement("div");
-    cellHead.className   = "exp-presence__sub";
-    cellHead.textContent = "matrix cells";
-
-    const cells          = document.createElement("div");
-    cells.className      = "exp-builder__names exp-presence__cells";
-    this.presenceCellsEl = cells;
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(cellHead);
-    panel.appendChild(cells);
-    this.presenceEl = panel;
-
-    if (this.presenceTrialsLeaf) this.view.controls[this.presenceTrialsLeaf.path] = { leaf: this.presenceTrialsLeaf, reset: () => this._repaintPresence() };
-
-    this._paintPresence();
-    return panel;
-  }
-
-  _presenceChipText(cell, spec) {
-    const parts = [];
-    if (spec && spec.use_active_normalization) parts.push("active norm");
-    if (spec && spec.presence_balance)         parts.push("presence balance");
-    return `${cell} · ${parts.join(" + ") || "both off"}`;
-  }
-
-  _paintPresence() {
-    if (!this.presenceCellsEl) return;
-    this._paintDictCells(this.presenceCellsEl, this._presenceTrials(), this._presenceDefaults(), (cell, spec) => this._presenceChipText(cell, spec), "Click to drop this cell", "Click to add this cell", (cell) => this._togglePresenceCell(cell));
-  }
-
-  _togglePresenceCell(cell) {
-    if (!this.presenceTrialsLeaf) return;
-
-    const ordered = this._toggleDictCell(this._presenceTrials(), this._presenceDefaults(), cell);
-    if (!ordered) return;
-
-    this.view._setValue(this.presenceTrialsLeaf, PythonLiteral.render(ordered));
-    this._repaintPresence();
-  }
-
-  _resetPresence() {
-    if (this.presenceTrialsLeaf) this.view._setValue(this.presenceTrialsLeaf, this.presenceTrialsLeaf.value);
-    this._repaintPresence();
-  }
-
-  _repaintPresence() {
-    this._paintPresence();
-    this._paintSummary();
-    this._paintNames();
-  }
-
-  _inputTrials() {
-    return this._trialsDict(this.inputTrialsLeaf);
-  }
-
-  _inputCells() {
-    return Object.keys(this._inputTrials());
-  }
-
-  _inputSpecText(spec) {
-    const on    = (key) => spec && Object.prototype.hasOwnProperty.call(spec, key) ? Boolean(spec[key]) : null;
-    const amps  = [];
-    if (on("use_primary")     !== false) amps.push("primary");
-    if (on("use_secondaries") !== false) amps.push("secondaries");
-
-    const parts = [];
-    parts.push(`${spec && spec.tracks} tracks`);
-    parts.push(amps.length ? `${amps.join("+")} amp` : "no amplitude");
-    parts.push(on("use_derived") === false ? "no derived" : "derived");
-    if (on("use_aux") !== null) parts.push(on("use_aux") ? "aux" : "no aux");
-    return parts.join(", ");
-  }
-
-  _inputPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">input-channel ablation</span>`;
-    const reset    = LaunchWidgetDom.mini("reset variants", () => this._resetInput());
-    reset.classList.add("exp-presence__reset");
-    head.appendChild(reset);
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "Each variant toggles which input channels feed the model and scopes its channel list: tracks=all expands the secondaries to every channel the dataset records in data/dataset.json, tracks=reduced keeps the configured selection, and every base variant comes as an explicit no-Aux and with-Aux version. Drop variants to trim the fan-out. Adding variants and channel representations live in code (TrialCatalog.input_trials); use reset variants to restore the default.";
-
-    const cellHead       = document.createElement("div");
-    cellHead.className    = "exp-presence__sub";
-    cellHead.textContent  = "input variants";
-
-    const cells         = document.createElement("div");
-    cells.className     = "exp-builder__names exp-presence__cells";
-    this.inputCellsEl   = cells;
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(cellHead);
-    panel.appendChild(cells);
-    this.inputEl = panel;
-
-    if (this.inputTrialsLeaf) this.view.controls[this.inputTrialsLeaf.path] = { leaf: this.inputTrialsLeaf, reset: () => this._repaintInput() };
-
-    this._paintInput();
-    return panel;
-  }
-
-  _paintInput() {
-    if (!this.inputCellsEl) return;
-    this.inputCellsEl.innerHTML = "";
-    const trials = this._inputTrials();
-    Object.keys(trials).forEach((cell) => this.inputCellsEl.appendChild(this._inputCellChip(cell, trials[cell])));
-  }
-
-  _inputCellChip(cell, spec) {
-    const text = this._inputSpecText(spec);
-    return this._cellChip(`${cell} · ${text}`, text, "Remove variant", () => this._removeInputCell(cell));
-  }
-
-  _removeInputCell(cell) {
-    if (!this.inputTrialsLeaf) return;
-    let raw;
-    try {
-      raw = PythonLiteral.parse(this.view._effective(this.inputTrialsLeaf));
-    } catch (e) {
-      return;
-    }
-    if (!raw || typeof raw !== "object" || Object.keys(raw).length <= 1) return;
-    delete raw[cell];
-    this.view._setValue(this.inputTrialsLeaf, PythonLiteral.render(raw));
-    this._repaintInput();
-  }
-
-  _resetInput() {
-    if (this.inputTrialsLeaf) this.view._setValue(this.inputTrialsLeaf, this.inputTrialsLeaf.value);
-    this._repaintInput();
-  }
-
-  _repaintInput() {
-    this._paintInput();
-    this._paintSummary();
-    this._paintNames();
   }
 
   _contextTrials() {
@@ -1512,133 +790,6 @@ class ExperimentBuilder {
     this._paintNames();
   }
 
-  _clampSlopes() {
-    return this._numbersOf(this.clampTrials.get("leaky_slopes"));
-  }
-
-  _clampParamSlopes() {
-    return this._numbersOf(this.clampTrials.get("param_leaky_slopes"));
-  }
-
-  _clampNames() {
-    const names = ["clamp-0-none", "clamp-1-hard"];
-    this._clampSlopes().forEach((slope) => names.push(`clamp-2-leaky-s${this._pyG(slope)}`));
-    return names;
-  }
-
-  _emitClampPairs(slopes, params) {
-    const slopeLeaf = this.clampTrials.get("leaky_slopes");
-    const paramLeaf = this.clampTrials.get("param_leaky_slopes");
-    if (!slopeLeaf || !paramLeaf) return;
-
-    const keep = slopes.map((slope, index) => [Number(slope), Number(params[index])]).filter((pair) => pair.every((value) => Number.isFinite(value) && value > 0));
-    this.view._setValue(slopeLeaf, PythonLiteral.render(keep.map((pair) => pair[0])));
-    this.view._setValue(paramLeaf, PythonLiteral.render(keep.map((pair) => pair[1])));
-
-    this._repaintClamp();
-  }
-
-  _clampPairChip(index, slopes, params) {
-    const chip     = document.createElement("div");
-    chip.className = "exp-patch__chip";
-
-    [[slopes, "curve leak slope of this leaky rung"], [params, "parameter leak slope of this leaky rung"]].forEach(([values, title], which) => {
-      const input      = document.createElement("input");
-      input.className  = "cfg-edit__input exp-patch__size";
-      input.type       = "number";
-      input.step       = "any";
-      input.min        = "0";
-      input.spellcheck = false;
-      input.value      = String(values[index]);
-      input.title      = title;
-      input.addEventListener("change", () => {
-        const nextSlopes = slopes.slice();
-        const nextParams = params.slice();
-        (which === 0 ? nextSlopes : nextParams)[index] = Number(input.value);
-        this._emitClampPairs(nextSlopes, nextParams);
-      });
-      chip.appendChild(input);
-    });
-
-    const remove = LaunchWidgetDom.mini("×", () => {
-      const nextSlopes = slopes.slice();
-      const nextParams = params.slice();
-      nextSlopes.splice(index, 1);
-      nextParams.splice(index, 1);
-      this._emitClampPairs(nextSlopes, nextParams);
-    });
-    remove.classList.add("exp-patch__remove");
-    remove.title = "Remove slope pair";
-    chip.appendChild(remove);
-
-    return chip;
-  }
-
-  _clampPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">output-clamp ladder</span>`;
-    const reset    = LaunchWidgetDom.mini("reset ladder", () => this._resetClamp());
-    reset.classList.add("exp-presence__reset");
-    head.appendChild(reset);
-    head.appendChild(LaunchWidgetDom.mini("Add slope pair", () => {
-      const slopes = this._clampSlopes();
-      const params = this._clampParamSlopes();
-      slopes.push(slopes.length ? slopes[slopes.length - 1] : 0.1);
-      params.push(params.length ? params[params.length - 1] : 0.1);
-      this._emitClampPairs(slopes, params);
-    }));
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "Ladder on the shared base config: rung 0 disables the output clamp, rung 1 clamps hard (both leak slopes zero), then one leaky rung per slope pair below; the clamp floor, ceiling and amplitude bound stay at the run's normalization config in every rung.";
-
-    const pairsHead       = document.createElement("div");
-    pairsHead.className   = "exp-presence__sub";
-    pairsHead.textContent = "leak slope pairs (curve / parameter, one leaky rung each)";
-
-    const pairs      = document.createElement("div");
-    pairs.className  = "exp-patch__sizes";
-    this.clampPairsEl = pairs;
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(pairsHead);
-    panel.appendChild(pairs);
-    this.clampEl = panel;
-
-    ["leaky_slopes", "param_leaky_slopes"].forEach((key) => {
-      const leaf = this.clampTrials.get(key);
-      if (leaf) this.view.controls[leaf.path] = { leaf, reset: () => this._repaintClamp() };
-    });
-
-    this._paintClamp();
-    return panel;
-  }
-
-  _paintClamp() {
-    if (!this.clampPairsEl) return;
-
-    const slopes = this._clampSlopes();
-    const params = this._clampParamSlopes();
-    this.clampPairsEl.innerHTML = "";
-    slopes.forEach((slope, index) => this.clampPairsEl.appendChild(this._clampPairChip(index, slopes, params)));
-  }
-
-  _resetClamp() {
-    this.clampTrials.forEach((leaf) => this.view._setValue(leaf, leaf.value));
-    this._repaintClamp();
-  }
-
-  _repaintClamp() {
-    this._paintClamp();
-    this._paintSummary();
-    this._paintNames();
-  }
-
   _stabilitySteps() {
     return this._numbersOf(this.stabilityTrials.get("warmup_fractions"));
   }
@@ -1922,121 +1073,6 @@ class ExperimentBuilder {
     return String(Number(number.toPrecision(6)));
   }
 
-  _subHead(text) {
-    const head       = document.createElement("div");
-    head.className   = "exp-presence__sub";
-    head.textContent = text;
-    return head;
-  }
-
-  _catalogSection(panel, subHead, leaf, repaint) {
-    panel.appendChild(this._subHead(subHead));
-
-    const grid     = document.createElement("div");
-    grid.className = "exp-builder__names exp-presence__strategies";
-    panel.appendChild(grid);
-
-    if (leaf) this.view.controls[leaf.path] = { leaf, reset: repaint };
-    return grid;
-  }
-
-  _headList(key) {
-    return this._listOf(this.headTrials.get(key), (value) => typeof value === "string");
-  }
-
-  _headBackbone() {
-    return this.modelLeaf ? this.view._effective(this.modelLeaf) : "?";
-  }
-
-  _emitHeadList(key, values) {
-    const leaf = this.headTrials.get(key);
-    if (!leaf) return;
-
-    this.view._setValue(leaf, PythonLiteral.render(values));
-    this._repaintHead();
-  }
-
-  _toggleHeadOption(key, option, catalog) {
-    const order = catalog.map((entry) => entry.key);
-    this._toggleInCatalog(order, this._headList(key), option, (values) => this._emitHeadList(key, values));
-  }
-
-  _headPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">head x matching grid</span>`;
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "One training run per checked head x matching pair, all on the backbone this entry names in its own backbone field. The matching strategy is applied to the loss; everything else comes from the base config.";
-
-    const headsHead       = document.createElement("div");
-    headsHead.className   = "exp-presence__sub";
-    headsHead.textContent = "heads";
-
-    const heads         = document.createElement("div");
-    heads.className     = "exp-builder__names exp-presence__strategies";
-    this.headHeadsEl    = heads;
-
-    const matchingsHead       = document.createElement("div");
-    matchingsHead.className   = "exp-presence__sub";
-    matchingsHead.textContent = "matchings";
-
-    const matchings         = document.createElement("div");
-    matchings.className     = "exp-builder__names exp-presence__strategies";
-    this.headMatchingsEl    = matchings;
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(headsHead);
-    panel.appendChild(heads);
-    panel.appendChild(matchingsHead);
-    panel.appendChild(matchings);
-    this.headEl = panel;
-
-    const headsLeaf = this.headTrials.get("heads");
-    if (headsLeaf) this.view.controls[headsLeaf.path] = { leaf: headsLeaf, reset: () => this._repaintHead() };
-
-    const matchingsLeaf = this.headTrials.get("matchings");
-    if (matchingsLeaf) this.view.controls[matchingsLeaf.path] = { leaf: matchingsLeaf, reset: () => this._repaintHead() };
-
-    this._paintHead();
-    return panel;
-  }
-
-  _paintHead() {
-    if (!this.headEl) return;
-
-    const paintToggles = (el, key, catalog) => {
-      el.innerHTML = "";
-      const active = this._headList(key);
-      catalog.forEach(({ key: option, label }) => {
-        const chip = this._toggleChip(label, active.includes(option), "Click to drop this option from the grid", "Click to add this option to the grid", () => this._toggleHeadOption(key, option, catalog));
-        el.appendChild(chip);
-      });
-    };
-
-    if (this.headHeadsEl)     paintToggles(this.headHeadsEl,     "heads",     ExperimentBuilder.HEAD_OPTIONS);
-    if (this.headMatchingsEl) paintToggles(this.headMatchingsEl, "matchings", ExperimentBuilder.MATCHING_OPTIONS);
-  }
-
-  _repaintHead() {
-    this._paintHead();
-    this._paintSummary();
-    this._paintNames();
-  }
-
-  _trialsDict(leaf) {
-    return leaf ? this._dictFrom(this.view._effective(leaf)) : {};
-  }
-
-  _defaultsDict(leaf) {
-    return leaf ? this._dictFrom(leaf.value) : {};
-  }
-
   _listOf(leaf, keep) {
     if (!leaf) return [];
 
@@ -2051,25 +1087,6 @@ class ExperimentBuilder {
 
   _numbersOf(leaf) {
     return this._listOf(leaf, () => true).map((value) => Number(value)).filter((value) => Number.isFinite(value));
-  }
-
-  _dictFrom(text) {
-    try {
-      const raw = PythonLiteral.parse(text);
-      return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-    } catch (e) {
-      return {};
-    }
-  }
-
-  _toggleChip(label, on, onTitle, offTitle, onClick) {
-    const chip       = document.createElement("button");
-    chip.type        = "button";
-    chip.className   = "exp-name exp-presence__toggle" + (on ? " is-on" : "");
-    chip.textContent = label;
-    chip.title       = on ? onTitle : offTitle;
-    chip.addEventListener("click", onClick);
-    return chip;
   }
 
   _cellChip(text, title, removeTitle, remove) {
@@ -2119,44 +1136,6 @@ class ExperimentBuilder {
     return chip;
   }
 
-  _toggleInCatalog(order, current, key, emit) {
-    if (current.includes(key)) {
-      if (current.length <= 1) return;
-      emit(current.filter((value) => value !== key));
-      return;
-    }
-    emit(order.filter((value) => current.includes(value) || value === key));
-  }
-
-  _paintDictCells(el, trials, defaults, text, onTitle, offTitle, toggle) {
-    el.innerHTML = "";
-
-    const cells = { ...defaults };
-    Object.entries(trials).forEach(([cell, spec]) => { if (!(cell in cells)) cells[cell] = spec; });
-
-    Object.entries(cells).forEach(([cell, spec]) => {
-      const on = Object.prototype.hasOwnProperty.call(trials, cell);
-      el.appendChild(this._toggleChip(text(cell, spec), on, onTitle, offTitle, () => toggle(cell)));
-    });
-  }
-
-  _toggleDictCell(trials, defaults, cell) {
-    const has = (dict, key) => Object.prototype.hasOwnProperty.call(dict, key);
-
-    if (has(trials, cell)) {
-      if (Object.keys(trials).length <= 1) return null;
-      delete trials[cell];
-    } else {
-      if (!has(defaults, cell)) return null;
-      trials[cell] = defaults[cell];
-    }
-
-    const ordered = {};
-    Object.keys(defaults).forEach((key) => { if (has(trials, key)) ordered[key] = trials[key]; });
-    Object.keys(trials).forEach((key) => { if (!has(ordered, key)) ordered[key] = trials[key]; });
-    return ordered;
-  }
-
   _paintMode() {
     const mode = this._mode();
 
@@ -2168,51 +1147,6 @@ class ExperimentBuilder {
       const el = this[entry.el];
       if (el) el.hidden = mode !== entry.key;
     });
-  }
-
-  _paintSecondary() {
-    if (!this.secondaryEl) return;
-    const strategy = this._strategy();
-    const note     = ExperimentBuilder.STRATEGIES.find((entry) => entry.key === strategy).note;
-    const fixed    = this._secondaryFixed();
-
-    if (this.strategySelect) this.strategySelect.value = strategy;
-    this.strategyNoteEl.textContent = fixed.length
-      ? `${note}; ${fixed.join(", ")} ${fixed.length === 1 ? "sits" : "sit"} in every run on top of the n_secondaries swept ones, and ${fixed.length === 1 ? "is" : "are"} taken out of the swept pool`
-      : note;
-    this.secondaryRows.forEach((entry) => (entry.row.hidden = !entry.strategies.includes(strategy)));
-  }
-
-  _secondaryFixed() {
-    return this._listOf(this.secondary.get("fixed"), (value) => typeof value === "string" && value.length > 0);
-  }
-
-  _secondaryEffective(key) {
-    const leaf = this.secondary.get(key);
-    return leaf ? this.view._effective(leaf) : "?";
-  }
-
-  _termCatalog() {
-    const prefix  = "loss.";
-    const leaves  = this.view.config.leaves.filter((leaf) => leaf.section === "loss");
-    const short   = (leaf) => leaf.path.slice(prefix.length);
-    const weights = leaves.filter((leaf) => short(leaf).startsWith("weight_") && (leaf.type === "float" || leaf.type === "int"));
-
-    const terms = [];
-    leaves.forEach((use) => {
-      if (use.type !== "bool" || !short(use).startsWith("use_")) return;
-
-      const name   = short(use).slice(4);
-      const weight = weights.find((leaf) => {
-        const wname = short(leaf).slice(7);
-        return wname === name || name.startsWith(wname) || wname.startsWith(name);
-      });
-      if (!weight) return;
-
-      const fallback = Number(weight.value);
-      terms.push({ key: name, useKey: short(use), weightKey: short(weight), defaultWeight: fallback > 0 ? fallback : 1.0 });
-    });
-    return terms;
   }
 
   _trialsSwitch() {

@@ -1,157 +1,18 @@
-
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib     import Path
-from typing      import ClassVar, Optional, Tuple
+from typing      import Tuple
 
-import numpy as np
-
-from configuration.normalization.general import ChannelStrategy, NormalizationConfig
-from tools.data.representation           import Representation
+from configuration.normalization.general import NormalizationConfig
 from tools.data.regions                  import SplitRegions
 
 
 @dataclass
-class InputConfig:
-
-    use_primary            : bool           = True
-    primary_representation : Representation = Representation.MAG_ONLY
- 
-    use_secondaries            : bool           = False
-    secondaries_representation : Representation = Representation.MAG_ONLY
- 
-    use_derived            : bool           = True
-    derived_representation : Representation = Representation.ANGLE_ONLY
-
-    use_aux                       : bool           = False
-
-    @classmethod
-    def full_stack(cls) -> "InputConfig":
-        return cls(
-            use_primary     = True,  primary_representation        = Representation.MAG_ONLY,
-            use_secondaries = True,  secondaries_representation    = Representation.MAG_ONLY,
-            use_derived     = True,  derived_representation = Representation.ANGLE_ONLY,
-        )
-
-    @classmethod
-    def no_stack(cls) -> "InputConfig":
-        return cls(use_primary=False, use_secondaries=False, use_derived=False, use_aux=False)
-
-    @property
-    def primary_channels_per_source(self) -> int:
-        return self.primary_representation.channels_per_source if self.use_primary else 0
-
-    @property
-    def secondaries_channels_per_source(self) -> int:
-        return self.secondaries_representation.channels_per_source if self.use_secondaries else 0
-
-    @property
-    def derived_channels_per_source(self) -> int:
-        return self.derived_representation.channels_per_source if self.use_derived else 0
-
-    def total_channels(self, n_secondaries: int, n_derived: int) -> int:
-        n  = self.primary_channels_per_source
-        n += n_secondaries    * self.secondaries_channels_per_source
-        n += n_derived * self.derived_channels_per_source
-        if self.use_aux:
-            n += 1
-        return n
-
-    def channel_group_keys(self, n_secondaries: int, n_derived: int) -> list[str]:
-        keys: list[str] = []
-
-        if self.use_primary:
-            slot_kinds = self.primary_representation.slot_kinds
-            cpp        = len(slot_kinds)
-            keys.extend(f"chan/{slot_kinds[i % cpp]}" for i in range(1 * cpp))
-
-        if self.use_secondaries:
-            slot_kinds = self.secondaries_representation.slot_kinds
-            cpp        = len(slot_kinds)
-            keys.extend(f"chan/{slot_kinds[i % cpp]}" for i in range(n_secondaries * cpp))
-
-        if self.use_derived:
-            slot_kinds = self.derived_representation.slot_kinds
-            cpp        = len(slot_kinds)
-            keys.extend(f"derived/{slot_kinds[i % cpp]}" for i in range(n_derived * cpp))
-
-        if self.use_aux:
-            keys.append("aux/value")
-
-        return keys
-
-    def as_dict(self) -> dict:
-        return {
-            "use_primary"                : self.use_primary,
-            "primary_representation"     : self.primary_representation.value,
-            "use_secondaries"            : self.use_secondaries,
-            "secondaries_representation" : self.secondaries_representation.value,
-            "use_derived"                : self.use_derived,
-            "derived_representation"     : self.derived_representation.value,
-            "use_aux"                    : self.use_aux,
-        }
-
-    @classmethod
-    def from_dict(cls, payload: dict) -> "InputConfig":
-        return cls(
-            use_primary                = bool(payload["use_primary"]),
-            primary_representation     = Representation(payload["primary_representation"]),
-            use_secondaries            = bool(payload["use_secondaries"]),
-            secondaries_representation = Representation(payload["secondaries_representation"]),
-            use_derived                = bool(payload["use_derived"]),
-            derived_representation     = Representation(payload["derived_representation"]),
-            use_aux                    = bool(payload["use_aux"]),
-        )
-
-      
-@dataclass
-class OutputConfig:
-
-    ROLE_NAMES : ClassVar[list[str]] = ["a", "mu", "sig"]
-
-    output_strategies : dict[str, ChannelStrategy] = field(default_factory=lambda: {
-        "out/amp"   : ChannelStrategy.from_slot("out/amp"),
-        "out/mu"    : ChannelStrategy.from_slot("out/mu"),
-        "out/sigma" : ChannelStrategy.from_slot("out/sigma"),
-    })
-
-    def strategy_for(self, role_key: str) -> ChannelStrategy:
-        return self.output_strategies[role_key]
-
-    @property
-    def role_names(self) -> list[str]:
-        return list(self.ROLE_NAMES)
-
-    @property
-    def params_per_gaussian(self) -> int:
-        return len(self.ROLE_NAMES)
-
-    def selected_indices(self, n_gaussians: int) -> list[int]:
-        return list(range(n_gaussians * self.params_per_gaussian))
-
-    def total_channels(self, n_gaussians: int) -> int:
-        return n_gaussians * self.params_per_gaussian
-
-    def as_dict(self) -> dict:
-        return {
-            "output_strategies" : {
-                k: v.as_dict() for k, v in self.output_strategies.items()
-            },
-        }
-
-    @classmethod
-    def from_dict(cls, payload: dict) -> "OutputConfig":
-        strategies = {key: ChannelStrategy.from_dict(value) for key, value in payload["output_strategies"].items()}
-
-        return cls(output_strategies = strategies)
-
-   
-@dataclass
 class PatchConfig:
 
-    size                  : Tuple[int, int] = (64, 32)
-    stride                : Tuple[int, int] = (32, 16)
+    size                  : Tuple[int, int] = (32, 32)
+    stride                : Tuple[int, int] = (16, 16)
     use_symmetric_padding : bool            = True
 
 
@@ -169,23 +30,48 @@ class AugmentationConfig:
 @dataclass
 class DatasetConfig:
 
-    preprocessing_run_directory : Path
-    split_regions               : SplitRegions
-    parameters_path             : Optional[Path]            = None
-    secondary_labels            : Optional[Tuple[str, ...]] = ("CH01", "CH02", "CH03", "CH04")
-    patch                       : PatchConfig               = field(default_factory=PatchConfig)
-    input_config                : InputConfig               = field(default_factory=InputConfig)
-    output_config               : OutputConfig              = field(default_factory=OutputConfig)
-    normalization               : NormalizationConfig       = field(default_factory=NormalizationConfig)
-    augmentation                : AugmentationConfig        = field(default_factory=AugmentationConfig)
+    dataset_directory : Path
+    split_regions     : SplitRegions
+    patch             : PatchConfig         = field(default_factory=PatchConfig)
+    normalization     : NormalizationConfig = field(default_factory=NormalizationConfig)
+    augmentation      : AugmentationConfig  = field(default_factory=AugmentationConfig)
 
-    batch_size      : int                  = 8
-    num_workers     : int                  = 16
-    prefetch_factor : int                  = 8
-    shuffle_train   : bool                 = True
-    pin_memory      : bool                 = True
-    z_axis          : Optional[np.ndarray] = field(default=None, repr=False)
-    n_gaussians     : int                  = 1
-
+    batch_size          : int  = 8
+    num_workers         : int  = 4
+    prefetch_factor     : int  = 2
+    shuffle_train       : bool = True
+    pin_memory          : bool = True
     fingerprint_dataset : bool = True
 
+    def as_dict(self) -> dict:
+        return {
+            "dataset_directory"   : str(self.dataset_directory),
+            "split_regions"       : self.split_regions.bounds(),
+            "patch"               : asdict(self.patch),
+            "normalization"       : self.normalization.as_dict(),
+            "augmentation"        : asdict(self.augmentation),
+            "batch_size"          : self.batch_size,
+            "num_workers"         : self.num_workers,
+            "prefetch_factor"     : self.prefetch_factor,
+            "shuffle_train"       : self.shuffle_train,
+            "pin_memory"          : self.pin_memory,
+            "fingerprint_dataset" : self.fingerprint_dataset,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> "DatasetConfig":
+        patch = payload["patch"]
+
+        return cls(
+            dataset_directory   = Path(payload["dataset_directory"]),
+            split_regions       = SplitRegions.from_bounds(payload["split_regions"]),
+            patch               = PatchConfig(size=tuple(patch["size"]), stride=tuple(patch["stride"]), use_symmetric_padding=bool(patch["use_symmetric_padding"])),
+            normalization       = NormalizationConfig.from_dict(payload["normalization"]),
+            augmentation        = AugmentationConfig(**payload["augmentation"]),
+            batch_size          = int(payload["batch_size"]),
+            num_workers         = int(payload["num_workers"]),
+            prefetch_factor     = int(payload["prefetch_factor"]),
+            shuffle_train       = bool(payload["shuffle_train"]),
+            pin_memory          = bool(payload["pin_memory"]),
+            fingerprint_dataset = bool(payload["fingerprint_dataset"]),
+        )

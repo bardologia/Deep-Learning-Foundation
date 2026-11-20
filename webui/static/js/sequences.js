@@ -1072,8 +1072,7 @@ class SequencesView extends ConfigForm {
 
     const rootLeaf   = { path: "seq.dataset_base", value: ResultsSources.datasets(), type: "str", editable: true, section: "seq" };
     const dsLeaf     = { path: "seq.dataset_path", value: this.current.dataset.dataset_path, type: "str", editable: true, section: "seq" };
-    const paramsLeaf = { path: "seq.parameters_path", value: this.current.dataset.parameters_path, type: "str", editable: true, section: "seq" };
-    this.byPath = new Map([[rootLeaf.path, rootLeaf], [dsLeaf.path, dsLeaf], [paramsLeaf.path, paramsLeaf]]);
+    this.byPath = new Map([[rootLeaf.path, rootLeaf], [dsLeaf.path, dsLeaf]]);
 
     const rows = document.createElement("div");
     rows.className = "seq-dataset";
@@ -1088,12 +1087,11 @@ class SequencesView extends ConfigForm {
 
     addRow("datasets root", this._textControl(rootLeaf));
     addRow("dataset", new window.DatasetPicker(this, dsLeaf, { kind: "dataset", mode: "datasets", baseFrom: "seq.dataset_base", validOnly: true }).build());
-    addRow("parameters", new window.DatasetPicker(this, paramsLeaf, { kind: "dataset", mode: "params", datasetFrom: "seq.dataset_path" }).build());
     body.appendChild(rows);
 
     const note       = document.createElement("p");
     note.className   = "cfg-note";
-    note.textContent = "At launch, blocks exposing paths.dataset_path and paths.parameters_path get both; multi-dataset entries get dataset_base_path plus a dataset_filter for this folder. Clear the dataset to let each block use its own paths.";
+    note.textContent = "At launch, every block exposing paths.dataset_path gets this dataset. Clear the dataset to let each block use its own path.";
     body.appendChild(note);
 
     const actions     = document.createElement("div");
@@ -1104,7 +1102,7 @@ class SequencesView extends ConfigForm {
     clear.className   = "btn btn--ghost";
     clear.textContent = "Clear dataset";
     clear.addEventListener("click", async () => {
-      this.current.dataset = { dataset_path: "", parameters_path: "" };
+      this.current.dataset = { dataset_path: "" };
       if (await this._persist()) this._render();
     });
 
@@ -1113,7 +1111,7 @@ class SequencesView extends ConfigForm {
     apply.className   = "btn btn--primary";
     apply.textContent = "Apply dataset";
     apply.addEventListener("click", async () => {
-      this.current.dataset = { dataset_path: String(this._effective(dsLeaf)), parameters_path: String(this._effective(paramsLeaf)) };
+      this.current.dataset = { dataset_path: String(this._effective(dsLeaf)) };
       if (await this._persist()) {
         Toast.show("Dataset applied to the sequence", "ok");
         this._render();

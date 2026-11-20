@@ -283,9 +283,9 @@ def test_doc_save_roundtrip_equals_render(tmp_path):
 
 
 @pytest.mark.dataset
-def test_kv_table_with_scene_extraction_meta(param_extraction_meta):
-    scalars = {k: v for k, v in param_extraction_meta.items() if isinstance(v, (str, int, float))}
-    doc     = MarkdownDoc("Extraction")
+def test_kv_table_with_scene_layout(dataset_json):
+    scalars = {k: v for k, v in dataset_json.items() if isinstance(v, (str, int, float))}
+    doc     = MarkdownDoc("Dataset")
     doc.kv_table(scalars)
     text = doc.render()
 
@@ -294,9 +294,9 @@ def test_kv_table_with_scene_extraction_meta(param_extraction_meta):
 
 
 @pytest.mark.dataset
-def test_table_render_extraction_meta(param_extraction_meta):
+def test_table_render_scene_layout(dataset_json):
     table = MarkdownTable(["Key", "Value"])
-    for k, v in list(param_extraction_meta.items())[:6]:
+    for k, v in list(dataset_json.items())[:6]:
         table.add_row(str(k), ScalarFormatter.format_scalar(v) if not isinstance(v, (dict, list)) else "...")
     lines = table.render()
     assert all(line.count("|") == 3 for line in lines)

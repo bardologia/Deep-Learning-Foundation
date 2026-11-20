@@ -20,9 +20,9 @@ if str(_REPO_ROOT) not in sys.path:
 
 os.environ["MLTEMPLATE_MACHINE_PROFILE"] = ""
 
-from configuration.synthesis import SynthesisConfig
+from configuration.generation import GenerationConfig
 
-_SCENE_CONFIG = SynthesisConfig()
+_SCENE_CONFIG = GenerationConfig(rows=96, cols=64)
 
 
 class SilentProgress:
@@ -150,103 +150,31 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(scope="session")
-def scene_config() -> SynthesisConfig:
+def scene_config() -> GenerationConfig:
     return _SCENE_CONFIG
 
 
 @pytest.fixture(scope="session")
 def test_data_dir(tmp_path_factory) -> Path:
-    from pipelines.processing.synthesis.pipeline import SyntheticDatasetPipeline
+    from pipelines.processing.generation import DatasetGenerator
 
-    config = dataclasses.replace(_SCENE_CONFIG, output_directory=tmp_path_factory.mktemp("synthetic_scene") / "synthetic_small")
+    config = dataclasses.replace(_SCENE_CONFIG, output_directory=tmp_path_factory.mktemp("synthetic_scene") / "synthetic")
 
-    SyntheticDatasetPipeline(config, logger=SilentLogger()).run()
+    DatasetGenerator(config, logger=SilentLogger()).run()
 
     return config.output_directory
 
 
 @pytest.fixture(scope="session")
-def data_dir(test_data_dir) -> Path:
-    return test_data_dir / "data"
+def dataset_json(test_data_dir) -> dict:
+    return json.loads((test_data_dir / "dataset.json").read_text())
 
 
 @pytest.fixture(scope="session")
-def meta_dir(test_data_dir) -> Path:
-    return test_data_dir / "meta"
+def inputs(test_data_dir) -> np.ndarray:
+    return np.load(test_data_dir / "inputs.npy", mmap_mode="r")
 
 
 @pytest.fixture(scope="session")
-def params_dir(test_data_dir) -> Path:
-    return test_data_dir / "params" / _SCENE_CONFIG.params_run_name
-
-
-@pytest.fixture(scope="session")
-def dataset_json(data_dir) -> dict:
-    return json.loads((data_dir / "dataset.json").read_text())
-
-
-@pytest.fixture(scope="session")
-def config_state_json(meta_dir) -> dict:
-    return json.loads((meta_dir / "config_state.json").read_text())
-
-
-@pytest.fixture(scope="session")
-def baselines_json(meta_dir) -> dict:
-    return json.loads((meta_dir / "baselines.json").read_text())
-
-
-@pytest.fixture(scope="session")
-def param_extraction_meta(params_dir) -> dict:
-    return json.loads((params_dir / "param_extraction_meta.json").read_text())
-
-
-@pytest.fixture(scope="session")
-def channel_labels(dataset_json) -> list:
-    return dataset_json["channel_labels"]
-
-
-@pytest.fixture(scope="session")
-def cube_full(data_dir) -> np.ndarray:
-    return np.load(data_dir / "cube_full.npy", mmap_mode="r")
-
-
-@pytest.fixture(scope="session")
-def aux_full(data_dir) -> np.ndarray:
-    return np.load(data_dir / "aux_full.npy", mmap_mode="r")
-
-
-@pytest.fixture(scope="session")
-def primary(data_dir) -> np.ndarray:
-    return np.load(data_dir / "primary.npy", mmap_mode="r")
-
-
-@pytest.fixture(scope="session")
-def secondaries(data_dir) -> np.ndarray:
-    return np.load(data_dir / "secondaries.npy", mmap_mode="r")
-
-
-@pytest.fixture(scope="session")
-def derived(data_dir) -> np.ndarray:
-    return np.load(data_dir / "derived.npy", mmap_mode="r")
-
-
-@pytest.fixture(scope="session")
-def parameters(params_dir) -> np.ndarray:
-    return np.load(params_dir / "parameters.npy", mmap_mode="r")
-
-
-@pytest.fixture(scope="session")
-def fit_diagnostics(params_dir) -> dict:
-    npz = np.load(params_dir / "fit_diagnostics.npz")
-    return {k: npz[k] for k in npz.files}
-
-
-@pytest.fixture(scope="session")
-def track_profiles(data_dir) -> dict:
-    npz = np.load(data_dir / "track_profiles.npz", allow_pickle=True)
-    return {k: npz[k] for k in npz.files}
-
-
-@pytest.fixture
-def small_window():
-    return (slice(0, 32), slice(0, 32))
+def targets(test_data_dir) -> np.ndarray:
+    return np.load(test_data_dir / "targets.npy", mmap_mode="r")

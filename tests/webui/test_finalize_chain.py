@@ -12,7 +12,7 @@ from web_logger                import WebLogger
 
 
 LEAVES = {
-    "train_backbone" : {"trials_mode": "presence", "trials_enabled": "True", "logdir": "/runs/backbone"},
+    "train_backbone" : {"trials_mode": "augmentation", "trials_enabled": "True", "logdir": "/runs/backbone"},
     "infer_backbone" : {"runs_dir": "/runs/backbone"},
     "cross_validate" : {"run_tag": "None", "paths.log_base_dir": "/runs/cross_validation"},
     "benchmark"      : {"run_tag": "None", "paths.log_base_dir": "/runs/benchmark"},
@@ -107,7 +107,7 @@ def _sweep_tree(root: Path, trials: tuple = ("rung_a", "rung_b")) -> Path:
 def test_the_sweep_of_a_training_entry_is_its_trials_mode_directory():
     chain = FinalizeChain()
 
-    assert chain.experiment_dir("train_backbone", {}, LEAVES["train_backbone"]) == "/runs/backbone/presence"
+    assert chain.experiment_dir("train_backbone", {}, LEAVES["train_backbone"]) == "/runs/backbone/augmentation"
     assert chain.experiment_dir("train_backbone", {"trials_mode": "patch", "logdir": "/other"}, LEAVES["train_backbone"]) == "/other/patch"
 
 
@@ -129,7 +129,7 @@ def test_an_entry_without_a_sweep_is_refused():
 
 
 def test_a_run_launched_on_its_own_stages_its_mail_where_the_entry_points(tmp_path):
-    experiment = _sweep_tree(tmp_path / "presence")
+    experiment = _sweep_tree(tmp_path / "augmentation")
 
     overrides = FinalizeChain().step_overrides("mail_experiment_reports", str(experiment))
 
@@ -137,10 +137,10 @@ def test_a_run_launched_on_its_own_stages_its_mail_where_the_entry_points(tmp_pa
 
 
 def test_the_mail_step_refuses_a_sweep_without_unit_runs(tmp_path):
-    (tmp_path / "presence").mkdir()
+    (tmp_path / "augmentation").mkdir()
 
     with pytest.raises(FileNotFoundError, match="no trial directories"):
-        FinalizeChain().step_overrides("mail_experiment_reports", str(tmp_path / "presence"))
+        FinalizeChain().step_overrides("mail_experiment_reports", str(tmp_path / "augmentation"))
 
 
 def test_planning_refuses_a_mail_step_without_the_smtp_password(rig, monkeypatch):
@@ -171,7 +171,7 @@ def test_planning_refuses_an_entry_that_writes_no_sweep(rig):
 
 def test_the_chain_walks_its_steps_after_the_run_finished(rig, tmp_path):
     processes, launcher, notifier, finalizer = rig
-    experiment  = _sweep_tree(tmp_path / "presence")
+    experiment  = _sweep_tree(tmp_path / "augmentation")
     plan, error = finalizer.plan("train_backbone", "/usr/bin/python3", {"logdir": str(tmp_path)}, _flags(*FinalizeChain.STEPS))
 
     assert error == ""
@@ -196,7 +196,7 @@ def test_the_chain_walks_its_steps_after_the_run_finished(rig, tmp_path):
     processes.finish("step-2")
     finalizer.scan()
     assert launcher.calls[2]["key"] == "mail_experiment_reports"
-    assert launcher.calls[2]["overrides"] == {"experiments_dir": str(tmp_path / "presence")}
+    assert launcher.calls[2]["overrides"] == {"experiments_dir": str(tmp_path / "augmentation")}
 
     processes.finish("step-3")
     finalizer.scan()
@@ -205,7 +205,7 @@ def test_the_chain_walks_its_steps_after_the_run_finished(rig, tmp_path):
 
 def test_only_the_switched_on_steps_run(rig, tmp_path):
     processes, launcher, notifier, finalizer = rig
-    _sweep_tree(tmp_path / "presence")
+    _sweep_tree(tmp_path / "augmentation")
     plan, _ = finalizer.plan("train_backbone", "/usr/bin/python3", {"logdir": str(tmp_path)}, _flags("compare_trials"))
 
     processes.register("run-1")
@@ -218,7 +218,7 @@ def test_only_the_switched_on_steps_run(rig, tmp_path):
 
 def test_a_failed_run_drops_its_chain(rig, tmp_path):
     processes, launcher, notifier, finalizer = rig
-    _sweep_tree(tmp_path / "presence")
+    _sweep_tree(tmp_path / "augmentation")
     plan, _ = finalizer.plan("train_backbone", "/usr/bin/python3", {"logdir": str(tmp_path)}, _flags(*FinalizeChain.STEPS))
 
     processes.register("run-1")
@@ -232,7 +232,7 @@ def test_a_failed_run_drops_its_chain(rig, tmp_path):
 
 def test_a_run_gone_from_the_job_table_drops_its_chain(rig, tmp_path):
     processes, launcher, notifier, finalizer = rig
-    _sweep_tree(tmp_path / "presence")
+    _sweep_tree(tmp_path / "augmentation")
     plan, _ = finalizer.plan("train_backbone", "/usr/bin/python3", {"logdir": str(tmp_path)}, _flags("compare_seeds"))
 
     processes.register("run-1")
@@ -246,7 +246,7 @@ def test_a_run_gone_from_the_job_table_drops_its_chain(rig, tmp_path):
 
 def test_a_failed_step_drops_the_rest_of_the_chain(rig, tmp_path):
     processes, launcher, notifier, finalizer = rig
-    _sweep_tree(tmp_path / "presence")
+    _sweep_tree(tmp_path / "augmentation")
     plan, _ = finalizer.plan("train_backbone", "/usr/bin/python3", {"logdir": str(tmp_path)}, _flags(*FinalizeChain.STEPS))
 
     processes.register("run-1")
@@ -277,7 +277,7 @@ def test_an_empty_sweep_directory_drops_the_chain(rig, tmp_path):
 
 def test_the_pending_listing_reports_the_steps_still_queued(rig, tmp_path):
     processes, launcher, notifier, finalizer = rig
-    _sweep_tree(tmp_path / "presence")
+    _sweep_tree(tmp_path / "augmentation")
     plan, _ = finalizer.plan("train_backbone", "/usr/bin/python3", {"logdir": str(tmp_path)}, _flags("compare_seeds", "compare_trials"))
 
     processes.register("run-1")

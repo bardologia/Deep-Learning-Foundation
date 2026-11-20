@@ -215,16 +215,14 @@ def test_a_failed_block_skips_its_descendants(rig):
 
 def test_the_dataset_is_injected_into_the_fields_each_entry_exposes(rig):
     store, processes, launcher, runner = rig
-    dataset     = {"dataset_path": "/data/sets/17sartom", "parameters_path": "/data/sets/17sartom/params/run_a/parameters.npy"}
+    dataset     = {"dataset_path": "/data/sets/scene_a"}
     sequence_id = _saved(store, [_block("a1", overrides={"paths.dataset_path": "/old", "training.seed": "7"}), _block("b2", script="benchmark")], dataset=dataset)
 
     runner.start_sequence(sequence_id)
 
     train, bench = launcher.calls
-    assert train["overrides"]["paths.dataset_path"] == "/data/sets/17sartom"
-    assert train["overrides"]["paths.parameters_path"] == dataset["parameters_path"]
-    assert train["overrides"]["training.seed"] == "7"
-    assert bench["overrides"] == {"dataset_base_path": str(Path("/data/sets")), "dataset_filter": "17sartom"}
+    assert train["overrides"] == {"paths.dataset_path": "/data/sets/scene_a", "training.seed": "7"}
+    assert bench["overrides"] == {"paths.dataset_path": "/data/sets/scene_a"}
 
 
 def test_an_empty_dataset_leaves_the_block_overrides_untouched(rig):
@@ -955,7 +953,7 @@ def test_study_progress_refuses_what_it_cannot_read(rig):
     assert runner.study_progress(sequence_id, "t1") == {"ok": True, "studies": {}}
 
 
-def _experiment_tree(run_dir: str, mode: str = "presence", trials: tuple = ("rung_a", "rung_b")) -> Path:
+def _experiment_tree(run_dir: str, mode: str = "augmentation", trials: tuple = ("rung_a", "rung_b")) -> Path:
     experiment = Path(run_dir) / mode
     for trial in trials:
         (experiment / trial / "seed0").mkdir(parents=True)

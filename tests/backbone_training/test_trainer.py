@@ -7,12 +7,12 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from configuration.training.general.loss import LossConfig
 from pipelines.backbone.training.loss    import Loss
 from pipelines.backbone.training.trainer import Trainer
+from tools.training.aggregation           import WeightedMean
 from tools.training.checkpoint            import WeightSwa
 
-from tests.backbone_training._helpers import identity_normalizer, tiny_model, tiny_trainer_config, x_axis_numpy
+from tests.backbone_training._helpers import TARGET_CHANNELS, batch_tensors, tiny_model, tiny_trainer_config
 from tests.conftest                   import RecordingWriter
 
 from tools.monitoring.logger import Logger
@@ -21,39 +21,18 @@ from tools.monitoring.logger import Logger
 pytestmark = pytest.mark.usefixtures("force_cpu")
 
 
-def _loader(in_channels: int = 2, n_gaussians: int = 2, n: int = 6, hw: int = 16) -> DataLoader:
-    gen  = torch.Generator().manual_seed(0)
-    imgs = torch.randn(n, in_channels, hw, hw, generator=gen)
-    tgt  = torch.randn(n, n_gaussians * 3, hw, hw, generator=gen)
-
-    for i, amp in enumerate((1.0, 5.0, 10.0)):
-        tgt[0, :, i + 1, i + 1]   = 0.0
-        tgt[0, 0:3, i + 1, i + 1] = torch.tensor([amp, 30.0, 5.0])
-
-    for i, mu2 in enumerate((26.0, 28.0, 29.0)):
-        tgt[1, 0:3, i + 1, i + 1] = torch.tensor([3.0, 20.0, 4.0])
-        tgt[1, 3:6, i + 1, i + 1] = torch.tensor([3.0, mu2, 4.0])
-
-    for i, amp2 in enumerate((5.0, 8.0, 9.0)):
-        tgt[2, 0:3, i + 1, i + 1] = torch.tensor([2.0, 0.0, 3.0])
-        tgt[2, 3:6, i + 1, i + 1] = torch.tensor([amp2, 60.0, 3.0])
-
-    for i, mu2 in enumerate((22.0, 34.0, 53.0)):
-        tgt[3, 0:3, i + 1, i + 1] = torch.tensor([3.0, 5.0, 3.0])
-        tgt[3, 3:6, i + 1, i + 1] = torch.tensor([3.0, mu2, 3.0])
-
-    return DataLoader(TensorDataset(imgs, tgt), batch_size=2)
+def _loader(n: int = 6, batch_size: int = 2) -> DataLoader:
+    return DataLoader(TensorDataset(*batch_tensors(n=n)), batch_size=batch_size)
 
 
-def _build_trainer(tmp_path, epochs: int = 1, n_gaussians: int = 2, resume: bool = False, level: str = "ERROR") -> Trainer:
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=n_gaussians)
-    config           = tiny_trainer_config(n_gaussians=n_gaussians, epochs=epochs)
+def _build_trainer(tmp_path, epochs: int = 1, resume: bool = False, level: str = "ERROR") -> Trainer:
+    model, model_cfg = tiny_model()
+    config           = tiny_trainer_config(epochs=epochs)
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level=level)
-    norm_stats       = identity_normalizer(n_gaussians * 3)
 
     config.training.resume = resume
 
-    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=norm_stats, emit_docs=False)
+    trainer = Trainer(model, model_cfg, TARGET_CHANNELS, config, tmp_path, logger, emit_docs=False)
     trainer.warmup.resolve(200)
     return trainer
 
@@ -97,8 +76,8 @@ def test_compute_loss_returns_finite_total(tmp_path):
 
     out     = trainer._compute_loss(batch)
 
-    assert "total_loss" in out
-    assert torch.isfinite(out["total_loss"]).item()
+    assert set(out["channels"]) == set(TARGET_CHANNELS)
+    assert torch.isfinite(out["total_loss"].value).item()
 
 
 def test_one_epoch_fit_writes_checkpoint(tmp_path):
@@ -113,14 +92,14 @@ def test_one_epoch_fit_writes_checkpoint(tmp_path):
 
 
 def test_trainer_builds_the_configured_optimizer_family(tmp_path):
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
-    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+    model, model_cfg = tiny_model()
+    config           = tiny_trainer_config(epochs=1)
 
     config.optimizer.type     = "sgd"
     config.optimizer.momentum = 0.8
 
     logger  = Logger(log_dir=str(tmp_path / "logs"), name="trainer_sgd", level="ERROR")
-    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+    trainer = Trainer(model, model_cfg, TARGET_CHANNELS, config, tmp_path, logger, emit_docs=False)
 
     assert isinstance(trainer.optimizer, torch.optim.SGD)
     assert all(pg["momentum"] == 0.8 for pg in trainer.optimizer.param_groups)
@@ -173,11 +152,10 @@ def test_multi_epoch_fit_records_losses(tmp_path):
 
 def test_train_logs_throughput_and_diagnostics(tmp_path):
     writer           = RecordingWriter()
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
-    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+    model, model_cfg = tiny_model()
+    config           = tiny_trainer_config(epochs=1)
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level="ERROR")
-    norm_stats       = identity_normalizer(6)
-    trainer          = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=norm_stats, emit_docs=False, writer=writer)
+    trainer          = Trainer(model, model_cfg, TARGET_CHANNELS, config, tmp_path, logger, emit_docs=False, writer=writer)
 
     loader = _loader()
     trainer.train(loader, loader, loader)
@@ -193,20 +171,22 @@ def test_train_logs_throughput_and_diagnostics(tmp_path):
     nonfinite = [value for tag, value, _ in writer.scalars if tag == "controls/nonfinite_batches"]
     assert nonfinite == [0.0]
 
-    assert len(writer.figures) == 12
-    assert all(tag.startswith("reconstruction/") and tag.endswith("/val") for tag, *_ in writer.figures)
+    assert {"loss_channels/a/train", "loss_channels/b/val"} <= scalar_tags
 
     assert len(writer.layouts) == 1
-    assert list(writer.layouts[0]) == ["Loss", "Optimiser", "Diagnostics", "Slots"]
-    assert "Active fraction per slot" in writer.layouts[0]["Slots"]
+    assert list(writer.layouts[0]) == ["Loss", "Optimiser"]
 
 
-def _loss_dict(total: float) -> dict:
-    return {"total_loss": torch.tensor(total), "components": {}, "monitor": {}, "occupancy": {}, "physical": {}}
+def _mean(value: float, weight: float = 1.0) -> WeightedMean:
+    return WeightedMean(torch.tensor(value * weight), torch.tensor(weight))
 
 
-def _diverged_loss_dict(bad_term: str) -> dict:
-    return {"total_loss": torch.tensor(float("nan")), "components": {"param_l1": torch.tensor(0.5), bad_term: torch.tensor(float("nan"))}, "monitor": {}, "occupancy": {}, "physical": {}}
+def _loss_dict(total: float, weight: float = 1.0) -> dict:
+    return {"total_loss": _mean(total, weight), "channels": {"a": _mean(total, weight)}}
+
+
+def _diverged_loss_dict(bad_channel: str) -> dict:
+    return {"total_loss": _mean(float("nan")), "channels": {"a": _mean(0.5), bad_channel: _mean(float("nan"))}}
 
 
 def test_evaluate_raises_on_nonfinite_loss(tmp_path):
@@ -235,13 +215,13 @@ def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
 
 
 def test_trainer_channels_last_converts_model_and_batches(tmp_path):
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
-    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+    model, model_cfg = tiny_model()
+    config           = tiny_trainer_config(epochs=1)
 
     config.training.channels_last = True
 
     logger  = Logger(log_dir=str(tmp_path / "logs"), name="trainer_cl", level="ERROR")
-    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+    trainer = Trainer(model, model_cfg, TARGET_CHANNELS, config, tmp_path, logger, emit_docs=False)
     trainer.warmup.resolve(200)
 
     conv = next(module for module in trainer.model.modules() if isinstance(module, torch.nn.Conv2d))
@@ -260,28 +240,28 @@ def test_trainer_compile_flag_compiles_the_forward(tmp_path, monkeypatch):
 
     monkeypatch.setattr(torch, "compile", _fake_compile)
 
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
-    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+    model, model_cfg = tiny_model()
+    config           = tiny_trainer_config(epochs=1)
 
     config.training.compile_model = True
     config.training.compile_mode  = "reduce-overhead"
 
     logger  = Logger(log_dir=str(tmp_path / "logs"), name="trainer_compile", level="ERROR")
-    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+    trainer = Trainer(model, model_cfg, TARGET_CHANNELS, config, tmp_path, logger, emit_docs=False)
 
     assert recorded["mode"] == "reduce-overhead"
     assert trainer.model is not None
 
 
 def test_trainer_activation_checkpointing_wraps_and_trains(tmp_path):
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
+    model, model_cfg = tiny_model()
     reference_keys   = sorted(model.state_dict())
-    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+    config           = tiny_trainer_config(epochs=1)
 
     config.training.activation_checkpointing = ("encoder_blocks", "decoder_blocks")
 
     logger  = Logger(log_dir=str(tmp_path / "logs"), name="trainer_ckpt", level="ERROR")
-    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+    trainer = Trainer(model, model_cfg, TARGET_CHANNELS, config, tmp_path, logger, emit_docs=False)
     trainer.warmup.resolve(200)
 
     trainer.train_epoch(_loader(), epoch=0)
@@ -289,21 +269,17 @@ def test_trainer_activation_checkpointing_wraps_and_trains(tmp_path):
     assert sorted(trainer.model.state_dict()) == reference_keys
 
 
-def test_evaluate_weights_batches_by_sample_count(tmp_path):
+def test_evaluate_pools_batches_by_their_pixel_weight(tmp_path):
     trainer = _build_trainer(tmp_path)
+    loader  = _loader(batch_size=4)
 
-    gen    = torch.Generator().manual_seed(0)
-    imgs   = torch.randn(6, 2, 16, 16, generator=gen)
-    tgt    = torch.randn(6, 6, 16, 16, generator=gen)
-    loader = DataLoader(TensorDataset(imgs, tgt), batch_size=4)
-
-    trainer._eval_step = lambda batch: _loss_dict(1.0 if batch[0].shape[0] == 4 else 4.0)
+    trainer._eval_step = lambda batch: _loss_dict(1.0, 30.0) if batch[0].shape[0] == 4 else _loss_dict(4.0, 10.0)
 
     result = trainer.evaluate(loader, epoch=0)
 
     assert result["num_batches"] == 2
     assert result["num_samples"] == 6
-    assert result["avg_loss"]    == pytest.approx((1.0 * 4 + 4.0 * 2) / 6)
+    assert result["avg_loss"]    == pytest.approx((1.0 * 30.0 + 4.0 * 10.0) / 40.0)
 
 
 def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
@@ -321,9 +297,9 @@ def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
 def test_nonfinite_train_loss_abort_names_the_term_and_clears_the_data(tmp_path):
     trainer = _build_trainer(tmp_path)
 
-    trainer._compute_loss = lambda batch: _diverged_loss_dict("mse_curve")
+    trainer._compute_loss = lambda batch: _diverged_loss_dict("b")
 
-    with pytest.raises(FloatingPointError, match=r"non-finite terms: \['mse_curve'\]; inputs and targets finite"):
+    with pytest.raises(FloatingPointError, match=r"non-finite target channels: \['b'\]; inputs and targets finite"):
         trainer.train_epoch(_loader(), epoch=0)
 
 
@@ -332,20 +308,20 @@ def test_nonfinite_train_loss_abort_names_corrupt_inputs(tmp_path):
     loader  = _loader()
 
     loader.dataset.tensors[0][0, 0, 0, 0] = float("nan")
-    trainer._compute_loss                 = lambda batch: _loss_dict(float("nan"))
+    trainer._compute_loss                 = lambda batch: {"total_loss": _mean(float("nan")), "channels": {"a": _mean(0.5)}}
 
-    with pytest.raises(FloatingPointError, match=r"non-finite terms: none \(every weighted term is finite\); non-finite inputs in the batch"):
+    with pytest.raises(FloatingPointError, match=r"non-finite target channels: none \(every channel loss is finite\); non-finite inputs in the batch"):
         trainer.train_epoch(loader, epoch=0)
 
 
 def test_evaluate_skip_warning_names_the_nonfinite_term(tmp_path):
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
-    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+    model, model_cfg = tiny_model()
+    config           = tiny_trainer_config(epochs=1)
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer_warn", level="WARNING")
-    trainer          = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+    trainer          = Trainer(model, model_cfg, TARGET_CHANNELS, config, tmp_path, logger, emit_docs=False)
 
     trainer.abort_on_nonfinite_loss = False
-    trainer._eval_step              = lambda batch: _diverged_loss_dict("cosine_curve")
+    trainer._eval_step              = lambda batch: _diverged_loss_dict("b")
 
     result = trainer.evaluate(_loader(), epoch=0)
     logger.close()
@@ -353,7 +329,7 @@ def test_evaluate_skip_warning_names_the_nonfinite_term(tmp_path):
     text = (tmp_path / "logs" / "trainer_warn.log").read_text(encoding="utf-8")
 
     assert result["num_batches"] == 0
-    assert "val loss is non-finite at epoch 1; non-finite terms: ['cosine_curve']; inputs and targets finite" in text
+    assert "val loss is non-finite at epoch 1; non-finite target channels: ['b']; inputs and targets finite" in text
 
 
 def test_checkpoint_save_restore_round_trip(tmp_path):
@@ -365,10 +341,9 @@ def test_checkpoint_save_restore_round_trip(tmp_path):
     saved = torch.load(tmp_path / "best_model.pt", map_location="cpu", weights_only=False)
 
     assert "params"        in saved
-    assert "z_axis"        in saved
     assert "best_val_loss" in saved
 
-    fresh_model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
+    fresh_model, model_cfg = tiny_model()
     fresh_model.load_state_dict(saved["params"])
 
     for name, param in fresh_model.state_dict().items():
@@ -424,21 +399,3 @@ def test_restore_best_loads_best_parameters(tmp_path):
     for name, param in trainer.model.state_dict().items():
         assert torch.equal(param, saved["params"][name])
 
-
-def test_slot_diagnostics_adopt_the_label_run_threshold(tmp_path):
-    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
-    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
-
-    config.gaussian.activity_threshold = 2.5e-3
-    config.loss                        = LossConfig(use_param_l1=True, weight_param_l1=1.0, use_active_normalization=True)
-
-    logger  = Logger(log_dir=str(tmp_path / "logs"), name="thr", level="ERROR")
-    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
-
-    trainer.tracker.writer = object()
-    val_loader             = _loader()
-
-    trainer._before_validation(0, val_loader)
-
-    assert trainer.param_sampler.thr == pytest.approx(2.5e-3)
-    assert trainer.slot_vitals.thr   == pytest.approx(2.5e-3)

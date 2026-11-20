@@ -1,57 +1,31 @@
-
 from __future__ import annotations
 
-from configuration.dataset                  import AugmentationConfig
-from configuration.training                 import LossConfig
-from pipelines.backbone.training.loss_terms import LOSS_TERMS
-from pipelines.shared.model.model_builder   import ModelBuilder
+from configuration.dataset                import AugmentationConfig
+from configuration.training               import LossConfig
+from pipelines.shared.model.model_builder import ModelBuilder
 
 
 class RunNaming:
 
-    NAMING_ORDER = tuple(reversed(LOSS_TERMS))
-
     AUGMENTATION_FLAGS = (("h", "p_flip_h"), ("v", "p_flip_v"), ("r", "p_rot90"), ("n", "p_noise"))
 
-    @classmethod
-    def loss_tag(cls, loss: LossConfig) -> str:
-        parts = [f"{term.name}_{getattr(loss, term.weight_key):g}" for term in cls.NAMING_ORDER if getattr(loss, term.use_flag)]
-
-        return "-".join(parts)
-
     @staticmethod
-    def matching_tag(loss: LossConfig) -> str:
-        return loss.param_matching.value
-
-    @staticmethod
-    def gaussians_tag(n_gaussians: int) -> str:
-        return f"K_{n_gaussians}"
+    def loss_tag(loss: LossConfig) -> str:
+        return loss.kind.value
 
     @classmethod
     def augmentation_tag(cls, augmentation: AugmentationConfig) -> str:
         letters = "".join(letter for letter, probability in cls.AUGMENTATION_FLAGS if getattr(augmentation, probability) > 0.0)
         return letters or "noaug"
 
-    @staticmethod
-    def presence_tag(loss: LossConfig) -> str:
-        letters = ("A" if loss.use_active_normalization else "") + ("B" if loss.presence_balance else "")
-        return letters or "none"
+    @classmethod
+    def tag(cls, model_name: str, head: str, loss: LossConfig, augmentation: AugmentationConfig) -> str:
+        return "-".join((model_name, head, cls.loss_tag(loss), cls.augmentation_tag(augmentation)))
 
     @classmethod
-    def stem(cls, model_name: str, head: str, loss: LossConfig, n_gaussians: int, augmentation: AugmentationConfig) -> str:
-        return "-".join((model_name, head, cls.matching_tag(loss), cls.gaussians_tag(n_gaussians), cls.augmentation_tag(augmentation), cls.presence_tag(loss)))
-
-    @classmethod
-    def tag(cls, model_name: str, head: str, loss: LossConfig, n_gaussians: int, augmentation: AugmentationConfig) -> str:
-        return f"{cls.stem(model_name, head, loss, n_gaussians, augmentation)}-{cls.loss_tag(loss)}"
-
-    @classmethod
-    def benchmark_unit(cls, model_key: str, component: str | None, loss: LossConfig, n_gaussians: int, augmentation: AugmentationConfig) -> str:
+    def benchmark_unit(cls, model_key: str, loss: LossConfig, augmentation: AugmentationConfig) -> str:
         name, head = ModelBuilder.split_key(model_key)
-        if component is None:
-            return cls.tag(name, head, loss, n_gaussians, augmentation)
-
-        return f"{cls.stem(name, head, loss, n_gaussians, augmentation)}__{component}"
+        return cls.tag(name, head, loss, augmentation)
 
     @staticmethod
     def compose(tag: str, suffix: str | None) -> str:

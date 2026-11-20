@@ -48,21 +48,17 @@ def test_the_earliest_matching_marker_wins(browser, tmp_path):
     assert browser.tree(str(run))["stage"] == "benchmark"
 
 
-def test_the_catalog_lists_datasets_with_their_parameter_runs(browser, tmp_path):
+def test_the_catalog_lists_the_dataset_folders(browser, tmp_path):
     datasets = tmp_path / "datasets"
-    (datasets / "ds01" / "params" / "k5_l02").mkdir(parents=True)
-    (datasets / "ds01" / "params" / "k2_l02").mkdir(parents=True)
+    (datasets / "ds01").mkdir(parents=True)
     (datasets / "ds02").mkdir()
     (datasets / ".hidden").mkdir()
     (datasets / "readme.md").write_text("x")
 
     payload = browser.catalog(str(datasets), "")["datasets"]
-    items   = {entry["name"]: entry for entry in payload["items"]}
 
     assert payload["error"] == ""
-    assert sorted(items)    == ["ds01", "ds02"]
-    assert [entry["name"] for entry in items["ds01"]["params"]] == ["k2_l02", "k5_l02"]
-    assert items["ds02"]["params"] == []
+    assert payload["items"] == [{"name": "ds01", "path": str(datasets / "ds01")}, {"name": "ds02", "path": str(datasets / "ds02")}]
 
 
 def test_the_catalog_orders_runs_by_recency_and_labels_the_stage(browser, tmp_path):

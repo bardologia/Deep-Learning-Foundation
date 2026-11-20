@@ -16,8 +16,8 @@ from tests.conftest                    import RecordingLogger
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_activation_xray_run_persists_capture_settings_layer_counts_and_thresholds(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+def test_activation_xray_run_persists_capture_settings_layer_counts_and_thresholds(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
     config  = ActivationXrayConfig(runs_dir=tmp_path, split="test", device="cpu", batch_size=2, max_batches=1, make_plots=False)
     logger  = RecordingLogger()
 

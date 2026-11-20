@@ -16,10 +16,10 @@ from tests.conftest                    import SilentLogger
 
 
 @pytest.fixture
-def run_root(tmp_path, test_data_dir, params_dir) -> Path:
+def run_root(tmp_path, test_data_dir) -> Path:
     root = tmp_path / "runs"
     root.mkdir()
-    build_run_directory(root, test_data_dir, params_dir)
+    build_run_directory(root, test_data_dir)
 
     return root
 

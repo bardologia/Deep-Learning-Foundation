@@ -28,7 +28,7 @@ class SequenceStore:
         entry = {
             "sequence_id" : uuid.uuid4().hex[:12],
             "name"        : str(name).strip() or f"sequence {stamp}",
-            "dataset"     : {"dataset_path": "", "parameters_path": ""},
+            "dataset"     : {"dataset_path": ""},
             "detach"      : True,
             "isolate"     : True,
             "blocks"      : [],
@@ -61,7 +61,7 @@ class SequenceStore:
             entry   = {
                 "sequence_id" : sequence_id,
                 "name"        : str(payload.get("name", "")).strip() or current["name"],
-                "dataset"     : {"dataset_path": str(dataset.get("dataset_path", "")), "parameters_path": str(dataset.get("parameters_path", ""))},
+                "dataset"     : {"dataset_path": str(dataset.get("dataset_path", ""))},
                 "detach"      : bool(payload.get("detach")),
                 "isolate"     : bool(payload.get("isolate")),
                 "blocks"      : blocks,

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import torch
 import torch.optim as optim
 
+from tools.training.aggregation      import WeightedMean
 from tools.training.trainer          import BaseTrainer
 from tools.training.vram_reservation import VramReservation
 
@@ -61,17 +62,16 @@ def test_update_optimizer_sets_lrs_and_logs(tracker):
     assert any(tag == "optim/lr/main" and val == 0.123 for tag, val, _ in tracker.scalars)
 
 
-def test_capture_state_contains_model_and_axis():
+def test_capture_state_contains_the_epoch_and_the_model():
     model = torch.nn.Linear(3, 1)
     shim  = TrainerShim()
-    shim.model  = model
-    shim.z_axis = torch.linspace(0, 1, 4)
+    shim.model = model
 
     state = BaseTrainer.capture_state(shim, epoch=7)
 
+    assert set(state) == {"epoch", "params"}
     assert state["epoch"] == 7
     assert set(state["params"].keys()) == set(model.state_dict().keys())
-    assert state["z_axis"].shape == (4,)
 
 
 def test_clear_cuda_cache_runs_on_cpu():
@@ -163,7 +163,7 @@ def test_evaluate_without_a_finite_batch_warns_that_the_loss_is_nan(recording_lo
     shim.use_amp                 = False
     shim.abort_on_nonfinite_loss = False
     shim._apply_memory_format    = lambda batch: batch
-    shim._eval_step              = lambda batch: {"total_loss": torch.tensor(float("nan")), "components": {"param": torch.tensor(float("nan"))}}
+    shim._eval_step              = lambda batch: {"total_loss": WeightedMean(torch.tensor(float("nan")), torch.tensor(1.0)), "channels": {"y": WeightedMean(torch.tensor(float("nan")), torch.tensor(1.0))}}
     shim._log_epoch_metrics      = lambda stage, aggregator, epoch: None
     shim._nonfinite_detail       = lambda loss_dict, batch: BaseTrainer._nonfinite_detail(shim, loss_dict, batch)
 
@@ -172,10 +172,10 @@ def test_evaluate_without_a_finite_batch_warns_that_the_loss_is_nan(recording_lo
     assert result["num_batches"] == 0
     assert result["avg_loss"] != result["avg_loss"]
     assert ("warning", "Backbone val epoch 3: no finite batch out of 2; the val loss is NaN") in recording_logger.messages
-    assert any(level == "warning" and "non-finite terms: ['param']" in message for level, message in recording_logger.messages)
+    assert any(level == "warning" and "non-finite target channels: ['y']" in message for level, message in recording_logger.messages)
 
 
-def test_nonfinite_detail_says_when_every_weighted_term_is_finite():
-    detail = BaseTrainer._nonfinite_detail(TrainerShim(), {"components": {"param": torch.tensor(1.0)}}, batch=None)
+def test_nonfinite_detail_says_when_every_channel_loss_is_finite():
+    detail = BaseTrainer._nonfinite_detail(TrainerShim(), {"channels": {"y": WeightedMean(torch.tensor(1.0), torch.tensor(1.0))}}, batch=None)
 
-    assert detail == "; non-finite terms: none (every weighted term is finite)"
+    assert detail == "; non-finite target channels: none (every channel loss is finite)"

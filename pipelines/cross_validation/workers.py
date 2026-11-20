@@ -215,12 +215,10 @@ class CrossValidationWorker(WorkerBase):
 class FoldTrainingWorker(CrossValidationWorker):
 
     def _spatial_configs(self, split_regions: SplitRegions) -> tuple:
-        trainer_config            = self.factory.training_trainer_config(logdir=self.run_dir / "folds")
-        trainer_config.loss = self.config.loss
+        trainer_config = self.factory.training_trainer_config(logdir=self.run_dir / "folds")
 
         dataset_config               = self.factory.training_dataset_config()
         dataset_config.split_regions = split_regions
-        dataset_config.input_config  = self.config.input
 
         return trainer_config, dataset_config
 

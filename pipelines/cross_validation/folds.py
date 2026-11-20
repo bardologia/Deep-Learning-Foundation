@@ -7,14 +7,14 @@ from pathlib     import Path
 
 from configuration.cross_validation               import CrossValidationConfig
 from configuration.inference                      import InferenceConfig
-from configuration.dataset.gaussian               import GaussianConfig
 from pipelines.shared.config.config_factory       import ConfigFactory
+from pipelines.shared.dataset.dataset_files       import DatasetFiles
 from pipelines.shared.inference.metadata          import CompletedInference
 from pipelines.shared.inference.run_classifier    import InferenceLayout
 from pipelines.shared.orchestration.unit_manifest import UnitManifest
-from pipelines.shared.training.seed_sweep        import SeedSet
-from tools.data.io            import FileIO
-from tools.data.regions       import CropRegion, SplitRegions
+from pipelines.shared.training.seed_sweep         import SeedSet
+from tools.data.io                                import FileIO
+from tools.data.regions                           import CropRegion, SplitRegions
 
 
 @dataclass
@@ -201,15 +201,12 @@ class FoldRunNaming:
         self.config       = config
         self.training_tag = self._training_tag()
 
-    def _n_gaussians(self) -> int:
-        return GaussianConfig.from_dataset(self.config.paths.dataset_path, self.config.paths.parameters_path).n_default_gaussians
-
     def _training_tag(self) -> str:
         from pipelines.shared.training.run_naming import RunNaming
 
         config = self.config
 
-        return RunNaming.tag(config.backbone_name, config.backbone_head, config.loss, self._n_gaussians(), config.augmentation)
+        return RunNaming.tag(config.backbone_name, config.backbone_head, config.loss, config.augmentation)
 
     def run_name(self, fold_index: int, seed: int | None) -> str:
         from pipelines.shared.training.run_naming import RunNaming
@@ -231,9 +228,9 @@ class FoldConfigFactory(ConfigFactory):
 
     def planner(self) -> FoldPlanner:
         if self._planner is None:
-            crop = self.global_crop()
+            files = DatasetFiles.read(self.config.paths.dataset_path)
 
-            self._planner = FoldPlanner(self.config, col_start=crop.col_start, col_end=crop.col_end)
+            self._planner = FoldPlanner(self.config, col_start=0, col_end=files.cols)
         return self._planner
 
     def fold_inference_config(self, run_directory: Path, split: str, fold_index: int) -> InferenceConfig:
@@ -272,7 +269,7 @@ class FoldTreeSurvey:
         return str(FileIO.load_json(run_dir / self.META_DIRNAME / self.SUMMARY_FILENAME)["model_name"])
 
     def split_regions(self, run_dir: Path) -> SplitRegions:
-        return SplitRegions.from_payload(FileIO.load_json(run_dir / self.META_DIRNAME / self.DATASET_FILENAME)["split_regions"])
+        return SplitRegions.from_bounds(FileIO.load_json(run_dir / self.META_DIRNAME / self.DATASET_FILENAME)["split_regions"])
 
     def splits(self, fold_runs: dict[int, Path]) -> list[str]:
         return [split for split in FoldPlanner.INFERENCE_SPLITS if any(CompletedInference.stamps(InferenceLayout.base(run_dir), split) for run_dir in fold_runs.values())]

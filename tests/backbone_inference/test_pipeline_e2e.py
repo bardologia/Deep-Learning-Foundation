@@ -1,195 +1,62 @@
-
 from __future__ import annotations
 
 import json
-import numbers
+import shutil
+from pathlib import Path
 
 import numpy as np
-import pytest
 
-from configuration.inference               import InferenceConfig
+from configuration.inference               import InferenceConfig, TargetDatasetConfig
 from pipelines.backbone.inference.pipeline import InferencePipeline
+from pipelines.shared.dataset.dataset_files import DatasetFiles
 from pipelines.shared.inference.metadata   import CompletedInference
-from tools.metrics.scoring                 import MetricOrientation
+from tools.runtime.completion              import CompletionMarker
 
-from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, build_run_directory
-
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir, param_extraction_meta):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
-
-    config = InferenceConfig(
-        run_directory            = run_dir,
-        output_subdir            = "e2e",
-        device                   = "cpu",
-        split                    = "test",
-        num_workers              = 0,
-        cpu_workers              = 2,
-        save_plots               = False,
-        save_animations          = False,
-        save_cubes               = True,
-    )
-
-    report_path = InferencePipeline(config).run()
-
-    output_dir = run_dir / "inference" / "e2e"
-    assert report_path == output_dir / "report.md"
-    assert report_path.is_file()
-
-    metrics = json.loads((output_dir / "metrics.json").read_text())
-
-    assert metrics["split"]              == "test"
-    assert metrics["activity_threshold"] == float(param_extraction_meta["activity_threshold"])
-
-    for key in ("curve_mse_gt", "overall_r2_gt", "pixel_mse_gt_mean", "ssim_norm_z_mean", "active_frac_gt", "matched_recall", "pixel_cosine_gt_nonempty_mean", "gt_empty_frac"):
-        assert np.isfinite(metrics[key]), key
-
-    for key, value in metrics.items():
-        if isinstance(value, numbers.Real) and not isinstance(value, bool):
-            MetricOrientation.direction(key)
-
-    cubes = output_dir / "cubes"
-    assert np.load(cubes / "pred_curves.npy").shape == (N_Z, 96, 96)
-    assert np.load(cubes / "gt_curves.npy").shape   == (N_Z, 96, 96)
-    assert np.load(cubes / "params_pred.npy").shape == (3 * N_GAUSSIANS, 96, 96)
-    assert np.load(cubes / "params_gt.npy").shape   == (3 * N_GAUSSIANS, 96, 96)
-
-    report = report_path.read_text()
-    assert "unet" in report
-
-    marker   = json.loads((output_dir / "complete.json").read_text())
-    resolved = json.loads((output_dir / "inference_config.json").read_text())
-
-    assert marker["checkpoint"]["name"]       == "best_model.pt"
-    assert marker["checkpoint"]["epoch"] + 1  == metrics["checkpoint_epoch"]
-    assert marker["inference_config"]         == "inference_config.json"
-    assert marker["provenance"]["git_commit"] == metrics["code_commit"]
-    assert metrics["checkpoint_name"]         == "best_model.pt"
-    assert resolved["run_directory"]          == str(run_dir)
-    assert "code_commit" in report
-
-    log = (output_dir / "logs" / "inference.log").read_text()
-    assert f"Cubes   : {len(list(cubes.glob('*.npy')))} .npy files in {cubes}" in log
+from tests.backbone_inference._helpers import build_run_directory
 
 
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_inference_pipeline_scores_the_standard_ssim_against_the_raw_cube(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
-
-    config = InferenceConfig(
-        run_directory     = run_dir,
-        output_subdir     = "cube_ssim",
-        device            = "cpu",
-        split             = "test",
-        num_workers       = 0,
-        cpu_workers       = 2,
-        save_plots        = False,
-        save_animations   = False,
-        save_cubes        = False,
-        compute_cube_ssim = True,
-    )
-
-    report_path = InferencePipeline(config).run()
-    metrics     = json.loads((run_dir / "inference" / "cube_ssim" / "metrics.json").read_text())
-
-    assert metrics["cube_ssim_status"] == "computed"
-
-    for axis, n_slices in (("z", N_Z), ("col", 96), ("row", 96)):
-        for form in ("cube", "cube_norm"):
-            assert np.isfinite(metrics[f"ssim_{form}_{axis}_mean"]), (form, axis)
-            assert f"ssim_{form}_{axis}_{n_slices - 1}" in metrics
-        assert metrics[f"ssim_cube_{axis}_mean"] != pytest.approx(metrics[f"ssim_gt_{axis}_mean"])
-
-    for key, value in metrics.items():
-        if isinstance(value, numbers.Real) and not isinstance(value, bool):
-            MetricOrientation.direction(key)
-
-    report = report_path.read_text()
-    assert "SSIM against the raw cube" in report
-    assert "3.4c SSIM summaries (prediction vs raw cube)" in report
+def _config(run_dir: Path, **overrides) -> InferenceConfig:
+    return InferenceConfig(run_directory=run_dir, output_subdir="stamp", device="cpu", num_workers=0, **overrides)
 
 
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_inference_pipeline_with_region_override(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+def test_inference_writes_maps_metrics_figures_report_and_marker(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
+    report  = InferencePipeline(_config(run_dir)).run()
+    stamp   = report.parent
+    region  = DatasetFiles.read(test_data_dir).splits.regions("test")[0]
 
-    config = InferenceConfig(
-        run_directory            = run_dir,
-        output_subdir            = "extended",
-        device                   = "cpu",
-        split                    = "test",
-        region_override          = [1180, 1296, 500, 596],
-        num_workers              = 0,
-        cpu_workers              = 2,
-        save_plots               = False,
-        save_animations          = False,
-        save_cubes               = True,
-    )
+    metrics     = json.loads((stamp / "metrics.json").read_text())
+    predictions = np.load(stamp / "maps" / "predictions.npy")
+    targets     = np.load(stamp / "maps" / "targets.npy")
 
-    InferencePipeline(config).run()
-
-    output_dir = run_dir / "inference" / "extended"
-    metrics    = json.loads((output_dir / "metrics.json").read_text())
-
-    assert metrics["split_region"] == [1180, 1296, 500, 596]
-    assert metrics["core_region"]  == [1200, 1296, 500, 596]
-
-    assert np.load(output_dir / "cubes" / "pred_curves.npy").shape == (N_Z, 116, 96)
-    assert np.load(output_dir / "cubes" / "gt_curves.npy").shape   == (N_Z, 116, 96)
+    assert predictions.shape == targets.shape == (2, region.row_size, region.col_size)
+    assert set(metrics["channels"]) == {"pointwise", "neighbourhood"}
+    assert metrics["split"] == "test"
+    assert metrics["checkpoint_epoch"] == 2
+    assert sorted(path.name for path in (stamp / "figures" / "pointwise").iterdir()) == ["error.png", "prediction.png", "target.png"]
+    assert "| pointwise" in report.read_text()
+    assert CompletionMarker.is_complete(stamp)
+    assert CompletedInference.latest(run_dir / "inference", "test") == stamp
 
 
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_backbone_runner_scores_each_region_of_a_split_stored_as_two(tmp_path, test_data_dir, params_dir):
-    from configuration.inference                       import BackboneInferenceEntryConfig
-    from pipelines.shared.inference.inference_dispatch import BackboneInferenceRunner
+def test_inference_skips_maps_and_figures_when_asked(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
+    stamp   = InferencePipeline(_config(run_dir, save_maps=False, save_plots=False)).run().parent
 
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
-    regions = [[1200, 1296, 500, 596], [1300, 1396, 500, 596]]
-
-    dataset_path = run_dir / "meta" / "dataset_creation_config.json"
-    payload      = json.loads(dataset_path.read_text())
-    payload["split_regions"]["test"] = [dict(zip(("row_start", "row_end", "col_start", "col_end"), region)) for region in regions]
-    dataset_path.write_text(json.dumps(payload))
-
-    inference = InferenceConfig(
-        run_directory   = run_dir,
-        device          = "cpu",
-        split           = "test",
-        num_workers     = 0,
-        cpu_workers     = 2,
-        save_plots      = False,
-        save_animations = False,
-        save_cubes      = False,
-    )
-
-    BackboneInferenceRunner(BackboneInferenceEntryConfig(inference=inference)).run(run_dir)
-
-    stamps = sorted((run_dir / "inference").glob("*_region*"))
-    assert [stamp.name[-len("_region0"):] for stamp in stamps] == ["_region0", "_region1"]
-
-    group = stamps[0].name[:-len("_region0")]
-
-    for index, (stamp, region) in enumerate(zip(stamps, regions)):
-        metrics = json.loads((stamp / "metrics.json").read_text())
-        marker  = json.loads((stamp / "complete.json").read_text())
-        assert metrics["split_region"] == region
-        assert metrics["core_region"]  == region
-        assert metrics["region_pass"]  == {"index": index, "count": 2, "group": group}
-        assert marker["region_pass"]   == {"index": index, "count": 2, "group": group}
-
-    assert CompletedInference.stamps(run_dir / "inference", "test") == stamps
-    assert "Cubes   : not saved (save_cubes=False)" in (stamps[0] / "logs" / "inference.log").read_text()
+    assert not any((stamp / "maps").iterdir())
+    assert not any((stamp / "figures").iterdir())
+    assert (stamp / "metrics.json").is_file()
 
 
-def test_equal_indices_are_unique_and_inside_the_axis():
-    for n_total in (7, 10, 64, 150):
-        for n_slices in (1, 3, 5, n_total):
-            indices = InferencePipeline._equal_indices(n_total, n_slices)
+def test_a_run_scored_on_a_target_dataset_stamps_under_its_cross_dataset_tree(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
+    other   = tmp_path / "other_scene"
+    shutil.copytree(test_data_dir, other)
 
-            assert indices.size == np.unique(indices).size
-            assert indices.min() >= 0
-            assert indices.max() < n_total
+    stamp   = InferencePipeline(_config(run_dir, target=TargetDatasetConfig(enabled=True, dataset_path=other))).run().parent
+    metrics = json.loads((stamp / "metrics.json").read_text())
+
+    assert stamp.parent.parent.name == "cross_dataset"
+    assert stamp.parent.name == "other_scene"
+    assert metrics["target_dataset"] == {"dataset_path": str(other)}
+    assert metrics["training_dataset"] == str(test_data_dir)

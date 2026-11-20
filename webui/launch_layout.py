@@ -30,13 +30,10 @@ class InferenceEssentials:
 
 class LaunchLayout:
 
-    NORM_PRESETS = ["min_max", "min_max_log1p", "robust_iqr", "robust_iqr_log1p", "fixed_div_pi", "zscore", "zscore_log1p"]
-
     GPU_ONE  = GpuWidgets.ONE
     GPU_MANY = GpuWidgets.MANY
 
     NUM_EPOCHS   = {"kind": "number", "int": True, "min": 1, "max": 1000, "presets": [10, 50, 60, 100, 200, 500]}
-    NUM_STEPS    = {"kind": "number", "int": True, "min": 0, "max": 1000, "presets": [0, 50, 100, 200, 500]}
     NUM_BATCH    = {"kind": "number", "int": True, "min": 1, "max": 4096, "presets": [32, 64, 128, 256, 512, 1024]}
     NUM_WORKERS  = {"kind": "number", "int": True, "min": 0, "max": 64, "presets": [0, 2, 4, 8, 16, 32]}
     NUM_PREFETCH = {"kind": "number", "int": True, "min": 1, "max": 32, "presets": [2, 4, 8, 16]}
@@ -47,62 +44,26 @@ class LaunchLayout:
     NUM_PLATEAU  = {"kind": "number", "int": True, "min": 0, "max": 10000, "presets": [0, 50, 100, 200, 400]}
     NUM_DELTA    = {"kind": "number", "min": 0, "max": 1, "step": 0.001, "presets": [0, 0.001, 0.005, 0.01, 0.02]}
     NUM_HOURS    = {"kind": "number", "min": 0, "max": 240, "step": 0.5, "presets": [0, 12, 24, 48, 72]}
-    NUM_K_MAX    = {"kind": "number", "int": True, "min": 1, "max": 10, "presets": [1, 2, 3, 5]}
     NUM_FREQ     = {"kind": "number", "int": True, "min": 1, "max": 50, "presets": [1, 2, 5, 10]}
     NUM_ETA_MIN  = {"kind": "number", "log": True, "min": 1e-9, "max": 1e-2, "presets": [0, 1e-7, 1e-6, 1e-5]}
-    NUM_LR       = {"kind": "number", "log": True, "min": 1e-5, "max": 1e-2, "presets": [1e-5, 1e-4, 3e-4, 1e-3, 1e-2]}
-    NUM_WD       = {"kind": "number", "log": True, "min": 1e-6, "max": 1e-1, "presets": [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]}
-    NUM_WEIGHT   = {"kind": "number", "min": 0, "max": 10, "step": 0.05, "presets": [0, 0.05, 0.1, 0.5, 1, 2]}
     NUM_FRACTION = {"kind": "number", "min": 0, "max": 1, "step": 0.01, "presets": [0.05, 0.1, 0.25, 0.5, 1.0]}
-    NUM_CELLS    = {"kind": "number", "int": True, "min": 10_000, "max": 100_000_000, "presets": [250_000, 500_000, 1_000_000, 2_000_000, 4_000_000, 8_000_000]}
     NUM_WARMFRAC = {"kind": "number", "min": 0, "max": 1, "step": 0.005, "presets": [0.01, 0.02, 0.03, 0.05, 0.1]}
     NUM_PROB     = {"kind": "number", "min": 0, "max": 1, "step": 0.05, "presets": [0, 0.25, 0.5, 0.75, 1.0]}
     NUM_DPI      = {"kind": "number", "int": True, "min": 72, "max": 600, "presets": [110, 150, 300, 600]}
-    NUM_SECONDS  = {"kind": "number", "min": 0.5, "max": 60, "step": 0.5, "presets": [3, 5, 8, 10, 15, 30]}
     NUM_MAIL_MB  = {"kind": "number", "min": 1, "max": 100, "step": 0.5, "presets": [10, 15, 18, 24]}
     NUM_FILE_MB  = {"kind": "number", "min": 0, "max": 100, "step": 0.5, "presets": [0, 2, 5, 10, 15]}
 
-    CH_STAGE        = {"kind": "choice", "options": ["full", "prepare", "compare"]}
-    CH_FIGSTYLE     = {"kind": "choice", "options": ["report", "paper"]}
-    CH_PARALLELISM  = {"kind": "choice", "options": ["multithreading", "multiprocessing", "serial"]}
-    CH_NORM_GLOBAL = {"kind": "choice", "options": ["per_slot"] + NORM_PRESETS}
+    CH_STAGE    = {"kind": "choice", "options": ["full", "prepare", "compare"]}
+    CH_FIGSTYLE = {"kind": "choice", "options": ["report", "paper"]}
 
-    PICK_DATASET  = {"kind": "dataset", "mode": "datasets", "baseFromParent": True, "validOnly": True}
-    PICK_PARAMS   = {"kind": "dataset", "mode": "params", "datasetFrom": "paths.dataset_path"}
-    PICK_DATASETS = {"kind": "dataset", "mode": "datasets", "multi": True, "baseFrom": "dataset_base_path", "validOnly": True}
-    PICK_CHANNELS = {"kind": "dataset", "mode": "secondaries", "multi": True, "datasetFrom": "paths.dataset_path", "standardButton": True}
-
-    NUM_CROP             = {"kind": "number", "int": True, "min": 0, "max": 100000, "presets": [0, 500, 1000, 1500, 2000]}
-    PICK_TARGET_PARAMS   = {"kind": "dataset", "mode": "params", "datasetFrom": "inference.target.dataset_path"}
-    PICK_TARGET_CHANNELS = {"kind": "dataset", "mode": "secondaries", "multi": True, "datasetFrom": "inference.target.dataset_path", "standardButton": True}
+    PICK_DATASET = {"kind": "dataset", "mode": "datasets", "baseFromParent": True, "validOnly": True}
 
     INFERENCE_TARGET_FIELDS = [
         "inference.target.enabled",
         "inference.target.dataset_path",
-        "inference.target.parameters_path",
-        "inference.target.secondary_labels",
-        "inference.target.row_start",
-        "inference.target.row_end",
-        "inference.target.col_start",
-        "inference.target.col_end",
     ]
 
-    MULTI_K       = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add K, Enter", "empty": "select at least one K"}
-    MULTI_LAMBDA  = {"kind": "multi", "numeric": True, "placeholder": "add lambda, Enter", "empty": "select at least one lambda"}
-    MULTI_INT     = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add value, Enter", "empty": "add at least one value"}
-
-
-
-
-    MULTI_FIT_MODES = {"kind": "multi", "empty": "select at least one fit mode", "choices": [
-        {"value": "sigma",        "label": "sigma only"},
-        {"value": "amp",          "label": "amplitude only"},
-        {"value": "mu",           "label": "mean only"},
-        {"value": "sigma_amp",    "label": "sigma + amplitude"},
-        {"value": "sigma_mu",     "label": "sigma + mean"},
-        {"value": "amp_mu",       "label": "amplitude + mean"},
-        {"value": "sigma_amp_mu", "label": "sigma + amplitude + mean"},
-    ]}
+    MULTI_INT = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add value, Enter", "empty": "add at least one value"}
 
     MULTI_HEADS = {"kind": "multi", "empty": "select at least one output head", "choices": [
         {"value": "conv",         "label": "Conv (single projection)"},
@@ -111,66 +72,20 @@ class LaunchLayout:
         {"value": "set_pred",     "label": "Set-Prediction (gated heads)"},
     ]}
 
-    MULTI_SWEEP_LOSSES = {"kind": "multi", "empty": "select at least one loss component to sweep", "choices": [
-        {"value": "param_l1",           "label": "Param L1 (baseline)"},
-        {"value": "param_huber",        "label": "Param Huber"},
-        {"value": "param_mse",          "label": "Param MSE"},
-        {"value": "mse_curve",          "label": "MSE curve"},
-        {"value": "l1_curve",           "label": "L1 curve"},
-        {"value": "huber_curve",        "label": "Huber curve"},
-        {"value": "charbonnier_curve",  "label": "Charbonnier curve"},
-        {"value": "cosine_curve",       "label": "Cosine curve"},
-        {"value": "log_energy_curve",   "label": "Log-energy curve"},
-        {"value": "smoothness_tv",      "label": "Smoothness TV"},
-        {"value": "total_power_relerr", "label": "Total power rel. error"},
-        {"value": "moments",            "label": "Moments"},
+    MULTI_LOSS_KINDS = {"kind": "multi", "empty": "select at least one loss kind to sweep", "choices": [
+        {"value": "mse",   "label": "Mean squared error"},
+        {"value": "l1",    "label": "Mean absolute error"},
+        {"value": "huber", "label": "Huber"},
     ]}
 
-
     INFERENCE_REPORT_GROUPS = [
-        {"title": "Artifacts", "fields": ["save_plots", "save_animations", "save_cubes", "stitch_window", "cube_dtype"]},
-        {"title": "Cube SSIM", "fields": ["compute_cube_ssim"]},
-        {"title": "Flip consistency", "fields": ["compute_flip_consistency"]},
-        {"title": "Stratified errors", "fields": ["compute_stratified"]},
-        {"title": "Profile picks", "fields": ["n_best_profiles", "n_worst_profiles", "n_random_profiles", {"path": "profile_seed", "widget": NUM_SEED}]},
-        {"title": "Slices", "fields": ["n_col_slices", "n_row_slices", "n_z_slices"]},
-        {"title": "GIFs", "fields": ["gif_axes", "gif_fps", {"path": "gif_duration", "widget": NUM_SECONDS}, "gif_max_frames", {"path": "gif_dpi", "widget": NUM_DPI}, "gif_separate_panels"]},
-        {"title": "Figures", "fields": ["cmap_intensity", "cmap_error", "normalize_intensity", {"path": "fig_dpi", "widget": NUM_DPI}, {"path": "save_dpi", "widget": NUM_DPI}, {"path": "figure_style", "widget": CH_FIGSTYLE}]},
+        {"title": "Outputs", "fields": ["save_maps", "save_plots", "stitch_window"]},
+        {"title": "Figures", "fields": ["cmap", "cmap_error", {"path": "fig_dpi", "widget": NUM_DPI}, {"path": "save_dpi", "widget": NUM_DPI}, {"path": "figure_style", "widget": CH_FIGSTYLE}]},
     ]
 
     TEMPLATES = {
         "loss": [
-            {"title": "Curve losses", "fields": [
-                {"gate": "use_mse_curve",         "fields": [{"path": "weight_mse_curve", "widget": NUM_WEIGHT}]},
-                {"gate": "use_l1_curve",          "fields": [{"path": "weight_l1_curve", "widget": NUM_WEIGHT}]},
-                {"gate": "use_huber_curve",       "fields": [{"path": "weight_huber_curve", "widget": NUM_WEIGHT}, "huber_delta"]},
-                {"gate": "use_charbonnier_curve", "fields": [{"path": "weight_charbonnier_curve", "widget": NUM_WEIGHT}, "charbonnier_eps"]},
-                {"gate": "use_cosine_curve",      "fields": [{"path": "weight_cosine_curve", "widget": NUM_WEIGHT}]},
-                {"gate": "use_log_energy_curve",  "fields": [{"path": "weight_log_energy_curve", "widget": NUM_WEIGHT}]},
-            ]},
-            {"title": "Parameter losses", "fields": [
-                {"gate": "use_param_l1",     "fields": [{"path": "weight_param_l1", "widget": NUM_WEIGHT}]},
-                {"gate": "use_param_huber",  "fields": [{"path": "weight_param_huber", "widget": NUM_WEIGHT}, "param_huber_delta"]},
-                {"gate": "use_param_mse",    "fields": [{"path": "weight_param_mse", "widget": NUM_WEIGHT}]},
-                "param_weights",
-                "param_matching",
-            ]},
-            {"title": "Slot presence", "fields": [
-                "use_active_normalization",
-                "presence_balance",
-                "active_weight",
-                "inactive_weight",
-                "amp_focal_gamma",
-                "amp_focal_delta",
-            ]},
-            {"title": "Regularization", "fields": [
-                {"gate": "use_smoothness_tv", "fields": [{"path": "weight_smoothness_tv", "widget": NUM_WEIGHT}]},
-            ]},
-            {"title": "Profile statistics", "fields": [
-                {"gate": "use_total_power", "fields": [{"path": "weight_total_power", "widget": NUM_WEIGHT}]},
-                {"gate": "use_moments",     "fields": [{"path": "weight_moments", "widget": NUM_WEIGHT}, "moments_weights"]},
-                "power_floor",
-            ]},
+            {"title": "Loss", "fields": ["kind", "huber_delta", {"path": "channel_weights", "widget": {"kind": "multi", "numeric": True, "placeholder": "add weight, Enter", "empty": "every target channel weighs 1"}}]},
         ],
         "training_queue": [
             {"title": "Schedule", "fields": [
@@ -184,7 +99,6 @@ class LaunchLayout:
                 {"path": "eta_min", "widget": NUM_ETA_MIN},
                 {"path": "early_stop_patience", "widget": NUM_PATIENCE},
                 "early_stop_min_delta",
-                "log_all_losses",
                 "log_debug",
                 "resume",
                 "snapshot_every_n_epochs",
@@ -227,51 +141,20 @@ class LaunchLayout:
             {"title": "VRAM reservation", "fields": [
                 {"gate": "reserve_vram", "fields": ["vram_keep_free_gb"]},
             ]},
-            {"title": "Patches and splits", "fields": [
+            {"title": "Patches", "fields": [
                 "patch_size",
                 "patch_stride",
                 "use_symmetric_padding",
-                "train_rows",
-                "val_rows",
-                "test_rows",
             ]},
         ],
         "paths_rest": [
             {"title": "Run paths", "fields": ["log_base_dir", "fingerprint_dataset"]},
-            {"title": "Secondary channels", "fields": [{"path": "secondary_labels", "widget": PICK_CHANNELS}]},
         ],
-
         "paths_train": [
             {"title": "Run paths", "fields": ["fingerprint_dataset"]},
-            {"title": "Secondary channels", "fields": [{"path": "secondary_labels", "widget": PICK_CHANNELS}]},
-        ],
-        "input": [
-            {"title": "Primary", "fields": [{"gate": "use_primary", "fields": ["primary_representation"]}]},
-            {"title": "Secondaries", "fields": [{"gate": "use_secondaries", "fields": ["secondaries_representation"]}]},
-            {"title": "Derived", "fields": [{"gate": "use_derived", "fields": ["derived_representation"]}]},
-            {"title": "Aux", "fields": ["use_aux"]},
         ],
         "normalization": [
-            {"title": "Strategy", "fields": [
-                {"path": "input_strategy", "widget": CH_NORM_GLOBAL},
-                {"path": "output_strategy", "widget": CH_NORM_GLOBAL},
-            ]},
-            {"title": "Per-channel overrides", "fields": [
-                {"path": "chan_mag",      "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "channel_phase", "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
-                {"path": "derived_mag",   "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "derived_phase", "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "fixed_div_pi, per-slot"}},
-                {"path": "out_amp",    "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "out_mu",     "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
-                {"path": "out_sigma",  "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "aux",        "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
-            ]},
-            {"title": "Clamp", "fields": [
-                {"gate": "clamp_output", "fields": ["clamp_floor", "clamp_ceil"]},
-                "clamp_leaky_slope",
-                "param_clamp_leaky_slope",
-                "amp_max",
-            ]},
+            {"title": "Strategy", "fields": ["inputs", "targets"]},
         ],
         "augmentation": [
             {"title": "Flips", "fields": [
@@ -295,15 +178,12 @@ class LaunchLayout:
                 "checkpoint_name",
                 {"path": "batch_size", "widget": NUM_BATCH},
                 {"path": "num_workers", "widget": NUM_WORKERS},
-                {"path": "cpu_workers", "widget": NUM_WORKERS},
-                {"path": "gif_workers", "widget": NUM_WORKERS},
             ]},
             *INFERENCE_REPORT_GROUPS,
             {"title": "Output layout", "fields": [
                 "paths.figures_subdir",
-                "paths.animations_subdir",
                 "paths.logs_subdir",
-                "paths.cubes_subdir",
+                "paths.maps_subdir",
                 "paths.metrics_filename",
                 "paths.report_filename",
             ]},
@@ -315,22 +195,12 @@ class LaunchLayout:
                 {"path": "seed", "widget": NUM_SEED},
                 {"path": "batch_size", "widget": NUM_BATCH},
                 {"path": "num_workers", "widget": NUM_WORKERS},
-                {"path": "cpu_workers", "widget": NUM_WORKERS},
-                {"path": "gif_workers", "widget": NUM_WORKERS},
             ]},
             *INFERENCE_REPORT_GROUPS,
         ],
         "inference_target": [
-            {"title": "Scene", "fields": [
-                {"gate": "enabled", "fields": [
-                    {"path": "dataset_path", "widget": PICK_DATASET},
-                    {"path": "parameters_path", "widget": PICK_TARGET_PARAMS},
-                    {"path": "secondary_labels", "widget": PICK_TARGET_CHANNELS},
-                    {"path": "row_start", "widget": NUM_CROP},
-                    {"path": "row_end", "widget": NUM_CROP},
-                    {"path": "col_start", "widget": NUM_CROP},
-                    {"path": "col_end", "widget": NUM_CROP},
-                ]},
+            {"title": "Dataset", "fields": [
+                {"gate": "enabled", "fields": [{"path": "dataset_path", "widget": PICK_DATASET}]},
             ]},
         ],
     }
@@ -343,34 +213,20 @@ class LaunchLayout:
         {"path": "gpus", "widget": GPU_MANY},
         "logdir",
         {"path": "paths.dataset_path", "widget": PICK_DATASET},
-        {"path": "paths.parameters_path", "widget": PICK_PARAMS},
         {"path": "seed", "widget": NUM_SEED},
         "seeds",
     ]
 
     EXPERIMENT_TRIALS = [
-        "trials_enabled", "trials_mode", "presence_trials", "input_trials", "context_trials",
+        "trials_enabled", "trials_mode", "context_trials",
         "augmentation_trials.flip_probability", "augmentation_trials.noise_probability", "augmentation_trials.noise_stds",
-        "clamp_trials.leaky_slopes", "clamp_trials.param_leaky_slopes",
         "stability_trials.warmup_fractions", "stability_trials.warmup_mode", "stability_trials.clip_mode", "stability_trials.max_grad_norms",
         "ema_trials.decays",
-        "head_trials.heads", "head_trials.matchings",
-        "pair_trials.base_component", "pair_trials.base_weight", "pair_trials.components", "pair_trials.weights", "pair_trials.include_baseline",
-        "log_energy_trials.weights", "log_energy_trials.replace_covariance", "log_energy_trials.include_baseline",
-        "secondary_trials.strategy", "secondary_trials.n_secondaries", "secondary_trials.fixed", "secondary_trials.n_trials",
-        "secondary_trials.mean", "secondary_trials.sigma", "secondary_trials.block_step", "secondary_trials.spacing", "secondary_trials.seed",
         "patch_trials.minimum", "patch_trials.maximum", "patch_trials.step", "patch_trials.stride_ratio", "patch_trials.constant_pixel_budget",
         "reach_trials.rungs", "reach_trials.patch_size", "reach_trials.patch_stride", "reach_trials.in_channels", "reach_trials.match_tolerance",
     ]
 
-
-
-
-
-
-
-
-    INFERENCE_TARGET_NOTE = "Scores every selected run on a dataset it was never trained on. The run keeps its checkpoint and training normalization; the target must share its z axis and K, and feed as many secondary channels. Leaving an axis at 0 to 0 scores the whole target scene along it. Stamps land under <run>/cross_dataset/<dataset>/, apart from the run's own inference, and split must stay test."
+    INFERENCE_TARGET_NOTE = "Scores every selected run on the test split of a dataset it was never trained on. The run keeps its checkpoint and training normalization, so the target must carry the same input and target channels. Stamps land under <run>/cross_dataset/<dataset>/, apart from the run's own inference, and split must stay test."
 
     INFER_BACKBONE_LAYOUT = {
         "essentials": InferenceEssentials.for_block("inference.split"),
@@ -385,54 +241,27 @@ class LaunchLayout:
     }
 
 
-
-
     LAYOUTS = {
         "generate_dataset": {
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [
                     {"kind": "fields", "groups": [
-                        {"title": "Output", "fields": [
-                            "synthesis.output_directory",
-                            "synthesis.params_run_name",
-                            "synthesis.dataset_type",
-                            "synthesis.cube_tag",
-                            "synthesis.parameter_tag",
-                            "log_dir",
+                        {"title": "Output", "fields": ["generation.output_directory", "log_dir"]},
+                        {"title": "Grid", "fields": [
+                            "generation.rows",
+                            "generation.cols",
+                            "generation.input_channels",
+                            {"path": "generation.seed", "widget": NUM_SEED},
                         ]},
-                        {"title": "Scene", "fields": [
-                            "synthesis.global_crop",
-                            "synthesis.profile_length",
-                            "synthesis.z_range",
-                            {"path": "synthesis.seed", "widget": NUM_SEED},
+                        {"title": "Fields", "fields": [
+                            "generation.smoothing_pixels",
+                            "generation.neighbourhood",
+                            "generation.input_noise",
+                            "generation.target_noise",
                         ]},
-                        {"title": "Channels", "fields": [
-                            "synthesis.primary_label",
-                            "synthesis.secondary_labels",
-                            "synthesis.channel_phase_rates",
-                            "synthesis.sensitivity_width_fraction",
-                            "synthesis.aux_range",
-                            "synthesis.phase_smoothing_pixels",
-                            "synthesis.max_amplitude_clip",
-                        ]},
-                        {"title": "Mixture", "fields": [
-                            {"path": "synthesis.k_max", "widget": NUM_K_MAX},
-                            "synthesis.amplitude_range",
-                            "synthesis.sigma_range",
-                            "synthesis.slot_band_margin",
-                            "synthesis.field_smoothing_pixels",
-                            {"path": "synthesis.empty_pixel_fraction", "widget": NUM_FRACTION},
-                            {"path": "synthesis.dropped_slot_fraction", "widget": NUM_FRACTION},
-                        ]},
-                        {"title": "Noise", "fields": [
-                            {"path": "synthesis.cube_noise_fraction", "widget": NUM_FRACTION},
-                            {"path": "synthesis.channel_noise_fraction", "widget": NUM_FRACTION},
-                        ]},
-                        {"title": "Fit metadata", "fields": [
-                            "synthesis.lambda_k",
-                            "synthesis.activity_threshold",
-                            "synthesis.threshold_factor",
-                            "synthesis.truncation_index",
+                        {"title": "Splits", "fields": [
+                            {"path": "generation.val_fraction", "widget": NUM_FRACTION},
+                            {"path": "generation.test_fraction", "widget": NUM_FRACTION},
                         ]},
                     ]},
                 ]},
@@ -447,7 +276,6 @@ class LaunchLayout:
                 ]},
                 {"key": "data", "title": "Data", "panels": [
                     {"kind": "fields", "title": "Paths", "template": "paths_train", "at": "paths"},
-                    {"kind": "fields", "title": "Input channels", "template": "input", "at": "input"},
                     {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
                     {"kind": "fields", "title": "Augmentation", "template": "augmentation", "at": "augmentation"},
                 ]},
@@ -478,7 +306,6 @@ class LaunchLayout:
                 "run_tag",
                 {"path": "gpus", "widget": GPU_MANY},
                 {"path": "paths.dataset_path", "widget": PICK_DATASET},
-                {"path": "paths.parameters_path", "widget": PICK_PARAMS},
                 {"path": "seed", "widget": NUM_SEED},
                 "seeds",
                 "resume",
@@ -492,14 +319,11 @@ class LaunchLayout:
                     {"kind": "special", "panel": "model_toggle", "fields": ["skip_models"]},
                     {"kind": "fields", "groups": [
                         {"title": "Output heads",    "fields": [{"path": "heads", "widget": MULTI_HEADS}]},
-                        {"title": "Loss components", "fields": [{"path": "sweep_loss_components", "widget": MULTI_SWEEP_LOSSES}]},
+                        {"title": "Loss kinds",      "fields": [{"path": "sweep_loss_kinds", "widget": MULTI_LOSS_KINDS}]},
                     ]},
                 ]},
                 {"key": "data", "title": "Data", "panels": [
                     {"kind": "fields", "title": "Paths", "template": "paths_rest", "at": "paths"},
-                ]},
-                {"key": "input", "title": "Input channels", "panels": [
-                    {"kind": "fields", "title": "Input channels", "template": "input", "at": "input"},
                 ]},
                 {"key": "transforms", "title": "Normalization and augmentation", "panels": [
                     {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
@@ -509,7 +333,7 @@ class LaunchLayout:
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
-                    {"kind": "fields", "title": "Base loss for swept components", "template": "loss", "at": "loss"},
+                    {"kind": "fields", "title": "Base loss for the swept kinds", "template": "loss", "at": "loss"},
                 ]},
                 {"key": "inference", "title": "Inference", "panels": [
                     {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after"]}]},
@@ -523,7 +347,6 @@ class LaunchLayout:
                 "run_tag",
                 {"path": "gpus", "widget": GPU_MANY},
                 {"path": "paths.dataset_path", "widget": PICK_DATASET},
-                {"path": "paths.parameters_path", "widget": PICK_PARAMS},
                 {"path": "seed", "widget": NUM_SEED},
                 "seeds",
                 "resume",
@@ -544,9 +367,6 @@ class LaunchLayout:
                 ]},
                 {"key": "data", "title": "Data", "panels": [
                     {"kind": "fields", "title": "Paths", "template": "paths_rest", "at": "paths"},
-                ]},
-                {"key": "input", "title": "Input channels", "panels": [
-                    {"kind": "fields", "title": "Input channels", "template": "input", "at": "input"},
                 ]},
                 {"key": "transforms", "title": "Normalization and augmentation", "panels": [
                     {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
@@ -573,7 +393,6 @@ class LaunchLayout:
                 {"path": "gpus", "widget": GPU_MANY},
                 {"path": "n_workers", "widget": TUNE_WORKERS},
                 {"path": "paths.dataset_path", "widget": PICK_DATASET},
-                {"path": "paths.parameters_path", "widget": PICK_PARAMS},
             ],
             "sections": [
                 {"key": "search", "title": "Search", "panels": [
@@ -903,12 +722,10 @@ class LaunchLayout:
                         {"title": "Trace", "fields": ["record_shapes", "profile_memory", "with_stack"]},
                         {"title": "Paths", "fields": [
                             {"path": "paths.dataset_path", "widget": PICK_DATASET},
-                            {"path": "paths.parameters_path", "widget": PICK_PARAMS},
                             "paths.log_base_dir",
                             "paths.fingerprint_dataset",
                             "output_dir",
                         ]},
-                        {"title": "Secondary channels", "fields": [{"path": "paths.secondary_labels", "widget": PICK_CHANNELS}]},
                     ]},
                 ]},
             ],

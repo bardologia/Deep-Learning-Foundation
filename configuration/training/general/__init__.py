@@ -13,7 +13,7 @@ from configuration.training.general.runtime import (
 )
 from configuration.training.general.loss import (
     LossConfig,
-    ParamMatching,
+    LossKind,
 )
 from configuration.training.general.run import (
     RunPathsConfig,

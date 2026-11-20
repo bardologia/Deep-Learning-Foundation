@@ -206,7 +206,7 @@ class ExperimentReportMailConfig:
 @dataclass
 class ArtifactMailConfig:
 
-    source_dir  : Path = Path("datasets/synthetic_small")
+    source_dir  : Path = Path("datasets/synthetic")
     staging_dir : Path = Path("results/mailed_reports")
 
     label : str = ""
@@ -255,14 +255,14 @@ class ReportMailEntryConfig:
     runs_dir   : Path      = Path("runs")
     run_filter : List[str] = field(default_factory=list)
 
-    run_excluded_paths    : List[str] = field(default_factory=lambda: ["checkpoints", "cubes"])
+    run_excluded_paths    : List[str] = field(default_factory=lambda: ["checkpoints", "maps"])
     run_excluded_suffixes : List[str] = field(default_factory=lambda: [".pt", ".pth", ".ckpt", ".npy", ".npz", ".h5", ".pkl"])
     run_max_file_mb       : float     = 5.0
 
     datasets_dir   : Path      = Path("datasets")
     dataset_filter : List[str] = field(default_factory=list)
 
-    dataset_required_paths : List[str] = field(default_factory=lambda: ["data/dataset.json", "meta"])
+    dataset_required_paths : List[str] = field(default_factory=lambda: ["dataset.json"])
     dataset_optional_paths : List[str] = field(default_factory=lambda: ["logs", "docs"])
 
     staging_dir : Path = Path("results/mailed_reports")

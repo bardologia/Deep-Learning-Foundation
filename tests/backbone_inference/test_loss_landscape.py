@@ -150,8 +150,8 @@ def test_grid_reports_every_evaluated_point():
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_landscape_pass_announces_tracks_and_times_its_stages(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+def test_landscape_pass_announces_tracks_and_times_its_stages(tmp_path, test_data_dir):
+    run_dir = build_run_directory(tmp_path, test_data_dir)
     config  = LossLandscapeConfig(batch_size=2, max_batches=1, n_directions=2, n_points_1d=11, n_points_2d=3)
     logger  = StageLogger()
 

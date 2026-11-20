@@ -10,14 +10,14 @@ from pathlib     import Path
 import torch
 
 from configuration.training                       import BackboneEntryConfig
-from configuration.training.general.loss          import ParamMatching
 from configuration.training.general.optimization  import ClipMode, WarmupMode
-from models                                       import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
+from models                                       import BACKBONE_CONFIG_REGISTRY
 from pipelines.backbone.inference.pipeline        import InferencePipeline
-from pipelines.backbone.training.experiments      import AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner
+from pipelines.backbone.training.experiments      import AugmentationTrialPlanner, ContextTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner
 from pipelines.backbone.training.patch_report     import PatchTrialsReport
 from pipelines.backbone.training.pipeline         import TrainingPipeline
 from pipelines.shared.config.config_factory       import ConfigFactory
+from pipelines.shared.dataset.dataset_files       import DatasetFiles
 from pipelines.shared.model.model_builder         import ModelBuilder
 from pipelines.shared.training.resume_source      import ResumeLauncher
 from pipelines.shared.training.run_naming         import RunNaming
@@ -25,7 +25,6 @@ from pipelines.shared.training.seed_sweep         import SeedFanoutScheduler, Se
 from pipelines.shared.training.trial_planners     import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
 from pipelines.shared.training.trial_sweep        import TrialSweepScheduler
 from pipelines.shared.training.unit_resume        import UnitResume
-from tools.data.gaussians                         import GaussianHead
 from tools.runtime.config_cli                     import ConfigCli
 from tools.runtime.run_tag                        import RunTag
 from tools.training.checkpoint                    import TrainerState
@@ -49,8 +48,7 @@ class SingleTrainRunner:
 
     @property
     def label(self) -> str:
-        n_gaussians = self.factory.gaussian_config().n_default_gaussians
-        return RunNaming.tag(self.model_name, self.model_head, self.config.loss, n_gaussians, self.config.augmentation)
+        return RunNaming.tag(self.model_name, self.model_head, self.config.loss, self.config.augmentation)
 
     def _apply_resume_from(self) -> None:
         target = Path(self.config.resume_from).expanduser()
@@ -79,15 +77,9 @@ class SingleTrainRunner:
         return ModelBuilder.config_from_registry(self.config.backbone_name, self.config.model_overrides, head=self.config.backbone_head)
 
     def _pipeline(self, logdir) -> TrainingPipeline:
-        trainer_config      = self.factory.training_trainer_config(logdir=logdir)
-        trainer_config.loss = self.config.loss
-
-        dataset_config              = self.factory.training_dataset_config()
-        dataset_config.input_config = self.config.input
-
         return TrainingPipeline(
-            trainer_config  = trainer_config,
-            dataset_config  = dataset_config,
+            trainer_config  = self.factory.training_trainer_config(logdir=logdir),
+            dataset_config  = self.factory.training_dataset_config(),
             backbone_name   = self.model_name,
             model_config    = self._model_config(),
             seed            = self.config.seed,
@@ -120,23 +112,16 @@ class SingleTrainRunner:
 
 class TrainScheduler(TrialSweepScheduler):
 
-    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "presence_trials", "pair_trials", "log_energy_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "clamp_trials", "stability_trials", "ema_trials", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
+    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "patch_trials", "context_trials", "reach_trials", "augmentation_trials", "stability_trials", "ema_trials", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
 
     MODE_SUBDIRS = {
-        "presence"      : "presence",
-        "pair"          : "pair",
-        "log_energy"    : "log_energy",
-        "secondary"     : "secondary",
-        "patch"         : "patch",
-        "input"         : "input",
-        "context"       : "context",
-        "reach"         : "reach",
-        "head"          : "head",
-        "augmentation"  : "augmentation",
-        "clamp"         : "clamp",
-        "stability"     : "stability",
-        "ema"           : "ema",
-        "amp"           : "amp",
+        "patch"        : "patch",
+        "context"      : "context",
+        "reach"        : "reach",
+        "augmentation" : "augmentation",
+        "stability"    : "stability",
+        "ema"          : "ema",
+        "amp"          : "amp",
     }
 
     @property
@@ -154,35 +139,18 @@ class TrainScheduler(TrialSweepScheduler):
         }
 
     def _out_channels(self) -> int:
-        gaussian = ConfigFactory(self.config).gaussian_config()
-
-        return GaussianHead.total_channels(gaussian.params_per_gaussian, gaussian.n_default_gaussians)
+        return len(DatasetFiles.read(self.config.paths.dataset_path).target_channels)
 
     def _build_planner(self):
         mode = self.config.trials_mode
-        if mode == "presence":
-            return SlotPresenceTrialPlanner(self.config.presence_trials)
-        if mode == "pair":
-            return PairLossTrialPlanner(self.config.pair_trials)
-        if mode == "log_energy":
-            return LogEnergyTrialPlanner(self.config.log_energy_trials)
-        if mode == "secondary":
-            return SecondaryTrialPlanner.from_dataset(self.config.secondary_trials, self.config.paths.dataset_path)
         if mode == "patch":
             return PatchSizeTrialPlanner(self.config.patch_trials, self.config.backbone_name, self.config.backbone_head, self.config.model_overrides, self.config.training)
-        if mode == "input":
-            return InputTrialPlanner.from_dataset(self.config.input_trials, self.config.paths.dataset_path)
         if mode == "context":
             return ContextTrialPlanner(self.config.context_trials, tuple(BACKBONE_CONFIG_REGISTRY))
         if mode == "reach":
-            n_secondaries = len(self.config.paths.secondary_labels)
-            return ReachTrialPlanner(self.config.reach_trials, tuple(BACKBONE_CONFIG_REGISTRY), self.config.backbone_head, self.config.input.total_channels(n_secondaries, n_secondaries), self._out_channels())
-        if mode == "head":
-            return HeadMatchingTrialPlanner(self.config.head_trials, self.config.backbone_name, tuple(BACKBONE_CONFIG_REGISTRY), BACKBONE_HEADS, tuple(matching.value for matching in ParamMatching))
+            return ReachTrialPlanner(self.config.reach_trials, tuple(BACKBONE_CONFIG_REGISTRY), self.config.backbone_head, self._out_channels())
         if mode == "augmentation":
             return AugmentationTrialPlanner(self.config.augmentation_trials)
-        if mode == "clamp":
-            return ClampTrialPlanner(self.config.clamp_trials)
         if mode == "stability":
             return StabilityTrialPlanner(self.config.stability_trials, tuple(mode.value for mode in WarmupMode), tuple(mode.value for mode in ClipMode))
         if mode == "ema":

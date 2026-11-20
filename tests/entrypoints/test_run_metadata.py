@@ -10,14 +10,12 @@ from configuration.benchmark                import BenchmarkConfig
 from pipelines.shared.config.config_factory import ConfigFactory
 from pipelines.shared.config.run_metadata   import TrainingRunMetadata
 from tools.monitoring.logger                import Logger
-from configuration.training.general.run     import DEFAULT_PARAMS_RUN
 
 
 @pytest.fixture
 def trainer_config(test_data_dir, tmp_path):
-    config                       = BenchmarkConfig()
-    config.paths.dataset_path    = str(test_data_dir)
-    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
+    config                    = BenchmarkConfig()
+    config.paths.dataset_path = test_data_dir
     return ConfigFactory(config).training_trainer_config(tmp_path / "seed_logdir")
 
 
@@ -85,18 +83,12 @@ def test_save_trainer_config_serializes_without_writer(metadata):
 
 @pytest.mark.dataset
 def test_save_run_summary_payload(metadata):
-    out_path = metadata.save_run_summary(
-        model_name    = "resunet",
-        in_channels   = 9,
-        out_channels  = 15,
-        x_axis_length = 256,
-    )
+    out_path = metadata.save_run_summary(model_name="resunet", input_channels=["x0", "x1"], target_channels=["y"])
 
     payload = json.loads(out_path.read_text())
     assert payload["model_name"]    == "resunet"
-    assert payload["in_channels"]   == 9
-    assert payload["out_channels"]  == 15
-    assert payload["x_axis_length"] == 256
+    assert payload["in_channels"]   == 2
+    assert payload["out_channels"]  == 1
     assert payload["framework"]     == "pytorch"
     assert payload["run_directory"] == str(metadata.run_directory)
 
@@ -155,22 +147,17 @@ def test_git_state_written_into_docs(metadata):
 
 @pytest.mark.dataset
 def test_dataset_fingerprint_hashes_the_data_files(metadata, test_data_dir):
-    parameters = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
-
-    out_path = metadata.save_dataset_fingerprint(test_data_dir, parameters)
+    out_path = metadata.save_dataset_fingerprint(test_data_dir)
     payload  = json.loads(Path(out_path).read_text())
 
-    data_keys = {key for key in payload if key.startswith("data/")}
-
     assert out_path == metadata.metadata_directory / "dataset_fingerprint.json"
-    assert data_keys
+    assert set(payload) == {"dataset.json", "inputs.npy", "targets.npy"}
     assert all(len(entry["sha256"]) == 64 and entry["bytes"] > 0 for entry in payload.values())
-    assert str(parameters) in payload or any(key.endswith("parameters.npy") for key in payload)
 
 
 @pytest.mark.dataset
 def test_dataset_fingerprint_disabled_writes_nothing(metadata, test_data_dir):
-    result = metadata.save_dataset_fingerprint(test_data_dir, None, enabled=False)
+    result = metadata.save_dataset_fingerprint(test_data_dir, enabled=False)
 
     assert result is None
     assert not (metadata.metadata_directory / "dataset_fingerprint.json").exists()

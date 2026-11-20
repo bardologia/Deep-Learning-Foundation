@@ -11,17 +11,17 @@ class ScriptCatalog:
         "generate_dataset": {
             "title"     : "Generate Dataset",
             "category"  : "Data",
-            "purpose"   : "Write the bundled synthetic dataset the rest of the template runs on: smooth Gaussian-mixture parameter fields, the profiles they render, a primary plus secondary channel stack with its derived channels, an auxiliary field, the reference cube, and a matching parameter run. CPU only.",
+            "purpose"   : "Write the bundled synthetic dataset the template trains on: a few smooth random input fields with noise, target fields given by a known nonlinear and spatially local function of them, and train, validation and test row bands, all in one dataset.json with inputs.npy and targets.npy. CPU only, a few seconds.",
         },
         "train_backbone": {
             "title"     : "Train Backbone",
             "category"  : "Training",
-            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: slot-presence balance matrices, loss-pair searches, secondary-channel selections, rectangular patch-shape grids under a constant pixel budget, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, weight-EMA on/off ladders, or mixed-precision on/off pairs.",
+            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: rectangular patch-shape grids under a constant pixel budget, backbone context ladders, size-matched reach comparisons, augmentation ladders, training-stability arms, weight-EMA ladders, or mixed-precision on/off pairs.",
         },
         "infer_backbone": {
             "title"     : "Infer Backbone",
             "category"  : "Inference",
-            "purpose"   : "Backbone inference: sliding-window prediction, stitched cubes, and reports. Scores every backbone run found under the path given, whether that is one run, a sweep, an experiment or a whole runs tree, and leaves alone the runs already scored on the split.",
+            "purpose"   : "Backbone inference: sliding-window prediction, stitched target maps, per-channel metrics and reports. Scores every backbone run found under the path given, whether that is one run, a sweep, an experiment or a whole runs tree, and leaves alone the runs already scored on the split.",
         },
         "benchmark": {
             "title"     : "Benchmark",

@@ -26,9 +26,8 @@ class ExtendedPaths(PathsSection):
 
 @dataclass
 class LoaderSection:
-    num_workers       : int  = 16
-    parameter_workers : int  = 2
-    pin_memory        : bool = True
+    num_workers : int  = 16
+    pin_memory  : bool = True
 
 
 @dataclass
@@ -67,8 +66,8 @@ FULL_DATA = {
     "machine"  : {"env_name": "Env", "interpreter": "/envs/Env/bin/python", "conda_root": "/opt/conda"},
     "console"  : {"host": "0.0.0.0", "port": 9001},
     "roots"    : {"repo": "/home/me/ML-Template", "data": "/data/me", "runs": "/scratch/me/runs", "results": "/home/me/results"},
-    "dataset"  : {"path": "/data/me/scene", "parameters_path": "/data/me/scene/params/p/parameters.npy"},
-    "hardware" : {"gpu_pool": [1], "cpu_workers": 6, "gif_workers": 3, "max_workers": 4},
+    "dataset"  : {"path": "/data/me/scene"},
+    "hardware" : {"gpu_pool": [1], "max_workers": 4},
     "mail"     : {"sender": "me@example.org", "recipient": "you@example.org"},
 }
 
@@ -155,8 +154,8 @@ def test_path_anchors_are_ordered_most_specific_first(tmp_path):
     assert anchors == [str(ReferenceLayout.DATASET_DIR), str(ReferenceLayout.DATA_ROOT), str(ReferenceLayout.RUNS_ROOT)]
 
     full = [anchor for anchor, _ in _profile(tmp_path, FULL_DATA).path_anchors()]
-    assert full[0] == str(ReferenceLayout.PARAMETERS)
-    assert set(full) == {str(ReferenceLayout.PARAMETERS), str(ReferenceLayout.DATASET_DIR), str(ReferenceLayout.DATA_ROOT), str(ReferenceLayout.RUNS_ROOT), str(ReferenceLayout.RESULTS_ROOT)}
+    assert full[0] == str(ReferenceLayout.DATASET_DIR)
+    assert set(full) == {str(ReferenceLayout.DATASET_DIR), str(ReferenceLayout.DATA_ROOT), str(ReferenceLayout.RUNS_ROOT), str(ReferenceLayout.RESULTS_ROOT)}
 
 
 def test_rebase_matches_whole_components_only():
@@ -174,11 +173,9 @@ def test_rebase_matches_whole_components_only():
 def test_field_rules_follow_the_hardware_and_mail_sections(tmp_path):
     rules = {(rule.field, rule.kind, rule.owner): rule for rule in _profile(tmp_path, FULL_DATA).field_rules()}
 
-    assert rules[("gpus", "set", None)].value              == [1]
-    assert rules[("gpu", "set", None)].value               == 1
-    assert rules[("cpu_workers", "set", None)].value       == 6
-    assert rules[("num_workers", "cap", None)].value       == 4
-    assert rules[("parameter_workers", "cap", None)].value == 4
+    assert rules[("gpus", "set", None)].value        == [1]
+    assert rules[("gpu", "set", None)].value         == 1
+    assert rules[("num_workers", "cap", None)].value == 4
     assert rules[("sender", "set", "ReportMailEntryConfig")].value == "me@example.org"
     assert ("smtp_host", "set", "ReportMailEntryConfig") in rules
 
@@ -203,7 +200,6 @@ def test_config_cli_applies_the_profile_to_the_defaults(tmp_path):
     assert config.gpu                      == 1
     assert config.gpu_flag                 is True
     assert config.loader.num_workers       == 4
-    assert config.loader.parameter_workers == 2
     assert config.loader.pin_memory        is True
     assert config.other.sender             == "unrelated"
     assert config.mail.sender              == "me@example.org"

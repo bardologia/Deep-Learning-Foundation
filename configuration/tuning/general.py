@@ -6,7 +6,6 @@ from pathlib     import Path
 
 from configuration.dataset                      import AugmentationConfig
 from configuration.normalization.general        import NormalizationConfig
-from configuration.training.backbone            import default_loss
 from configuration.training.general.loss        import LossConfig
 from configuration.training.general.run         import RunPathsConfig, TrainingQueueConfig
 
@@ -56,6 +55,6 @@ class TuningEntryConfig:
     resume_from : str        = ""
 
     training      : TrainingQueueConfig  = field(default_factory=TrainingQueueConfig)
-    loss          : LossConfig           = field(default_factory=default_loss)
+    loss          : LossConfig           = field(default_factory=LossConfig)
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)

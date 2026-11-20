@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from configuration.benchmark                 import BenchmarkConfig
 from pipelines.shared.config.config_factory  import ConfigFactory
 from pipelines.shared.training.seed_sweep    import SeedSet
@@ -23,13 +25,10 @@ class BenchmarkWorker(WorkerBase):
     def unit_run_name(self, model_name: str, component: str | None, seed: int | None, run_name: str | None) -> str:
         return run_name if run_name else self._run_name(model_name, component, seed)
 
-    def _apply_loss_component(self, trainer_config, component: str | None) -> None:
-        if component is None:
-            return
+    def _apply_loss_component(self, trainer_config, component: str) -> None:
+        from configuration.training.general.loss import LossKind
 
-        from pipelines.backbone.training.loss_terms import LossComponentCatalog
-
-        trainer_config.loss = LossComponentCatalog.standalone(component, base=self.config.loss)
+        trainer_config.loss = replace(self.config.loss, kind=LossKind(component))
 
 class TrainingWorker(BenchmarkWorker):
 
@@ -41,15 +40,12 @@ class TrainingWorker(BenchmarkWorker):
         name, head   = ModelBuilder.split_key(model_name)
         model_config = ModelBuilder.config_from_registry(name, {}, head=head)
 
-        trainer_config          = self.factory.training_trainer_config(logdir=stage_dir)
+        trainer_config = self.factory.training_trainer_config(logdir=stage_dir)
         self._apply_loss_component(trainer_config, loss_component)
-
-        dataset_config              = self.factory.training_dataset_config()
-        dataset_config.input_config = self.config.input
 
         pipeline = TrainingPipeline(
             trainer_config = trainer_config,
-            dataset_config = dataset_config,
+            dataset_config = self.factory.training_dataset_config(),
             backbone_name  = name,
             model_config   = model_config,
             seed           = self.config.seed if seed is None else seed,
