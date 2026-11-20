@@ -14,7 +14,7 @@ from web_logger                import WebLogger
 
 
 INTERPRETERS = [
-    {"path": "/envs/Dune/bin/python", "name": "Dune"},
+    {"path": "/envs/ml-template/bin/python", "name": "ml-template"},
     {"path": "/envs/base/bin/python", "name": "base"},
 ]
 
@@ -134,7 +134,7 @@ def _wait_for(items: list, count: int, timeout: float = 5.0) -> list:
 
 
 def test_the_preferred_interpreter_is_chosen_per_script():
-    assert _launcher().preferred_interpreter("train_backbone") == "/envs/Dune/bin/python::train_backbone"
+    assert _launcher().preferred_interpreter("train_backbone") == "/envs/ml-template/bin/python::train_backbone"
 
 
 def test_only_a_discovered_interpreter_is_accepted():
@@ -201,37 +201,37 @@ def test_execute_launches_and_forwards_every_argument():
     processes = StubProcesses()
     launcher  = _launcher(StubResolver({"logdir": "/data/runs"}), processes)
 
-    result = launcher.execute("train_backbone", "/envs/Dune/bin/python", {"epochs": 3}, "infer_backbone", True, False)
+    result = launcher.execute("train_backbone", "/envs/ml-template/bin/python", {"epochs": 3}, "infer_backbone", True, False)
 
     assert result["job_id"] == "job-1"
     assert processes.queued == []
-    assert processes.launched == [("train_backbone", "/envs/Dune/bin/python", {"epochs": 3}, "infer_backbone", True)]
+    assert processes.launched == [("train_backbone", "/envs/ml-template/bin/python", {"epochs": 3}, "infer_backbone", True)]
 
 
 def test_execute_queues_instead_of_launching_when_asked():
     processes = StubProcesses()
     launcher  = _launcher(StubResolver({"logdir": "/data/runs"}), processes)
 
-    result = launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, False, True)
+    result = launcher.execute("train_backbone", "/envs/ml-template/bin/python", {}, None, False, True)
 
     assert result["queued"] is True
     assert processes.launched == []
-    assert processes.queued   == [("train_backbone", "/envs/Dune/bin/python", {}, None, False)]
+    assert processes.queued   == [("train_backbone", "/envs/ml-template/bin/python", {}, None, False)]
 
 
 def test_a_launch_with_finalize_switches_registers_its_chain(monkeypatch):
     monkeypatch.setenv(ReportMailEntryConfig.password_env, "pw")
     processes = StubProcesses()
-    launcher  = _launcher(StubResolver({"logdir": "/data/runs", "trials_mode": "presence"}), processes)
+    launcher  = _launcher(StubResolver({"logdir": "/data/runs", "trials_mode": "augmentation"}), processes)
 
-    result  = launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, True, False, FinalizeChain.flags({"compare_trials": True}))
+    result  = launcher.execute("train_backbone", "/envs/ml-template/bin/python", {}, None, True, False, FinalizeChain.flags({"compare_trials": True}))
     pending = launcher.finalizer.pending()
 
     assert result["ok"] is True
     assert len(processes.launched) == 1
     assert pending[0]["job_id"]    == result["job_id"]
     assert pending[0]["steps"]     == ["compare_trials"]
-    assert pending[0]["experiment_dir"] == "/data/runs/presence"
+    assert pending[0]["experiment_dir"] == "/data/runs/augmentation"
     assert processes.attached == [(result["job_id"], FinalizeChain.flags({"compare_trials": True}))]
 
 
@@ -239,7 +239,7 @@ def test_a_launch_without_switches_stores_all_finalize_flags_off():
     processes = StubProcesses()
     launcher  = _launcher(StubResolver({"logdir": "/data/runs"}), processes)
 
-    result = launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, False, True)
+    result = launcher.execute("train_backbone", "/envs/ml-template/bin/python", {}, None, False, True)
 
     assert processes.attached == [(result["job_id"], FinalizeChain.flags(None))]
     assert not any(processes.attached[0][1].values())
@@ -249,7 +249,7 @@ def test_a_refused_launch_stores_no_finalize_flags():
     processes = StubProcesses(ok=False)
     launcher  = _launcher(StubResolver({"logdir": "/data/runs"}), processes)
 
-    launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, False, False)
+    launcher.execute("train_backbone", "/envs/ml-template/bin/python", {}, None, False, False)
 
     assert processes.attached == []
 
@@ -258,7 +258,7 @@ def test_a_launch_whose_chain_cannot_run_is_refused_before_it_starts():
     processes = StubProcesses()
     launcher  = _launcher(StubResolver({"logdir": "/data/runs"}), processes)
 
-    result = launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, True, False, FinalizeChain.flags({"compare_seeds": True}))
+    result = launcher.execute("train_backbone", "/envs/ml-template/bin/python", {}, None, True, False, FinalizeChain.flags({"compare_seeds": True}))
 
     assert result["ok"] is False
     assert "trials_mode" in result["error"]
@@ -269,7 +269,7 @@ def test_a_launch_whose_chain_cannot_run_is_refused_before_it_starts():
 def test_a_launch_without_finalize_switches_registers_no_chain():
     launcher = _launcher(StubResolver({"logdir": "/data/runs"}))
 
-    launcher.execute("infer_backbone", "/envs/Dune/bin/python", {}, None, False, False)
+    launcher.execute("infer_backbone", "/envs/ml-template/bin/python", {}, None, False, False)
 
     assert launcher.finalizer.pending() == []
 
@@ -277,16 +277,16 @@ def test_a_launch_without_finalize_switches_registers_no_chain():
 def test_a_training_launch_autostarts_tensorboard_on_its_logdir():
     launcher = _launcher(StubResolver({"logdir": "/data/runs/backbone"}))
 
-    launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, False, False)
+    launcher.execute("train_backbone", "/envs/ml-template/bin/python", {}, None, False, False)
     ensured = _wait_for(launcher.tensorboard.ensured, 1)
 
-    assert ensured == [("/data/runs/backbone", "/envs/Dune/bin/python")]
+    assert ensured == [("/data/runs/backbone", "/envs/ml-template/bin/python")]
 
 
 def test_a_non_training_launch_never_touches_tensorboard():
     launcher = _launcher(StubResolver({"logdir": "/data/runs"}))
 
-    launcher.execute("infer_backbone", "/envs/Dune/bin/python", {}, None, False, False)
+    launcher.execute("infer_backbone", "/envs/ml-template/bin/python", {}, None, False, False)
     time.sleep(0.2)
 
     assert launcher.tensorboard.ensured == []
@@ -295,7 +295,7 @@ def test_a_non_training_launch_never_touches_tensorboard():
 def test_a_refused_launch_never_starts_tensorboard():
     launcher = _launcher(StubResolver({"logdir": "/data/runs"}), StubProcesses(ok=False))
 
-    launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, False, False)
+    launcher.execute("train_backbone", "/envs/ml-template/bin/python", {}, None, False, False)
     time.sleep(0.2)
 
     assert launcher.tensorboard.ensured == []
@@ -305,7 +305,7 @@ def test_a_broken_resolver_does_not_break_the_launch():
     processes = StubProcesses()
     launcher  = _launcher(StubResolver(ok=False), processes)
 
-    result = launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, False, False)
+    result = launcher.execute("train_backbone", "/envs/ml-template/bin/python", {}, None, False, False)
     time.sleep(0.2)
 
     assert result["ok"] is True
@@ -321,7 +321,7 @@ def test_a_raising_tensorboard_is_swallowed_by_the_autostart(monkeypatch):
 
 
 def _record(script: str = "train_backbone", overrides: dict | None = None, pid: int | None = None) -> dict:
-    return {"job_id": "job-1", "script": script, "overrides": overrides or {}, "interpreter": "/envs/Dune/bin/python", "pid": pid, "started": "2026-08-20T10:00:00"}
+    return {"job_id": "job-1", "script": script, "overrides": overrides or {}, "interpreter": "/envs/ml-template/bin/python", "pid": pid, "started": "2026-08-20T10:00:00"}
 
 
 def _unit(name: str, log: str) -> dict:
@@ -353,7 +353,7 @@ def test_a_job_without_units_is_served_the_whole_logdir(tmp_path):
     result = launcher.job_tensorboard(_record())
 
     assert result["ok"] is True
-    assert launcher.tensorboard.ensured      == [(str(tmp_path), "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.ensured      == [(str(tmp_path), "/envs/ml-template/bin/python")]
     assert launcher.tensorboard.spec_ensured == []
 
 
@@ -368,7 +368,7 @@ def test_a_flat_fanout_is_served_exactly_its_named_run_directories(tmp_path):
     launcher.job_tensorboard(_record())
 
     assert launcher.tensorboard.ensured == []
-    assert launcher.tensorboard.spec_ensured == [({"run_a": str(tmp_path / "run_a"), "run_b": str(tmp_path / "run_b")}, "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.spec_ensured == [({"run_a": str(tmp_path / "run_a"), "run_b": str(tmp_path / "run_b")}, "/envs/ml-template/bin/python")]
 
 
 def test_a_training_and_inference_twin_collapse_into_one_run(tmp_path):
@@ -379,7 +379,7 @@ def test_a_training_and_inference_twin_collapse_into_one_run(tmp_path):
 
     launcher.job_tensorboard(_record())
 
-    assert launcher.tensorboard.spec_ensured == [({"run_a": str(tmp_path / "run_a")}, "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.spec_ensured == [({"run_a": str(tmp_path / "run_a")}, "/envs/ml-template/bin/python")]
 
 
 def test_a_seed_sweep_run_name_with_slashes_resolves_and_labels_by_relative_path(tmp_path):
@@ -390,7 +390,7 @@ def test_a_seed_sweep_run_name_with_slashes_resolves_and_labels_by_relative_path
 
     launcher.job_tensorboard(_record())
 
-    assert launcher.tensorboard.spec_ensured == [({"base/seed0": str(tmp_path / "base" / "seed0")}, "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.spec_ensured == [({"base/seed0": str(tmp_path / "base" / "seed0")}, "/envs/ml-template/bin/python")]
 
 
 def test_a_nested_fanout_is_served_the_directories_holding_its_logs(tmp_path):
@@ -401,7 +401,7 @@ def test_a_nested_fanout_is_served_the_directories_holding_its_logs(tmp_path):
 
     launcher.job_tensorboard(_record())
 
-    assert launcher.tensorboard.spec_ensured == [({"bench/training/resunet": str(tmp_path / "bench" / "training" / "resunet")}, "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.spec_ensured == [({"bench/training/resunet": str(tmp_path / "bench" / "training" / "resunet")}, "/envs/ml-template/bin/python")]
 
 
 def test_units_without_event_files_fall_back_to_the_whole_logdir(tmp_path):
@@ -412,7 +412,7 @@ def test_units_without_event_files_fall_back_to_the_whole_logdir(tmp_path):
 
     launcher.job_tensorboard(_record())
 
-    assert launcher.tensorboard.ensured      == [(str(tmp_path), "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.ensured      == [(str(tmp_path), "/envs/ml-template/bin/python")]
     assert launcher.tensorboard.spec_ensured == []
 
 
@@ -424,7 +424,7 @@ def test_a_unit_resolving_to_the_logdir_itself_is_not_wrapped_in_a_spec(tmp_path
 
     launcher.job_tensorboard(_record())
 
-    assert launcher.tensorboard.ensured      == [(str(tmp_path), "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.ensured      == [(str(tmp_path), "/envs/ml-template/bin/python")]
     assert launcher.tensorboard.spec_ensured == []
 
 
@@ -434,7 +434,7 @@ def test_a_single_run_is_served_the_directory_its_pid_wrote(tmp_path):
 
     launcher.job_tensorboard(_record(pid=42))
 
-    assert launcher.tensorboard.ensured     == [(str(tmp_path / "run_a"), "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.ensured     == [(str(tmp_path / "run_a"), "/envs/ml-template/bin/python")]
     assert launcher.tensorboard.pid_queries == [(str(tmp_path), 42, datetime.fromisoformat("2026-08-20T10:00:00").timestamp() - 60.0)]
 
 
@@ -444,7 +444,7 @@ def test_an_ambiguous_pid_match_falls_back_to_the_whole_logdir(tmp_path):
 
     launcher.job_tensorboard(_record(pid=42))
 
-    assert launcher.tensorboard.ensured == [(str(tmp_path), "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.ensured == [(str(tmp_path), "/envs/ml-template/bin/python")]
 
 
 def test_a_pid_match_on_the_root_itself_is_not_narrowed(tmp_path):
@@ -453,7 +453,7 @@ def test_a_pid_match_on_the_root_itself_is_not_narrowed(tmp_path):
 
     launcher.job_tensorboard(_record(pid=42))
 
-    assert launcher.tensorboard.ensured == [(str(tmp_path), "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.ensured == [(str(tmp_path), "/envs/ml-template/bin/python")]
 
 
 def test_a_job_without_a_pid_never_scans_for_event_writers(tmp_path):
@@ -461,7 +461,7 @@ def test_a_job_without_a_pid_never_scans_for_event_writers(tmp_path):
 
     launcher.job_tensorboard(_record())
 
-    assert launcher.tensorboard.ensured     == [(str(tmp_path), "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.ensured     == [(str(tmp_path), "/envs/ml-template/bin/python")]
     assert launcher.tensorboard.pid_queries == []
 
 
@@ -474,7 +474,7 @@ def test_resolved_units_win_over_the_pid_scan(tmp_path):
 
     launcher.job_tensorboard(_record(pid=42))
 
-    assert launcher.tensorboard.spec_ensured == [({"run_a": str(tmp_path / "run_a")}, "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.spec_ensured == [({"run_a": str(tmp_path / "run_a")}, "/envs/ml-template/bin/python")]
     assert launcher.tensorboard.pid_queries  == []
 
 

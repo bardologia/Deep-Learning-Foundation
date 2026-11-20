@@ -130,11 +130,11 @@ def test_start_notifies(notifier, sent):
 
 def test_start_body_carries_description(notifier, sent):
     _arm(notifier)
-    notifier.job_started(_record(status="running", description="presence trials experiment · resunet-conv"))
+    notifier.job_started(_record(status="running", description="augmentation trials experiment · resunet-conv"))
 
     assert len(_drain(sent, 1)) == 1
     body = sent[0][1]
-    assert body.startswith("presence trials experiment · resunet-conv\n")
+    assert body.startswith("augmentation trials experiment · resunet-conv\n")
     assert "abc123def456" in body
 
 

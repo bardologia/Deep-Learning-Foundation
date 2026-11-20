@@ -249,7 +249,7 @@ class RobustnessRun(AnalysisRun):
         doc = MarkdownDoc(title=f"Robustness: {run.backbone_name}")
         doc.paragraph(
             f"Degradation of the pixel-weighted MSE of the normalized prediction on {n_batches} '{self.config.split}' batches under four controlled stresses. "
-            f"Gaussian noise is added to the normalized inputs (averaged over {self.config.noise_draws} draws), either on all channels or on one input channel at a time, "
+            f"Noise drawn from a normal distribution is added to the normalized inputs (averaged over {self.config.noise_draws} draws), either on all channels or on one input channel at a time, "
             "which shows which channels the model is fragile to. The gain sweep scales every input by a global factor, probing calibration "
             "error. Channel dropout sets input channels to zero, averaged over up to "
             f"{self.config.draws_per_count} random channel subsets per count, capped at the number of distinct subsets; counts with a single possible subset report no spread. "

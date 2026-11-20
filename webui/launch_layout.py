@@ -772,7 +772,7 @@ class LaunchLayout:
                     ]},
                 ]},
                 {"key": "runs", "title": "Runs", "when": {"field": "target", "in": ["runs"]}, "panels": [
-                    {"kind": "fields", "note": "Mails one message per selected run carrying everything that run holds: the configuration and metadata it recorded, its logs and docs, the TensorBoard events, and every report and figure its inference wrote, packed into zip volumes. What travels is decided by what is left out rather than by a list of gathered paths: the three rules below drop the checkpoints, the reconstructed cubes and any file above the per-file cap, which is what keeps the walk animations behind.", "groups": [
+                    {"kind": "fields", "note": "Mails one message per selected run carrying everything that run holds: the configuration and metadata it recorded, its logs and docs, the TensorBoard events, and every report and figure its inference wrote, packed into zip volumes. What travels is decided by what is left out rather than by a list of gathered paths: the three rules below drop the checkpoints, the saved prediction maps and any file above the per-file cap.", "groups": [
                         {"title": "Runs", "fields": [
                             "runs_dir",
                             {"path": "run_filter", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir", "hint": "nothing selected = every run at or below the path is mailed"}},

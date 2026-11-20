@@ -22,7 +22,7 @@ to debug a step.
 ./install.sh
 ```
 
-`install.sh` finds or installs Miniconda, creates the `Dune` environment with the torch
+`install.sh` finds or installs Miniconda, creates the `ml-template` environment with the torch
 build that matches your NVIDIA driver, installs the pinned dependencies and the optional
 extras, and then asks eight questions: where your datasets are, where runs and results
 should be written, which GPUs the entry points may use, how many workers to allow, and
@@ -62,14 +62,14 @@ has to be told, with `--inference.device cpu`. You also need conda.
 ## 1. Environment
 
 ```bash
-conda create -n Dune python=3.11
-conda activate Dune
+conda create -n ml-template python=3.11
+conda activate ml-template
 
 pip install -r requirements.txt
 pip install onnx==1.22.0 pytest==9.0.3 pyflakes==3.4.0
 ```
 
-Keep the name `Dune` unless you have a reason not to. The installer records the
+Keep the name `ml-template` unless you have a reason not to. The installer records the
 interpreter of the environment in the machine profile, and `webui/run.sh` starts the
 console with exactly that interpreter; a hand-made environment under another name works
 as long as the installer is told about it (`./install.sh --skip-install --env <name>`).
@@ -113,7 +113,7 @@ docs/          resolved_entry_config.json and provenance.json of the generating 
 
 The split regions are lists of `[row_start, row_end, col_start, col_end]` per split, in
 dataset pixels. The generator draws `generation.input_channels` smooth random fields
-(white noise under a Gaussian filter of `generation.smoothing_pixels`, standardized, plus
+(white noise smoothed by a normal kernel of `generation.smoothing_pixels`, standardized, plus
 `generation.input_noise`) and computes two targets from them: `pointwise`, equal to
 tanh(x0 x1) + 0.5 x2, and `neighbourhood`, the mean of x3 squared minus the mean of x0
 over a square window of `generation.neighbourhood` pixels. Both carry
@@ -379,7 +379,7 @@ inference after them, when they miss a trial or seed, or when they scored anothe
 To read a run rather than compare it, mail the run itself:
 
 ```bash
-python main/analysis/mail_experiment_reports.py --target runs --runs_dir runs/backbone --run_filter "['unet-conv-sorted_gt-K_2']"
+python main/analysis/mail_experiment_reports.py --target runs --runs_dir runs/backbone --run_filter unet-mse-hv_demo
 ```
 
 Each selected run travels whole, packed into zip volumes that each stay under the
@@ -408,9 +408,11 @@ dispatches one inference job per run across the GPU pool. Each job writes an
 predicted and target maps under `maps/` (`predictions.npy` and `targets.npy`, in target
 units), one target, prediction and absolute-error map per target channel under
 `figures/<channel>/`, and its own `complete.json`, which records the scored checkpoint
-(name, epoch, best epoch and best validation loss). `metrics.json` holds the RMSE, MAE,
-bias and R2 of every target channel and their means, with the checkpoint name, its
-one-based epoch and the code commit. R2 is NaN for a channel whose targets are constant
+(name, epoch, best epoch and best validation loss). `metrics.json` holds flat keys: `rmse_<channel>`,
+`mae_<channel>`, `bias_<channel>` and `r2_<channel>` for every target channel, their means
+`rmse_mean`, `mae_mean` and `r2_mean`, `n_pixels`, and the checkpoint name, its one-based
+epoch and the code commit. Benchmarks, cross-validation, trial and seed comparisons and the
+result tables rank on these keys; the leaderboards use the three means. R2 is NaN for a channel whose targets are constant
 over the region. Those directories are what the console's results tab reads.
 
 The predictor runs every patch of the split region through the model, inverts the target
@@ -474,8 +476,8 @@ Three experiment entries under `main/experiments/` wrap the training loop:
 `benchmark.py` sweeps models and loss kinds; `cross_validate.py` runs k-fold over
 the dataset rows; `tune.py` drives an Optuna study. Patch-shape sweeps run through the
 training entries themselves as `trials_mode=patch`, alongside the other fan-out modes
-(context, reach, augmentation, stability, EMA and AMP ladders). The patch sweep report
-follows the planned seeds and names the seeds a trial mean drops.
+(one run per listed architecture, augmentation, stability, EMA and AMP ladders). The
+patch sweep report follows the planned seeds and names the seeds a trial mean drops.
 
 `benchmark.py` lists the selected and skipped models at the start, and checks its comparison
 against the planned units, warning about each missing or unplanned run. A resumed

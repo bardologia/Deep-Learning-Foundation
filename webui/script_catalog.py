@@ -61,7 +61,7 @@ class ScriptCatalog:
         "xray_activations": {
             "title"     : "X-Ray Activations",
             "category"  : "Analysis",
-            "purpose"   : "X-ray the activations of trained backbone runs on real data. Hook every leaf module, run a few batches, and diagnose dead layers, dead channels, exploding and constant activations. Writes depth profiles, per-layer histograms for flagged layers, a JSON of all statistics, and a markdown report inside each run directory. The static-weight sibling of this check is X-Ray Weights.",
+            "purpose"   : "X-ray the activations of trained backbone runs on real data. Hook every leaf module, run a few batches, and diagnose dead layers, dead channels, exploding and constant activations. Writes statistics by depth, per-layer histograms for flagged layers, a JSON of all statistics, and a markdown report inside each run directory. The static-weight sibling of this check is X-Ray Weights.",
         },
         "measure_receptive_field": {
             "title"     : "Receptive Field",
@@ -71,27 +71,27 @@ class ScriptCatalog:
         "attribute_inputs": {
             "title"     : "Attribute Inputs",
             "category"  : "Analysis",
-            "purpose"   : "Attribute the predictions of trained backbone runs to their input channels. Gradient attribution shares |∂ output/∂ input| across channels per output family (amp, mu, sigma) on probe windows, and an occlusion pass zeroes one normalized channel at a time to measure the prediction shift. Answers which channels and which channel kinds (amplitude vs derived-channel phase vs Aux) the model actually uses.",
+            "purpose"   : "Attribute the predictions of trained backbone runs to their input channels. Gradient attribution shares |∂ output/∂ input| across input channels per target channel on probe windows, and an occlusion pass zeroes one normalized channel at a time to measure the prediction shift. Answers which input channels the model actually uses.",
         },
         "probe_layers": {
             "title"     : "Probe Layers",
             "category"  : "Analysis",
-            "purpose"   : "Probe trained backbone runs layer by layer with linear readouts. Ridge probes on sampled real pixels predict the GT active Gaussian count and the dominant component position along z from each layer's features; the held-out R² by depth shows where each quantity becomes linearly decodable inside the network.",
+            "purpose"   : "Probe trained backbone runs layer by layer with linear readouts. Ridge probes on sampled real pixels predict every target channel from each layer's features; the held-out R² by depth shows where each target becomes linearly decodable inside the network.",
         },
         "map_loss_landscape": {
             "title"     : "Loss Landscape",
             "category"  : "Analysis",
-            "purpose"   : "Map the curve-MSE landscape around the trained weights of backbone runs along two filter-normalized random directions (Li et al. 2018). Writes 1D cuts, a 2D log-scale contour, and a sharpness scalar per direction into each run directory. The physical curve objective keeps runs trained under different losses comparable, replacing the synthetic shift/scale landscape.",
+            "purpose"   : "Map the weighted-MSE landscape around the trained weights of backbone runs along two filter-normalized random directions (Li et al. 2018). Writes 1D cuts, a 2D log-scale contour, and a sharpness scalar per direction into each run directory. The normalized-target MSE objective keeps runs trained under different losses comparable.",
         },
         "stress_inputs": {
             "title"     : "Stress Inputs",
             "category"  : "Analysis",
-            "purpose"   : "Stress trained backbone runs with controlled input degradation. Curve-MSE-vs-severity under gaussian noise on the normalized inputs and under whole-channel dropout (secondary and derived channels zeroed, averaged over random channel subsets). Complements the secondaries experiment with a post-hoc robustness axis that needs no retraining.",
+            "purpose"   : "Stress trained backbone runs with controlled input degradation. Weighted MSE against severity under normal noise on the normalized inputs, global gain error, input-channel dropout (averaged over random channel subsets) and row shifts. A post-hoc robustness axis that needs no retraining.",
         },
         "animate_training": {
             "title"     : "Animate Training",
             "category"  : "Analysis",
-            "purpose"   : "Animate how a backbone run learned. Re-predicts probe pixels from every epoch snapshot saved during training (enable snapshot_every_n_epochs on the training entry) and renders one GIF per pixel of the prediction converging onto the fixed ground-truth profile.",
+            "purpose"   : "Animate how a backbone run learned. Re-predicts the split from every epoch snapshot saved during training (enable snapshot_every_n_epochs on the training entry) and renders one GIF per target channel, with the RMSE of every snapshot.",
         },
         "export_tensorboard_plots": {
             "title"     : "Export TensorBoard Plots",
@@ -126,7 +126,7 @@ class ScriptCatalog:
         "mail_experiment_reports": {
             "title"     : "Mail Results",
             "category"  : "Analysis",
-            "purpose"   : "Email gathered results, one bundle per source, with the target tab choosing what is mailed. Experiments: any path is scanned for experiments by the trial runs they hold (a sweep of trials, a cross-validation run, a benchmark run, a sequence workspace or a whole runs tree), and each one is mailed as one message carrying the seed-aggregate report of every trial, the trial-comparison reports, a cross-validation run's cross-fold report and the configuration it ran with; a missing seed aggregate, comparison or cross-fold report is written first. Runs: the runs picked at or below a path travel whole, everything each one holds (configuration, metadata, logs, docs, TensorBoard events, reports and figures) minus the checkpoints, the reconstructed cubes and any file above the per-file cap. Datasets: everything Generate Dataset wrote (layout and metadata). Run and dataset bundles are packed into zip volumes that each stay under the attachment cap, sent as one message per volume, and the arrays under data/ are left out unless you name them in the gathered paths. The SMTP password comes from an environment variable, and a dry run stages without sending.",
+            "purpose"   : "Email gathered results, one bundle per source, with the target tab choosing what is mailed. Experiments: any path is scanned for experiments by the trial runs they hold (a sweep of trials, a cross-validation run, a benchmark run, a sequence workspace or a whole runs tree), and each one is mailed as one message carrying the seed-aggregate report of every trial, the trial-comparison reports, a cross-validation run's cross-fold report and the configuration it ran with; a missing seed aggregate, comparison or cross-fold report is written first. Runs: the runs picked at or below a path travel whole, everything each one holds (configuration, metadata, logs, docs, TensorBoard events, reports and figures) minus the checkpoints, the saved prediction maps and any file above the per-file cap. Datasets: everything Generate Dataset wrote (layout and metadata). Run and dataset bundles are packed into zip volumes that each stay under the attachment cap, sent as one message per volume, and the arrays under data/ are left out unless you name them in the gathered paths. The SMTP password comes from an environment variable, and a dry run stages without sending.",
         },
     }
 

@@ -9,7 +9,7 @@ from _bootstrap import EnvironmentPinner
 
 class InferenceEntry:
 
-    DESCRIPTION = "Backbone inference: sliding-window prediction, stitched cubes, and reports over every backbone run found at any depth under runs_dir (one run, a sweep, an experiment or a whole tree); runs already scored on the split are skipped unless skip_completed is off."
+    DESCRIPTION = "Backbone inference: sliding-window prediction, stitched target maps, and reports over every backbone run found at any depth under runs_dir (one run, a sweep, an experiment or a whole tree); runs already scored on the split are skipped unless skip_completed is off."
 
     def __init__(self, entry_script: Path) -> None:
         self.entry_script = Path(entry_script)

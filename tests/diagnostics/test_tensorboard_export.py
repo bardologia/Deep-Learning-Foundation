@@ -56,10 +56,10 @@ def test_train_and_val_series_share_one_group():
 
 
 def test_validation_segment_pairs_with_train_segment():
-    groups = ScalarTagGrouper().group(_series(["loss_components/train/param_l1", "loss_components/validation/param_l1"]))
+    groups = ScalarTagGrouper().group(_series(["loss_channels/train/pointwise", "loss_channels/validation/pointwise"]))
 
     assert len(groups) == 1
-    assert groups[0].stem == "loss_components/param_l1"
+    assert groups[0].stem == "loss_channels/pointwise"
 
 
 def test_unpaired_split_tag_keeps_its_original_path():
@@ -87,7 +87,7 @@ def test_labels_humanize_segments_acronyms_and_units():
     labeler = CurveLabeler()
 
     assert labeler.title("loss")                              == "Loss"
-    assert labeler.title("loss_components/param_l1")          == "Loss Components / Param L1"
+    assert labeler.title("loss_channels/pointwise_l1")        == "Loss Channels / Pointwise L1"
     assert labeler.title("system/resources/ram_used_gb")      == "System / Resources / RAM Used (GB)"
     assert labeler.y_label("system/resources/gpu0_vram_pct")  == "GPU0 VRAM (%)"
     assert labeler.y_label("system/resources/disk_read_mb_s") == "Disk Read (MB/s)"
@@ -95,7 +95,7 @@ def test_labels_humanize_segments_acronyms_and_units():
 
 
 def test_long_titles_wrap_instead_of_overflowing():
-    title = CurveLabeler().title("permutation/validation/perm/placeholder/precision/slot_0")
+    title = CurveLabeler().title("loss_channels/neighbourhood/validation/weighted_mean/placeholder/channel_0")
 
     assert "\n" in title
     assert all(len(line) <= CurveLabeler.WRAP_WIDTH for line in title.split("\n"))

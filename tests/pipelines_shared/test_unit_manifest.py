@@ -115,17 +115,17 @@ def test_unit_results_follow_their_worker_log_into_a_renamed_directory(tmp_path)
     stage_dir = tmp_path / "moved" / "run" / "training"
     elsewhere = Path("/elsewhere/scratch/run/training")
     results   = {
-        "unet__param_l1/seed3" : {"name": "unet__param_l1/seed3", "status": "DONE", "duration_s": 7.0, "log_file": str(elsewhere / "old_name__param_l1" / "seed3" / "worker.log")},
-        "unet__param_l1/seed4" : {"name": "unet__param_l1/seed4", "status": "FAILED", "duration_s": 2.0, "log_file": str(elsewhere / "unet__param_l1" / "seed4" / "worker.log")},
+        "unet__mse/seed3" : {"name": "unet__mse/seed3", "status": "DONE", "duration_s": 7.0, "log_file": str(elsewhere / "old_name__mse" / "seed3" / "worker.log")},
+        "unet__mse/seed4" : {"name": "unet__mse/seed4", "status": "FAILED", "duration_s": 2.0, "log_file": str(elsewhere / "unet__mse" / "seed4" / "worker.log")},
     }
-    runs = [("old_name__param_l1/seed3", stage_dir / "old_name__param_l1" / "seed3"), ("unet__param_l1/seed4", stage_dir / "unet__param_l1" / "seed4")]
+    runs = [("old_name__mse/seed3", stage_dir / "old_name__mse" / "seed3"), ("unet__mse/seed4", stage_dir / "unet__mse" / "seed4")]
 
     logger = RecordingLogger()
     keyed  = UnitResultsByRun(stage_dir, logger).rekey(results, runs)
 
-    assert keyed["old_name__param_l1/seed3"]["duration_s"] == 7.0
-    assert keyed["unet__param_l1/seed4"]["status"]         == "FAILED"
-    assert logger.messages == [("info", "1 unit result(s) matched to the renamed run directory holding their worker log: ['unet__param_l1/seed3 -> old_name__param_l1/seed3']")]
+    assert keyed["old_name__mse/seed3"]["duration_s"] == 7.0
+    assert keyed["unet__mse/seed4"]["status"]         == "FAILED"
+    assert logger.messages == [("info", "1 unit result(s) matched to the renamed run directory holding their worker log: ['unet__mse/seed3 -> old_name__mse/seed3']")]
 
 
 def test_unit_results_name_the_runs_and_results_that_match_nothing(tmp_path):
@@ -142,10 +142,10 @@ def test_unit_results_name_the_runs_and_results_that_match_nothing(tmp_path):
 
 
 def test_unit_results_rebuilt_from_markers_pass_through_unchanged(tmp_path):
-    derived = {"fold_0": {"name": "fold_0", "status": "DONE", "duration_s": None}}
+    rebuilt = {"fold_0": {"name": "fold_0", "status": "DONE", "duration_s": None}}
     logger  = RecordingLogger()
 
-    keyed = UnitResultsByRun(tmp_path / "folds", logger).build(_StoredIndex(tmp_path / "pipeline" / "training_results.json", derived), [("fold_0", tmp_path / "folds" / "fold_0")])
+    keyed = UnitResultsByRun(tmp_path / "folds", logger).build(_StoredIndex(tmp_path / "pipeline" / "training_results.json", rebuilt), [("fold_0", tmp_path / "folds" / "fold_0")])
 
-    assert keyed           == derived
+    assert keyed           == rebuilt
     assert logger.messages == []

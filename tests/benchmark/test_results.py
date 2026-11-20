@@ -99,7 +99,7 @@ def test_collector_reads_checkpoint_with_weights_only_false(tmp_path, logger_stu
     checkpoint = {
         "epoch"         : 9,
         "params"        : {"encoder.weight": torch.zeros(64, 64)},
-        "z_axis"        : np.zeros(4, dtype=np.float32),
+        "grid"          : np.zeros(4, dtype=np.float32),
         "best_val_loss" : 0.123,
         "best_epoch"    : 7,
     }

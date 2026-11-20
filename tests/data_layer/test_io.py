@@ -149,7 +149,7 @@ def test_dataset_fingerprint_digest_matches_hashlib(tmp_path):
 def test_dataset_fingerprint_keys_relative_to_root(tmp_path):
     from tools.data.io import DatasetFingerprint
 
-    inside  = tmp_path / "data" / "primary.npy"
+    inside  = tmp_path / "data" / "inputs.npy"
     outside = tmp_path.parent / f"{tmp_path.name}_params.npy"
     inside.parent.mkdir()
     inside.write_bytes(b"a")
@@ -157,8 +157,8 @@ def test_dataset_fingerprint_keys_relative_to_root(tmp_path):
 
     entries = DatasetFingerprint.compute(tmp_path, [inside, outside])
 
-    assert set(entries) == {"data/primary.npy", str(outside)}
-    assert entries["data/primary.npy"]["bytes"] == 1
+    assert set(entries) == {"data/inputs.npy", str(outside)}
+    assert entries["data/inputs.npy"]["bytes"] == 1
 
     outside.unlink()
 

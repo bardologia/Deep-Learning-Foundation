@@ -22,7 +22,7 @@ class CatalogRouter(SubRouter):
     PROJECT = {
         "name"        : "ML Template",
         "tagline"     : "Deep learning project template and control console",
-        "description" : "A reusable scaffold for supervised deep learning projects: dataset assembly, model zoo, training, inference, experiments and analysis, all wired to this console. The bundled example task predicts the parameters of a per-pixel Gaussian mixture from a synthetic multi-channel dataset.",
+        "description" : "A reusable scaffold for supervised deep learning projects: dataset assembly, model zoo, training, inference, experiments and analysis, all wired to this console. The bundled example task regresses two target channels from four input channels of a synthetic dataset on a 2-D grid.",
         "pipelines"   : ["Parameter Extraction", "Dataset", "Training", "Inference", "Tuning"],
     }
 

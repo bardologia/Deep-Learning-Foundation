@@ -991,9 +991,9 @@ class ConsoleTile {
 
   _openUnitStream(index) {
     if (!this.unitTerm) {
-      const aux = this._makeTerm();
-      this.unitTerm = aux.term;
-      this.unitFit = aux.fit;
+      const extra = this._makeTerm();
+      this.unitTerm = extra.term;
+      this.unitFit = extra.fit;
     }
 
     this.unitTerm.reset();

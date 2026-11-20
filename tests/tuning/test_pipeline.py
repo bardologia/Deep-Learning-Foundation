@@ -56,7 +56,7 @@ def _make_config(tmp_path: Path, n_trials: int = 10):
         keep_trial_checkpoints  = False,
     )
 
-    paths = SimpleNamespace(log_base_dir=tmp_path, secondary_labels=None, parameters_path=None)
+    paths = SimpleNamespace(log_base_dir=tmp_path)
 
     return SimpleNamespace(
         paths         = paths,

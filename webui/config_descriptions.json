@@ -9,7 +9,7 @@
     "benchmark": "The stage that compares multiple model architectures on the same data. It trains each backbone at its own configured size, runs inference, and assembles a cross-model comparison report. The configs here control batched inference and its diagnostic artifacts, the comparison report assembly, and the top-level sweep orchestration.",
     "cross_validation": "The stage that estimates generalization by partitioning the stack along row into k folds and training and evaluating on each. It orchestrates per-fold training, inference, and comparison for the backbone. The configs here control the row-range fold partitioning and the top-level k-fold orchestration.",
     "tuning": "The stage that searches hyperparameter spaces with Optuna to improve a chosen backbone. It wires the search budget, pruning, and resources to a nested training configuration and swaps in per-trial hyperparameter samples. The configs here control the Optuna search controls and artifact emission, and the entry point binding resources and data to the search.",
-    "comparison": "The stage that rebuilds side-by-side comparisons across completed runs and trials without re-running training or inference. It aggregates existing inference or preprocessing outputs into a single report grouped by the varied factor. The configs here control comparison of backbone inference runs, of preprocessing trials differing by multilook window, of Gaussian-fit extraction trials grouped by component count, and the standalone rebuild of an existing benchmark comparison report.",
+    "comparison": "The stage that rebuilds side-by-side comparisons across completed runs and trials without re-running training or inference. It aggregates existing inference outputs into a single report grouped by the varied factor. The configs here control the comparison of trial runs, the aggregation of seed runs, and the standalone rebuild of an existing benchmark comparison report.",
     "diagnostics": "The stage that inspects completed training runs independently of any data run. The weight-xray diagnostic classifies each checkpoint tensor against numeric thresholds and emits a per-run report and plots; the tensorboard export renders every logged scalar series as a publication-quality figure inside the run directory, pairing train and validation series of the same metric in one shared figure. The configs here control the pathology classification thresholds, the single-run diagnostics and their report and plot outputs, and the batch webui entries that select runs and build a per-run configuration.",
     "generation": "The stage that writes the bundled example dataset, so the template runs end to end without external data. It draws a few smooth random input fields with noise, computes target fields from them with a known nonlinear and spatially local function, splits the grid into train, validation and test row bands, and writes dataset.json, inputs.npy and targets.npy. The configs here control the grid size, the number of input channels, the smoothness and neighbourhood of the fields, the noise levels and the split fractions."
   },
@@ -44,8 +44,8 @@
         "p_flip_h": "probability of a horizontal (left-right) flip applied to a training patch",
         "p_flip_v": "probability of a vertical (up-down) flip applied to a training patch",
         "p_rot90": "probability of a random 90-degree rotation applied to a training patch, default disabled",
-        "noise_std": "standard deviation of additive Gaussian noise injected into patch channels when p_noise triggers",
-        "p_noise": "probability of adding Gaussian noise (noise_std) to a training patch, default disabled"
+        "noise_std": "standard deviation of the additive normal noise injected into patch channels when p_noise triggers",
+        "p_noise": "probability of adding normal noise (noise_std) to a training patch, default disabled"
       }
     },
     "dataset/general/dataset::DatasetConfig": {
@@ -65,7 +65,7 @@
       }
     },
     "architectures/backbone::UNetConfig": {
-      "summary": "Plain U-Net backbone predicting per-pixel Gaussian mixture parameters over the z profile",
+      "summary": "Plain U-Net backbone for dense per-pixel regression",
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
@@ -89,7 +89,7 @@
       }
     },
     "architectures/backbone::ResUNetConfig": {
-      "summary": "Residual-block U-Net backbone predicting per-pixel Gaussian mixture parameters over the z profile",
+      "summary": "Residual-block U-Net backbone for dense per-pixel regression",
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
@@ -314,7 +314,7 @@
       }
     },
     "architectures/backbone::SegFormerLiteConfig": {
-      "summary": "Lightweight SegFormer hierarchical transformer with MLP fusion decoder for z Gaussian mixtures",
+      "summary": "Lightweight SegFormer hierarchical transformer with an MLP fusion decoder",
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
@@ -339,7 +339,7 @@
       }
     },
     "architectures/backbone::ConvNeXtUNetConfig": {
-      "summary": "ConvNeXt-block U-Net backbone for z Gaussian mixtures",
+      "summary": "ConvNeXt-block U-Net backbone",
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
@@ -364,7 +364,7 @@
       }
     },
     "architectures/backbone::DenseUNetConfig": {
-      "summary": "Densely-connected U-Net backbone for z Gaussian mixtures",
+      "summary": "Densely-connected U-Net backbone",
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
@@ -388,7 +388,7 @@
       }
     },
     "architectures/backbone::HRNetLiteConfig": {
-      "summary": "Lightweight HRNet keeping parallel multi-resolution branches for z Gaussian mixtures",
+      "summary": "Lightweight HRNet keeping parallel multi-resolution branches",
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
@@ -410,7 +410,7 @@
       }
     },
     "architectures/backbone::MultiResUNetConfig": {
-      "summary": "MultiRes U-Net with multi-kernel blocks and residual skip paths for z Gaussian mixtures",
+      "summary": "MultiRes U-Net with multi-kernel blocks and residual skip paths",
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
@@ -434,7 +434,7 @@
       }
     },
     "architectures/backbone::FPNNetConfig": {
-      "summary": "Feature-pyramid-network segmentation backbone for z Gaussian mixtures",
+      "summary": "Feature-pyramid-network backbone",
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
@@ -456,7 +456,7 @@
       }
     },
     "architectures/backbone::U2NetLiteConfig": {
-      "summary": "Lightweight U^2-Net with nested residual U-blocks for z Gaussian mixtures",
+      "summary": "Lightweight U^2-Net with nested residual U-blocks",
       "fields": {
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
@@ -540,10 +540,10 @@
       }
     },
     "training/backbone::AugmentationTrialsConfig": {
-      "summary": "Cumulative augmentation ladder for the augmentation trial planner: rung 0 trains without augmentation, rung 1 adds horizontal flips, rung 2 adds vertical flips, and one final rung per noise strength adds additive Gaussian input noise on top of both flips; rot90 stays off in every rung",
+      "summary": "Cumulative augmentation ladder for the augmentation trial planner: rung 0 trains without augmentation, rung 1 adds horizontal flips, rung 2 adds vertical flips, and one final rung per noise strength adds additive normal input noise on top of both flips; rot90 stays off in every rung",
       "fields": {
         "flip_probability": "Probability of each enabled flip on the flip and noise rungs, valid range (0, 1]",
-        "noise_probability": "Probability of injecting the additive Gaussian noise on the noise rungs, valid range (0, 1]",
+        "noise_probability": "Probability of injecting the additive normal noise on the noise rungs, valid range (0, 1]",
         "noise_stds": "Noise standard deviations in normalised input units, one noise rung each on top of both flips; all must be positive and unique"
       }
     },
@@ -616,7 +616,7 @@
         "gpus": "List of GPU device indices across which queued runs are distributed and launched in parallel; feeds the trials fan-out when trials are enabled and the per-seed fan-out of a plain multi-seed run otherwise",
         "gpus_file": "Path of the live GPU pool control file for this fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the experiment while it runs (added devices pick up queued jobs, removed devices retire once the job in flight ends). Empty places gpu_pool.json inside the trials directory for trials, or the base run directory for a multi-seed fan-out",
         "poll_interval_s": "Seconds between successive polls of the run queue while waiting for GPUs or completed jobs",
-        "loss": "LossConfig selecting the loss terms and their weights for the whole run, defaulting to parameter L1 with Hungarian matching, active normalization, presence balance and a cosine curve term"
+        "loss": "LossConfig selecting the loss kind (mse, l1 or huber), the huber delta and the per-target-channel weights for the whole run, defaulting to a plain MSE over every target channel"
       }
     },
     "training/general/loss::LossConfig": {
@@ -854,7 +854,7 @@
         "checkpoint_name": "filename of the checkpoint to load for inference, defaulting to best_model.pt",
         "batch_size": "inference batch size; None reuses the batch size recorded in the training run's own config",
         "num_workers": "number of dataloader worker processes used for parallel batch assembly during inference",
-        "seed": "random seed applied via np.random.seed at inference setup, controlling any stochastic pixel/profile selection",
+        "seed": "random seed applied via np.random.seed at inference setup, controlling any stochastic pixel selection",
         "stitch_window": "window function blending overlapping inference tiles back into the full scene: hann, uniform, or triangular",
         "save_maps": "whether to save the stitched predicted and target maps as maps/predictions.npy and maps/targets.npy",
         "save_plots": "whether to render the per-channel target, prediction and error maps",
@@ -1196,7 +1196,7 @@
         "dead_channel_frac_warn": "Fraction of channels that never activate above the dead threshold at or above which a layer is flagged (warning)",
         "explode_abs_threshold": "Peak absolute activation at or above which a layer is flagged as exploding (warning)",
         "constant_std_threshold": "Activation standard deviation at or below which a non-dead layer is flagged as constant (warning)",
-        "make_plots": "Render the depth-profile figures and per-layer histograms for flagged layers",
+        "make_plots": "Render the statistics-by-depth figures and per-layer histograms for flagged layers",
         "max_layer_histograms": "Maximum number of flagged layers that get an individual activation histogram figure",
         "figure_style": "PlotBase figure style the plots are rendered with (report or paper)",
         "channel_collapse_frac_warn": "Effective channel fraction (entropy-effective channels over channel count) below which a layer is flagged as channel-collapsed (warning)"
@@ -1221,7 +1221,7 @@
       }
     },
     "diagnostics::LayerProbeConfig": {
-      "summary": "Entry config that trains ridge linear probes on the intermediate features of one or more trained backbone runs, reporting held-out R² by depth for the GT active count and dominant component position along z, written into each run directory",
+      "summary": "Entry config that trains ridge linear probes on the intermediate features of one or more trained backbone runs, reporting held-out R² by depth for every target channel, written into each run directory",
       "fields": {
         "runs_dir": "Root directory scanned recursively for run directories holding the configured checkpoint file; each selected run is probed in sequence",
         "run_filter": "Run directory names (or names of parent directories whose nested runs are expanded) to probe; empty selects interactively on a TTY and every discovered run otherwise",
@@ -1232,7 +1232,7 @@
         "batch_size": "Batch size of the capture forward passes",
         "max_batches": "Number of loader batches whose activations feed the probes; more batches mean more probe samples at linear cost",
         "max_layers": "Maximum number of leaf layers probed, spread evenly across the network depth",
-        "samples_per_batch": "Number of pixels sampled per batch as probe examples; features are read at each pixel's location scaled into every layer's spatial grid",
+        "samples_per_batch": "Number of weighted pixels sampled per batch as probe examples; padding pixels are never sampled; features are read at each pixel's location scaled into every layer's spatial grid",
         "ridge_lambda": "Ridge regularization strength of the linear probes",
         "seed": "Seed of the sampled probe pixels and of the held-out probe split; vary it to check how sensitive the reported R² is to the sample",
         "figure_style": "PlotBase figure style the decodability curves are rendered with (report or paper)",
@@ -1269,7 +1269,7 @@
         "output_subdir": "Name of the output directory created inside each run directory for the JSON, curves and markdown report",
         "batch_size": "Batch size of the fixed evaluation batches",
         "max_batches": "Number of batches the weighted MSE is averaged over at every severity level",
-        "noise_sigmas": "Gaussian noise standard deviations (in normalized input units) the degradation curve samples; include 0.0 for the clean reference",
+        "noise_sigmas": "Normal noise standard deviations (in normalized input units) the degradation curve samples; include 0.0 for the clean reference",
         "draws_per_count": "Number of random channel subsets averaged for each dropped-channel count",
         "seed": "Seed of the noise draws and dropped-channel subsets",
         "figure_style": "PlotBase figure style the severity curves are rendered with (report or paper)",
@@ -1356,7 +1356,7 @@
         "rows": "number of grid rows",
         "cols": "number of grid columns",
         "input_channels": "number of input fields x0, x1, ...; the targets read x0 to x3, so at least four are needed and any further channel is a pure distractor",
-        "smoothing_pixels": "standard deviation in pixels of the Gaussian filter that turns white noise into each smooth input field",
+        "smoothing_pixels": "standard deviation in pixels of the normal smoothing kernel that turns white noise into each smooth input field",
         "neighbourhood": "side in pixels of the square window the neighbourhood target averages over, which sets the receptive field a model needs to predict it",
         "input_noise": "standard deviation of the white noise added to every standardized input field",
         "target_noise": "standard deviation of the white noise added to every target field",

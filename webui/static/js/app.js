@@ -58,9 +58,9 @@ class App {
   }
 
   _initScenes() {
-    const radar = document.getElementById("radar");
+    const backdrop = document.getElementById("backdrop");
 
-    if (radar) this.scenes.push(new window.TrainingScene(radar));
+    if (backdrop) this.scenes.push(new window.TrainingScene(backdrop));
     for (const mast of document.querySelectorAll(".mast--flanked")) this.scenes.push(new window.MastFigures(mast));
   }
 

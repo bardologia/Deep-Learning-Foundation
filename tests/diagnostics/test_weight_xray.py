@@ -27,7 +27,7 @@ def _write_run(root, name: str, wide_units: int = 4):
     run_dir = root / name
     run_dir.mkdir(parents=True)
 
-    payload = {"epoch": 3, "best_epoch": 2, "best_val_loss": 0.1, "params": _state_dict(wide_units), "z_axis": np.linspace(-20.0, 80.0, 8)}
+    payload = {"epoch": 3, "best_epoch": 2, "best_val_loss": 0.1, "params": _state_dict(wide_units), "grid": np.linspace(-20.0, 80.0, 8)}
     torch.save(payload, run_dir / "best_model.pt")
     return run_dir
 
@@ -47,7 +47,7 @@ def _write_unet_run(root, name: str):
 
     torch.manual_seed(0)
     model, _ = get_backbone("unet", config=config)
-    torch.save({"epoch": 0, "best_epoch": 0, "params": model.state_dict(), "z_axis": np.linspace(-20.0, 80.0, 8)}, run_dir / "best_model.pt")
+    torch.save({"epoch": 0, "best_epoch": 0, "params": model.state_dict(), "grid": np.linspace(-20.0, 80.0, 8)}, run_dir / "best_model.pt")
 
     return run_dir, model
 
