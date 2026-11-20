@@ -3071,8 +3071,8 @@ p.seq-block__flag--study  { color: var(--accent); overflow-wrap: anywhere; }
 .ms-stage { display: flex; flex-direction: column; gap: 16px; }
 .ms-stage[hidden] { display: none; }
 
-.ms-scene { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px 28px; align-items: start; }
-.ms-scene .view-map__wrap img { max-height: 52vh; }
+.ms-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px 28px; align-items: start; }
+.ms-grid .view-map__wrap img { max-height: 52vh; }
 .ms-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .ms-idle[hidden] { display: none; }
 .ms-card canvas { max-width: 860px; }
@@ -3284,7 +3284,7 @@ p.seq-block__flag--study  { color: var(--accent); overflow-wrap: anywhere; }
 .ms-wifacts b { color: var(--accent-deep); }
 
 @media (max-width: 980px) {
-  .ms-scene { grid-template-columns: 1fr; }
+  .ms-grid { grid-template-columns: 1fr; }
 }
 
 .figsave {

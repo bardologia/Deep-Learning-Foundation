@@ -66,7 +66,7 @@ FULL_DATA = {
     "machine"  : {"env_name": "Env", "interpreter": "/envs/Env/bin/python", "conda_root": "/opt/conda"},
     "console"  : {"host": "0.0.0.0", "port": 9001},
     "roots"    : {"repo": "/home/me/ML-Template", "data": "/data/me", "runs": "/scratch/me/runs", "results": "/home/me/results"},
-    "dataset"  : {"path": "/data/me/scene"},
+    "dataset"  : {"path": "/data/me/dataset"},
     "hardware" : {"gpu_pool": [1], "max_workers": 4},
     "mail"     : {"sender": "me@example.org", "recipient": "you@example.org"},
 }
@@ -188,7 +188,7 @@ def test_config_cli_applies_the_profile_to_the_defaults(tmp_path):
     cli     = ConfigCli(EntryConfig(), profile=profile)
     config  = cli.config
 
-    assert config.paths.dataset_path       == Path("/data/me/scene")
+    assert config.paths.dataset_path       == Path("/data/me/dataset")
     assert config.paths.log_base_dir       == Path("/scratch/me/runs/benchmark")
     assert config.paths.extra              == 5
     assert config.logdir                   == "/scratch/me/runs"
@@ -210,10 +210,10 @@ def test_config_cli_applies_the_profile_to_the_defaults(tmp_path):
 
 
 def test_a_dataset_path_alone_leaves_the_other_roots_relative(tmp_path):
-    profile = _profile(tmp_path, {"schema": 1, "dataset": {"path": "/data/me/scene"}})
+    profile = _profile(tmp_path, {"schema": 1, "dataset": {"path": "/data/me/dataset"}})
     config  = ConfigCli(EntryConfig(), profile=profile).config
 
-    assert config.paths.dataset_path == Path("/data/me/scene")
+    assert config.paths.dataset_path == Path("/data/me/dataset")
     assert config.paths.log_base_dir == ReferenceLayout.RUNS_ROOT / "benchmark"
     assert config.logdir             == str(ReferenceLayout.RUNS_ROOT)
 
@@ -229,7 +229,7 @@ def test_sources_name_the_kind_of_rule_behind_each_rewritten_default(tmp_path):
     assert origins["gpus"]               == "profile set"
     assert origins["loader.num_workers"] == "profile cap"
     assert changes["loader.num_workers"] == (16, 4)
-    assert changes["paths.dataset_path"] == (ReferenceLayout.DATASET_DIR, Path("/data/me/scene"))
+    assert changes["paths.dataset_path"] == (ReferenceLayout.DATASET_DIR, Path("/data/me/dataset"))
     assert set(origins) == set(cli.profile_overrides)
     assert cli.unmatched_overrides == []
 
@@ -260,14 +260,14 @@ def test_report_logs_the_profile_state_and_one_row_per_rewritten_leaf(tmp_path):
     assert summary["Unmatched config_overrides"] == "none"
     assert by_leaf["loader.num_workers"] == {"Leaf": "loader.num_workers", "Origin": "profile cap", "Before": 16, "After": 4}
     assert by_leaf["seed"]               == {"Leaf": "seed", "Origin": "command line", "Before": 42, "After": 9}
-    assert by_leaf["paths.dataset_path"]["After"] == "/data/me/scene"
+    assert by_leaf["paths.dataset_path"]["After"] == "/data/me/dataset"
 
 
 def test_command_line_flags_override_the_profile(tmp_path):
     profile = _profile(tmp_path, FULL_DATA)
-    config  = ConfigCli(EntryConfig(), profile=profile).apply(["--paths.dataset_path", "/cli/scene", "--gpus", "[0, 2]"])
+    config  = ConfigCli(EntryConfig(), profile=profile).apply(["--paths.dataset_path", "/cli/dataset", "--gpus", "[0, 2]"])
 
-    assert config.paths.dataset_path == Path("/cli/scene")
+    assert config.paths.dataset_path == Path("/cli/dataset")
     assert config.gpus               == [0, 2]
 
 

@@ -32,6 +32,6 @@ include = ["configuration*", "models*", "pipelines*", "tools*"]
 testpaths      = ["tests"]
 strict_markers = true
 markers        = [
-    "dataset: test runs against the generated synthetic dataset scene",
+    "dataset: test runs against the generated synthetic dataset",
     "slow: heavier test (full-frame numerics, many model forwards)",
 ]

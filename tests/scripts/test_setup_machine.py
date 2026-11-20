@@ -132,15 +132,15 @@ def test_the_default_roots_are_the_checkout_reference_layout(tmp_path, logger_st
 
 
 def test_a_detected_dataset_becomes_the_default(tmp_path, logger_stub):
-    scene = tmp_path / "data" / "scene_b"
-    scene.mkdir(parents=True)
-    (scene / "dataset.json").write_text("{}")
+    dataset = tmp_path / "data" / "dataset_b"
+    dataset.mkdir(parents=True)
+    (dataset / "dataset.json").write_text("{}")
     (tmp_path / "data" / "not_a_dataset").mkdir()
 
     _setup(tmp_path, logger_stub).run()
     profile = MachineProfile.load(tmp_path / "cfg" / "machine.json")
 
-    assert profile.dataset == {"path": str(scene)}
+    assert profile.dataset == {"path": str(dataset)}
 
 
 def test_the_handed_over_interpreter_skips_the_question_unless_a_preset_names_one(tmp_path, logger_stub):

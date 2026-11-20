@@ -88,7 +88,7 @@ def test_notifier_seeds_its_settings_from_the_profile(tmp_path):
 
 
 def test_the_resolver_marks_the_leaves_the_profile_rewrote(tmp_path, monkeypatch):
-    profile = _profile(tmp_path, roots={"runs": str(tmp_path / "runs")}, dataset={"path": str(tmp_path / "scene")}, hardware={"gpu_pool": [1]})
+    profile = _profile(tmp_path, roots={"runs": str(tmp_path / "runs")}, dataset={"path": str(tmp_path / "dataset")}, hardware={"gpu_pool": [1]})
     monkeypatch.setenv(MachineProfile.ENV_VAR, str(profile.path))
 
     result = ScriptConfigResolver(ProjectPaths(REPO_ROOT, profile)).resolve("train_backbone", sys.executable)
@@ -98,7 +98,7 @@ def test_the_resolver_marks_the_leaves_the_profile_rewrote(tmp_path, monkeypatch
     leaves = {leaf["path"]: leaf for leaf in result["leaves"]}
 
     assert leaves["paths.dataset_path"]["source"] == "profile"
-    assert leaves["paths.dataset_path"]["value"]  == str(tmp_path / "scene")
+    assert leaves["paths.dataset_path"]["value"]  == str(tmp_path / "dataset")
     assert leaves["logdir"]["source"]             == "profile"
     assert leaves["logdir"]["value"]              == str(tmp_path / "runs" / "backbone")
     assert leaves["gpus"]["source"]               == "profile"

@@ -209,14 +209,14 @@ def test_a_failed_block_skips_its_descendants(rig):
 
 def test_the_dataset_is_injected_into_the_fields_each_entry_exposes(rig):
     store, processes, launcher, runner = rig
-    dataset     = {"dataset_path": "/data/sets/scene_a"}
+    dataset     = {"dataset_path": "/data/sets/dataset_a"}
     sequence_id = _saved(store, [_block("a1", overrides={"paths.dataset_path": "/old", "training.seed": "7"}), _block("b2", script="benchmark")], dataset=dataset)
 
     runner.start_sequence(sequence_id)
 
     train, bench = launcher.calls
-    assert train["overrides"] == {"paths.dataset_path": "/data/sets/scene_a", "training.seed": "7"}
-    assert bench["overrides"] == {"paths.dataset_path": "/data/sets/scene_a"}
+    assert train["overrides"] == {"paths.dataset_path": "/data/sets/dataset_a", "training.seed": "7"}
+    assert bench["overrides"] == {"paths.dataset_path": "/data/sets/dataset_a"}
 
 
 def test_an_empty_dataset_leaves_the_block_overrides_untouched(rig):

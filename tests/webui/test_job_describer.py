@@ -19,7 +19,7 @@ BACKBONE_LEAVES = [
     {"path": "trials_mode",            "value": "augmentation"},
     {"path": "run_name",               "value": "None"},
     {"path": "infer_after",            "value": "False"},
-    {"path": "paths.dataset_path",     "value": "/data/scene_a"},
+    {"path": "paths.dataset_path",     "value": "/data/dataset_a"},
     {"path": "training.patch_size",    "value": "(64, 32)"},
     {"path": "training.epochs",        "value": "60"},
 ]
@@ -54,7 +54,7 @@ def test_backbone_defaults_read_as_single_training():
     text = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", {})
 
     assert text.startswith("single training · resunet")
-    assert "dataset scene_a" in text
+    assert "dataset dataset_a" in text
     assert "patch (64, 32)" in text
     assert "epochs 60" in text
     assert "run" not in text.replace("single training", "")
@@ -75,7 +75,7 @@ def test_overrides_win_over_defaults():
     assert "inference after" in text
 
 
-def test_generate_dataset_shows_scene_shape_and_seed():
+def test_generate_dataset_shows_grid_shape_and_seed():
     text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {})
 
     assert "rows 256" in text
@@ -84,7 +84,7 @@ def test_generate_dataset_shows_scene_shape_and_seed():
 
 
 def test_generate_dataset_output_override_appears():
-    text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {"generation.output_directory": "/data/scenes/synthetic_big"})
+    text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {"generation.output_directory": "/data/datasets/synthetic_big"})
 
     assert "synthetic_big" in text
 

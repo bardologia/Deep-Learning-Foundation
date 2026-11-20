@@ -109,7 +109,7 @@ def test_save_json_serializes_nonjson_via_default(tmp_path):
 
 
 @pytest.mark.dataset
-def test_save_json_roundtrip_scene_layout(dataset_json, tmp_path):
+def test_save_json_roundtrip_dataset_layout(dataset_json, tmp_path):
     path = tmp_path / "dataset_copy.json"
     FileIO.save_json(dataset_json, path)
 

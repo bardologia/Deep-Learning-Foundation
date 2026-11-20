@@ -73,7 +73,7 @@ def test_inference_layout_places_stamps_under_the_run(tmp_path):
     from pipelines.shared.inference.run_layout import InferenceLayout
 
     assert InferenceLayout.base(tmp_path)                 == tmp_path / "inference"
-    assert InferenceLayout.target_base(tmp_path, "scene") == tmp_path / "cross_dataset" / "scene"
+    assert InferenceLayout.target_base(tmp_path, "other") == tmp_path / "cross_dataset" / "other"
 
 
 class _RecordingPipeline:

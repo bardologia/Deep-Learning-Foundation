@@ -283,7 +283,7 @@ def test_doc_save_roundtrip_equals_render(tmp_path):
 
 
 @pytest.mark.dataset
-def test_kv_table_with_scene_layout(dataset_json):
+def test_kv_table_with_dataset_layout(dataset_json):
     scalars = {k: v for k, v in dataset_json.items() if isinstance(v, (str, int, float))}
     doc     = MarkdownDoc("Dataset")
     doc.kv_table(scalars)
@@ -294,7 +294,7 @@ def test_kv_table_with_scene_layout(dataset_json):
 
 
 @pytest.mark.dataset
-def test_table_render_scene_layout(dataset_json):
+def test_table_render_dataset_layout(dataset_json):
     table = MarkdownTable(["Key", "Value"])
     for k, v in list(dataset_json.items())[:6]:
         table.add_row(str(k), ScalarFormatter.format_scalar(v) if not isinstance(v, (dict, list)) else "...")
@@ -304,9 +304,9 @@ def test_table_render_scene_layout(dataset_json):
 
 def test_table_add_row_escapes_pipes_so_the_row_keeps_its_columns():
     table = MarkdownTable(["metric", "description"])
-    table.add_row("peak", "mean |Δ peak| in metres")
+    table.add_row("bias", "mean |Δ value| in target units")
 
     row = table.render()[2]
 
-    assert "\\|Δ peak\\|" in row
+    assert "\\|Δ value\\|" in row
     assert row.replace("\\|", "").count("|") == 3

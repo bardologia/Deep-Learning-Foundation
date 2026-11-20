@@ -18,7 +18,7 @@ ROOTS = (str(ReferenceLayout.DATA_ROOT), str(ReferenceLayout.RUNS_ROOT), str(Ref
 
 ALL_ROOTS_PROFILE = {
     "roots"   : {"repo": "/local/repo", "data": "/local/data", "runs": "/local/runs", "results": "/local/results"},
-    "dataset" : {"path": "/local/data/scene"},
+    "dataset" : {"path": "/local/data/dataset"},
 }
 
 

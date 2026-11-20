@@ -206,7 +206,7 @@ def test_grouper_section_order_follows_definition():
 
 
 @pytest.mark.dataset
-def test_report_assembly_with_scene_metadata(dataset_json, tmp_path):
+def test_report_assembly_with_dataset_metadata(dataset_json, tmp_path):
     assets = ReportAssets(base=tmp_path, timestamp="2026-01-01 00:00:00")
 
     fig = tmp_path / "figs" / "overview.png"

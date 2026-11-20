@@ -31,11 +31,11 @@
       }
     },
     "dataset/general/dataset::PatchConfig": {
-      "summary": "Tiling of cropped scenes into overlapping training/inference patches",
+      "summary": "Tiling of the split regions into overlapping training/inference patches",
       "fields": {
         "size": "patch rows and cols in pixels as a (H, W) tuple; the two dimensions may differ for rectangular patches",
         "stride": "pixel step between adjacent patch origins as a per-axis (vertical, horizontal) tuple, entries smaller than the matching size give overlapping patches",
-        "use_symmetric_padding": "pad scene borders with numpy symmetric (mirror, edge-duplicating) padding instead of zero (constant) padding so edge patches are still fully covered"
+        "use_symmetric_padding": "pad grid borders with numpy symmetric (mirror, edge-duplicating) padding instead of zero (constant) padding so edge patches are still fully covered"
       }
     },
     "dataset/general/dataset::AugmentationConfig": {
@@ -739,7 +739,7 @@
         "clip_adaptive_mean_std_k": "std-dev multiplier k in mean + k*std used as the clip bound when clip_mode is adaptive_mean_std",
         "patch_size": "rows and cols in pixels of training patches cropped from the dataset grid, (H, W) may be rectangular for fully-convolutional backbones",
         "patch_stride": "per-axis (vertical, horizontal) pixel stride between overlapping extracted patches",
-        "use_symmetric_padding": "pad scene borders with symmetric (mirror) padding instead of zero (constant) padding so edge patches stay fully covered",
+        "use_symmetric_padding": "pad grid borders with symmetric (mirror) padding instead of zero (constant) padding so edge patches stay fully covered",
         "snapshot_every_n_epochs": "Save a weights-only epoch snapshot to checkpoints/epoch_<N>.pt every N epochs (EMA weights when EMA is on); 0 disables. Snapshots feed the training-evolution animation and cost one state_dict write each"
       }
     },
@@ -852,7 +852,7 @@
         "batch_size": "inference batch size; None reuses the batch size recorded in the training run's own config",
         "num_workers": "number of dataloader worker processes used for parallel batch assembly during inference",
         "seed": "random seed applied via np.random.seed at inference setup, controlling any stochastic pixel selection",
-        "stitch_window": "window function blending overlapping inference tiles back into the full scene: hann, uniform, or triangular",
+        "stitch_window": "window function blending overlapping inference tiles back into the full grid: hann, uniform, or triangular",
         "save_maps": "whether to save the stitched predicted and target maps as maps/predictions.npy and maps/targets.npy",
         "save_plots": "whether to render the per-channel target, prediction and error maps",
         "cmap": "matplotlib colormap of the target and prediction maps",

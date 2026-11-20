@@ -65,13 +65,13 @@ def test_the_benchmark_inference_config_writes_the_maps_seed_comparison_reads(tm
 
 def test_a_run_scored_on_a_target_dataset_stamps_under_its_cross_dataset_tree(tmp_path, test_data_dir):
     run_dir = build_run_directory(tmp_path, test_data_dir)
-    other   = tmp_path / "other_scene"
+    other   = tmp_path / "other_dataset"
     shutil.copytree(test_data_dir, other)
 
     stamp   = InferencePipeline(_config(run_dir, target=TargetDatasetConfig(enabled=True, dataset_path=other))).run().parent
     metrics = json.loads((stamp / "metrics.json").read_text())
 
     assert stamp.parent.parent.name == "cross_dataset"
-    assert stamp.parent.name == "other_scene"
+    assert stamp.parent.name == "other_dataset"
     assert metrics["target_dataset"] == {"dataset_path": str(other)}
     assert metrics["training_dataset"] == str(test_data_dir)

@@ -21,7 +21,7 @@ from tests.conftest import SilentLogger
 TARGET_SPLITS = {"train": [[0, 40, 0, 32]], "val": [[40, 48, 0, 32]], "test": [[48, 64, 0, 32]]}
 
 
-def _target_dataset(root: Path, name: str = "scene_a") -> Path:
+def _target_dataset(root: Path, name: str = "dataset_a") -> Path:
     dataset = root / name
     FileIO.save_json({"name": name, "input_channels": ["x0"], "target_channels": ["y"], "rows": 64, "cols": 32, "splits": TARGET_SPLITS, "generator": {}}, dataset / "dataset.json")
 
@@ -39,8 +39,8 @@ def test_a_disabled_target_scores_the_run_on_its_own_split():
 def test_an_enabled_target_names_its_dataset(tmp_path):
     target = TargetDataset.of(_config(_target_dataset(tmp_path)))
 
-    assert target.name    == "scene_a"
-    assert target.payload() == {"dataset_path": str(tmp_path / "scene_a")}
+    assert target.name    == "dataset_a"
+    assert target.payload() == {"dataset_path": str(tmp_path / "dataset_a")}
     assert "test split" in target.describe()
 
 
@@ -63,7 +63,7 @@ def test_target_stamps_are_written_under_the_runs_cross_dataset_tree(tmp_path):
 
     meta = InferenceMetadata(config, TargetDataset.of(config))
 
-    assert meta.output_dir == run_dir / InferenceLayout.TARGET_DIRNAME / "scene_a" / "stamp"
+    assert meta.output_dir == run_dir / InferenceLayout.TARGET_DIRNAME / "dataset_a" / "stamp"
     assert InferenceMetadata(config).output_dir == run_dir / InferenceLayout.DIRNAME / "stamp"
 
 
@@ -99,18 +99,18 @@ def test_the_scheduler_skips_only_runs_scored_on_the_same_target(tmp_path):
     runs   = tmp_path / "runs"
 
     own_only    = _run(runs / "own_only")
-    other_scene = _run(runs / "other_scene")
+    other_dataset = _run(runs / "other_dataset")
     scored      = _run(runs / "scored")
 
     own_stamp = InferenceLayout.base(own_only) / "20260101_000000"
     own_stamp.mkdir(parents=True)
     CompletionMarker.stamp(own_stamp, {"split": "test", CompletedInference.CHECKPOINT_KEY: {"name": "best_model.pt"}})
 
-    _target_stamp(other_scene, target, "20260101_000000", payload={"dataset_path": str(tmp_path / "elsewhere")})
+    _target_stamp(other_dataset, target, "20260101_000000", payload={"dataset_path": str(tmp_path / "elsewhere")})
     _target_stamp(scored, target, "20260101_000000")
 
     scheduler = _scheduler(runs, block)
     remaining = sorted(directory.name for directory in scheduler._run_dirs(SilentLogger()))
 
-    assert remaining                                           == ["other_scene", "own_only"]
+    assert remaining                                           == ["other_dataset", "own_only"]
     assert [directory.name for directory in scheduler.skipped] == ["scored"]

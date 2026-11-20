@@ -68,7 +68,7 @@ def test_forward_finite(name, make_input):
 
 
 @pytest.mark.dataset
-def test_forward_on_a_scene_window(inputs):
+def test_forward_on_a_grid_window(inputs):
     model, config = _build("unet")
 
     window = np.asarray(inputs[:1, :WINDOW, :WINDOW], dtype=np.float32)

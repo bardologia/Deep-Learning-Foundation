@@ -70,8 +70,8 @@ class MicroscopeView {
       </div>
 
       <div class="ms-stage" id="probe-stage" hidden>
-        <section class="ms-card ms-scene">
-          <div class="ms-scene__map">
+        <section class="ms-card ms-grid">
+          <div class="ms-grid__map">
             <div class="view-map__frame">
               <span class="view-axis view-axis--y">row &darr;</span>
               <div class="view-map__wrap" id="probe-map-wrap">
@@ -81,7 +81,7 @@ class MicroscopeView {
               <span class="view-axis view-axis--x">col &rarr;</span>
             </div>
           </div>
-          <div class="ms-scene__info">
+          <div class="ms-grid__info">
             <div class="ms-card__head">
               <h3 class="view-panel-title">Split</h3>
               <span class="ms-badge" id="probe-model-badge"></span>

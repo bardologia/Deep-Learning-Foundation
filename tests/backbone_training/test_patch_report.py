@@ -26,9 +26,9 @@ def make_planner(maximum: tuple[int, int] = (32, 16)) -> PatchSizeTrialPlanner:
 
 
 def synthetic_loss(patch_size: tuple[int, int]) -> float:
-    row_opt, range_opt = OPTIMUM
-    row,     range_len = patch_size
-    return 0.1 + 0.02 * ((row - row_opt) / 32) ** 2 + 0.02 * ((range_len - range_opt) / 32) ** 2
+    row_opt, col_opt = OPTIMUM
+    row,     col_len = patch_size
+    return 0.1 + 0.02 * ((row - row_opt) / 32) ** 2 + 0.02 * ((col_len - col_opt) / 32) ** 2
 
 
 def populate_runs(runs_root: Path, planner: PatchSizeTrialPlanner, seeds: list[int] | None = None, drop_metrics: set[str] = frozenset(), nan_units: set[str] = frozenset(), prefix: str = "") -> None:

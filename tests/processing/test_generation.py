@@ -15,27 +15,27 @@ from tools.data.regions                     import CropRegion
 from tests.conftest import SilentLogger
 
 
-def test_the_generator_writes_the_three_files_of_the_contract(test_data_dir, scene_config):
+def test_the_generator_writes_the_three_files_of_the_contract(test_data_dir, generation_config):
     files = DatasetFiles.read(test_data_dir)
 
     assert sorted(path.name for path in test_data_dir.iterdir() if path.is_file()) == ["dataset.json", "inputs.npy", "targets.npy"]
     assert files.input_channels  == ["x0", "x1", "x2", "x3"]
     assert files.target_channels == ["pointwise", "neighbourhood"]
-    assert (files.rows, files.cols) == (scene_config.rows, scene_config.cols)
-    assert files.inputs().shape  == (4, scene_config.rows, scene_config.cols)
-    assert files.targets().shape == (2, scene_config.rows, scene_config.cols)
+    assert (files.rows, files.cols) == (generation_config.rows, generation_config.cols)
+    assert files.inputs().shape  == (4, generation_config.rows, generation_config.cols)
+    assert files.targets().shape == (2, generation_config.rows, generation_config.cols)
     assert files.inputs().dtype  == np.float32
-    assert files.generator["config"]["seed"] == scene_config.seed
+    assert files.generator["config"]["seed"] == generation_config.seed
 
 
-def test_the_splits_are_disjoint_row_bands_covering_the_grid(test_data_dir, scene_config):
+def test_the_splits_are_disjoint_row_bands_covering_the_grid(test_data_dir, generation_config):
     splits = DatasetFiles.read(test_data_dir).splits
     bands  = [region for name in ("train", "val", "test") for region in splits.regions(name)]
 
     assert bands[0].row_start == 0
-    assert bands[-1].row_end  == scene_config.rows
+    assert bands[-1].row_end  == generation_config.rows
     assert all(left.row_end == right.row_start for left, right in zip(bands, bands[1:]))
-    assert all((region.col_start, region.col_end) == (0, scene_config.cols) for region in bands)
+    assert all((region.col_start, region.col_end) == (0, generation_config.cols) for region in bands)
 
 
 def test_the_targets_follow_the_known_function_of_the_inputs(tmp_path):

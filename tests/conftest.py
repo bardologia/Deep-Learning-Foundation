@@ -22,7 +22,7 @@ os.environ["MLTEMPLATE_MACHINE_PROFILE"] = ""
 
 from configuration.generation import GenerationConfig
 
-_SCENE_CONFIG = GenerationConfig(rows=96, cols=64)
+_GENERATION_CONFIG = GenerationConfig(rows=96, cols=64)
 
 
 class SilentProgress:
@@ -144,15 +144,15 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(scope="session")
-def scene_config() -> GenerationConfig:
-    return _SCENE_CONFIG
+def generation_config() -> GenerationConfig:
+    return _GENERATION_CONFIG
 
 
 @pytest.fixture(scope="session")
 def test_data_dir(tmp_path_factory) -> Path:
     from pipelines.processing.generation import DatasetGenerator
 
-    config = dataclasses.replace(_SCENE_CONFIG, output_directory=tmp_path_factory.mktemp("synthetic_scene") / "synthetic")
+    config = dataclasses.replace(_GENERATION_CONFIG, output_directory=tmp_path_factory.mktemp("synthetic_dataset") / "synthetic")
 
     DatasetGenerator(config, logger=SilentLogger()).run()
 

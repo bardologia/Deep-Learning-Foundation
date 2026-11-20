@@ -193,7 +193,7 @@ def test_imshow_figure_saved_dpi(plotter, small_field, tmp_path):
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_imshow_scene_input_window(plotter, inputs, tmp_path):
+def test_imshow_input_window(plotter, inputs, tmp_path):
     window = np.asarray(inputs[0, :32, :32], dtype=np.float32)
     out    = plotter._imshow_figure(
         window,
@@ -210,7 +210,7 @@ def test_imshow_scene_input_window(plotter, inputs, tmp_path):
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_imshow_scene_target_window_with_clim(plotter, targets, tmp_path):
+def test_imshow_target_window_with_clim(plotter, targets, tmp_path):
     window = np.asarray(targets[0, :32, :32], dtype=np.float32)
     lo, hi = plotter._shared_clim(window, q_low=2.0, q_high=98.0)
 
@@ -229,7 +229,7 @@ def test_imshow_scene_target_window_with_clim(plotter, targets, tmp_path):
 
 
 @pytest.mark.dataset
-def test_shared_clim_scene_target(targets):
+def test_shared_clim_target(targets):
     layer = np.asarray(targets[1, :32, :32])
     lo, hi = PlotBase._shared_clim(layer, q_low=5.0, q_high=95.0)
     assert lo <= hi
