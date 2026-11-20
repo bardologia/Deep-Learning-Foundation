@@ -75,7 +75,7 @@ Stage $i$ of the encoder stacks `enc_blocks[i]` NAFBlocks at width $c_i = \textt
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `NAFNetConfig` (`width` — the capacity-matching knob; `enc_blocks`, `middle_blocks`, `dec_blocks`; `dw_expand`, `ffn_expand`).
+See `NAFNetConfig` in `configuration/architectures/backbone.py` (`width` — the capacity-matching knob; `enc_blocks`, `middle_blocks`, `dec_blocks`; `dw_expand`, `ffn_expand`).
 
 ---
 
@@ -102,5 +102,3 @@ Ground truth: Chen, Chu, Zhang, Sun, *Simple Baselines for Image Restoration*, E
 - [[ConvNeXt UNet]] — Modern conv design under the segmentation topology; NAFNet is the restoration counterpart
 - [[HRNet]] — The other fidelity-first design (no resolution bottleneck)
 - [[Model Zoo]] — Architecture comparison
-- [[Configuration Layer]] — NAFNetConfig
-- [[ML-Template Index]] — Master index

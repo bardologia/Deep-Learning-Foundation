@@ -15,7 +15,7 @@ summary: UNet with attention-gated skip connections that suppress spatially irre
 
 # Attention UNet
 
-`AttentionUNet` (`models/backbone/attention_unet.py`) extends the standard [[UNet]] by replacing direct skip connection concatenation with attention-gated skip connections ([[AttentionUNet_Oktay2018_1804.03999.pdf|Oktay et al., 2018]]). An attention gate learns to suppress spatially irrelevant activations in the skip features before merging them with the decoder.
+`AttentionUNet` (`models/backbone/attention_unet.py`) extends the standard [[UNet]] by replacing direct skip connection concatenation with attention-gated skip connections (Oktay et al., 2018). An attention gate learns to suppress spatially irrelevant activations in the skip features before merging them with the decoder.
 
 ---
 
@@ -106,7 +106,7 @@ In this task different spatial regions carry different structural complexity. At
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `AttentionUNetConfig`.
+See `AttentionUNetConfig` in `configuration/architectures/backbone.py`.
 
 Additional parameter:
 
@@ -120,9 +120,7 @@ All other parameters are identical to [[UNet]].
 
 ## Paper fidelity
 
-**Review date.** 2026-06-04.
-
-**Reference.** Oktay, O., Schlemper, J., Le Folgoc, L., Lee, M., Heinrich, M., Misawa, K., Mori, K., McDonagh, S., Hammerla, N. Y., Kainz, B., Glocker, B., Rueckert, D. (2018). *Attention U-Net: Learning Where to Look for the Pancreas*. MIDL 2018. arXiv:1804.03999. [[AttentionUNet_Oktay2018_1804.03999.pdf|PDF]]
+**Reference.** Oktay, O., Schlemper, J., Le Folgoc, L., Lee, M., Heinrich, M., Misawa, K., Mori, K., McDonagh, S., Hammerla, N. Y., Kainz, B., Glocker, B., Rueckert, D. (2018). *Attention U-Net: Learning Where to Look for the Pancreas*. MIDL 2018. arXiv:1804.03999.
 
 This section records an equation-by-equation, figure-by-figure verification of `AttentionUNet` (`models/backbone/attention_unet.py`, shared blocks and builders in `models/blocks.py`) against the paper. The paper PDF is treated as ground truth. The reference architecture is 3D (volumetric CT); the implementation is the 2D adaptation for this task, so any pure $3D \rightarrow 2D$ change (e.g. trilinear $\rightarrow$ bilinear resampling, $\text{Conv3d} \rightarrow \text{Conv2d}$) is an accepted adaptation rather than a deviation.
 
@@ -132,19 +130,19 @@ The gate follows the paper's coarse-grid (grid-attention) formulation: (i) the g
 
 | # | Component | Paper reference | Code reference | Verdict |
 |---|---|---|---|---|
-| 1 | Backbone encoder/decoder (double $3\times3$ conv + ReLU per scale, factor-2 rescaling) | Fig. 1; Sec. 2 | `ConvBlock` `models/blocks.py:140-176`; `models/backbone/attention_unet.py:84-151` | MATCH |
-| 2 | Gate signal $g$ = coarse decoder feature (pre-upsample) | Fig. 1, Fig. 2; Sec. 3.2 | `models/backbone/attention_unet.py:171` (gate called before `upsample`) | MATCH |
-| 3 | $W_g$ ($1\times1$ conv, to $F_{int}$) on $g$ | Eq. 2; Fig. 2 | `models/backbone/attention_unet.py:19-27` | MATCH |
-| 3 | $W_x$ ($1\times1$ conv on $x^l$, feature-maps downsampled to gate grid) | Eq. 2; Sec. 3.2; Fig. 2 | `models/backbone/attention_unet.py:28-37` (kernel-2 stride-2 conv) | ACCEPTED ADAPTATION |
-| 4a | $\sigma_1$ = ReLU on $W_x^T x + W_g^T g$ | Eq. 1 | `models/backbone/attention_unet.py:56, 64` | MATCH |
-| 4b | $\psi$ ($1\times1$ conv to single channel) | Eq. 1; Fig. 2 | `models/backbone/attention_unet.py:38-44` | MATCH |
-| 4c | $\sigma_2$ = sigmoid $\rightarrow \alpha \in [0,1]$ | Eq. 2; Sec. 3.2 | `models/backbone/attention_unet.py:45` | MATCH |
-| 5 | Resampling of $\alpha$ back to $x^l$ grid | Fig. 2 (Resampler, trilinear) | `models/backbone/attention_unet.py:65` (bilinear) | ACCEPTED ADAPTATION |
-| 6 | Output transform $W$ ($1\times1$ conv + norm) on gated skip | Fig. 2 (right recombination block) | `models/backbone/attention_unet.py:47-55, 67` | MATCH |
-| 7 | Gated skip enters decoder via concatenation before refinement conv | Fig. 1 (concatenation); Sec. 3.2 | `models/backbone/attention_unet.py:171-175` | MATCH |
-| 8 | Downsampling (max-pool / 2), upsampling (/2) of backbone | Fig. 1 legend | `models/backbone/attention_unet.py:98`, `build_upsample` `models/blocks.py:79-101` | MATCH |
+| 1 | Backbone encoder/decoder (double $3\times3$ conv + ReLU per scale, factor-2 rescaling) | Fig. 1; Sec. 2 | `ConvBlock` `models/blocks.py`; `models/backbone/attention_unet.py` | MATCH |
+| 2 | Gate signal $g$ = coarse decoder feature (pre-upsample) | Fig. 1, Fig. 2; Sec. 3.2 | `models/backbone/attention_unet.py` (gate called before `upsample`) | MATCH |
+| 3 | $W_g$ ($1\times1$ conv, to $F_{int}$) on $g$ | Eq. 2; Fig. 2 | `models/backbone/attention_unet.py` | MATCH |
+| 3 | $W_x$ ($1\times1$ conv on $x^l$, feature-maps downsampled to gate grid) | Eq. 2; Sec. 3.2; Fig. 2 | `models/backbone/attention_unet.py` (kernel-2 stride-2 conv) | ACCEPTED ADAPTATION |
+| 4a | $\sigma_1$ = ReLU on $W_x^T x + W_g^T g$ | Eq. 1 | `models/backbone/attention_unet.py` | MATCH |
+| 4b | $\psi$ ($1\times1$ conv to single channel) | Eq. 1; Fig. 2 | `models/backbone/attention_unet.py` | MATCH |
+| 4c | $\sigma_2$ = sigmoid $\rightarrow \alpha \in [0,1]$ | Eq. 2; Sec. 3.2 | `models/backbone/attention_unet.py` | MATCH |
+| 5 | Resampling of $\alpha$ back to $x^l$ grid | Fig. 2 (Resampler, trilinear) | `models/backbone/attention_unet.py` (bilinear) | ACCEPTED ADAPTATION |
+| 6 | Output transform $W$ ($1\times1$ conv + norm) on gated skip | Fig. 2 (right recombination block) | `models/backbone/attention_unet.py` | MATCH |
+| 7 | Gated skip enters decoder via concatenation before refinement conv | Fig. 1 (concatenation); Sec. 3.2 | `models/backbone/attention_unet.py` | MATCH |
+| 8 | Downsampling (max-pool / 2), upsampling (/2) of backbone | Fig. 1 legend | `models/backbone/attention_unet.py`, `build_upsample` `models/blocks.py` | MATCH |
 | 9 | Deep supervision | Sec. 3 (Implementation Details) | not implemented | DEVIATION (minor) |
-| 10 | Multiplicative gating $\hat{x}_{i,c}^l = x_{i,c}^l \cdot \alpha_i^l$ | Sec. 3.2 | `models/backbone/attention_unet.py:67` | MATCH |
+| 10 | Multiplicative gating $\hat{x}_{i,c}^l = x_{i,c}^l \cdot \alpha_i^l$ | Sec. 3.2 | `models/backbone/attention_unet.py` | MATCH |
 
 ### Additive-attention equations
 
@@ -159,17 +157,17 @@ q_{att}^l &= \psi^T a_i^l + b_\psi \\
 \end{aligned}
 $$
 
-with $\sigma_1 = \text{ReLU}$ and $\sigma_2 = \text{sigmoid}$. The code realises this exactly: `gate_projection` and `skip_projection` provide $W_g, W_x$, their sum passes through `relu` ($\sigma_1$), `attention_score` applies $\psi$ ($1\times1$ conv to one channel) followed by `Sigmoid` ($\sigma_2$). The bias terms $b_g, b_\psi$ are governed by `conv_bias`: the paper carries $b_g, b_\psi$, whereas here the projections are bias-free by default and only $\psi$ carries a bias (`bias=True`, `models/backbone/attention_unet.py:43`). With normalization layers after each projection this is the standard and behaviourally equivalent choice; not a deviation.
+with $\sigma_1 = \text{ReLU}$ and $\sigma_2 = \text{sigmoid}$. The code realises this exactly: `gate_projection` and `skip_projection` provide $W_g, W_x$, their sum passes through `relu` ($\sigma_1$), `attention_score` applies $\psi$ ($1\times1$ conv to one channel) followed by `Sigmoid` ($\sigma_2$). The bias terms $b_g, b_\psi$ are governed by `conv_bias`: the paper carries $b_g, b_\psi$, whereas here the projections are bias-free by default and only $\psi$ carries a bias (`bias=True`, `models/backbone/attention_unet.py`). With normalization layers after each projection this is the standard and behaviourally equivalent choice; not a deviation.
 
 ### Accepted adaptations
 
-- **$3D \rightarrow 2D$.** All convolutions and the resampler are 2D; the paper's trilinear coefficient resampling becomes bilinear (`models/backbone/attention_unet.py:65`). This is the intended adaptation for 2D grid inputs and changes no architectural semantics.
-- **$W_x$ as a strided convolution.** The paper performs the linear transforms with $1\times1$ convolutions and *separately* downsamples the input feature-maps to the gating resolution (Sec. 3.2, "without any spatial support ... input feature-maps are downsampled to the resolution of gating signal"). The code fuses these two steps into a single kernel-2 stride-2 convolution (`models/backbone/attention_unet.py:28-37`), which matches the official `Attention-Gated-Networks` reference implementation. The resulting attention grid is identical ($H_g \times W_g$); accepted.
+- **$3D \rightarrow 2D$.** All convolutions and the resampler are 2D; the paper's trilinear coefficient resampling becomes bilinear (`models/backbone/attention_unet.py`). This is the intended adaptation for 2D grid inputs and changes no architectural semantics.
+- **$W_x$ as a strided convolution.** The paper performs the linear transforms with $1\times1$ convolutions and *separately* downsamples the input feature-maps to the gating resolution (Sec. 3.2, "without any spatial support ... input feature-maps are downsampled to the resolution of gating signal"). The code fuses these two steps into a single kernel-2 stride-2 convolution (`models/backbone/attention_unet.py`), which matches the official `Attention-Gated-Networks` reference implementation. The resulting attention grid is identical ($H_g \times W_g$); accepted.
 - **Intermediate-channel count $F_{int}$.** Driven by `attention_intermediate_ratio` ($D = \max(1, \lfloor S \cdot r \rfloor)$, default $r = 0.5$). The paper does not fix $F_{int}$ analytically, so this is a free design choice, not a deviation.
 
 ### Deviations
 
-- **Deep supervision (minor).** The paper's Implementation Details (Sec. 3) state "All models are trained using ... deep-supervision [16]", and Sec. 3.2 reiterates that deep supervision forces intermediate feature-maps to be semantically discriminative at each scale. The current model emits a single prediction from the finest decoder level (`models/backbone/attention_unet.py:147-151, 178`); there are no auxiliary heads at coarser decoder scales. This is a *training-objective* feature rather than a core attention-gate property, so severity is minor. Proposed fix: add optional auxiliary $1\times1$ output heads on the intermediate decoder feature-maps (one per decoder level), upsample each to the input resolution, and combine their losses with the main head (guarded by a config flag such as `deep_supervision: bool = False`). The attention-gate mechanism itself is fully faithful without it.
+- **Deep supervision (minor).** The paper's Implementation Details (Sec. 3) state "All models are trained using ... deep-supervision [16]", and Sec. 3.2 reiterates that deep supervision forces intermediate feature-maps to be semantically discriminative at each scale. The current model emits a single prediction from the finest decoder level (`models/backbone/attention_unet.py`); there are no auxiliary heads at coarser decoder scales. This is a *training-objective* feature rather than a core attention-gate property, so severity is minor. Proposed fix: add optional auxiliary $1\times1$ output heads on the intermediate decoder feature-maps (one per decoder level), upsample each to the input resolution, and combine their losses with the main head (guarded by a config flag such as `deep_supervision: bool = False`). The attention-gate mechanism itself is fully faithful without it.
 
 ### Overall
 
@@ -181,5 +179,3 @@ The attention gate matches the paper's additive grid-attention formulation (Eq. 
 
 - [[UNet]] — Base architecture
 - [[Model Zoo]] — Architecture comparison
-- [[Configuration Layer]] — AttentionUNetConfig
-- [[Training Pipeline]] — Training context

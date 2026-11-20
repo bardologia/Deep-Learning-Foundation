@@ -12,7 +12,7 @@ aliases:
 
 # Model Zoo
 
-This note summarises all model architectures available in ML-Template, their key properties, and guidance on when to prefer each. Model selection has two independent axes: the backbone (`backbone_name`, the registry key below) and the output head (`head` on the architecture config, `backbone_head` in the entry configs), so any backbone pairs with any head.
+This note summarises all model architectures available in ML-Template, their key properties, and guidance on when to prefer each. Model selection is one choice, the backbone (`backbone_name`, the registry key below); every backbone ends in the same single-convolution output head.
 
 ---
 
@@ -28,7 +28,7 @@ This note summarises all model architectures available in ML-Template, their key
 | `linknet` | [[LinkNet]] | ResNet encoder | Additive skip | Single 1×1 conv | ~31.0M |
 | `swin_unet` | [[SwinUNet]] | Swin Transformer | Hierarchical Swin | 1×1 conv | ~28.8M |
 | `transunet` | [[TransUNet]] | CNN + ViT hybrid | Transformer patch tokens | CNN decoder | ~30.6M |
-| `unetr` | [[UNETR]] | Pure ViT | Transformer skip outputs | CNN decoder | ~34.4M |
+| `unetr` | [[UNETR]] | Pure ViT | Transformer skip outputs | CNN decoder | ~34.9M |
 | `deeplabv3plus` | [[DeepLabV3+]] | Residual CNN, output stride 8 | Low-level fusion in decoder | ASPP + light decoder | ~10.3M |
 | `segformer` | [[SegFormer]] | Hierarchical transformer (MiT-style) | Pyramid to all-MLP decoder | 1×1 conv | ~5.2M |
 | `convnext_unet` | [[ConvNeXt UNet]] | ConvNeXt blocks in U-Net | Direct concatenation | Single 1×1 conv | ~19.1M |
@@ -37,11 +37,11 @@ This note summarises all model architectures available in ML-Template, their key
 | `multires_unet` | [[MultiResUNet]] | MultiRes blocks in U-Net | ResPath-filtered concat | Single 1×1 conv | ~14.4M |
 | `fpn` | [[FPN]] | Residual bottom-up + FPN top-down | Lateral 1×1 additions | Summed pyramid + 1×1 conv | ~7.8M |
 | `u2net` | [[U2-Net]] | Nested RSU mini-U-Nets | Direct concatenation | Single 1×1 conv | ~8.3M |
-| `pixel_mlp` | [[PixelMLP]] | 1×1 conv stack (no spatial context) | None (single stream) | Single 1×1 conv | ~3.2M |
-| `local_cnn` | [[Local CNN]] | Full-resolution 3×3 ConvBlock stack | None (single stream) | Single 1×1 conv | ~3.0M |
+| `pixel_mlp` | [[PixelMLP]] | 1×1 conv stack (no spatial context) | None (single stream) | Single 1×1 conv | ~30.8M |
+| `local_cnn` | [[Local CNN]] | Full-resolution 3×3 ConvBlock stack | None (single stream) | Single 1×1 conv | ~31.1M |
 | `nafnet` | [[NAFNet]] | Gated NAFBlock encoder-decoder (activation-free) | Additive skip | Single 3×3 conv | ~29.2M |
 
-Parameter counts are approximate for default configurations with $C_{\text{in}} = 4$ (`in_channels`) and $C_{\text{out}} = 2$ (`out_channels`), the channel counts of the example dataset. The [[Capacity Matching]] stage of the [[Benchmark Pipeline]] rescales all of them to the UNet reference budget before benchmarking.
+Parameter counts are approximate for default configurations with $C_{\text{in}} = 4$ (`in_channels`) and $C_{\text{out}} = 2$ (`out_channels`), the channel counts of the example dataset. Most defaults sit near the UNet budget of about 31M parameters, PixelMLP and Local CNN included, so that a benchmark compares architectures at similar capacity.
 
 ---
 
@@ -57,7 +57,7 @@ Every backbone ends in one output convolution (`OutputHeadMixin`, `models/blocks
 The dataset is small or GPU memory is limited. The standard UNet provides a strong baseline with minimal complexity. Default starting point for any new experiment.
 
 ### Use AttentionUNet when
-There is spatial heterogeneity in the scene (e.g., mixed urban–vegetated regions) where different areas require different processing. The attention gates learn to suppress irrelevant skip features region-specifically.
+Different regions of the grid follow different input-target relations and need different processing. The attention gates learn to suppress irrelevant skip features region-specifically.
 
 ### Use UNet++ when
 Skip connection quality is suspected to be a bottleneck. UNet++ provides graduated feature fusion across multiple encoder levels, which can reduce the semantic gap between encoder and decoder.
@@ -87,7 +87,7 @@ Evaluating modern convolution design (large depthwise kernels, inverted bottlene
 Parameter efficiency through feature reuse is the question; at matched capacity it is the deepest, thinnest model in the zoo.
 
 ### Use HRNet when
-Per-pixel position accuracy (peak-location error) is the priority: the full-resolution stream is never downsampled, avoiding the encode-decode round trip entirely.
+Per-pixel position accuracy is the priority: the full-resolution stream is never downsampled, avoiding the encode-decode round trip entirely.
 
 ### Use MultiResUNet when
 Structures span several spatial scales; every block sees effective 3/5/7-pixel receptive fields in parallel, and ResPaths reduce the encoder-decoder semantic gap.
@@ -102,15 +102,10 @@ Intra-stage multi-scale mixing is desired: every stage is itself a small U-Net, 
 Establishing the no-spatial-context control. A per-pixel regressor sees one pixel's channel vector at a time; PixelMLP is that regime in learned form, and the margin any spatial backbone holds over it is the measured value of spatial context. Every benchmark sweep should carry it.
 
 ### Use Local CNN when
-Measuring how far local context alone goes. A fixed $(4B+1)\times(4B+1)$ receptive field with no downsampling completes the context ladder PixelMLP → Local CNN → encode-decode backbones, decomposing performance into per-pixel mapping, local smoothing, and long-range aggregation.
+Measuring how far local context alone goes. A fixed $(4B+1)\times(4B+1)$ receptive field with no downsampling sits between PixelMLP (no context) and the encode-decode backbones (wide context), so the three together separate per-pixel mapping, local smoothing and long-range aggregation.
 
 ### Use NAFNet when
-Testing the restoration hypothesis: the task is dense continuous regression, closer to image restoration than to the semantic segmentation the rest of the zoo descends from. NAFNet is the restoration family's strongest simple representative — gated blocks, channel attention, no conventional activations — and directly probes whether the segmentation prior (deep semantic bottleneck) is the wrong trade for per-pixel parameter fidelity.
-
----
-
-## Beyond the Zoo
-
+Testing the restoration hypothesis: the task is dense continuous regression, closer to image restoration than to the semantic segmentation the rest of the zoo descends from. NAFNet is the restoration family's strongest simple representative — gated blocks, channel attention, no conventional activations — and directly probes whether the segmentation prior (deep semantic bottleneck) is the wrong trade for per-pixel fidelity.
 
 ---
 
@@ -119,7 +114,7 @@ Testing the restoration hypothesis: the task is dense continuous regression, clo
 All architectures share:
 - Input: $(C_{\text{in}}, P_H, P_W)$ patch tensor
 - Output: $(C_{\text{out}}, P_H, P_W)$ target tensor, one channel per target channel
-- Optimised with AdamW (see [[Training Pipeline]])
+- Optimised with AdamW by default (`OptimizerConfig` in `configuration/training/general/optimization.py`)
 - Per-layer learning rate groups defined in each `*Config.get_param_groups()`
 
 Architectures requiring image size (`swin_unet`, `transunet`, `unetr`) receive `image_size = patch_height` from the dataset configuration.
@@ -146,7 +141,7 @@ Every backbone class inherits `OutputHeadMixin`, sets `embedding_channels` at th
 
 ## Configuration Persistence (BackboneModelConfigIO)
 
-Each training run persists the full architecture configuration so a checkpoint can be reloaded into a structurally identical model at inference time. `BackboneModelConfigIO` (`pipelines/shared/config/config_persistence.py`, a subclass of the shared `ConfigIO` base) serialises every dataclass field of the model config except `shape_logger_types` (its `EXCLUDED` set) to `model_config.json` (the `RunArtifacts.BACKBONE_CONFIG` filename) in the run's metadata directory, recording `model_name`, `config_type` (the config class name), and the field/value map under `config`.
+Each training run persists the full architecture configuration so a checkpoint can be reloaded into a structurally identical model at inference time. `BackboneModelConfigIO` (`pipelines/shared/config/config_persistence.py`) serialises every dataclass field of the model config except `shape_logger_types` (its `EXCLUDED` set) to `model_config.json` (the `RunArtifacts.BACKBONE_CONFIG` filename) in the run's metadata directory, recording `model_name`, `config_type` (the config class name), and the field/value map under `config`.
 
 `BackboneModelConfigIO.load` reconstructs the config strictly: it normalises `model_name` (lowercase, `-`/space to `_`), instantiates the dataclass from `BACKBONE_CONFIG_REGISTRY[model_name]`, then overwrites each persisted field; it fails if the file is missing, the `model_name` is unknown, a field of the dataclass is absent from the file, or a persisted field is not an attribute of the dataclass. It returns the reconstructed `config` together with the raw persisted `model_name`. Tuple-typed fields (e.g. `atrous_rates`, `rsu_heights`, `num_heads`, `sr_ratios`) are coerced back from their JSON list form when the live default is a tuple. There is no tolerant fallback: an absent `model_config.json` raises `FileNotFoundError` and forces a retrain rather than a best-effort reconstruction. This makes the hyperparameters in each model note (channel widths, depths, head counts, dilation rates) the exact quantities captured per run.
 
@@ -154,8 +149,5 @@ Each training run persists the full architecture configuration so a checkpoint c
 
 ## Related Notes
 
-- [[ML-Template Index]] — Master index
-- [[Training Pipeline]] — Model instantiation and training loop
 - [[UNet]] — Baseline architecture
 - [[Attention UNet]] — Attention-gated variant
-- [[Configuration Layer]] — UNetConfig

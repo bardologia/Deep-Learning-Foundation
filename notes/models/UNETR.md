@@ -15,7 +15,7 @@ summary: Pure ViT encoder with a CNN decoder receiving skips from four evenly-sp
 
 # UNETR
 
-`UNETR` (`models/backbone/unetr.py`) uses a pure Vision Transformer (ViT) encoder with a CNN decoder that receives skip connections from intermediate ViT layer outputs ([[UNETR_Hatamizadeh2021_2103.10504.pdf|Hatamizadeh et al., 2022]]).
+`UNETR` (`models/backbone/unetr.py`) uses a pure Vision Transformer (ViT) encoder with a CNN decoder that receives skip connections from intermediate ViT layer outputs (Hatamizadeh et al., 2022).
 
 ---
 
@@ -112,7 +112,7 @@ where lines for $\mathbf{u}_s, \mathbf{c}_s, \mathbf{h}_s$ repeat for $s = 1, \d
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `UNETRConfig`.
+See `UNETRConfig` in `configuration/architectures/backbone.py`.
 
 | Parameter | Symbol | Default | Description |
 |---|---|---|---|
@@ -138,41 +138,41 @@ The default `embedding_dim = 544` is divisible by `transformer_heads = 8`. Every
 
 ## Paper fidelity
 
-*Review date: 2026-06-04. Ground truth: Hatamizadeh et al., "UNETR: Transformers for 3D Medical Image Segmentation", arXiv:2103.10504 (Sec. 3.1 Architecture, Fig. 2, Eq. 1-6; [[UNETR_Hatamizadeh2021_2103.10504.pdf|PDF]]). Code under review: `models/backbone/unetr.py`, `configuration/architectures/backbone.py` (`UNETRConfig`). The original is 3D ($H\times W\times D$, $P^3$ patches, $3\times3\times3$ convs, Deconv $2\times2\times2$); our implementation is the 2D analog ($H\times W$, $p^2$ patches, $3\times3$ convs, Deconv $2\times2$) and is judged on the 2D analog of each structure.*
+Ground truth: Hatamizadeh et al., "UNETR: Transformers for 3D Medical Image Segmentation", arXiv:2103.10504 (Sec. 3.1 Architecture, Fig. 2, Eq. 1-6;). Code under review: `models/backbone/unetr.py`, `configuration/architectures/backbone.py` (`UNETRConfig`). The original is 3D ($H\times W\times D$, $P^3$ patches, $3\times3\times3$ convs, Deconv $2\times2\times2$); our implementation is the 2D analog ($H\times W$, $p^2$ patches, $3\times3$ convs, Deconv $2\times2$) and is judged on the 2D analog of each structure.*
 
 **Overall verdict: faithful 2D adaptation.** Patch-direct embedding (no CNN encoder), the pre-norm ViT encoder (Eq. 1-3), the $\{z_3,z_6,z_9,z_{12}\}$ even-spacing skip rule, the per-skip deconv-step counts (3/2/1), the bottleneck-deconv-then-merge wiring, the multi-scale concat-then-conv decoder, the full-resolution input-stem skip, and the $1\times1$ output head all reproduce Fig. 2. Each deconv is followed by a $3\times3$ conv + norm + act and the front projection is a $3\times3$ conv, matching the Fig. 2 legend. The patch embedding, transformer block, and attention are the shared `PatchEmbedding`, `TransformerBlock`, and `MultiHeadSelfAttention` from `models/blocks.py`, the same modules used by [[TransUNet]]; only `ProgressiveProjectionHead` and the `UNETR` shell are local to `models/backbone/unetr.py`. One minor deviation: the patch embedding adds a `LayerNorm` not present in Eq. 1.
 
 | # | Component (paper ref) | Code site | Verdict |
 |---|---|---|---|
-| 1 | Direct patch embedding, no CNN encoder; linear projection of non-overlapping $p\times p$ patches (Eq. 1) | `PatchEmbedding` `blocks.py:419-441`, `UNETR.py:72-76,199` | Match (2D analog) |
-| 1b | Learned 1D positional embedding, no class token (Eq. 1) | `UNETR.py:78-79,200` | Match |
-| 1c | Extra `LayerNorm` on patch embedding (not in Eq. 1) | `PatchEmbedding` `blocks.py:434,440` | Deviation (minor) |
-| 2 | ViT block: pre-norm, $z'=\mathrm{MSA}(\mathrm{LN}(z))+z$, $z=\mathrm{MLP}(\mathrm{LN}(z'))+z'$, GELU MLP (Eq. 2-3) | `TransformerBlock` `blocks.py:380-416` | Match |
-| 2b | Scaled dot-product MSA, $K_h=K/n$ scaling (Eq. 4-6) | `MultiHeadSelfAttention` `blocks.py:343-377` | Match |
-| 3 | Even-spaced skip taps $z_3,z_6,z_9,z_{12}$ via quartile rule; final LN on deepest tap | `UNETR.py:96-102,205-207` | Match (2D analog) |
-| 4 | Reshape each tapped sequence to a 2D grid $(B,d,H/p,W/p)$ | `tokens_to_feature_map` `blocks.py:444-446`, `UNETR.py:207` | Match (2D analog) |
-| 5 | Per-skip deconv counts: $z_9$=1, $z_6$=2, $z_3$=3 | `UNETR.py:105-130` | Match (count) |
-| 5b | Blue-block composition: each deconv followed by Conv $3\times3$+BN+ReLU (Fig. 2 legend) | `ProgressiveProjectionHead` `UNETR.py:10-54` | Match (2D analog) |
-| 6 | Bottleneck $z_{12}$ projected then deconv by 2, merged with $z_9$ (Fig. 2) | `UNETR.py:131-138,215,218-227` | Match (2D analog) |
-| 7 | Decoder per scale: concat then conv blocks then deconv | `UNETR.py:149-176,217-227` | Accepted adaptation |
-| 8 | Full-resolution input stem: raw input through conv blocks, concat at last stage (Fig. 2 bottom) | `UNETR.py:140-147,223,226` | Match (2D analog) |
-| 9 | Output head $1\times1$ conv | `UNETR.py:188-192,231` | Match (2D analog) |
-| 10 | Resolution / channel bookkeeping of every merge | `UNETR.py:149-176,217-230` | Match |
+| 1 | Direct patch embedding, no CNN encoder; linear projection of non-overlapping $p\times p$ patches (Eq. 1) | `PatchEmbedding` `blocks.py`, `unetr.py` | Match (2D analog) |
+| 1b | Learned 1D positional embedding, no class token (Eq. 1) | `unetr.py` | Match |
+| 1c | Extra `LayerNorm` on patch embedding (not in Eq. 1) | `PatchEmbedding` `blocks.py` | Deviation (minor) |
+| 2 | ViT block: pre-norm, $z'=\mathrm{MSA}(\mathrm{LN}(z))+z$, $z=\mathrm{MLP}(\mathrm{LN}(z'))+z'$, GELU MLP (Eq. 2-3) | `TransformerBlock` `blocks.py` | Match |
+| 2b | Scaled dot-product MSA, $K_h=K/n$ scaling (Eq. 4-6) | `MultiHeadSelfAttention` `blocks.py` | Match |
+| 3 | Even-spaced skip taps $z_3,z_6,z_9,z_{12}$ via quartile rule; final LN on deepest tap | `unetr.py` | Match (2D analog) |
+| 4 | Reshape each tapped sequence to a 2D grid $(B,d,H/p,W/p)$ | `tokens_to_feature_map` `blocks.py`, `unetr.py` | Match (2D analog) |
+| 5 | Per-skip deconv counts: $z_9$=1, $z_6$=2, $z_3$=3 | `unetr.py` | Match (count) |
+| 5b | Blue-block composition: each deconv followed by Conv $3\times3$+BN+ReLU (Fig. 2 legend) | `ProgressiveProjectionHead` `unetr.py` | Match (2D analog) |
+| 6 | Bottleneck $z_{12}$ projected then deconv by 2, merged with $z_9$ (Fig. 2) | `unetr.py` | Match (2D analog) |
+| 7 | Decoder per scale: concat then conv blocks then deconv | `unetr.py` | Accepted adaptation |
+| 8 | Full-resolution input stem: raw input through conv blocks, concat at last stage (Fig. 2 bottom) | `unetr.py` | Match (2D analog) |
+| 9 | Output head $1\times1$ conv | `unetr.py` | Match (2D analog) |
+| 10 | Resolution / channel bookkeeping of every merge | `unetr.py` | Match |
 
-**Encoder (items 1-2).** The patch embedding is a strided $\mathrm{Conv2d}$ with kernel = stride = $p$ (shared `PatchEmbedding`, `blocks.py:419-441`), the exact equivalent of the per-patch linear projection $E$ in Eq. 1; the learned positional table (`UNETR.py:78-79`) is added with no class token, matching the paper's explicit note that the `[class]` token is dropped for segmentation. The transformer block (shared `TransformerBlock`, `blocks.py:411-416`) implements the pre-norm form of Eq. 2-3 verbatim — $\mathrm{LN}\to\mathrm{MSA}\to$ residual, then $\mathrm{LN}\to\mathrm{MLP}\to$ residual — with a GELU two-layer MLP (`ffn_activation = "gelu"`). The attention (shared `MultiHeadSelfAttention`, `blocks.py:363-377`) is standard scaled dot-product with the $1/\sqrt{K_h}$ scaling of Eq. 4. The paper fixes $L=12$, $K=768$; here $L$ and $d$ are hyperparameters (default $L=8$, $d=544$) and out of scope.
+**Encoder (items 1-2).** The patch embedding is a strided $\mathrm{Conv2d}$ with kernel = stride = $p$ (shared `PatchEmbedding`, `blocks.py`), the exact equivalent of the per-patch linear projection $E$ in Eq. 1; the learned positional table (`unetr.py`) is added with no class token, matching the paper's explicit note that the `[class]` token is dropped for segmentation. The transformer block (shared `TransformerBlock`, `blocks.py`) implements the pre-norm form of Eq. 2-3 verbatim — $\mathrm{LN}\to\mathrm{MSA}\to$ residual, then $\mathrm{LN}\to\mathrm{MLP}\to$ residual — with a GELU two-layer MLP (`ffn_activation = "gelu"`). The attention (shared `MultiHeadSelfAttention`, `blocks.py`) is standard scaled dot-product with the $1/\sqrt{K_h}$ scaling of Eq. 4. The paper fixes $L=12$, $K=768$; here $L$ and $d$ are hyperparameters (default $L=8$, $d=544$) and out of scope.
 
-**Skip rule (item 3).** The paper taps the fixed layers $\{3,6,9,12\}$, i.e. the quartiles of $L=12$. The code generalises this to $\{L/4,\,L/2,\,3L/4,\,L\}$ (0-based: `total_layers//4 - 1`, etc., `UNETR.py:96-102`), which reproduces $\{2,5,8,11\}$ (0-based for $\{3,6,9,12\}$) at $L=12$ and stays evenly spaced for any $L$. The final transformer `LayerNorm` is applied only to the deepest tap (`UNETR.py:206`), consistent with the paper applying Norm at the encoder output / bottleneck; the three shallower taps are forwarded un-normed, which is the standard reading of Fig. 2. Match.
+**Skip rule (item 3).** The paper taps the fixed layers $\{3,6,9,12\}$, i.e. the quartiles of $L=12$. The code generalises this to $\{L/4,\,L/2,\,3L/4,\,L\}$ (0-based: `total_layers//4 - 1`, etc., `unetr.py`), which reproduces $\{2,5,8,11\}$ (0-based for $\{3,6,9,12\}$) at $L=12$ and stays evenly spaced for any $L$. The final transformer `LayerNorm` is applied only to the deepest tap (`unetr.py`), consistent with the paper applying Norm at the encoder output / bottleneck; the three shallower taps are forwarded un-normed, which is the standard reading of Fig. 2. Match.
 
-**Projection / blue block (items 4-5).** Each tapped sequence is reshaped to the grid (shared `tokens_to_feature_map`, `blocks.py:444-446`, called at `UNETR.py:207`) and passed through a `ProgressiveProjectionHead`. The number of upsample steps (3 for $z_3$, 2 for $z_6$, 1 for $z_9$, 0 for the $z_{12}$ bottleneck) exactly matches the blue-block counts in Fig. 2. The head (`UNETR.py:21-50`) opens with a $3\times3$ conv + norm + act front projection (matching the paper's "consecutive $3\times3$ convolutional layers" projection) and repeats `[ConvTranspose2d, Conv $3\times3$, Norm, Act]` per upsample step, the 2D analog of the Fig. 2 legend "Deconv $2\times2\times2$, Conv $3\times3\times3$, BN, ReLU". The bottleneck head (`upsample_steps=0`) is the $3\times3$ conv + norm + act front projection alone. Each head emits its target `decoder_features[...]` width, feeding the decoder wiring directly. Match.
+**Projection / blue block (items 4-5).** Each tapped sequence is reshaped to the grid (shared `tokens_to_feature_map`, `blocks.py`, called at `unetr.py`) and passed through a `ProgressiveProjectionHead`. The number of upsample steps (3 for $z_3$, 2 for $z_6$, 1 for $z_9$, 0 for the $z_{12}$ bottleneck) exactly matches the blue-block counts in Fig. 2. The head (`unetr.py`) opens with a $3\times3$ conv + norm + act front projection (matching the paper's "consecutive $3\times3$ convolutional layers" projection) and repeats `[ConvTranspose2d, Conv $3\times3$, Norm, Act]` per upsample step, the 2D analog of the Fig. 2 legend "Deconv $2\times2\times2$, Conv $3\times3\times3$, BN, ReLU". The bottleneck head (`upsample_steps=0`) is the $3\times3$ conv + norm + act front projection alone. Each head emits its target `decoder_features[...]` width, feeding the decoder wiring directly. Match.
 
-**Bottleneck and decoder (items 6-7).** The $z_{12}$ tap is projected with 0 upsample steps (`UNETR.py:131-138`), staying at the $H/p$ grid; decoder step `idx0` then deconvs it $\times2$ and concatenates the $z_9$ projection (`UNETR.py:215,218-227`), reproducing the Fig. 2 "deconv bottleneck by 2, then merge with $z_9$" path. Each decoder level (`UNETR.py:217-227`) does ConvTranspose-up $\to$ resize-to-skip $\to$ concat $\to$ double-$3\times3$-conv ConvBlock. The paper draws the level as concat $\to$ yellow convs $\to$ green deconv, i.e. the deconv that the code places at the *start* of level $n{+}1$ the paper draws at the *end* of level $n$. This is the standard equivalent regrouping of the U-Net decoder ladder; the connectivity graph and channel flow are identical. Accepted adaptation. The yellow conv blocks (Conv $3\times3$ + BN + ReLU, $\times2$) are faithfully realised by the shared `ConvBlock` (`blocks.py:113-149`).
+**Bottleneck and decoder (items 6-7).** The $z_{12}$ tap is projected with 0 upsample steps (`unetr.py`), staying at the $H/p$ grid; decoder step `idx0` then deconvs it $\times2$ and concatenates the $z_9$ projection (`unetr.py`), reproducing the Fig. 2 "deconv bottleneck by 2, then merge with $z_9$" path. Each decoder level (`unetr.py`) does ConvTranspose-up $\to$ resize-to-skip $\to$ concat $\to$ double-$3\times3$-conv ConvBlock. The paper draws the level as concat $\to$ yellow convs $\to$ green deconv, i.e. the deconv that the code places at the *start* of level $n{+}1$ the paper draws at the *end* of level $n$. This is the standard equivalent regrouping of the U-Net decoder ladder; the connectivity graph and channel flow are identical. Accepted adaptation. The yellow conv blocks (Conv $3\times3$ + BN + ReLU, $\times2$) are faithfully realised by the shared `ConvBlock` (`blocks.py`).
 
-**Stem and output (items 8-9).** The raw input is processed by `input_skip_conv` (a double-$3\times3$ ConvBlock, `UNETR.py:140-147`) and concatenated at the final, full-resolution decoder stage (`UNETR.py:223,226`), matching the Fig. 2 bottom path (Input $\to$ two yellow convs at $H\times W\times64 \to$ concat before the output head). The output head is a $1\times1$ conv (`UNETR.py:188-192`); the paper's softmax is a loss-side detail and out of scope.
+**Stem and output (items 8-9).** The raw input is processed by `input_skip_conv` (a double-$3\times3$ ConvBlock, `unetr.py`) and concatenated at the final, full-resolution decoder stage (`unetr.py`), matching the Fig. 2 bottom path (Input $\to$ two yellow convs at $H\times W\times64 \to$ concat before the output head). The output head is a $1\times1$ conv (`unetr.py`); the paper's softmax is a loss-side detail and out of scope.
 
 **Resolution / channel bookkeeping (item 10).** With default $p=16$ the token grid is $H/16$. Projected skip resolutions are $z_9\to H/8$ (1 deconv), $z_6\to H/4$ (2), $z_3\to H/2$ (3); the bottleneck stays at $H/16$ and is deconv'd to $H/8$ before the $z_9$ merge. The decoder ladder ($H/16\to H/8\to H/4\to H/2\to H$, channels $360\to184\to88\to48\to48$) meets each skip at the correct scale, and `final_upsample` resolves to `Identity` because `patch_size // 2**4 = 1`. Every concat site is dimensionally consistent. Match.
 
 **Deviation summary.**
-- *Patch-embedding `LayerNorm`* — minor. Paper: Eq. 1 (linear projection + pos embed only). Code: shared `PatchEmbedding` `blocks.py:434,440`. The extra `self.norm` is a benign modern-ViT stabiliser with no structural impact; because `PatchEmbedding` is shared with [[TransUNet]], it applies to both.
+- *Patch-embedding `LayerNorm`* — minor. Paper: Eq. 1 (linear projection + pos embed only). Code: shared `PatchEmbedding` `blocks.py`. The extra `self.norm` is a benign modern-ViT stabiliser with no structural impact; because `PatchEmbedding` is shared with [[TransUNet]], it applies to both.
 
 ---
 
@@ -181,5 +181,3 @@ The default `embedding_dim = 544` is divisible by `transformer_heads = 8`. Every
 - [[Model Zoo]] — Architecture comparison
 - [[SwinUNet]] — Window-attention alternative
 - [[TransUNet]] — CNN + ViT hybrid
-- [[Configuration Layer]] — UNETRConfig
-- [[ML-Template Index]] — Master index

@@ -21,7 +21,7 @@ summary: Shallow full-resolution CNN control baseline; a fixed small receptive f
 
 ## Summary
 
-The trunk chains $B$ `ConvBlock`s — the same double-conv block used by the [[UNet]] family — at constant resolution, each block widening (or keeping) the channel count per `features` and carrying its own kernel size per `block_kernels` (default $3\times3$ everywhere). Each block contributes $2(k-1)$ pixels of receptive field, so a pure $3\times3$ stack gives $(4B+1)\times(4B+1)$ — the default `features = [1072, 1072]` gives a $9\times9$ window — while mixing $3\times3$ and $1\times1$ blocks sets the receptive field at constant depth: the context-ladder rungs (RF 1/9/29/41, widths 1277/848/502/426, ten blocks each) hold depth, parameters, and compute fixed so only spatial reach varies. An all-$1\times1$ stack degenerates to a per-pixel MLP, so the ladder's floor lives in the same family. Comparing the rungs against the encode-decode backbones at matched capacity decomposes performance into per-pixel mapping, local smoothing, and long-range context.
+The trunk chains $B$ `ConvBlock`s — the same double-conv block used by the [[UNet]] family — at constant resolution, each block widening (or keeping) the channel count per `features` and carrying its own kernel size per `block_kernels` (default $3\times3$ everywhere). Each block contributes $2(k-1)$ pixels of receptive field, so a pure $3\times3$ stack gives $(4B+1)\times(4B+1)$ — the default `features = [1072, 1072]` gives a $9\times9$ window at about 31M parameters, near the UNet budget — while mixing $3\times3$ and $1\times1$ blocks through `block_kernels` sets the receptive field without changing the depth. An all-$1\times1$ stack degenerates to a per-pixel MLP. Comparing the model against [[PixelMLP]] and the encode-decode backbones at similar capacity separates per-pixel mapping, local smoothing and long-range context.
 
 ---
 
@@ -52,7 +52,7 @@ No pooling, striding, or upsampling appears anywhere: spatial resolution is pres
 
 ## Design Rationale
 
-**The middle rung of the context ladder.** If LocalCNN matches the full backbones, long-range context is unnecessary and the encode-decode round trip is overhead; if it clearly beats [[PixelMLP]] but trails the U-shaped models, both local smoothing and long-range aggregation contribute; if all three tie, the task is per-pixel and architecture choice is moot. Each outcome is directly interpretable, which is the point of the control pair.
+**Between no context and wide context.** If LocalCNN matches the full backbones, long-range context is unnecessary and the encode-decode round trip is overhead; if it clearly beats [[PixelMLP]] but trails the U-shaped models, both local smoothing and long-range aggregation contribute; if all three tie, the task is per-pixel and architecture choice is moot. Each outcome is directly interpretable, which is the point of the control pair.
 
 **Relation to HRNet.** [[HRNet]] also maintains a full-resolution stream, but fuses it with downsampled branches; LocalCNN removes the branches entirely, isolating "full resolution, local context only" as a hypothesis.
 
@@ -60,13 +60,13 @@ No pooling, striding, or upsampling appears anywhere: spatial resolution is pres
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `LocalCNNConfig` (`features` — channel width per `ConvBlock`; `block_kernels` — per-block kernel size, receptive field $1 + \sum_b 2(k_b - 1)$; `activation`, `normalization`, `dropout`).
+See `LocalCNNConfig` in `configuration/architectures/backbone.py` (`features` — channel width per `ConvBlock`; `block_kernels` — per-block kernel size, receptive field $1 + \sum_b 2(k_b - 1)$; `activation`, `normalization`, `dropout`).
 
 ---
 
 ## Provenance
 
-Not derived from a reference paper: this is a purpose-built scientific control completing the context ladder PixelMLP → LocalCNN → encode-decode backbones.
+Not derived from a reference paper: this is a purpose-built control that sits between PixelMLP and the encode-decode backbones.
 
 ---
 
@@ -76,5 +76,3 @@ Not derived from a reference paper: this is a purpose-built scientific control c
 - [[HRNet]] — Full-resolution stream with multi-scale fusion
 - [[UNet]] — Source of the shared ConvBlock
 - [[Model Zoo]] — Architecture comparison
-- [[Configuration Layer]] — LocalCNNConfig
-- [[ML-Template Index]] — Master index

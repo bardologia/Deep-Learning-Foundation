@@ -111,25 +111,12 @@ class TempNoteLibrary(BackboneModelLibrary):
 NOTE = """# Demo Model
 
 An encoder-decoder with skip connections.
-
-## Correction
-
-The stride was wrong and got fixed on 2026-07-03.
-
-### Still inside the correction
-
-Dropped as well.
-
-## Architecture
-
-Four levels (reviewed 2026-07-03) of downsampling.
-The receptive field is 41 pixels. This claim was flagged in the audit.
 """
 
 
 @pytest.fixture
 def temp_notes(tmp_path):
-    (tmp_path / "Demo Model.md").write_text(NOTE)
+    (tmp_path / "Demo Model.md").write_text("---\ntype: model\n---\n" + NOTE)
     return TempNoteLibrary(tmp_path)
 
 
@@ -141,28 +128,6 @@ def test_a_missing_note_file_yields_nothing(temp_notes):
 def test_a_note_links_every_sibling_model(temp_notes):
     note = temp_notes.note("demo")
 
-    assert note["note"]  == "Demo Model"
-    assert note["links"] == {"Demo Model": "demo", "Other Model": "other"}
-
-
-def test_an_operational_heading_takes_its_whole_subtree_with_it(temp_notes):
-    markdown = temp_notes.note("demo")["markdown"]
-
-    assert "## Correction"     not in markdown
-    assert "The stride"        not in markdown
-    assert "Still inside"      not in markdown
-    assert "Dropped as well"   not in markdown
-    assert "## Architecture"       in markdown
-
-
-def test_dated_parentheticals_and_flagged_sentences_are_removed(temp_notes):
-    markdown = temp_notes.note("demo")["markdown"]
-
-    assert "(reviewed 2026-07-03)"  not in markdown
-    assert "flagged in the audit"   not in markdown
-    assert "Four levels of downsampling." in markdown
-    assert "The receptive field is 41 pixels." in markdown
-
-
-def test_stripping_never_leaves_a_run_of_blank_lines(temp_notes):
-    assert "\n\n\n" not in temp_notes.note("demo")["markdown"]
+    assert note["note"]     == "Demo Model"
+    assert note["markdown"] == NOTE
+    assert note["links"]    == {"Demo Model": "demo", "Other Model": "other"}

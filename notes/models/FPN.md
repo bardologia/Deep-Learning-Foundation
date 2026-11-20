@@ -16,7 +16,7 @@ summary: Residual bottom-up encoder with top-down lateral pyramid and a Panoptic
 
 # FPN
 
-`FPNNet` (`models/backbone/fpn_net.py`) is a Feature Pyramid Network ([[FPN_Lin2017_1612.03144.pdf|Lin et al., 2017]]) adapted for dense regression: a residual bottom-up encoder, a top-down pathway with lateral connections that gives every pyramid level the same channel width, and a Panoptic-FPN semantic branch ([[PanopticFPN_Kirillov2019_1901.02446.pdf|Kirillov et al., 2019]]) that brings each pyramid level to the target scale through depth-scaled interleaved upsampling stages whose outputs are summed before the head.
+`FPNNet` (`models/backbone/fpn_net.py`) is a Feature Pyramid Network (Lin et al., 2017) adapted for dense regression: a residual bottom-up encoder, a top-down pathway with lateral connections that gives every pyramid level the same channel width, and a Panoptic-FPN semantic branch (Kirillov et al., 2019) that brings each pyramid level to the target scale through depth-scaled interleaved upsampling stages whose outputs are summed before the head.
 
 ---
 
@@ -79,7 +79,7 @@ N_i &= \log_2\!\frac{\text{stride}_i}{\text{stride}_\text{target}} \\
 \end{aligned}
 $$
 
-Each pyramid level $\mathbf{p}_i$ is decoded to the common target scale by $N_i$ interleaved stages indexed by $k$, where one stage $\mathbf{s}_{i,k-1} \mapsto \mathbf{s}_{i,k}$ is a 3×3 conv, normalisation, activation, and a $2\times$ bilinear upsample (Kirillov et al. 2019, Sec. 3.1, Fig. 3). Deeper (coarser) levels receive more stages; with encoder strides $\{1,2,4,8\}$ and the target at level 0, the levels take $N = 0,1,2,3$ stages respectively. The level-0 case ($N=0$) degenerates to `segmentation_convs` 3×3 conv → norm → act units with no upsample (`fpn_net.py:18-24`). Repeated $2\times$ steps insert learned refinement at each scale rather than collapsing the decode into one large-factor interpolation; a residual `interpolate` only corrects the floor-rounding of odd input sizes (`fpn_net.py:110-111`). The equal-scale maps $\mathbf{s}_i$ are then summed:
+Each pyramid level $\mathbf{p}_i$ is decoded to the common target scale by $N_i$ interleaved stages indexed by $k$, where one stage $\mathbf{s}_{i,k-1} \mapsto \mathbf{s}_{i,k}$ is a 3×3 conv, normalisation, activation, and a $2\times$ bilinear upsample (Kirillov et al. 2019, Sec. 3.1, Fig. 3). Deeper (coarser) levels receive more stages; with encoder strides $\{1,2,4,8\}$ and the target at level 0, the levels take $N = 0,1,2,3$ stages respectively. The level-0 case ($N=0$) degenerates to `segmentation_convs` 3×3 conv → norm → act units with no upsample (`fpn_net.py`). Repeated $2\times$ steps insert learned refinement at each scale rather than collapsing the decode into one large-factor interpolation; a residual `interpolate` only corrects the floor-rounding of odd input sizes (`fpn_net.py`). The equal-scale maps $\mathbf{s}_i$ are then summed:
 
 $$
 \mathbf{s} = \sum_i \mathbf{s}_i .
@@ -97,38 +97,38 @@ The `segmentation_convs` hyperparameter sets the number of 3×3 conv → norm �
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `FPNNetConfig` (`features`, `pyramid_channels`, `segmentation_convs` — convs per semantic-branch stage).
+See `FPNNetConfig` in `configuration/architectures/backbone.py` (`features`, `pyramid_channels`, `segmentation_convs` — convs per semantic-branch stage).
 
 ---
 
 ## Paper fidelity
 
-*Review date: 2026-06-04.* Ground truth: Lin et al., *Feature Pyramid Networks for Object Detection*, arXiv:1612.03144 (Sec. 3, Fig. 3) [[FPN_Lin2017_1612.03144.pdf|PDF]] and Kirillov et al., *Panoptic Feature Pyramid Networks*, arXiv:1901.02446 (Sec. 3.1, Fig. 3) [[PanopticFPN_Kirillov2019_1901.02446.pdf|PDF]]. Comparison against `models/backbone/fpn_net.py` and `configuration/architectures/backbone.py` (`FPNNetConfig`, build helpers).
+Ground truth: Lin et al., *Feature Pyramid Networks for Object Detection*, arXiv:1612.03144 (Sec. 3, Fig. 3) and Kirillov et al., *Panoptic Feature Pyramid Networks*, arXiv:1901.02446 (Sec. 3.1, Fig. 3). Comparison against `models/backbone/fpn_net.py` and `configuration/architectures/backbone.py` (`FPNNetConfig`, build helpers).
 
 ### Verdict table
 
 | # | Dimension | Verdict | Evidence |
 |---|-----------|---------|----------|
-| 1 | Bottom-up feature hierarchy, stride-2 between stages | MATCH | Lin Sec. 3 "scaling step of 2"; `fpn_net.py:58` `MaxPool2d(kernel_size=2)` per stage (strides $\{1,2,4,8\}$) |
-| 2 | Lateral $1\times1$ conv on each bottom-up map | MATCH | Lin Fig. 3, Sec. 3; `fpn_net.py:71` |
-| 3 | Top-down upsample $\times2$ + element-wise ADD | MATCH (add) / DEVIATION-minor (bilinear vs nearest) | Lin Sec. 3 "nearest neighbor upsampling", merge by addition; `fpn_net.py:100-101` bilinear interpolate + `lateral + top_down` |
-| 4 | Post-merge $3\times3$ anti-aliasing conv per level | MATCH | Lin Sec. 3 "append a $3\times3$ convolution on each merged map"; `fpn_net.py:72,103` |
-| 5 | Uniform pyramid channel width | MATCH | Lin Sec. 3 ($d{=}256$, uniform); Kirillov Sec. 3.1 "same channel dimension"; `fpn_net.py:71-72`, `pyramid_channels` |
-| 6 | Semantic branch: depth-scaled upsampling stages, SUM merge | MATCH | Kirillov Sec. 3.1 + Fig. 3 (progressive 3x3+norm+act+2x stages, more for deeper levels); `fpn_net.py:12-38,74-77` `SegmentationBlock(channels, n_stages, convs_per_stage, ...)` emits $N_i=\log_2(\text{stride}_i/\text{stride}_\text{target})$ interleaved stages ($N=0,1,2,3$), SUM merge |
-| 7 | Fused map predicted ($1\times1$) and upsampled | MATCH (predict) / DEVIATION-minor (no final upsample) | Kirillov Sec. 3.1 final $1\times1$ + $4\times$ upsample; `fpn_net.py:86,116` |
-| 8 | Index-0 full-resolution ($1/1$) level | ACCEPTED ADAPTATION | Papers start pyramid at $1/4$; code uses an identity-stride level 0 (`fpn_net.py:58` `nn.Identity()` when `index == 0`) |
+| 1 | Bottom-up feature hierarchy, stride-2 between stages | MATCH | Lin Sec. 3 "scaling step of 2"; `fpn_net.py` `MaxPool2d(kernel_size=2)` per stage (strides $\{1,2,4,8\}$) |
+| 2 | Lateral $1\times1$ conv on each bottom-up map | MATCH | Lin Fig. 3, Sec. 3; `fpn_net.py` |
+| 3 | Top-down upsample $\times2$ + element-wise ADD | MATCH (add) / DEVIATION-minor (bilinear vs nearest) | Lin Sec. 3 "nearest neighbor upsampling", merge by addition; `fpn_net.py` bilinear interpolate + `lateral + top_down` |
+| 4 | Post-merge $3\times3$ anti-aliasing conv per level | MATCH | Lin Sec. 3 "append a $3\times3$ convolution on each merged map"; `fpn_net.py` |
+| 5 | Uniform pyramid channel width | MATCH | Lin Sec. 3 ($d{=}256$, uniform); Kirillov Sec. 3.1 "same channel dimension"; `fpn_net.py`, `pyramid_channels` |
+| 6 | Semantic branch: depth-scaled upsampling stages, SUM merge | MATCH | Kirillov Sec. 3.1 + Fig. 3 (progressive 3x3+norm+act+2x stages, more for deeper levels); `fpn_net.py` `SegmentationBlock(channels, n_stages, convs_per_stage, ...)` emits $N_i=\log_2(\text{stride}_i/\text{stride}_\text{target})$ interleaved stages ($N=0,1,2,3$), SUM merge |
+| 7 | Fused map predicted ($1\times1$) and upsampled | MATCH (predict) / DEVIATION-minor (no final upsample) | Kirillov Sec. 3.1 final $1\times1$ + $4\times$ upsample; `fpn_net.py` |
+| 8 | Index-0 full-resolution ($1/1$) level | ACCEPTED ADAPTATION | Papers start pyramid at $1/4$; code uses an identity-stride level 0 (`fpn_net.py` `nn.Identity()` when `index == 0`) |
 | 9 | Encoder block composition | ACCEPTED ADAPTATION | Lin Sec. 3 backbone-agnostic; code uses pre-activation `ResidualConvBlock` ([[ResUNet]]), constructed stride-1 with separate maxpool |
-| 10 | Smooth/lateral layers carry no non-linearity | MATCH | Lin Sec. 4.1 "no non-linearities in these extra layers"; `fpn_net.py:71-72` bare convs |
+| 10 | Smooth/lateral layers carry no non-linearity | MATCH | Lin Sec. 4.1 "no non-linearities in these extra layers"; `fpn_net.py` bare convs |
 
 ### Prose
 
-The **bottom-up pathway, lateral connections, additive merge, post-merge smoothing, and uniform channel width** are all faithful to Lin Sec. 3 and Fig. 3. The encoder reuses the pre-activation [[ResUNet]] `ResidualConvBlock`, constructed without a `stride` argument so every block stays stride-$1$ and spatial reduction is delegated entirely to the separate `MaxPool2d(kernel_size=2)` layers (level 0 uses `nn.Identity()`) (`fpn_net.py:54-69`). This is consistent with Lin's explicitly *generic-backbone* assumption (Sec. 3, "independent of the backbone convolutional architecture"), so the construction is paper-conformant.
+The **bottom-up pathway, lateral connections, additive merge, post-merge smoothing, and uniform channel width** are all faithful to Lin Sec. 3 and Fig. 3. The encoder reuses the pre-activation [[ResUNet]] `ResidualConvBlock`, constructed without a `stride` argument so every block stays stride-$1$ and spatial reduction is delegated entirely to the separate `MaxPool2d(kernel_size=2)` layers (level 0 uses `nn.Identity()`) (`fpn_net.py`). This is consistent with Lin's explicitly *generic-backbone* assumption (Sec. 3, "independent of the backbone convolutional architecture"), so the construction is paper-conformant.
 
-Two **minor deviations** concern the top-down resampling: the paper specifies nearest-neighbour upsampling "for simplicity", whereas the code uses `mode="bilinear"` (`fpn_net.py:100`). Bilinear is a strictly richer interpolation and is the choice Panoptic FPN itself makes in the semantic branch, so this is a benign, well-motivated minor deviation. Relatedly, the final output is produced by the $1\times1$ head at the merge resolution with no subsequent upsample (`fpn_net.py:116`); because the merge resolution is already full input resolution (level 0 is $1/1$), this is correct for the adapted geometry and only a nominal difference from Kirillov's "$1\times1$ then $4\times$ upsample".
+Two **minor deviations** concern the top-down resampling: the paper specifies nearest-neighbour upsampling "for simplicity", whereas the code uses `mode="bilinear"` (`fpn_net.py`). Bilinear is a strictly richer interpolation and is the choice Panoptic FPN itself makes in the semantic branch, so this is a benign, well-motivated minor deviation. Relatedly, the final output is produced by the $1\times1$ head at the merge resolution with no subsequent upsample (`fpn_net.py`); because the merge resolution is already full input resolution (level 0 is $1/1$), this is correct for the adapted geometry and only a nominal difference from Kirillov's "$1\times1$ then $4\times$ upsample".
 
 The semantic segmentation branch follows the *depth-scaled* upsampling decoder of Kirillov Sec. 3.1 / Fig. 3: each FPN level is brought to the target scale by a sequence of upsampling stages, where a stage is $3\times3$ conv + norm + activation + $2\times$ bilinear, and **deeper (coarser) levels receive more stages** (in the paper the $1/32$ level gets three stages, $1/16$ two, $1/8$ one, $1/4$ a single conv with no upsample), after which the equal-scale maps are summed.
 
-`SegmentationBlock(channels, n_stages, convs_per_stage, activation, normalization, bias)` emits $N_i = \log_2(\text{stride}_i/\text{stride}_\text{target})$ interleaved stages of ($3\times3$ conv → norm → act → $2\times$ bilinear upsample); the shallowest level ($N_i=0$) degenerates to `convs_per_stage` $3\times3$ conv → norm → act units with no upsample (`fpn_net.py:18-24`), generalising the single-conv $1/4$ level of Kirillov Fig. 3 to the configured per-stage conv count. The blocks are built with `n_stages = index` over `features` (`fpn_net.py:74-77`); with the encoder strides $\{1,2,4,8\}$ and the target at level 0, the four levels receive $N = 0,1,2,3$ stages. The per-level loop reaches the common scale through these repeated $2\times$ stages; the residual `interpolate` absorbs only the floor-rounding mismatch produced by odd input sizes (`fpn_net.py:110-111`). The element-wise SUM merge matches the paper (Kirillov ablation Table 1d confirms sum over concat). The `segmentation_convs` hyperparameter sets the number of $3\times3$ conv → norm → act units *within each stage*, with tunable choices $\{1,2,3\}$ (`configuration/architectures/backbone.py`). The bottom-up / lateral / top-down core, pyramid width, and per-stage conv count are the architecture's hyperparameters.
+`SegmentationBlock(channels, n_stages, convs_per_stage, activation, normalization, bias)` emits $N_i = \log_2(\text{stride}_i/\text{stride}_\text{target})$ interleaved stages of ($3\times3$ conv → norm → act → $2\times$ bilinear upsample); the shallowest level ($N_i=0$) degenerates to `convs_per_stage` $3\times3$ conv → norm → act units with no upsample (`fpn_net.py`), generalising the single-conv $1/4$ level of Kirillov Fig. 3 to the configured per-stage conv count. The blocks are built with `n_stages = index` over `features` (`fpn_net.py`); with the encoder strides $\{1,2,4,8\}$ and the target at level 0, the four levels receive $N = 0,1,2,3$ stages. The per-level loop reaches the common scale through these repeated $2\times$ stages; the residual `interpolate` absorbs only the floor-rounding mismatch produced by odd input sizes (`fpn_net.py`). The element-wise SUM merge matches the paper (Kirillov ablation Table 1d confirms sum over concat). The `segmentation_convs` hyperparameter sets the number of $3\times3$ conv → norm → act units *within each stage*, with tunable choices $\{1,2,3\}$ (`configuration/architectures/backbone.py`). The bottom-up / lateral / top-down core, pyramid width, and per-stage conv count are the architecture's hyperparameters.
 
 ---
 
@@ -137,5 +137,3 @@ The semantic segmentation branch follows the *depth-scaled* upsampling decoder o
 - [[ResUNet]] — Source of the residual block
 - [[LinkNet]] — Another light-decoder design (additive skips)
 - [[Model Zoo]] — Architecture comparison
-- [[Configuration Layer]] — FPNNetConfig
-- [[ML-Template Index]] — Master index

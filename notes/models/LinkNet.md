@@ -15,7 +15,7 @@ summary: Compact encoder-decoder with additive (not concatenative) skip connecti
 
 # LinkNet
 
-`LinkNet` (`models/backbone/link_net.py`) implements a compact encoder-decoder architecture where skip connections are additive rather than concatenative ([[LinkNet_Chaurasia2017_1707.03718.pdf|Chaurasia & Culurciello, 2017]]). The decoder adds a transformed version of the encoder skip back to the decoder feature map rather than doubling the channel count via concatenation.
+`LinkNet` (`models/backbone/link_net.py`) implements a compact encoder-decoder architecture where skip connections are additive rather than concatenative (Chaurasia & Culurciello, 2017). The decoder adds a transformed version of the encoder skip back to the decoder feature map rather than doubling the channel count via concatenation.
 
 ---
 
@@ -80,7 +80,7 @@ Concatenation doubles the decoder's input channel count at each level, increasin
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `LinkNetConfig`.
+See `LinkNetConfig` in `configuration/architectures/backbone.py`.
 
 | Parameter | Symbol | Default | Description |
 |---|---|---|---|
@@ -101,7 +101,7 @@ See [[Configuration Layer]] → `LinkNetConfig`.
 
 ## Relation to the LinkNet paper
 
-**Reference:** Chaurasia, A. & Culurciello, E. (2017). *LinkNet: Exploiting Encoder Representations for Efficient Semantic Segmentation.* arXiv:1707.03718. (Fig. 1 network, Fig. 2 encoder module, Fig. 3 decoder module, Tables I–II block specs.) [[LinkNet_Chaurasia2017_1707.03718.pdf|PDF]]
+**Reference:** Chaurasia, A. & Culurciello, E. (2017). *LinkNet: Exploiting Encoder Representations for Efficient Semantic Segmentation.* arXiv:1707.03718. (Fig. 1 network, Fig. 2 encoder module, Fig. 3 decoder module, Tables I–II block specs.)
 **Code:** `models/backbone/link_net.py`, `models/blocks.py` (`build_activation`, `build_norm2d`, `match_spatial_size`), `configuration/architectures/backbone.py` (`LinkNetConfig`).
 
 The signature LinkNet idea — additive (not concatenative) skips, added before each decoder block input exactly as in Fig. 1 — is the contribution the architecture is named for and is reproduced here. The stem ($k\times k$ stride-1, no max-pool), the single-residual-block encoder depth, and the generic-decoder-block-plus-$1\times1$-head final stage differ from the paper's ResNet-18 encoder, fitting the single-channel dense-regression task that has no ImageNet-pretrained-weight pathway.
@@ -110,22 +110,22 @@ The signature LinkNet idea — additive (not concatenative) skips, added before 
 
 | # | Dimension | Paper | Code |
 |---|---|---|---|
-| 1 | Initial stem | $7\times7$ conv stride 2 $+$ $3\times3$ max-pool stride 2 ($/4$); Fig. 1, Sec. III | $k\times k$ conv stride 1, no max-pool ($/1$); `LinkNet.py:124-135` |
-| 2 | Encoder block depth | Two ResNet-18 basic blocks per stage (stride-2 projection block $+$ stride-1 identity block); Fig. 2, Sec. III | One `ResidualEncoderBlock` per stage, no identity sub-block; `LinkNet.py:9-57,137-150` |
-| 3 | Conv–Norm–Act ordering | Post-activation: conv $\to$ BN $\to$ ReLU; Sec. III | Same; `LinkNet.py:20-39`, `build_norm2d`/`build_activation` `models/blocks.py:24-49` |
-| 4 | Decoder block layout | $1\times1\,(m\!\to\!m/4)\to$ full-conv $3\times3$ $/2\,(m/4\!\to\!m/4)\to1\times1\,(m/4\!\to\!n)$, BN$+$ReLU each; Fig. 3, Table II | Same sequence, compression ratio $c$ (default 4) via `max(1, m//c)`; `LinkNet.py:60-103` |
-| 5 | Skip linking | $\text{input}(\text{dec}_i)=\text{out}(\text{dec}_{i+1})+\text{out}(\text{enc}_i)$, add before decoder input; Fig. 1 | Same add point; deepest decoder fed directly by deepest encoder, no add; `LinkNet.py:192-202` |
-| 6 | Final block | full-conv $3\times3$ $/2\,(64\!\to\!32)\to$ conv $3\times3\,(32\!\to\!32)\to$ full-conv $2\times2$ $/2\,(32\!\to\!N)$; Fig. 1 | Generic bottleneck decoder block $(F_0\!\to\!F_0)$ $+$ $1\times1$ head $(F_0\!\to\!C)$; `LinkNet.py:164-179` |
-| 7 | ReLU around additions | ReLU after encoder residual add (Fig. 2); no ReLU on decoder skip circles (Fig. 1) | ReLU after encoder add (`LinkNet.py:56`); decoder add not followed by ReLU |
-| 8 | Output resolution recovery | Recover from stem's $/4$ via decoder up-samples $+$ final block's two $\times2$; Sec. III | Stem at $/1$, encoder to $/16$, four stride-2 ConvT recover $/16\!\to\!/1$; bilinear `match_spatial_size`; `models/blocks.py:102-110`, `LinkNet.py:204` |
-| 9 | Up-sampling operator | Full-convolution (transposed conv); Sec. III–IV | `nn.ConvTranspose2d` $3\times3$, stride 2, `output_padding=1`; `LinkNet.py:81-89` |
+| 1 | Initial stem | $7\times7$ conv stride 2 $+$ $3\times3$ max-pool stride 2 ($/4$); Fig. 1, Sec. III | $k\times k$ conv stride 1, no max-pool ($/1$); `link_net.py` |
+| 2 | Encoder block depth | Two ResNet-18 basic blocks per stage (stride-2 projection block $+$ stride-1 identity block); Fig. 2, Sec. III | One `ResidualEncoderBlock` per stage, no identity sub-block; `link_net.py` |
+| 3 | Conv–Norm–Act ordering | Post-activation: conv $\to$ BN $\to$ ReLU; Sec. III | Same; `link_net.py`, `build_norm2d`/`build_activation` `models/blocks.py` |
+| 4 | Decoder block layout | $1\times1\,(m\!\to\!m/4)\to$ full-conv $3\times3$ $/2\,(m/4\!\to\!m/4)\to1\times1\,(m/4\!\to\!n)$, BN$+$ReLU each; Fig. 3, Table II | Same sequence, compression ratio $c$ (default 4) via `max(1, m//c)`; `link_net.py` |
+| 5 | Skip linking | $\text{input}(\text{dec}_i)=\text{out}(\text{dec}_{i+1})+\text{out}(\text{enc}_i)$, add before decoder input; Fig. 1 | Same add point; deepest decoder fed directly by deepest encoder, no add; `link_net.py` |
+| 6 | Final block | full-conv $3\times3$ $/2\,(64\!\to\!32)\to$ conv $3\times3\,(32\!\to\!32)\to$ full-conv $2\times2$ $/2\,(32\!\to\!N)$; Fig. 1 | Generic bottleneck decoder block $(F_0\!\to\!F_0)$ $+$ $1\times1$ head $(F_0\!\to\!C)$; `link_net.py` |
+| 7 | ReLU around additions | ReLU after encoder residual add (Fig. 2); no ReLU on decoder skip circles (Fig. 1) | ReLU after encoder add (`link_net.py`); decoder add not followed by ReLU |
+| 8 | Output resolution recovery | Recover from stem's $/4$ via decoder up-samples $+$ final block's two $\times2$; Sec. III | Stem at $/1$, encoder to $/16$, four stride-2 ConvT recover $/16\!\to\!/1$; bilinear `match_spatial_size`; `models/blocks.py`, `link_net.py` |
+| 9 | Up-sampling operator | Full-convolution (transposed conv); Sec. III–IV | `nn.ConvTranspose2d` $3\times3$, stride 2, `output_padding=1`; `link_net.py` |
 | 10 | Encoder channel widths | $64,128,256,512$ (Table I) | `features` hyperparameter, default $[152,312,624,1248]$; $[64,128,256,512]$ available as a tunable preset |
 
 ### Notes
 
-The `BottleneckDecoderBlock` (`LinkNet.py:60-103`) follows Fig. 3: a $1\times1$ compression to $m/c$, a full $3\times3$ transposed convolution at stride 2, and a $1\times1$ expansion to $n$, each followed by normalisation and activation. The additive skip wiring in the forward pass (`LinkNet.py:192-202`) follows Fig. 1 — the encoder output at level $i$ is summed onto the decoder output coming down from level $i+1$, and that sum is the input to decoder block $i$, with the deepest decoder block fed directly by the deepest encoder block. The post-add ReLU sits inside the encoder block (`LinkNet.py:56`), consistent with Fig. 2; the decoder add carries no ReLU.
+The `BottleneckDecoderBlock` (`link_net.py`) follows Fig. 3: a $1\times1$ compression to $m/c$, a full $3\times3$ transposed convolution at stride 2, and a $1\times1$ expansion to $n$, each followed by normalisation and activation. The additive skip wiring in the forward pass (`link_net.py`) follows Fig. 1 — the encoder output at level $i$ is summed onto the decoder output coming down from level $i+1$, and that sum is the input to decoder block $i$, with the deepest decoder block fed directly by the deepest encoder block. The post-add ReLU sits inside the encoder block (`link_net.py`), consistent with Fig. 2; the decoder add carries no ReLU.
 
-The stem (`LinkNet.py:124-135`) is a stride-1 convolution with no max-pool, so it performs no spatial reduction; the encoder reaches $/16$ through four stride-2 stages and the four stride-2 ConvT decoder blocks recover full resolution, with a bilinear `match_spatial_size` (`models/blocks.py:102-110`, called at `LinkNet.py:204`) enforcing the output spatial size against the original input. Each encoder stage is a single `ResidualEncoderBlock` (`LinkNet.py:9-57,137-150`) rather than the paper's pair of ResNet-18 basic blocks. The final stage appends one extra bottleneck decoder block ($F_0\!\to\!F_0$, `LinkNet.py:164-179`) feeding the $1\times1$ output head, in place of the paper's dedicated three-layer segmentation head.
+The stem (`link_net.py`) is a stride-1 convolution with no max-pool, so it performs no spatial reduction; the encoder reaches $/16$ through four stride-2 stages and the four stride-2 ConvT decoder blocks recover full resolution, with a bilinear `match_spatial_size` (`models/blocks.py`, called at `link_net.py`) enforcing the output spatial size against the original input. Each encoder stage is a single `ResidualEncoderBlock` (`link_net.py`) rather than the paper's pair of ResNet-18 basic blocks. The final stage appends one extra bottleneck decoder block ($F_0\!\to\!F_0$, `link_net.py`) feeding the $1\times1$ output head, in place of the paper's dedicated three-layer segmentation head.
 
 ---
 
@@ -133,5 +133,3 @@ The stem (`LinkNet.py:124-135`) is a stride-1 convolution with no max-pool, so i
 
 - [[UNet]] — Concatenative skip alternative
 - [[Model Zoo]] — Architecture comparison
-- [[Configuration Layer]] — LinkNetConfig
-- [[ML-Template Index]] — Master index

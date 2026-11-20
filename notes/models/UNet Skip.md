@@ -101,7 +101,7 @@ The state-dict keys and shapes follow directly from the submodule structure:
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `UNetSkipConfig`. The configurable fields and their defaults mirror [[UNet]] and [[ResUNet]].
+See `UNetSkipConfig` in `configuration/architectures/backbone.py`. The configurable fields and their defaults mirror [[UNet]] and [[ResUNet]].
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -120,12 +120,10 @@ See [[Configuration Layer]] → `UNetSkipConfig`. The configurable fields and th
 
 ## Paper fidelity
 
-**Review date:** 2026-06-04
-
 `UNetSkip` is a **project-specific hybrid with no single publication**. Its three structural ingredients each trace to a different source:
 
-- **Topology** — the encoder/bottleneck/decoder layout with concatenative skip connections follows [[UNet]] (O. Ronneberger, P. Fischer, T. Brox, "U-Net: Convolutional Networks for Biomedical Image Segmentation," *MICCAI*, 2015; arXiv:1505.04597; [[UNet_Ronneberger2015_1505.04597.pdf|PDF]]).
-- **Blocks** — the residual conv blocks follow the residual-unit (pre-activation BN-ReLU-Conv with summed shortcut) formulation of Z. Zhang, Q. Liu, Y. Wang, "Road Extraction by Deep Residual U-Net," *IEEE Geoscience and Remote Sensing Letters*, 2018 (arXiv:1711.10684), Fig. 1(b), Sec. II-A2, Eq. 1–3. [[ResUNet_Zhang2018_1711.10684.pdf|PDF]]
+- **Topology** — the encoder/bottleneck/decoder layout with concatenative skip connections follows [[UNet]] (O. Ronneberger, P. Fischer, T. Brox, "U-Net: Convolutional Networks for Biomedical Image Segmentation," *MICCAI*, 2015; arXiv:1505.04597;).
+- **Blocks** — the residual conv blocks follow the residual-unit (pre-activation BN-ReLU-Conv with summed shortcut) formulation of Z. Zhang, Q. Liu, Y. Wang, "Road Extraction by Deep Residual U-Net," *IEEE Geoscience and Remote Sensing Letters*, 2018 (arXiv:1711.10684), Fig. 1(b), Sec. II-A2, Eq. 1–3.
 - **Downsampling** — `MaxPool2d(2)` **deviates from Zhang et al.**, who explicitly replace pooling with stride-2 convolutions (Sec. II-A; Table I). The pooling choice here is the classic [[UNet]] decimation operator.
 
 Consequently this architecture cannot be checked against one paper. The residual-block internals are faithful to Zhang et al. (verified in the [[ResUNet]] note); the spatial-reduction operator is deliberately the [[UNet]] `MaxPool` rather than Zhang's stride-2 convolution. The combination is a residual U-Net with pooled downsampling.
@@ -137,5 +135,3 @@ Consequently this architecture cannot be checked against one paper. The residual
 - [[ResUNet]] — Sibling `ResUNetBackbone` subclass with stride-2 downsampling
 - [[UNet]] — Base topology and the source of the `MaxPool` downsampling
 - [[Model Zoo]] — Architecture comparison
-- [[Configuration Layer]] — UNetSkipConfig
-- [[ML-Template Index]] — Master index

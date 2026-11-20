@@ -49,7 +49,7 @@ $$
 \end{aligned}
 $$
 
-Every operation is pointwise across the spatial grid: the same MLP is applied independently at each pixel, exactly as the multihead `PixelMLP` output heads do, but here composing the entire network.
+Every operation is pointwise across the spatial grid: the same MLP is applied independently at each pixel, so the whole network is one per-pixel MLP.
 
 ---
 
@@ -57,13 +57,13 @@ Every operation is pointwise across the spatial grid: the same MLP is applied in
 
 **The control the benchmark cannot do without.** The premise of using spatial backbones for dense regression is that neighbourhood context regularises the per-pixel prediction. Without a context-free baseline the benchmark cannot separate what the encode-decode architectures contribute spatially from what any sufficiently wide per-pixel mapping would achieve on the same input channels. PixelMLP closes that gap; [[Local CNN]] then adds the smallest increment of context (a fixed local window) between this model and the full backbones.
 
-**Capacity matching caveat.** Because every parameter is applied at every pixel at full resolution, matching this model to the UNet parameter budget inflates per-pixel FLOPs and activation memory far beyond the encode-decode models (which spend most parameters at downsampled resolutions). The [[Capacity Matching]] stage will match it faithfully; the throughput and VRAM probes of the [[Benchmark Pipeline]] make the cost visible, and `skip_models` can exclude it from strictly budget-matched sweeps where the scaled width is impractical.
+**Capacity caveat.** The default widths (`features = [3200, 3200, 3200, 3200]`) put this model near the UNet budget of about 31M parameters. Because every parameter is applied at every pixel at full resolution, that budget costs far more per-pixel FLOPs and activation memory than in the encode-decode models, which spend most of their parameters at downsampled resolutions. Every training run logs its throughput and peak GPU memory to TensorBoard, which shows that cost, and the benchmark's `skip_models` list leaves the model out of a sweep where that cost is impractical; a narrower `features` list makes it a cheap control.
 
 ---
 
 ## Parameter Reference
 
-See [[Configuration Layer]] → `PixelMLPNetConfig` (`features` — hidden widths, one per $1\times1$ layer; `activation`, `normalization`, `dropout`).
+See `PixelMLPNetConfig` in `configuration/architectures/backbone.py` (`features` — hidden widths, one per $1\times1$ layer; `activation`, `normalization`, `dropout`).
 
 ---
 
@@ -77,5 +77,3 @@ Not derived from a reference paper: this is a purpose-built scientific control, 
 
 - [[Local CNN]] — The local-context-only companion control
 - [[Model Zoo]] — Architecture comparison
-- [[Configuration Layer]] — PixelMLPNetConfig
-- [[ML-Template Index]] — Master index
