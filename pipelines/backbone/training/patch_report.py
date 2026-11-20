@@ -150,7 +150,7 @@ class PatchTrialCollector:
 class PatchTrialPlots(PlotBase):
 
     save_dpi    = 300
-    AXIS_LABELS = ("row", "range")
+    AXIS_LABELS = ("row", "col")
 
     def __init__(self, out_dir: Path) -> None:
         self.out_dir = out_dir
@@ -191,11 +191,11 @@ class PatchTrialPlots(PlotBase):
 
         return self._save(fig, self.out_dir / "curve.png")
 
-    def heatmap(self, title: str, records: list[PatchTrialRecord], rows: list[int], ranges: list[int]) -> Path:
-        grid = np.full((len(rows), len(ranges)), np.nan, dtype=np.float64)
+    def heatmap(self, title: str, records: list[PatchTrialRecord], rows: list[int], cols: list[int]) -> Path:
+        grid = np.full((len(rows), len(cols)), np.nan, dtype=np.float64)
         for record in records:
             if record.complete:
-                grid[rows.index(record.patch_size[0]), ranges.index(record.patch_size[1])] = record.test_loss
+                grid[rows.index(record.patch_size[0]), cols.index(record.patch_size[1])] = record.test_loss
 
         fig, ax = plt.subplots(figsize=(5.2, 3.6))
 
@@ -206,11 +206,11 @@ class PatchTrialPlots(PlotBase):
             best_v, best_h = np.unravel_index(np.nanargmin(grid), grid.shape)
             ax.scatter([best_h], [best_v], marker="*", s=130, color="#B03052", edgecolors="white", linewidths=0.6)
 
-        ax.set_xticks(range(len(ranges)))
-        ax.set_xticklabels(ranges)
+        ax.set_xticks(range(len(cols)))
+        ax.set_xticklabels(cols)
         ax.set_yticks(range(len(rows)))
         ax.set_yticklabels(rows)
-        ax.set_xlabel("range patch length (px)")
+        ax.set_xlabel("col patch length (px)")
         ax.set_ylabel("row patch length (px)")
         ax.set_title(title)
 
@@ -218,10 +218,10 @@ class PatchTrialPlots(PlotBase):
 
     def grid_figure(self, title: str, records: list[PatchTrialRecord]) -> Path:
         rows = self._axis_values(records, 0)
-        ranges   = self._axis_values(records, 1)
+        cols     = self._axis_values(records, 1)
 
-        if len(rows) > 1 and len(ranges) > 1:
-            return self.heatmap(title, records, rows, ranges)
+        if len(rows) > 1 and len(cols) > 1:
+            return self.heatmap(title, records, rows, cols)
 
         return self.curve(title, records, axis=0 if len(rows) > 1 else 1)
 
@@ -339,7 +339,7 @@ class PatchTrialsReport:
             "Dataset path"   : str(self.config.paths.dataset_path),
             "Patch step"     : self.planner.patch_step(),
             "Row sizes"  : row_sizes,
-            "Range sizes"    : col_sizes,
+            "Col sizes"      : col_sizes,
             "Seeds"          : self.seeds,
             "Ranking metric" : "seed-mean test avg_loss at the restored best-validation checkpoint",
         })

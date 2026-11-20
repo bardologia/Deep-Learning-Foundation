@@ -34,7 +34,7 @@ class SeedAxisNote {
 class ExperimentBuilder {
 
   static MODES = [
-    { group: "data", key: "patch",      label: "patch",       hint: "rectangular grid of (row x range) patch shapes, same model end to end, batch rescaled to a constant pixel budget",
+    { group: "data", key: "patch",      label: "patch",       hint: "rectangular grid of (row x col) patch shapes, same model end to end, batch rescaled to a constant pixel budget",
       at        : 1,
       el        : "patchEl",
       available : (b) => b.patch.size > 0,
@@ -44,14 +44,14 @@ class ExperimentBuilder {
         const grid = b._patchGrid();
         if (grid.error)    return `invalid patch grid: ${grid.error}`;
         if (grid.deferred) return `grid resolved at launch: ${grid.deferred}${b._seedsSuffix(null)}${gpus}`;
-        const n = grid.row.length * grid.range.length;
-        return `${grid.row.length} row x ${grid.range.length} range = ${n} patch shape${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
+        const n = grid.row.length * grid.col.length;
+        return `${grid.row.length} row x ${grid.col.length} col = ${n} patch shape${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
       },
       names     : (b, model) => {
         const grid = b._patchGrid();
         if (!grid.row) return [];
         const pad = (value) => String(value).padStart(3, "0");
-        return grid.row.flatMap((row) => grid.range.map((col) => `${model}_p-${pad(row)}x${pad(col)}`));
+        return grid.row.flatMap((row) => grid.col.map((col) => `${model}_p-${pad(row)}x${pad(col)}`));
       } },
 
     { group: "arch", key: "architecture", label: "architecture", hint: "one trial per listed backbone architecture on the shared base config",
@@ -301,7 +301,7 @@ class ExperimentBuilder {
 
     const note       = document.createElement("p");
     note.className   = "exp-secondary__note";
-    note.textContent = "each (row x range) shape trains the same model end to end; stride = round(length x stride_ratio) per axis; step 0 derives the admissible step from the backbone pyramid (2^levels) at launch; the pixel budget keeps batch x pixels and the batch-linear LR scale identical across shapes";
+    note.textContent = "each (row x col) shape trains the same model end to end; stride = round(length x stride_ratio) per axis; step 0 derives the admissible step from the backbone pyramid (2^levels) at launch; the pixel budget keeps batch x pixels and the batch-linear LR scale identical across shapes";
 
     const grid     = document.createElement("div");
     grid.className = "exp-patch__sizes";
@@ -452,14 +452,14 @@ class ExperimentBuilder {
     };
 
     const row = axis(0, "row");
-    const range   = axis(1, "range");
+    const col = axis(1, "col");
     if (row.error) return row;
-    if (range.error)   return range;
+    if (col.error) return col;
 
-    const shapes = row.sizes.length * range.sizes.length;
-    if (shapes < 2) return { error: `the grid row [${row.sizes}] x range [${range.sizes}] yields ${shapes} patch shape; a sweep needs at least 2` };
+    const shapes = row.sizes.length * col.sizes.length;
+    if (shapes < 2) return { error: `the grid row [${row.sizes}] x col [${col.sizes}] yields ${shapes} patch shape; a sweep needs at least 2` };
 
-    return { row: row.sizes, range: range.sizes };
+    return { row: row.sizes, col: col.sizes };
   }
 
   _paintPatch() {
