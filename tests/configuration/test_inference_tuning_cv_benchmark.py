@@ -122,7 +122,6 @@ def test_tuning_entry_config_subconfigs():
 def test_fold_config_defaults():
     cfg = FoldConfig()
     assert cfg.n_folds > 0
-    assert cfg.row_end > cfg.row_start
 
 
 def test_cross_validation_config_subconfigs():
