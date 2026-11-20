@@ -46,11 +46,11 @@ class ExperimentBuilder {
         const n = grid.row.length * grid.col.length;
         return `${grid.row.length} row x ${grid.col.length} col = ${n} patch shape${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
       },
-      names     : (b, model) => {
+      names     : (b) => {
         const grid = b._patchGrid();
         if (!grid.row) return [];
         const pad = (value) => String(value).padStart(3, "0");
-        return grid.row.flatMap((row) => grid.col.map((col) => `${model}_p-${pad(row)}x${pad(col)}`));
+        return grid.row.flatMap((row) => grid.col.map((col) => `p-${pad(row)}x${pad(col)}`));
       } },
 
     { group: "arch", key: "architecture", label: "architecture", hint: "one trial per listed backbone architecture on the shared base config",
@@ -63,7 +63,7 @@ class ExperimentBuilder {
         const n = b._architectureTrials().length;
         return `${n} backbone${n === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
       },
-      names     : (b) => b._architectureTrials().map((entry) => `${entry.backbone}_arch-${entry.label}`) },
+      names     : (b) => b._architectureTrials().map((entry) => `arch-${entry.label}`) },
 
     { group: "data", key: "augmentation", label: "augmentation", hint: "cumulative augmentation ladder on the shared base config: no augmentation, then one rung per added augmentation, then + input noise at each configured strength",
       at        : 9,
@@ -75,7 +75,7 @@ class ExperimentBuilder {
         const n = 3 + b._augNoiseStds().length;
         return `3 ladder rungs + ${b._augNoiseStds().length} noise rung${b._augNoiseStds().length === 1 ? "" : "s"} = ${n} trials${b._seedsSuffix(n)}${gpus}`;
       },
-      names     : (b, model) => b._augNames().map((rung) => `${model}_${rung}`) },
+      names     : (b) => b._augNames() },
 
     { group: "training", key: "stability", label: "stability", hint: "training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction of the total optimizer steps, then gradient clipping alone per norm threshold, then the first warmup fraction paired with each threshold",
       at        : 11,
@@ -87,7 +87,7 @@ class ExperimentBuilder {
         const n = 1 + b._stabilitySteps().length + 2 * b._stabilityNorms().length;
         return `bare + ${b._stabilitySteps().length} warmup + ${b._stabilityNorms().length} clipping + ${b._stabilityNorms().length} both = ${n} trials${b._seedsSuffix(n)}${gpus}`;
       },
-      names     : (b, model) => b._stabilityNames().map((rung) => `${model}_${rung}`) },
+      names     : (b) => b._stabilityNames() },
 
     { group: "training", key: "ema", label: "weight EMA", hint: "weight-EMA arms on the shared base config: raw weights, then at each configured decay an exponential moving average with the plain decay and one with the decay warmup ramp",
       at        : 15,
@@ -99,7 +99,7 @@ class ExperimentBuilder {
         const n = 1 + 2 * b._emaDecays().length;
         return `off + ${b._emaDecays().length} raw + ${b._emaDecays().length} decay-warmup rung${b._emaDecays().length === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
       },
-      names     : (b, model) => b._emaNames().map((rung) => `${model}_${rung}`) },
+      names     : (b) => b._emaNames() },
 
     { group: "training", key: "amp", label: "mixed precision", hint: "mixed-precision pair on the shared base config: autocast off, then autocast on, nothing else changes",
       at        : 16,
@@ -108,7 +108,7 @@ class ExperimentBuilder {
       make      : (b) => b._ampPanel(),
       paint     : () => {},
       summary   : (b, gpus) => `autocast off and on = 2 trials${b._seedsSuffix(2)}${gpus}`,
-      names     : (b, model) => ["amp-0-off", "amp-1-on"].map((rung) => `${model}_${rung}`) },
+      names     : () => ["amp-0-off", "amp-1-on"] },
 
   ];
 
@@ -125,7 +125,6 @@ class ExperimentBuilder {
     this.view         = view;
     this.trialsLeaf   = byPath.get("trials_enabled");
     this.modeLeaf     = byPath.get("trials_mode");
-    this.modelLeaf    = byPath.get("backbone_name");
     this.gpusLeaf     = byPath.get("gpus");
     this.seedsLeaf    = byPath.get("seeds");
 
@@ -198,7 +197,7 @@ class ExperimentBuilder {
 
     const preview     = document.createElement("div");
     preview.className = "exp-builder__preview";
-    preview.innerHTML = `<span class="exp-builder__preview-title">trial run names</span>`;
+    preview.innerHTML = `<span class="exp-builder__preview-title">trial suffixes; each run directory is &lt;backbone&gt;-&lt;loss&gt;-&lt;augmentation&gt;_&lt;suffix&gt;</span>`;
     const names       = document.createElement("div");
     names.className   = "exp-builder__names";
     this.namesEl      = names;
@@ -1071,10 +1070,9 @@ class ExperimentBuilder {
 
   _paintNames() {
     this.namesEl.innerHTML = "";
-    const model = this.modelLeaf ? this.view._effective(this.modelLeaf) : "model";
     const entry = this._modeEntry(this._mode());
 
-    const names = entry.names(this, model);
+    const names = entry.names(this);
     const limit = 12;
     names.slice(0, limit).forEach((name) => {
       const chip       = document.createElement("span");
