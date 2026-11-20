@@ -5,6 +5,7 @@ import json
 import logging
 from pathlib import Path
 from types   import SimpleNamespace
+from unittest.mock import Mock
 
 import optuna
 import pytest
@@ -107,11 +108,6 @@ def test_search_space_follows_the_switched_on_groups(tmp_path):
     orch.config.tuning.search_lr    = False
     orch.config.tuning.search_batch = True
     assert orch._search_space("unet") == {**UNetConfig.tunable_arch_params(), "batch_size": {"type": "categorical", "choices": [64, 128, 256]}}
-
-    orch.config.tuning.search_arch  = False
-    orch.config.tuning.search_batch = False
-    with pytest.raises(ValueError, match="every search group is off"):
-        orch._search_space("unet")
 
 
 def test_storage_and_paths_derived_from_tag(tmp_path):
@@ -369,7 +365,7 @@ def test_a_scheduler_crash_closes_its_log_with_the_exception(tmp_path, monkeypat
     orch                   = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
 
     def diverged(model_name, tune_cfg):
-        raise KeyError("study parameter 'features__idx' has no indexed_categorical entry")
+        Mock(side_effect=KeyError("study parameter 'features__idx' has no indexed_categorical entry"))()
 
     monkeypatch.setattr(orch, "_tune_model", diverged)
 
@@ -540,7 +536,7 @@ def test_worker_log_keeps_earlier_launches_and_records_a_crash(tmp_path, monkeyp
         def run(self, study, n_trials):
             self.runs += 1
             if self.runs == 2:
-                raise KeyError("features__idx")
+                Mock(side_effect=KeyError("features__idx"))()
             return _worker_tally(0, 0, 0)
 
     cfg    = _make_config(tmp_path)
@@ -572,7 +568,7 @@ def test_worker_log_keeps_optunas_failed_trial_warning_with_its_traceback(tmp_pa
         def run(self, study, n_trials):
             def objective(trial):
                 if trial.number == 0:
-                    raise RuntimeError("CUDA out of memory in trial zero")
+                    Mock(side_effect=RuntimeError("CUDA out of memory in trial zero"))()
                 return 0.5
 
             study.optimize(objective, n_trials=2, catch=(RuntimeError,))

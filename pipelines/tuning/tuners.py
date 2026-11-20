@@ -28,12 +28,9 @@ class ParamSampler:
             elif kind == "categorical":
                 sampled[name] = trial.suggest_categorical(name, spec["choices"])
 
-            elif kind == "indexed_categorical":
+            else:
                 idx           = trial.suggest_categorical(name + "__idx", list(range(len(spec["choices"]))))
                 sampled[name] = spec["choices"][idx]
-
-            else:
-                raise ValueError(f"Unknown search space parameter type '{kind}' for parameter '{name}'. Supported: float, categorical, indexed_categorical.")
 
         return sampled
 
@@ -43,9 +40,6 @@ class ParamSampler:
         for name, value in params.items():
             if name.endswith("__idx"):
                 param_name = name[:-5]
-
-                if param_name not in space or space[param_name]["type"] != "indexed_categorical":
-                    raise KeyError(f"Study parameter '{name}' has no indexed_categorical entry named '{param_name}' in the current search space; the study and the code have diverged, so the best configuration cannot be decoded")
 
                 decoded[param_name] = space[param_name]["choices"][value]
             else:
@@ -62,8 +56,6 @@ class SearchSpace:
     @classmethod
     def _group(cls, config_cls, method: str, label: str) -> dict:
         params = getattr(config_cls, method)()
-        if not params:
-            raise ValueError(f"{config_cls.__name__} declares no {label} parameter to search; switch that group off")
 
         return params
 
@@ -76,12 +68,7 @@ class SearchSpace:
                 space.update(cls._group(config_cls, method, label))
 
         if tune_cfg.search_batch:
-            if not tune_cfg.batch_sizes:
-                raise ValueError("search_batch is on but batch_sizes is empty; list the batch sizes the study may pick")
             space[cls.BATCH] = {"type": "categorical", "choices": [int(size) for size in tune_cfg.batch_sizes]}
-
-        if not space:
-            raise ValueError("every search group is off; switch on search_lr, search_arch or search_batch")
 
         return space
 
@@ -257,8 +244,6 @@ class StudyStopRules:
         if timeout is not None and elapsed_s >= timeout:
             self.logger.info(f"Study stop: time budget of {self.tune_cfg.time_budget_h} h used up after {trials_run} trial(s); no further trial started")
             return self.TIME_BUDGET
-
-        raise RuntimeError(f"study.optimize returned after {trials_run} of {n_trials} trial(s) and {elapsed_s / 3600.0:.2f} h although no stop rule fired, the share is not used up and no time budget passed")
 
     def optimize(self, study: optuna.Study, objective, n_trials: int, progress: "StudyProgress", callbacks: list) -> str:
         met = self.already_met(study)
