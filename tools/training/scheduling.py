@@ -182,7 +182,7 @@ class Scheduler:
         if self.scheduler_type == "exponential":
             return self._exponential(epoch)
 
-        return self._step(epoch)
+        return {"step": self._step}[self.scheduler_type](epoch)
 
     def reset(self, epoch_offset: int = 0) -> None:
         self._epoch_offset = epoch_offset

@@ -143,7 +143,7 @@ class Loss:
         if kind == "huber":
             return ParamLoss.huber(pred, gt, elem_w, cfg.param_huber_delta, cfg.use_active_normalization), {}
 
-        return ParamLoss.mse(pred, gt, elem_w, cfg.use_active_normalization), {}
+        return {"mse": ParamLoss.mse}[kind](pred, gt, elem_w, cfg.use_active_normalization), {}
 
     @torch.no_grad()
     def _physical_errors(self, matched) -> dict:

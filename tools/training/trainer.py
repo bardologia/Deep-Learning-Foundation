@@ -264,7 +264,7 @@ class BaseTrainer:
         for pg in param_groups:
             pg.setdefault("momentum", cfg.momentum)
             pg.setdefault("eps",      cfg.eps)
-        return optim.RMSprop(param_groups)
+        return {"rmsprop": optim.RMSprop}[kind](param_groups)
 
     def _update_optimizer(self, lrs: list[float]):
         for i, (param_group, lr) in enumerate(zip(self.optimizer.param_groups, lrs)):
