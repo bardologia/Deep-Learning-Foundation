@@ -143,95 +143,6 @@ class HairlineFigureBase {
   }
 }
 
-class VoxelColumnFigure extends HairlineFigureBase {
-  static RANGE     = [10, 20, 32];
-  static BINS      = 12;
-  static SLAB      = 8;
-  static STEP      = 10.4;
-  static PLINTH    = 42;
-  static AXIS      = [-38, 38];
-  static REACH     = 2.6;
-  static STAGGER   = 45;
-  static REST_PULL = 0.4;
-
-  constructor({ stage, svg }, value) {
-    super(svg, value, 1.8);
-    this.widths  = Array.from({ length: VoxelColumnFigure.BINS }, (_, i) => this._width(i));
-    this.restBin = this._restBin();
-    this._camera(this._extent(), 162);
-    this._plinth(-VoxelColumnFigure.PLINTH, -VoxelColumnFigure.PLINTH, VoxelColumnFigure.PLINTH, VoxelColumnFigure.PLINTH, 9, 5);
-    this._buildAxis();
-    this._buildSlabs();
-    this._start(stage, svg);
-  }
-
-  _width(i) {
-    return 9 + 19 * Math.exp(-((i / 1.1) ** 2)) + 17 * Math.exp(-(((i - 7.6) / 2) ** 2));
-  }
-
-  _restBin() {
-    let best = 4;
-    for (let i = 4; i < VoxelColumnFigure.BINS; i++) if (this.widths[i] > this.widths[best]) best = i;
-    return best;
-  }
-
-  _extent() {
-    const edge = VoxelColumnFigure.PLINTH;
-    const top  = VoxelColumnFigure.BINS * VoxelColumnFigure.STEP;
-    const out  = this.widths[this.restBin] + VoxelColumnFigure.RANGE[2] * Math.SQRT1_2;
-    return [[-edge, -edge, -5], [edge, edge, -5], [edge, -edge, -5], [-edge, edge, -5], [0, 0, top], [out, -out, top * 0.75], [...VoxelColumnFigure.AXIS, top]];
-  }
-
-  _buildAxis() {
-    const [ax, ay] = VoxelColumnFigure.AXIS;
-    const top      = VoxelColumnFigure.BINS * VoxelColumnFigure.STEP;
-    HL.mk("path", { d: HL.seg(this.P(ax, ay, 0), this.P(ax, ay, top)), class: "dash nf" }, this.g);
-    this.ticks = this.widths.map((_, i) => {
-      const tick = HL.flatDot(this.g, this.C, 0.9, "dot off");
-      HL.place(tick, this.P(ax, ay, i * VoxelColumnFigure.STEP + VoxelColumnFigure.SLAB / 2));
-      return tick;
-    });
-  }
-
-  _buildSlabs() {
-    this.slabs = this.widths.map((w, i) => {
-      const [ring, inner] = HL.rings(-w, -w, w, w, 3.2, 1.3);
-      const z0            = i * VoxelColumnFigure.STEP;
-      const z1            = z0 + VoxelColumnFigure.SLAB;
-      const rest          = i === this.restBin ? this.amount * VoxelColumnFigure.REST_PULL : 0;
-      const el            = HL.solid(this.g);
-      el.sil.classList.toggle("hi", i === this.restBin);
-      return { i, ring, inner, z0, z1, el, tw: HL.tween(rest), drawn: NaN, restY: this.P(0, 0, (z0 + z1) / 2)[1] };
-    });
-  }
-
-  _tick(dt, now) {
-    return this._advance(this.slabs, now);
-  }
-
-  _draw(slab, out) {
-    const moved = this._shifted(out * Math.SQRT1_2, -out * Math.SQRT1_2, 0);
-    HL.put(slab.el, HL.prism(moved, this.front, slab.ring, slab.inner, slab.z0, slab.z1));
-  }
-
-  _move(p) {
-    this._choose(HairlineFigureBase.nearest(this.slabs.map((slab) => slab.restY), p[1]));
-  }
-
-  _retarget(now) {
-    const anchor = this.chosen === null ? this.restBin : this.chosen;
-    for (const slab of this.slabs) {
-      const distance = Math.abs(slab.i - anchor);
-      const reach    = Math.max(0, 1 - distance / VoxelColumnFigure.REACH) ** 2;
-      const target   = this.chosen === null ? (slab.i === this.restBin ? this.amount * VoxelColumnFigure.REST_PULL : 0) : this.amount * reach;
-      HL.tset(slab.tw, target, now, distance * VoxelColumnFigure.STAGGER);
-      slab.el.sil.classList.toggle("hi", slab.i === anchor);
-      this.ticks[slab.i].setAttribute("class", slab.i === this.chosen ? "dot m" : "dot off");
-    }
-    this.loop.wake();
-  }
-}
-
 class CvFoldsFigure extends HairlineFigureBase {
   static RANGE     = [6, 12, 18];
   static FOLDS     = 5;
@@ -322,73 +233,6 @@ class CvFoldsFigure extends HairlineFigureBase {
     for (const fold of this.folds) {
       HL.tset(fold.tw, fold.k === held ? pull : 0, now, 0);
       this._light(fold.el, fold.dots, fold.k === held);
-    }
-    this.loop.wake();
-  }
-}
-
-class SliceLoafFigure extends HairlineFigureBase {
-  static RANGE     = [8, 14, 22];
-  static SLICES    = 11;
-  static THICK     = 3.4;
-  static GAP       = 1.1;
-  static DEPTH     = 40;
-  static REACH     = 1.8;
-  static STAGGER   = 40;
-  static REST      = 7;
-  static REST_PULL = 0.45;
-
-  constructor({ stage, svg }, value) {
-    super(svg, value, 3.0);
-    this.length = SliceLoafFigure.SLICES * (SliceLoafFigure.THICK + SliceLoafFigure.GAP) - SliceLoafFigure.GAP;
-    this._camera(this._extent(), 168);
-    this._plinth(-6, -6, this.length + 6, SliceLoafFigure.DEPTH + 6, 6, 4);
-    this._buildSlices();
-    this._start(stage, svg);
-  }
-
-  _height(k) {
-    return 12 + 14 * Math.exp(-(((k - 3) / 2.2) ** 2)) + 10 * Math.exp(-(((k - 8) / 1.5) ** 2));
-  }
-
-  _extent() {
-    const length = this.length;
-    const depth  = SliceLoafFigure.DEPTH;
-    const far    = depth + SliceLoafFigure.RANGE[2];
-    return [[-6, -6, -4], [length + 6, depth + 6, -4], [length + 6, -6, -4], [-6, depth + 6, -4], [0, 0, 30], [length, 0, 30], [0, far, 30], [length, far, 25]];
-  }
-
-  _buildSlices() {
-    this.slices = Array.from({ length: SliceLoafFigure.SLICES }, (_, k) => {
-      const x0            = k * (SliceLoafFigure.THICK + SliceLoafFigure.GAP);
-      const [ring, inner] = HL.rings(x0, 0, x0 + SliceLoafFigure.THICK, SliceLoafFigure.DEPTH, 1.2, 0.55);
-      const el            = HL.solid(this.g);
-      const lit           = k === SliceLoafFigure.REST;
-      el.sil.classList.toggle("hi", lit);
-      return { k, ring, inner, h: this._height(k), el, tw: HL.tween(lit ? this.amount * SliceLoafFigure.REST_PULL : 0), drawn: NaN, restX: this.P(x0 + SliceLoafFigure.THICK / 2, SliceLoafFigure.DEPTH / 2, 0)[0] };
-    });
-  }
-
-  _tick(dt, now) {
-    return this._advance(this.slices, now);
-  }
-
-  _draw(slice, out) {
-    HL.put(slice.el, HL.prism(this._shifted(0, out, 0), this.front, slice.ring, slice.inner, 0, slice.h));
-  }
-
-  _move(p) {
-    this._choose(HairlineFigureBase.nearest(this.slices.map((slice) => slice.restX), p[0]));
-  }
-
-  _retarget(now) {
-    const anchor = this.chosen === null ? SliceLoafFigure.REST : this.chosen;
-    for (const slice of this.slices) {
-      const distance = Math.abs(slice.k - anchor);
-      const reach    = Math.max(0, 1 - distance / SliceLoafFigure.REACH) ** 2;
-      const target   = this.chosen === null ? (slice.k === SliceLoafFigure.REST ? this.amount * SliceLoafFigure.REST_PULL : 0) : this.amount * reach;
-      HL.tset(slice.tw, target, now, distance * SliceLoafFigure.STAGGER);
-      slice.el.sil.classList.toggle("hi", slice.k === anchor);
     }
     this.loop.wake();
   }
@@ -4568,9 +4412,7 @@ class ProjectFigures {
   }
 
   static CATALOG = {
-    voxels:     ProjectFigures.entry(VoxelColumnFigure, "A pixel's profile as a column cut into z bins, wide at the bottom and again near the top. The pointer's height picks a bin and it slides out of the column."),
     folds:      ProjectFigures.entry(CvFoldsFigure, "A drum cut into five cross-validation folds, each numbered with dots. The pointer's angle picks a fold and it slides out as the held-out one."),
-    slices:     ProjectFigures.entry(SliceLoafFigure, "A cube cut into eleven slices whose tops follow a profile. The pointer picks a slice and it slides out of the block with its neighbours."),
     slots:      ProjectFigures.entry(GaussianSlotsFigure, "Three Gaussian slots, each a tray of fins tracing one component; the middle slot has collapsed flat. The pointer picks a slot and its component rises."),
     gpus:       ProjectFigures.entry(GpuShelfFigure, "Six GPU cards standing in a chassis, each with two fans and a status light. The pointer picks a card and it rises out of its slot."),
     guard:      ProjectFigures.entry(GpuGuardFigure, "A fenced yard of GPU card slots with a gate in the front fence. Another user's process, a puck, patrols the path outside and bumps the shut gate; during an intrusion the gate swings open and the puck rolls in to the card it invaded. The pointer picks a card and it rises."),

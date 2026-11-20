@@ -60,9 +60,8 @@ def test_the_figure_modules_load_before_their_users():
     for module in ("figure_export.js", "figure_saver.js"):
         assert module in loaded
 
-    for user in ("app.js", "cube_view.js"):
-        assert loaded.index("figure_export.js") < loaded.index(user)
-        assert loaded.index("figure_saver.js") < loaded.index(user)
+    assert loaded.index("figure_export.js") < loaded.index("app.js")
+    assert loaded.index("figure_saver.js") < loaded.index("app.js")
 
 
 def test_the_browser_download_helper_lives_in_one_module():
@@ -71,22 +70,12 @@ def test_the_browser_download_helper_lives_in_one_module():
     assert holders == ["figure_export.js"]
 
 
-def test_the_cube_explorer_delegates_its_downloads():
-    text = (JS_DIR / "cube_view.js").read_text(encoding="utf-8")
-
-    for call in ("FigureExport.download(", "FigureExport.saveCanvas(", "FigureExport.saveBitmap("):
-        assert call in text
-
-    assert "canvas.toBlob(" not in text
-    assert "downloadBlob(" not in text
-
-
 def test_every_registered_figure_tab_supplies_a_filename_context():
     classes = _classes()
     binds   = dict(VIEW_BIND.findall((JS_DIR / "app.js").read_text(encoding="utf-8")))
     tabs    = _figure_tabs()
 
-    assert set(tabs) == {"microscope", "survey", "triage", "autopsy", "cube", "slices", "results"}
+    assert set(tabs) == {"microscope", "survey", "autopsy", "results"}
 
     for route, prop in tabs.items():
         assert prop in binds, f"{route} points at an unbound view property"
@@ -110,19 +99,6 @@ def test_the_inspect_views_label_their_bare_canvases():
         text = (JS_DIR / name).read_text(encoding="utf-8")
         for canvas in ids:
             assert re.search(rf'id="{canvas}" data-fig="[^"]+"', text), f"{name}: {canvas}"
-
-
-def test_the_cube_panels_label_every_slice_plane_and_profile():
-    html = INDEX.read_text(encoding="utf-8")
-
-    assert len(re.findall(r'class="cube-slice" data-axis="\w+" data-source="\w+" data-fig="\w+ cut \w+"', html)) == 10
-    assert len(re.findall(r'class="cube-prof" data-source="\w+" data-fig="profile \w+"', html))                  == 4
-    assert len(re.findall(r'class="cube-eplane" data-source="\w+" data-fig="\w+ plane \w+"', html))              == 20
-
-
-def test_the_volume_view_keeps_its_drawing_buffer():
-    assert 'id="cube-volume-canvas" data-fig="volume view"' in INDEX.read_text(encoding="utf-8")
-    assert re.search(r'getContext\("webgl2", \{[^}]*preserveDrawingBuffer: true', (JS_DIR / "cube_view.js").read_text(encoding="utf-8"))
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is needed to execute the frontend ZIP writer")

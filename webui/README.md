@@ -25,8 +25,8 @@ ntfy seed. Launch pages mark every field whose default the profile rewrote and c
 them in the facts rail.
 
 The HTTP transport is standard library only (`http.server` plus server-sent events), but
-the console itself needs the project environment. `web_ui_server.py` imports the cube
-explorer, model probe, A/B autopsy, triage board and system monitor at boot, and those pull numpy, matplotlib, scipy, torch, scikit-image,
+the console itself needs the project environment. `web_ui_server.py` imports the
+model probe, A/B autopsy and system monitor at boot, and those pull numpy, matplotlib, scipy, torch, scikit-image,
 tensorboard and psutil. On a bare interpreter the server fails with an ImportError before
 it binds the port, which is why `run.sh` starts from the interpreter the profile records.
 
@@ -55,16 +55,13 @@ talking to one group of JSON endpoints.
 | Console | `#/console` | `/api/jobs`, `/api/stream` | Real-time stdout of launched jobs with stop control. The page opens one server-sent-events channel (`GET /api/stream?channel=<id>`) and subscribes every job tile and every selected sub-run to it through `POST /api/stream/<channel>/subscribe` and `/unsubscribe` (body `job_id`, optional integer `unit`, and `after`, the last event id held, 0 for none; anything else is a 400), so any number of open tiles costs the browser a single connection out of its six per origin instead of one each, which used to freeze every other request once six tiles or sub-runs were open. Every event carries its subscription key, and viewers of the same job share one subscription: a viewer that joins a job another one already follows (a tile opened after another tile on the same job) re-subscribes it from the first event and is replayed the buffered output, while the earlier viewer drops the event ids it already holds. A channel that cannot keep up is truncated with a marker rather than allowed to stall the publishers. A dropped channel reconnects and each job stream replays from its last event id (a sub-run tail restarts from its top, and a restarted server, recognised by the `boot` token in the channel's `hello` frame, replays everything); while it is down, and after a console restart, a tile takes its status from the polled job list, and a tile whose job the console no longer knows turns `untracked` with its Stop disabled. The terminal refits whenever its tile changes size, and the sub-run menu caps its height at the room left inside the tile. Fan-out experiments add a progress strip from `/api/jobs/<id>/progress`: units done of total, mean unit duration, ETA and projected finish. Once a job has ended (finished, failed, cancelled or untracked) its tile shows Retry, which reopens the launch page with the overrides, interpreter, detach switch, follow-up and finalize switches the job was launched with, ready to adjust and launch again; each job record keeps that request under `request` (overrides before the per-job GPU pool file). |
 | TensorBoard | `#/tensorboard` | `/api/tensorboard/*` | Starts and supervises a TensorBoard process against any run directory. The run picker browses the runs root as a folder tree from `/api/tensorboard/tree`: a run is a folder holding `tensorboard/` and is never descended into, a folder of runs only is a set served on click, and a folder holding further run folders is a group that expands, with an open-all button serving the whole group. |
 | Results | `#/results` | `/api/results/*`, `/api/fs/*` | Browse any run or dataset directory: rendered markdown reports, figure galleries with compare pinning, configs, and inline log and text files. |
-| Cube | `#/cube` | `/api/cubes/*` | Cube explorer over saved inference cubes: live cuts with profiles (whose readout names the pixel's seed disagreement when the stamp stores `seed_std_profile`) and SSIM and an optional overlay of the Gaussian mixture rebuilt from the extracted parameters with one stem per active slot, axis sweeps, Gaussian parameter maps with per-pixel slot readout, one locked pixel shared by the cuts, parameter and metric views (a Params here button opens the parameter map at it), per-pixel metric overlays with thresholding and named class legends for the failure-mode and label-suspect layers, a layer histogram that shades the colour range and marks the keep threshold, a selective-prediction panel whose mask paints only the pixels the chosen coverage keeps and whose Play button sweeps the coverage from 100% down to 5% and back, region statistics comparing a shift-dragged rectangle's metric means and mean z profiles against the whole scene, polyline transects traced click by click with undo, an along-line strip of any metric layer and named lines the browser remembers per cube footprint, a 3D component point cloud coloured by z, amplitude or the seed disagreement (`seed_std_profile`) of each point's pixel, with a section-cut plane that can sweep back and forth along row, col or z, a ray-marched WebGL2 volume view of any loaded source (strided to at most 192 voxels per axis and quantised over the source's colour range) with a transfer-function window, opacity, step count and a clip plane along row, col or z, a Timeline view that replays one cut at the locked pixel across the run's inference stamps covering the same region and z axis, in stamp order, with play, a scrubber and each stamp's curve MSE, a Figures view over the PNG, GIF, JPEG and SVG files inference saved under the stamp's `figures/` and `animations/` trees (grouped by folder and served only from inside those trees), run-vs-run comparison with signed delta metric layers (A minus B for every continuous metric map both runs carry, on a diverging palette), a Link button that copies a `#/cube/<state>` link reopening the cube, view, locked pixel, metric layer, value space and colormap (a link to another cube loads it first, and one naming a view the cube lacks opens without it and says so), a Story panel that records named steps in the browser with a PNG snapshot each, replays them in order, copies each step's link and downloads the snapshots, client-side PNG downloads of the visible cuts, metric overlay and transect panels and a CSV of the profiles at the locked pixel, selectable colormaps and paper-style figure export. A load reads every source whole into memory through a process-wide read pool (`NpyReader`, up to 32 threads) that splits each file into 16 MB `pread` chunks and keeps them in flight together, since concurrent whole-file reads beat memory-mapped page faults on a network mount, and the sources after the prediction cube are fetched in parallel. The progress bar follows the bytes read against the byte plan of the load and names the files still in flight; a load whose status has not moved for 5 s also shows how long it has been silent and the innermost frames of its thread. Every stage books its wall time: the ready line in the console log lists the stage times, the ready payload carries them under `timings`, and the tab shows the total next to the slowest stage. The full reference cube is read as the row band the cube covers, one contiguous read per z plane, and the last eight loaded cubes stay in memory (`CubeExplorer.CUBE_CACHE_ENTRIES`), so switching back to one is immediate and drops any attached comparison. `kill -USR1 <pid>` dumps every thread's stack of the console to its stderr without stopping it. |
-| Slices | `#/slices` | `/api/slices/*` | Multi-run slice collector: tick any number of cubes, hover the primary map to preview the same cuts from every run side by side, and click the map (or a slice's own button) to put cuts in a basket that persists in the browser. Every basket entry keeps its own run, source, cut, point, value space and colormap. The basket renders into one `slice_collections/<name>/` folder with a `collection.json` manifest, and can be mailed as zip volumes through the report mailer (`REPORT_MAIL_PASSWORD`); a basket already saved under the same name is mailed from that folder. A slice that cannot be rendered clears its cell and names the reason in the console log. |
 | Microscope | `#/microscope` | `/api/probe/*` | Model microscope over a trained run: load the checkpoint with its real dataset, click a pixel, and inspect the predicted profile against ground truth, gradient attribution of every output family to every input channel with per-pair spatial maps, feature-map grids along a clickable architecture strip, and live what-if perturbations with per-slot deltas. |
-| Triage | `#/triage` | `/api/triage/*` | Error triage over a saved inference: the worst blocks ranked by pixel MSE, tagged with dominant failure mode, label fit, seed disagreement and flip disagreement where those cubes exist. Each case opens the cube explorer at its worst pixel and takes a persisted verdict plus a note under `logs/triage/`. |
 | Autopsy | `#/autopsy` | `/api/autopsy/*` | Guided A/B comparison of two inferences over the same region: the largest relative metric gaps with an orientation-aware winner per row, plus the blocks where the runs disagree most, each rendered as both predicted profiles against the ground truth. |
 
 ## Saving figures
 
-The tabs that show images have a figure saver: Microscope, Survey, Triage, Autopsy,
-Results, Cube and Slices. It runs in the browser over what is already on
+The tabs that show images have a figure saver: Microscope, Survey, Autopsy and
+Results. It runs in the browser over what is already on
 screen, so the server renders nothing extra and no run directory is written.
 
 - **One figure.** Hovering a chart, map or plot floats a small save button in its top-right
@@ -86,9 +83,7 @@ covers the page on screen. Canvases are written at their backing-store resolutio
 opaque background. Small server-rendered maps are upscaled by whole pixels the way the page
 shows them, and vector charts are rasterized at twice their layout size with their computed
 styles inlined. `figure_export.js` holds the mechanics, including a store-only ZIP writer,
-and `figure_saver.js` the scanner and the dock. The cube explorer keeps its own PNG, CSV and
-story snapshot buttons, which hand their files to the same exporter, and its server-side
-paper-style figure export beside this.
+and `figure_saver.js` the scanner and the dock.
 
 ## How launching works
 
@@ -155,7 +150,7 @@ which owns one instance of every collaborator and composes the routing table. Re
 enter `request_router.py`, which resolves the path's leading section to exactly one
 sub-router under `routers/` and delegates: `routers/dispatch.py` carries the shared
 `HttpExchange` (query accessors, JSON, PNG, byte and file responses) and the per-router
-`RouteTable`; `static_router.py`, `results_routers.py`, `cube_routers.py`,
+`RouteTable`; `static_router.py`, `results_routers.py`,
 `analysis_routers.py`, `library_routers.py`, `launch_routers.py`, `system_router.py` and
 `tensorboard_router.py` declare the routes of their own domain and hold only the
 collaborators they use. A section may be claimed by one sub-router only; a second claim
@@ -174,17 +169,16 @@ tests under `tests/webui/`: `config_descriptions.json` and the model library
 `backbone_model_library.py`, which reads the per-model notes from `notes/models/`.
 
 **Analysis surfaces.** `results_browser.py`, `dataset_browser.py`,
-`cube_explorer.py` which also carries the slice collector,
-`model_probe.py`, `triage_board.py`, `ab_autopsy.py`.
+`model_probe.py`, `ab_autopsy.py`.
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`,
 `static/vendor/hairline-kernel.js`,
-`static/vendor/hairline-figures.js` and 39 modules under `static/js/`. `app.js` and
+`static/vendor/hairline-figures.js` and 36 modules under `static/js/`. `app.js` and
 `router.js` wire the views; one module per tab (`home`, `models`, `scripts`, `launch` with its widget
 modules (`python_literal`, `form_widgets`, `model_panels`, `gpu_pickers`,
 `experiment_builder`, `config_form`) and `launch_pickers`, `saved_runs`,
 `templates`, `sequences`, `configs`, `console`, `tensorboard`, `results`,
-`cube_view`, `slice_collector`, `microscope`, `survey`, `triage`, `autopsy`);
+`microscope`, `survey`, `autopsy`);
 the rest are shared helpers (`api`, `stream_hub` with the page's single live-output channel, `shared_charts`,
 `results_sources`, `run_strip`, `canvas_base`, `figure_export`, `figure_saver`, `diagram`,
 `gauges`, `training_anim`, `hairline_figure` with
@@ -221,8 +215,8 @@ from one autopilot on the mast, so both answer the same pointer; any header with
 
 The stock `drawer`, `terminal` (turned to face right), `plug`, `riffle`, `loupe`, `sieve`,
 `elevator`, `slow`, `cabinet`, `router`, `patch` and `phosphor` come from the package;
-`hairline_project` draws the project's own on a shared `HairlineFigureBase`: `voxels`,
-`folds`, `slices`, `slots`, `gpus`, `guard`, `backbone` (the backbone zoo as a
+`hairline_project` draws the project's own on a shared `HairlineFigureBase`:
+`folds`, `slots`, `gpus`, `guard`, `backbone` (the backbone zoo as a
 bench of swappable cartridges), `landscape`,
 `surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
 `balance`, `podium`, `tiles`, `film`, `tray`, `shelf`, `dial`, `scheduler`, `sampler`, `feed`, `field`,
@@ -248,7 +242,7 @@ keys (for example `infer_*` `shelf`, `generate_dataset` `slots`, `tune` `dial`, 
 `field`; a generic `train_*` script and an unmatched key show `surface`). Standard pages
 carry the figure in a `page__head--figure` header, Launch puts it at the end of its top
 bar, and Configuration (`sampler`) and TensorBoard (`landscape`) at the end of their row
-headers. The cube explorer hides its header while a cube is open, figure included. The
+headers. The
 console shows `terminal` under the job list and `slow` in the main pane while no job
 is open, and `HairlineFigure.empty` shows `plug` on a failed load.
 

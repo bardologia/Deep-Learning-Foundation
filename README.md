@@ -408,8 +408,8 @@ dispatches one inference job per run across the GPU pool. Each job writes an
 prediction cubes under `cubes/`, plus figures, animations and its own `complete.json`,
 which records the scored checkpoint (name, epoch, best epoch and best validation loss).
 `metrics.json` carries the checkpoint name, its one-based epoch, the code commit and the
-activity threshold it scored with. Those directories are what the console's results,
-cube, triage and autopsy tabs read.
+activity threshold it scored with. Those directories are what the console's results
+and autopsy tabs read.
 
 `--inference.device` defaults to `cuda` and is used as given, so without a GPU the job
 fails with `No CUDA GPUs are available`. Pass `--inference.device cpu` on a machine
@@ -443,7 +443,7 @@ webui/run.sh 9000     # different port
 `run.sh` reads the interpreter, bind address and port from the machine profile's shell
 twin (`~/.config/ml-template/machine.env`) and refuses to start without one, pointing at
 `./install.sh`. The HTTP layer is standard library only, but the console runs inside the
-project environment: the cube explorer and model probe are imported at boot, so numpy, matplotlib, scipy, torch, scikit-image, tensorboard and
+project environment: the model probe is imported at boot, so numpy, matplotlib, scipy, torch, scikit-image, tensorboard and
 psutil all have to be there, which is why the profile records the project environment's
 interpreter. Each launch page also has an interpreter picker filled from the conda envs
 the server discovers, with the profile's environment preselected.
@@ -474,10 +474,7 @@ switches. A dropped job stream reconnects and replays from its last event. Tenso
 runs are picked from a folder tree.
 Finalize steps chain onto blocks of plain sequences as well as isolated ones, and a
 tuning block records its best configuration as its verdict while the sequence board
-shows its study progress. The cube explorer reads cubes whole through a shared read
-pool, shows the load in bytes and keeps the last eight cubes in memory; the slice
-collector puts cuts in a basket that is saved as one folder and can be mailed
-(`REPORT_MAIL_PASSWORD`).
+shows its study progress.
 
 The frontend pulls MathJax, GSAP, highlight.js and xterm.js from a CDN. Offline it still
 works, with plain text where the architecture notes' equations would be.
@@ -575,7 +572,7 @@ regenerated, not converted. These changes, made in October 2026, affect existing
 - Trainer states saved before `last.pt` recorded the batch geometry cannot be resumed.
   Retrain them.
 - Inference stamps scored before `metrics.json` recorded the activity threshold are
-  refused by the seed comparison and by the cube explorer's parameter overlays, and
+  refused by the seed comparison, and
   stamps without a completion marker are ignored by the split-aware readers. Metric
   values moved too: slot activity is strict, scoring uses the label run's threshold
   where it used a fixed 1e-4, and pixel R² is NaN at constant references. Run inference

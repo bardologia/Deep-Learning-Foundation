@@ -19,7 +19,6 @@ WEBUI_ROOT = REPO_ROOT / "webui"
 if str(WEBUI_ROOT) not in sys.path:
     sys.path.insert(0, str(WEBUI_ROOT))
 
-from cube_explorer   import CubeExplorer
 from gpu_activity    import GpuActivityLog
 from host_history    import HostHistoryLog
 from notifier        import JobNotifier
@@ -176,37 +175,6 @@ def make_cube_run(base: Path, sources: tuple = ("pred", "gt"), with_full: bool =
         np.save(stamp / "cubes" / "misshaped.npy", rng.random((3, 3)).astype(np.float32))
 
     return stamp
-
-
-def open_explorer(base: Path, expected: int | None = None) -> tuple[CubeExplorer, list[str]]:
-    explorer = CubeExplorer(WebLogger())
-    listing  = explorer.list_cubes(str(base))
-
-    assert listing["ok"], listing
-    if expected is not None:
-        assert len(listing["cubes"]) == expected, listing
-
-    return explorer, [cube["id"] for cube in listing["cubes"]]
-
-
-def load_cube(explorer: CubeExplorer, cube_id: str, timeout: float = 30.0) -> dict:
-    assert explorer.start_load(cube_id)["ok"]
-
-    deadline = time.time() + timeout
-    while explorer.load_status()["state"] == "loading" and time.time() < deadline:
-        time.sleep(0.05)
-
-    status = explorer.load_status()
-    assert status["state"] == "ready", status
-    return status
-
-
-def loaded_cube(base: Path, **kwargs) -> tuple[CubeExplorer, str]:
-    make_cube_run(base, **kwargs)
-    explorer, cube_ids = open_explorer(base, expected=1)
-    load_cube(explorer, cube_ids[0])
-
-    return explorer, cube_ids[0]
 
 
 @pytest.fixture

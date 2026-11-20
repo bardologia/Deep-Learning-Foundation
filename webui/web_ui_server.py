@@ -6,13 +6,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib     import Path
 
 from config_registry                   import ConfigRegistry
-from cube_explorer                     import CubeExplorer, SliceCollectionMailer, SliceCollector
 from dataset_browser                   import DatasetBrowser
 from energy_meter                      import JobEnergyMeter
 from ab_autopsy                        import AbAutopsy
 from model_probe                       import ModelProbe
 from model_survey                      import ModelSurvey
-from triage_board                      import TriageBoard
 from gpu_schedule                      import GpuSchedule
 from gpu_watchdog                      import GpuWatchdog
 from job_describer                     import JobDescriber
@@ -40,8 +38,7 @@ from system_monitor                    import SystemMonitor
 from tensorboard_manager               import TensorboardManager
 from web_logger                        import WebLogger
 
-from routers.analysis_routers   import AutopsyRouter, ProbeRouter, SurveyRouter, TriageRouter
-from routers.cube_routers       import CubeRouter, SliceRouter
+from routers.analysis_routers   import AutopsyRouter, ProbeRouter, SurveyRouter
 from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
 from routers.sequence_router    import SequenceRouter
 from routers.library_routers    import BackboneRouter, ContentLibraryRouter
@@ -110,13 +107,9 @@ class WebUIServer:
         self.energy            = JobEnergyMeter(self.system, self.processes, self.logger)
         self.tensorboard       = TensorboardManager(self.paths, self.logger)
         self.results           = ResultsBrowser(self.logger)
-        self.cubes             = CubeExplorer(self.logger)
-        self.slices            = SliceCollector(self.cubes, self.logger)
-        self.slice_mail        = SliceCollectionMailer(self.slices, self.logger)
         self.datasets          = DatasetBrowser(self.logger)
         self.probe             = ModelProbe(self.logger)
         self.survey            = ModelSurvey(self.logger)
-        self.triage            = TriageBoard(self.paths, self.cubes.roots, self.logger)
         self.autopsy           = AbAutopsy(self.logger)
         self.launcher          = RunLauncher(self.paths, self.logger, self.resolver, self.processes, self.tensorboard, self.notifier)
         self.run_configs       = RunConfigReader(self.logger)
@@ -128,11 +121,8 @@ class WebUIServer:
             StaticRouter(self.paths, self.results),
             ResultsRouter(self.results),
             DatasetRouter(self.datasets),
-            CubeRouter(self.cubes),
-            SliceRouter(self.slices, self.slice_mail),
             ProbeRouter(self.probe),
             SurveyRouter(self.survey),
-            TriageRouter(self.triage),
             AutopsyRouter(self.autopsy),
             ContentLibraryRouter("/api/configs",      self.configs,      "groups"),
             BackboneRouter("/api/backbones", self.models),

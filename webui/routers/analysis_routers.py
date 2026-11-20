@@ -5,7 +5,6 @@ from ab_autopsy       import AbAutopsy
 from model_probe      import ModelProbe
 from model_survey     import ModelSurvey
 from routers.dispatch import HttpExchange, RouteTable, SubRouter
-from triage_board     import TriageBoard
 
 
 class ProbeRouter(SubRouter):
@@ -113,36 +112,6 @@ class SurveyRouter(SubRouter):
         exchange.send_result(self.survey.cancel())
 
 
-class TriageRouter(SubRouter):
-
-    def __init__(self, triage: TriageBoard) -> None:
-        self.triage = triage
-
-        super().__init__(("/api/triage",))
-
-    def declare(self, table: RouteTable) -> None:
-        table.add("GET",  "/api/triage/cases",    self.cases)
-        table.add("GET",  "/api/triage/thumb",    self.thumb)
-        table.add("GET",  "/api/triage/profile",  self.profile)
-        table.add("POST", "/api/triage/annotate", self.annotate)
-
-    def cases(self, exchange: HttpExchange) -> None:
-        result = self.triage.cases(
-            cube_id = exchange.text("id"),
-            top_n   = exchange.integer("n", "40"),
-        )
-        exchange.send_result(result)
-
-    def thumb(self, exchange: HttpExchange) -> None:
-        exchange.send_png(self.triage.thumb(exchange.text("id"), exchange.integer("az0"), exchange.integer("rg0")))
-
-    def profile(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.triage.profile(exchange.text("id"), exchange.integer("az"), exchange.integer("rg")))
-
-    def annotate(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.triage.annotate(exchange.body))
-
-
 class AutopsyRouter(SubRouter):
 
     def __init__(self, autopsy: AbAutopsy) -> None:
@@ -193,5 +162,3 @@ class AnalysisPayloadRouter(SubRouter):
 
     def report(self, exchange: HttpExchange) -> None:
         exchange.send_result(self.browser.report(exchange.text("id")))
-
-

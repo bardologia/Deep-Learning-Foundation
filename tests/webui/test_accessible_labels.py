@@ -41,13 +41,6 @@ def test_page_shell_placeholder_inputs_have_an_accessible_name():
     assert PlaceholderInputAudit().unnamed(INDEX.read_text()) == []
 
 
-def test_metric_bounds_and_threshold_carry_an_aria_label():
-    tags    = {ident: tag for tag in re.findall(r"<input\b[^>]*>", INDEX.read_text()) for ident in re.findall(r'\bid="([^"]+)"', tag)}
-    unnamed = [ident for ident in ("cube-metric-vmin", "cube-metric-vmax", "cube-metric-thr") if "aria-label=" not in tags[ident]]
-
-    assert unnamed == []
-
-
 def test_markup_filter_boxes_carry_an_aria_label():
     unnamed = []
     for path in sorted(JS_DIR.glob("*.js")):

@@ -7,8 +7,7 @@ from collections import Counter
 import pytest
 
 from request_router             import RequestRouter
-from routers.analysis_routers   import AutopsyRouter, ProbeRouter, SurveyRouter, TriageRouter
-from routers.cube_routers       import CubeRouter, SliceRouter
+from routers.analysis_routers   import AutopsyRouter, ProbeRouter, SurveyRouter
 from routers.dispatch           import HttpExchange, RouteTable, SubRouter
 from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
 from routers.library_routers    import BackboneRouter, ContentLibraryRouter
@@ -20,8 +19,8 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 134
-SECTION_COUNT = 32
+ROUTE_COUNT   = 95
+SECTION_COUNT = 29
 
 RESOLUTIONS = [
     ("GET",  "/",                                  StaticRouter),
@@ -30,25 +29,11 @@ RESOLUTIONS = [
     ("GET",  "/resultsmedia",                      StaticRouter),
     ("GET",  "/api/results/tree",                  ResultsRouter),
     ("GET",  "/api/fs/runs",                       DatasetRouter),
-    ("GET",  "/api/cubes/plane",                   CubeRouter),
-    ("GET",  "/api/cubes/metric_hist",             CubeRouter),
-    ("GET",  "/api/cubes/timeline",                CubeRouter),
-    ("GET",  "/api/cubes/figures",                 CubeRouter),
-    ("GET",  "/api/cubes/figure",                  CubeRouter),
-    ("POST", "/api/cubes/save_slices",             CubeRouter),
-    ("GET",  "/api/slices/slice",                  SliceRouter),
-    ("POST", "/api/slices/collect",                SliceRouter),
-    ("GET",  "/api/slices/primary",                SliceRouter),
     ("GET",  "/api/fs/secondaries",                DatasetRouter),
-    ("GET",  "/api/slices/mail_settings",          SliceRouter),
-    ("POST", "/api/slices/mail",                   SliceRouter),
     ("POST", "/api/probe/predict",                 ProbeRouter),
     ("GET",  "/api/probe/runs",                    ProbeRouter),
     ("GET",  "/api/survey/runs",                   SurveyRouter),
     ("POST", "/api/survey/start",                  SurveyRouter),
-    ("GET",  "/api/triage/cases",                  TriageRouter),
-    ("GET",  "/api/triage/thumb",                  TriageRouter),
-    ("GET",  "/api/triage/profile",                TriageRouter),
     ("GET",  "/api/autopsy/compare",               AutopsyRouter),
     ("GET",  "/api/autopsy/runs",                  AutopsyRouter),
     ("GET",  "/api/backbones",                     BackboneRouter),
@@ -140,11 +125,8 @@ def build_routers() -> list:
         StaticRouter(None, None),
         ResultsRouter(None),
         DatasetRouter(None),
-        CubeRouter(None),
-        SliceRouter(None, None),
         ProbeRouter(None),
         SurveyRouter(None),
-        TriageRouter(None),
         AutopsyRouter(None),
         ContentLibraryRouter("/api/configs",      None, "groups"),
         BackboneRouter("/api/backbones", None),
