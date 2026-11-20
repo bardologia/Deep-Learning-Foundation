@@ -133,7 +133,7 @@ MAIL_LEAVES = [
     {"path": "run_filter",        "value": "[]"},
     {"path": "datasets_dir",      "value": "/data/datasets"},
     {"path": "dataset_filter",    "value": "[]"},
-    {"path": "recipient",         "value": "victor@example.com"},
+    {"path": "recipient",         "value": "you@example.com"},
 ]
 
 
@@ -144,7 +144,7 @@ def test_mail_lead_surfaces_only_the_selected_target():
     assert text.startswith("dataset results")
     assert "root datasets" in text
     assert "ds_alpha" in text
-    assert "to victor@example.com" in text
+    assert "to you@example.com" in text
     assert "sequences" not in text
 
 

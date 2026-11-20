@@ -140,8 +140,8 @@ def entry_config(workspace, tmp_path):
     return ReportMailEntryConfig(
         experiments_dir = workspace,
         staging_dir     = tmp_path / "staging",
-        recipient       = "victor@example.com",
-        sender          = "victor@example.com",
+        recipient       = "you@example.com",
+        sender          = "you@example.com",
         password_env    = "TEST_REPORT_MAIL_PASSWORD",
     )
 
@@ -487,7 +487,7 @@ def test_mailer_bounds_the_submission_by_the_timeout_and_logs_its_size_and_durat
 
     assert fake_smtp.instances[0].timeout == 42.0
     assert any(level == "info" and message.startswith("Sending 'subject' via smtp.gmail.com:465: 1 attachment(s), ") and message.endswith("MB encoded, timeout 42 s") for level, message in logger.messages)
-    assert re.fullmatch(r"Sent 'subject' to victor@example\.com with 1 attachment\(s\) in \d+\.\d s", logger.messages[-1][1])
+    assert re.fullmatch(r"Sent 'subject' to you@example\.com with 1 attachment\(s\) in \d+\.\d s", logger.messages[-1][1])
 
 
 class StalledSmtp(FakeSmtp):
@@ -521,10 +521,10 @@ def test_batch_sends_one_message_per_experiment(entry_config, monkeypatch, fake_
     message     = fake_smtp.instances[2].messages[0]
     attachments = [part.get_filename() for part in message.iter_attachments()]
 
-    assert message["To"] == "victor@example.com"
+    assert message["To"] == "you@example.com"
     assert message["Subject"] == f"{entry_config.subject_prefix}: plan_20260901/exp_alpha"
     assert attachments == ["trial_a.md", "trial_b.md", "comparison_overview.md", "comparison_metrics_comparison.md", "resolved_config.json", "train_scheduler_results.json", "resolved_entry_config.json"]
-    assert fake_smtp.instances[2].logins == [("victor@example.com", "app-password")]
+    assert fake_smtp.instances[2].logins == [("you@example.com", "app-password")]
     assert "Report bundle of experiment" in message.get_body(preferencelist=("plain",)).get_content()
 
 
@@ -536,7 +536,7 @@ def test_batch_dry_run_says_nothing_was_sent(entry_config, monkeypatch, fake_smt
 
     ReportMailBatch(entry_config, logger).run()
 
-    assert ("section", "Staging experiment results for victor@example.com (dry run, nothing is sent)") in logger.messages
+    assert ("section", "Staging experiment results for you@example.com (dry run, nothing is sent)") in logger.messages
     assert logger.messages[-1] == ("ok", f"Dry run: staged 7 file(s) for 1 message(s) across 1 experiment(s) under {entry_config.staging_dir}; nothing was sent")
     assert not any(message.startswith("Mailed") for _level, message in logger.messages)
     assert fake_smtp.instances == []

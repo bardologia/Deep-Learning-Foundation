@@ -83,8 +83,8 @@ def entry_config(datasets_dir, runs_dir, tmp_path):
         datasets_dir = datasets_dir,
         runs_dir     = runs_dir,
         staging_dir  = tmp_path / "staging",
-        recipient    = "victor@example.com",
-        sender       = "victor@example.com",
+        recipient    = "you@example.com",
+        sender       = "you@example.com",
         password_env = "TEST_REPORT_MAIL_PASSWORD",
     )
 
