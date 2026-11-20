@@ -78,7 +78,7 @@ class ResultsView {
       this.pathInput.value = recents[0];
       this.open(recents[0]);
     } else {
-      this.detailEl.innerHTML = `<div class="res-empty">Point the sidebar at your datasets and runs folders, then pick a dataset, parameter extraction or run &mdash; or paste any run directory above and press Open.</div>`;
+      this.detailEl.innerHTML = `<div class="res-empty">Point the sidebar at your datasets and runs folders, then pick a dataset or a run, or paste any run directory above and press Open.</div>`;
     }
   }
 
@@ -135,7 +135,7 @@ class ResultsView {
     this.folderData  = null;
     this.galleryData = null;
     this.pathInput.value = "";
-    this.detailEl.innerHTML = `<div class="res-empty">Pick a dataset, parameter extraction or run.</div>`;
+    this.detailEl.innerHTML = `<div class="res-empty">Pick a dataset or a run.</div>`;
     this._renderSidebar();
   }
 
