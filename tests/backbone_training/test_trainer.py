@@ -8,6 +8,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
+from configuration.training              import OptimizerConfig
 from pipelines.backbone.training.loss    import Loss
 from pipelines.backbone.training.trainer import Trainer
 from tools.training.aggregation           import WeightedMean
@@ -409,7 +410,7 @@ class TrainerShim:
 def _shim(model, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01):
     shim        = TrainerShim()
     shim.model  = model
-    shim.config = SimpleNamespace(optimizer=SimpleNamespace(type="adamw", betas=betas, eps=eps, weight_decay=weight_decay))
+    shim.config = SimpleNamespace(optimizer=OptimizerConfig(type="adamw", betas=betas, eps=eps, weight_decay=weight_decay))
     return shim
 
 
@@ -436,6 +437,26 @@ def test_build_optimizer_does_not_override_explicit_group_values():
     optimizer    = Trainer._build_optimizer(shim, param_groups)
 
     assert optimizer.param_groups[0]["weight_decay"] == 0.0
+
+
+@pytest.mark.parametrize("kind, expected", [("adamw", torch.optim.AdamW), ("adam", torch.optim.Adam), ("sgd", torch.optim.SGD), ("rmsprop", torch.optim.RMSprop)])
+def test_build_optimizer_dispatches_on_the_configured_type(kind, expected):
+    model                      = torch.nn.Linear(4, 2)
+    shim                       = _shim(model)
+    shim.config.optimizer.type = kind
+
+    optimizer = Trainer._build_optimizer(shim, [{"params": list(model.parameters()), "lr": 0.01}])
+
+    assert type(optimizer) is expected
+
+
+def test_build_optimizer_fails_on_an_unknown_type():
+    model                      = torch.nn.Linear(4, 2)
+    shim                       = _shim(model)
+    shim.config.optimizer.type = "lamb"
+
+    with pytest.raises(KeyError):
+        Trainer._build_optimizer(shim, [{"params": list(model.parameters()), "lr": 0.01}])
 
 
 def test_update_optimizer_sets_lrs_and_logs():

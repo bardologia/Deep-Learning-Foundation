@@ -48,17 +48,21 @@ class LayerFactory:
         return factories[name]()
 
     @staticmethod
+    def group_count(num_features: int) -> int:
+        num_groups = min(32, num_features)
+        while num_features % num_groups != 0:
+            num_groups -= 1
+        return num_groups
+
+    @staticmethod
     def build_norm2d(name: str, num_features: int) -> nn.Module:
-        if name == "batch":
-            return nn.BatchNorm2d(num_features)
-        if name == "instance":
-            return nn.InstanceNorm2d(num_features, affine=True)
-        if name == "group":
-            num_groups = min(32, num_features)
-            while num_features % num_groups != 0:
-                num_groups -= 1
-            return nn.GroupNorm(num_groups, num_features)
-        return {"none": nn.Identity}[name]()
+        factories = {
+            "batch"    : lambda: nn.BatchNorm2d(num_features),
+            "instance" : lambda: nn.InstanceNorm2d(num_features, affine=True),
+            "group"    : lambda: nn.GroupNorm(LayerFactory.group_count(num_features), num_features),
+            "none"     : lambda: nn.Identity(),
+        }
+        return factories[name]()
 
     @staticmethod
     def build_upsample(mode: str, in_channels: int, out_channels: int, scale_factor: int = 2) -> nn.Module:

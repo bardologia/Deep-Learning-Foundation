@@ -119,25 +119,21 @@ class Trainer:
         cfg  = self.config.optimizer
         kind = str(cfg.type)
 
+        adam_defaults = {"betas": tuple(cfg.betas), "eps": cfg.eps}
+        defaults      = {
+            "adamw"   : adam_defaults,
+            "adam"    : adam_defaults,
+            "sgd"     : {"momentum": cfg.momentum, "nesterov": cfg.nesterov and cfg.momentum > 0.0},
+            "rmsprop" : {"momentum": cfg.momentum, "eps": cfg.eps},
+        }
+        optimizers    = {"adamw": optim.AdamW, "adam": optim.Adam, "sgd": optim.SGD, "rmsprop": optim.RMSprop}
+
         for pg in param_groups:
             pg.setdefault("weight_decay", cfg.weight_decay)
+            for key, value in defaults[kind].items():
+                pg.setdefault(key, value)
 
-        if kind in ("adamw", "adam"):
-            for pg in param_groups:
-                pg.setdefault("betas", tuple(cfg.betas))
-                pg.setdefault("eps",   cfg.eps)
-            return optim.AdamW(param_groups) if kind == "adamw" else optim.Adam(param_groups)
-
-        if kind == "sgd":
-            for pg in param_groups:
-                pg.setdefault("momentum", cfg.momentum)
-                pg.setdefault("nesterov", cfg.nesterov and cfg.momentum > 0.0)
-            return optim.SGD(param_groups)
-
-        for pg in param_groups:
-            pg.setdefault("momentum", cfg.momentum)
-            pg.setdefault("eps",      cfg.eps)
-        return {"rmsprop": optim.RMSprop}[kind](param_groups)
+        return optimizers[kind](param_groups)
 
     def _update_optimizer(self, lrs: list[float]):
         for i, (param_group, lr) in enumerate(zip(self.optimizer.param_groups, lrs)):

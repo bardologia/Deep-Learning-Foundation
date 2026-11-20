@@ -156,26 +156,19 @@ class Scheduler:
         decayed   = self.config.scheduler.gamma ** (epoch // step_size)
         return max(decayed, ratio)
 
-    def _constant(self) -> float:
+    def _constant(self, epoch: int) -> float:
         return 1.0
 
     def _factor_for(self, epoch: int) -> float:
-        if self.scheduler_type == "cosine_annealing":
-            return self._cosine_annealing(epoch)
-
-        if self.scheduler_type == "constant":
-            return self._constant()
-
-        if self.scheduler_type == "linear":
-            return self._linear(epoch)
-
-        if self.scheduler_type == "polynomial":
-            return self._polynomial(epoch)
-
-        if self.scheduler_type == "exponential":
-            return self._exponential(epoch)
-
-        return {"step": self._step}[self.scheduler_type](epoch)
+        factors = {
+            "cosine_annealing" : self._cosine_annealing,
+            "constant"         : self._constant,
+            "linear"           : self._linear,
+            "polynomial"       : self._polynomial,
+            "exponential"      : self._exponential,
+            "step"             : self._step,
+        }
+        return factors[self.scheduler_type](epoch)
 
     def step(self, epoch: int) -> list[float]:
         factor           = self._factor_for(epoch)
