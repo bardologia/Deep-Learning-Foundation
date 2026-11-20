@@ -9,23 +9,22 @@ from pathlib     import Path
 
 import torch
 
-from configuration.training                       import BackboneEntryConfig
-from configuration.training.general.optimization  import ClipMode, WarmupMode
-from pipelines.backbone.inference.pipeline        import InferencePipeline
-from pipelines.backbone.training.experiments      import ArchitectureTrialPlanner, AugmentationTrialPlanner, PatchSizeTrialPlanner
-from pipelines.backbone.training.patch_report     import PatchTrialsReport
-from pipelines.backbone.training.pipeline         import TrainingPipeline
-from pipelines.shared.config.config_factory       import ConfigFactory
-from pipelines.shared.model.model_builder         import ModelBuilder
-from pipelines.shared.training.resume_source      import ResumeLauncher
-from pipelines.shared.training.run_naming         import RunNaming
-from pipelines.shared.training.seed_sweep         import SeedFanoutScheduler, SeedSet, SeedSweepRunner
-from pipelines.shared.training.trial_planners     import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
-from pipelines.shared.training.trial_sweep        import TrialSweepScheduler
-from pipelines.shared.training.unit_resume        import UnitResume
-from tools.runtime.config_cli                     import ConfigCli
-from tools.runtime.run_tag                        import RunTag
-from tools.training.checkpoint                    import TrainerState
+from configuration.training                   import BackboneEntryConfig
+from pipelines.backbone.inference.pipeline    import InferencePipeline
+from pipelines.backbone.training.experiments  import ArchitectureTrialPlanner, AugmentationTrialPlanner, PatchSizeTrialPlanner
+from pipelines.backbone.training.patch_report import PatchTrialsReport
+from pipelines.backbone.training.pipeline     import TrainingPipeline
+from pipelines.shared.config.config_factory   import ConfigFactory
+from pipelines.shared.model.model_builder     import ModelBuilder
+from pipelines.shared.training.resume_source  import ResumeLauncher
+from pipelines.shared.training.run_naming     import RunNaming
+from pipelines.shared.training.seed_sweep     import SeedFanoutScheduler, SeedSet, SeedSweepRunner
+from pipelines.shared.training.trial_planners import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
+from pipelines.shared.training.trial_sweep    import TrialSweepScheduler
+from pipelines.shared.training.unit_resume    import UnitResume
+from tools.runtime.config_cli                 import ConfigCli
+from tools.runtime.run_tag                    import RunTag
+from tools.training.checkpoint                import TrainerState
 
 
 class SingleTrainRunner:
@@ -140,7 +139,7 @@ class TrainScheduler(TrialSweepScheduler):
         if mode == "augmentation":
             return AugmentationTrialPlanner(self.config.augmentation_trials)
         if mode == "stability":
-            return StabilityTrialPlanner(self.config.stability_trials, tuple(mode.value for mode in WarmupMode), tuple(mode.value for mode in ClipMode))
+            return StabilityTrialPlanner(self.config.stability_trials)
         if mode == "ema":
             return EmaTrialPlanner(self.config.ema_trials)
         return AmpTrialPlanner()

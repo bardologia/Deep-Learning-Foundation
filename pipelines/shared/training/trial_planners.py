@@ -4,10 +4,8 @@ from __future__ import annotations
 
 class StabilityTrialPlanner:
 
-    def __init__(self, trials, warmup_modes: tuple, clip_modes: tuple) -> None:
-        self.trials       = trials
-        self.warmup_modes = tuple(warmup_modes)
-        self.clip_modes   = tuple(clip_modes)
+    def __init__(self, trials) -> None:
+        self.trials = trials
 
     def summary(self) -> dict:
         return {

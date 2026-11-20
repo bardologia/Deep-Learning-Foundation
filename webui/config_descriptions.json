@@ -461,7 +461,7 @@
         "in_channels": "Number of input channels, set at build time to the input channel count of the dataset",
         "out_channels": "Number of output channels, set at build time to the target channel count of the dataset",
         "features": "Channel width of the 4 RSU stages (3 encoder/decoder plus the dilated bridge); exactly 4 entries required",
-        "rsu_heights": "Recursion depth of the 3 encoder and decoder RSU stages, rejected at construction unless exactly three depths are given; the dilated bridge stage has a fixed depth",
+        "rsu_heights": "Recursion depth of the 3 encoder and decoder RSU stages, one entry per stage; the dilated bridge stage has a fixed depth",
         "dropout": "Dropout probability applied to the fused feature map before the output head, tuned over 0.0-0.5",
         "activation": "Nonlinearity: relu, leaky_relu, gelu, or silu",
         "normalization": "Normalization layer type: batch, instance, or group",
@@ -542,24 +542,24 @@
     "training/backbone::AugmentationTrialsConfig": {
       "summary": "Cumulative augmentation ladder for the augmentation trial planner: rung 0 trains without augmentation, rung 1 adds horizontal flips, rung 2 adds vertical flips, and one final rung per noise strength adds additive normal input noise on top of both flips; rot90 stays off in every rung",
       "fields": {
-        "flip_probability": "Probability of each enabled flip on the flip and noise rungs, valid range (0, 1]",
-        "noise_probability": "Probability of injecting the additive normal noise on the noise rungs, valid range (0, 1]",
-        "noise_stds": "Noise standard deviations in normalised input units, one noise rung each on top of both flips; all must be positive and unique"
+        "flip_probability": "Probability of each enabled flip on the flip and noise rungs, a value in (0, 1]",
+        "noise_probability": "Probability of injecting the additive normal noise on the noise rungs, a value in (0, 1]",
+        "noise_stds": "Noise standard deviations in normalised input units, one noise rung each on top of both flips; distinct positive values give distinct rungs"
       }
     },
     "training/backbone::EmaTrialsConfig": {
       "summary": "Weight-EMA ladder for the ema trial planner: rung 0 trains and checkpoints the raw weights, then one rung per configured decay tracks an exponential moving average of the weights at that decay",
       "fields": {
-        "decays": "EMA decay rates, one raw rung and one decay-warmup rung each; all must lie strictly between 0 and 1 and be unique"
+        "decays": "EMA decay rates, one raw rung and one decay-warmup rung each, each strictly between 0 and 1; distinct values give distinct rungs"
       }
     },
     "training/backbone::StabilityTrialsConfig": {
       "summary": "Cumulative training-stability ladder for the stability trial planner: rung 0 trains without lr warmup and without gradient clipping, then one warmup rung per configured fraction of the total optimizer steps, then one clipping rung per configured norm threshold on top of the first warmup",
       "fields": {
-        "warmup_fractions": "Fractions of the run's total optimizer steps the learning-rate warmup ramp spans, one warmup-only rung each; all must lie in (0, 1] and be unique, and the first also underlies the combined warmup-plus-clipping rungs",
+        "warmup_fractions": "Fractions of the run's total optimizer steps the learning-rate warmup ramp spans, one warmup-only rung each, each in (0, 1]; the first also underlies the combined warmup-plus-clipping rungs",
         "warmup_mode": "Shape of the warmup ramp on those rungs, one of linear, cosine, exponential or polynomial",
-        "clip_mode": "Gradient-clipping strategy of the clipping rungs, one of fixed, adaptive_percentile or adaptive_mean_std; disabled is rejected because it would repeat the warmup rungs",
-        "max_grad_norms": "Gradient-norm thresholds of the fixed clipping strategy, one clipping-only rung and one combined rung each; all must be positive and unique, and only the fixed strategy may list more than one"
+        "clip_mode": "Gradient-clipping strategy of the clipping rungs, one of fixed, adaptive_percentile or adaptive_mean_std; disabled would only repeat the warmup rungs",
+        "max_grad_norms": "Gradient-norm thresholds of the fixed clipping strategy, one clipping-only rung and one combined rung each, each positive; the adaptive strategies ignore the threshold, so with them one entry is enough"
       }
     },
     "training/backbone::PatchTrialsConfig": {
@@ -568,7 +568,7 @@
         "minimum": "Smallest (rows, cols) patch shape included in pixels; 0 on an axis starts that axis at one admissible step",
         "maximum": "Largest (rows, cols) patch shape included in pixels; each axis runs from its start to this bound in steps of the admissible step",
         "step": "Spacing between consecutive patch lengths in pixels, shared by both axes; 0 derives it from the backbone's encoder pyramid as 2^levels so every length stays divisible through all downsampling stages (verified one-halving-per-stage U-Nets only, others must set it explicitly)",
-        "stride_ratio": "Patch stride as a fraction of the patch length per axis, valid range (0, 1]; 0.5 gives 50% overlap",
+        "stride_ratio": "Patch stride as a fraction of the patch length per axis, a value in (0, 1]; 0.5 gives 50% overlap",
         "constant_pixel_budget": "When true, each trial's batch size and lr_reference_batch_size are rescaled together so batch x rows x cols matches the reference training.batch_size x training.patch_size pixels, keeping pixels per step and the batch-linear LR scale identical across patch shapes"
       }
     },
@@ -706,7 +706,7 @@
         "early_stop_patience": "epochs without validation improvement before training stops early",
         "early_stop_min_delta": "minimum validation-loss improvement required to reset early-stopping patience",
         "log_debug": "enable the tracker's debug mode, adding gradient NaN/Inf checks and extra diagnostic logging",
-        "use_amp": "autocast the forward/loss pass to bfloat16; raises at startup if the GPU lacks bf16 support",
+        "use_amp": "autocast the forward/loss pass to bfloat16",
         "compile_model": "compile the model forward with torch.compile before training; the first step pays a compilation delay, later steps run the optimized kernels, and saved checkpoints stay byte-identical to an uncompiled run",
         "compile_mode": "torch.compile mode: default balances compile time and speed, reduce-overhead targets small batches via CUDA graphs, max-autotune searches the widest kernel space",
         "channels_last": "keep the model weights and every 4-D batch in channels_last (NHWC) memory layout, which speeds up convolutions under AMP on tensor-core GPUs",
@@ -757,7 +757,7 @@
       "fields": {
         "epochs": "Number of full channels over the training dataset",
         "validation_frequency": "Run validation every this many epochs, plus always on the final epoch",
-        "use_amp": "Enable autocast mixed precision to bfloat16 during train/eval forward passes; raises at construction if the GPU lacks bf16 support",
+        "use_amp": "Enable autocast mixed precision to bfloat16 during train/eval forward passes",
         "compile_model": "compile the model forward with torch.compile before training; the first step pays a compilation delay, later steps run the optimized kernels, and saved checkpoints stay byte-identical to an uncompiled run",
         "compile_mode": "torch.compile mode: default balances compile time and speed, reduce-overhead targets small batches via CUDA graphs, max-autotune searches the widest kernel space",
         "channels_last": "keep the model weights and every 4-D batch in channels_last (NHWC) memory layout, which speeds up convolutions under AMP on tensor-core GPUs",
@@ -797,7 +797,7 @@
       "summary": "Entry config for the scheduler that runs sliding-window backbone inference over multiple runs, queuing one worker process per run across a fixed pool of GPUs",
       "fields": {
         "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every run at any depth below it (a directory holding meta/model_config.json) is discovered. A missing directory is an error",
-        "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run raises FileNotFoundError listing the runs found",
+        "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run selects nothing",
         "gpus": "GPU device indices the GpuQueue cycles jobs across, default [0]; one run is launched per free GPU concurrently until the queue drains",
         "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
         "poll_interval_s": "seconds GpuQueue sleeps between reap/launch cycles while jobs are running or queued, default 5.0",
@@ -892,7 +892,7 @@
         "seeds": "List of seeds expanded across every (model, loss-component) pair, one run per seed nested as seed<N> inside each unit directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "poll_interval_s": "seconds between polls of queued job status while waiting for GPUs or completed jobs",
         "resume_from": "Path at or inside an existing benchmark run to finish (the run directory, its pipeline, training or one unit run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every model x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference passes run. Empty starts a fresh run",
-        "sweep_loss_kinds": "loss kinds (mse, l1, huber), one training run per kind with the rest of the loss config unchanged; must be non-empty"
+        "sweep_loss_kinds": "loss kinds (mse, l1, huber), one training run per kind with the rest of the loss config unchanged"
       }
     },
     "cross_validation/general::FoldConfig": {
@@ -981,8 +981,8 @@
       "summary": "Entry config that aggregates the existing inference results of the seed runs nested inside each selected group directory into a mean ± std seed-comparison report per group, without re-running inference",
       "fields": {
         "runs_dir": "Root directory the group directories are resolved against; with group_tags empty it is itself treated as the single seed group to aggregate",
-        "group_tags": "Group directory names relative to runs_dir, each the shared training run directory holding one sweep's seed<N> runs; every selected group is compared in isolation and its report generated in sequence, an unmatched name raises FileNotFoundError, and empty treats runs_dir itself as one group",
-        "split": "Data split every aggregated inference stamp must record in its completion marker (train, val or test); a seed whose newest completed stamp was scored on another split is refused, so one aggregate never mixes splits",
+        "group_tags": "Group directory names relative to runs_dir, each the shared training run directory holding one sweep's seed<N> runs; every selected group is compared in isolation and its report generated in sequence, and empty treats runs_dir itself as one group",
+        "split": "Data split every aggregated inference stamp must record in its completion marker (train, val or test); each seed contributes its newest completed stamp of that split, so one aggregate never mixes splits",
         "inference_subdir": "Fixed inference stamp to read from every seed run (run_dir/inference/<subdir>); it must carry a completion marker for the configured split and a metrics file, and empty picks each run's newest completed stamp of that split, skipping stamps without a completion marker with a warning",
         "output_subdir": "Name of the aggregate output directory written under each group's inference/ subdirectory; empty falls back to inference_subdir when set, else a fresh timestamp shared by all groups",
         "metrics_filename": "Filename of the per-run metrics JSON read from each seed's inference directory and of the aggregate mean/std JSON written next to the report",

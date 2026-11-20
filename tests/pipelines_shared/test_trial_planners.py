@@ -1,18 +1,13 @@
 
 from __future__ import annotations
 
-
 from configuration.training.backbone          import BackboneEntryConfig, EmaTrialsConfig, StabilityTrialsConfig
 from pipelines.shared.training.trial_planners import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
 from tools.runtime.config_cli                 import ConfigCli
 
 
-WARMUP_MODES = ("linear", "cosine", "exponential", "polynomial")
-CLIP_MODES   = ("disabled", "fixed", "adaptive_percentile", "adaptive_mean_std")
-
-
 def test_stability_planner_default_walks_the_ladder():
-    planner = StabilityTrialPlanner(StabilityTrialsConfig(), WARMUP_MODES, CLIP_MODES)
+    planner = StabilityTrialPlanner(StabilityTrialsConfig())
 
     plans = dict(planner.plan())
 
@@ -44,7 +39,7 @@ def test_stability_planner_default_walks_the_ladder():
 
 
 def test_stability_planner_labels_a_non_fixed_clip_arm_by_strategy():
-    planner = StabilityTrialPlanner(StabilityTrialsConfig(clip_mode="adaptive_percentile"), WARMUP_MODES, CLIP_MODES)
+    planner = StabilityTrialPlanner(StabilityTrialsConfig(clip_mode="adaptive_percentile"))
 
     plans = dict(planner.plan())
 
@@ -54,7 +49,7 @@ def test_stability_planner_labels_a_non_fixed_clip_arm_by_strategy():
 
 
 def test_stability_planner_plans_extra_warmup_and_clipping_rungs():
-    planner = StabilityTrialPlanner(StabilityTrialsConfig(warmup_fractions=[0.03, 0.1], max_grad_norms=[1.0, 0.5]), WARMUP_MODES, CLIP_MODES)
+    planner = StabilityTrialPlanner(StabilityTrialsConfig(warmup_fractions=[0.03, 0.1], max_grad_norms=[1.0, 0.5]))
 
     plans = dict(planner.plan())
 
@@ -71,7 +66,7 @@ def test_stability_planner_plans_extra_warmup_and_clipping_rungs():
 def test_stability_planner_paths_are_entry_config_leaves():
     leaves = {path for path, _ in ConfigCli._leaves(BackboneEntryConfig())}
 
-    for _, overrides in StabilityTrialPlanner(StabilityTrialsConfig(), WARMUP_MODES, CLIP_MODES).plan():
+    for _, overrides in StabilityTrialPlanner(StabilityTrialsConfig()).plan():
         for path in overrides:
             assert path in leaves, path
 
@@ -118,7 +113,7 @@ def test_amp_planner_paths_are_entry_config_leaves():
 
 
 def test_stability_plan_round_trips_through_config_cli():
-    plans = dict(StabilityTrialPlanner(StabilityTrialsConfig(), WARMUP_MODES, CLIP_MODES).plan())
+    plans = dict(StabilityTrialPlanner(StabilityTrialsConfig()).plan())
 
     cli   = ConfigCli(BackboneEntryConfig())
     trial = cli.apply(ConfigCli.to_argv(plans["stab-3-both-w0.03-n1"]) + ["--trial"])
