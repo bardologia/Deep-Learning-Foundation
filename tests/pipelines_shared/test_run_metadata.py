@@ -10,6 +10,7 @@ from configuration.dataset.gaussian       import GaussianConfig
 from configuration.training               import BackboneTrainerConfig
 from pipelines.shared.config.run_metadata import RunDirectoryLeftovers, TrainingRunMetadata
 from tools.monitoring.logger              import Logger
+from tools.runtime.completion             import CompletionMarker
 
 
 def _trainer_config() -> BackboneTrainerConfig:
@@ -117,6 +118,17 @@ def test_leftovers_are_listed_relative_to_the_run_directory(tmp_path):
     assert RunDirectoryLeftovers.find(run_directory)       == ["best_model.pt", "inference", "tensorboard/events.out.tfevents.1.host"]
     assert RunDirectoryLeftovers.find(tmp_path / "absent") == []
     assert RunDirectoryLeftovers.find(tmp_path)            == []
+
+
+def test_fresh_run_refuses_a_directory_holding_a_completed_run(tmp_path):
+    run_directory = _earlier_run(tmp_path, "run_old")
+    CompletionMarker.stamp(run_directory, {"stage": "training"})
+
+    with pytest.raises(ValueError, match="already holds a completed run"):
+        TrainingRunMetadata(_trainer_config(), "unet", tmp_path, run_name="run_old", logger=_logger(tmp_path))
+
+    assert [path.name for path in (run_directory / "tensorboard").iterdir()] == ["events.out.tfevents.1.host"]
+    assert (run_directory / "best_model.pt").is_file()
 
 
 def test_fresh_run_deletes_an_unfinished_attempt_and_keeps_its_logs(tmp_path):
