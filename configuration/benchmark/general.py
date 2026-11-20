@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 from configuration.dataset                      import AugmentationConfig
 from configuration.normalization.general        import NormalizationConfig
+from configuration.reference_layout             import ReferenceLayout
 from configuration.training.general.loss        import LossConfig
 from configuration.training.general.run         import RunPathsConfig, TrainingQueueConfig, standard_seeds
 
@@ -13,7 +14,7 @@ from configuration.training.general.run         import RunPathsConfig, TrainingQ
 class InferenceQueueConfig:
 
     split           : str        = "test"
-    checkpoint_name : str        = "best_model.pt"
+    checkpoint_name : str        = ReferenceLayout.CHECKPOINT
     batch_size      : int | None = None
     num_workers     : int        = 4
     seed            : int        = 0

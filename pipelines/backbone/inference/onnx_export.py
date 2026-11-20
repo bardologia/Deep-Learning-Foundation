@@ -5,6 +5,7 @@ from pathlib import Path
 
 import torch
 
+from configuration.reference_layout             import ReferenceLayout
 from models                                     import get_backbone
 from pipelines.shared.config.config_persistence import BackboneModelConfigIO
 from pipelines.shared.model.model_builder       import ModelBuilder
@@ -14,7 +15,7 @@ from tools.monitoring.logger                    import Logger
 
 class OnnxRunExporter:
 
-    CHECKPOINT = "best_model.pt"
+    CHECKPOINT = ReferenceLayout.CHECKPOINT
 
     def __init__(self, entry, logger: Logger) -> None:
         self.entry  = entry

@@ -11,6 +11,7 @@ import torch
 from rich.markup             import escape
 from torch.utils.tensorboard import SummaryWriter
 
+from configuration.reference_layout             import ReferenceLayout
 from configuration.training                     import BackboneTrainerConfig
 from pipelines.shared.config.config_persistence import BackboneModelConfigIO
 from tools.data.io                              import DatasetFingerprint, FileIO
@@ -24,7 +25,7 @@ from tools.training.checkpoint                  import TrainerState
 
 class RunDirectoryLeftovers:
 
-    FILES       = (CompletionMarker.FILENAME, TrainerState.FILENAME, "best_model.pt", "final_model.pt")
+    FILES       = (CompletionMarker.FILENAME, TrainerState.FILENAME, ReferenceLayout.CHECKPOINT, ReferenceLayout.FINAL_MODEL)
     DIRECTORIES = ("checkpoints", "inference")
     EVENTS_GLOB = "tensorboard/events.out.tfevents.*"
 

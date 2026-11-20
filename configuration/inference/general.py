@@ -35,7 +35,7 @@ class InferenceConfig:
 
     split           : str                 = "test"
     region_override : Optional[List[int]] = None
-    checkpoint_name : str                 = "best_model.pt"
+    checkpoint_name : str                 = ReferenceLayout.CHECKPOINT
     batch_size      : Optional[int]       = None
     num_workers     : int                 = 4
 

@@ -1,21 +1,19 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
-from web_logger import WebLogger
+from configuration.reference_layout         import ReferenceLayout
+from pipelines.shared.dataset.dataset_files import DatasetFiles
+from pipelines.shared.inference.run_layout  import RunDirectoryWalk
+from web_logger                             import WebLogger
 
 
 class DatasetBrowser:
 
-    SEED_DIR        = re.compile(r"seed\d+")
-    LAYOUT_FILE     = "dataset.json"
-    CHECKPOINT_NAME = "best_model.pt"
-    INFERENCE_DIR   = "inference"
-    RUN_MARKER      = "meta"
-    RUN_MAX_DEPTH   = 6
+    SEED_DIR      = re.compile(r"seed\d+")
+    INFERENCE_DIR = "inference"
 
     def __init__(self, logger: WebLogger) -> None:
         self.logger = logger
@@ -30,13 +28,12 @@ class DatasetBrowser:
             if not entry.is_dir() or entry.name.startswith("."):
                 continue
 
-            layout = entry / self.LAYOUT_FILE
-            item   = {"name": entry.name, "path": str(entry), "is_dataset": layout.is_file()}
+            item = {"name": entry.name, "path": str(entry), "is_dataset": DatasetFiles.is_dataset(entry)}
 
             if item["is_dataset"]:
-                payload         = json.loads(layout.read_text(encoding="utf-8"))
-                item["inputs"]  = len(payload["input_channels"])
-                item["targets"] = len(payload["target_channels"])
+                files           = DatasetFiles.read(entry)
+                item["inputs"]  = len(files.input_channels)
+                item["targets"] = len(files.target_channels)
 
             entries.append(item)
 
@@ -55,7 +52,7 @@ class DatasetBrowser:
                 base_entries.append({
                     "name"           : self._run_name(base, run_dir),
                     "path"           : str(run_dir),
-                    "has_checkpoint" : (run_dir / self.CHECKPOINT_NAME).is_file(),
+                    "has_checkpoint" : (run_dir / ReferenceLayout.CHECKPOINT).is_file(),
                     "has_inference"  : self._has_inference(run_dir, split),
                 })
 
@@ -147,24 +144,14 @@ class DatasetBrowser:
         return {"ok": True, "base": str(base), "experiments": entries}
 
     def _run_dirs(self, base: Path):
-        if (base / self.RUN_MARKER).is_dir():
+        if (base / RunDirectoryWalk.MARKER).is_dir():
             yield base
             return
 
-        yield from self._walk_runs(base, 0)
+        yield from RunDirectoryWalk.walk(base)
 
     def _run_name(self, base: Path, run_dir: Path) -> str:
         return run_dir.name if run_dir == base else str(run_dir.relative_to(base))
-
-    def _walk_runs(self, directory: Path, depth: int):
-        for entry in sorted(directory.iterdir()):
-            if not entry.is_dir() or entry.name.startswith("."):
-                continue
-
-            if (entry / self.RUN_MARKER).is_dir():
-                yield entry
-            elif depth < self.RUN_MAX_DEPTH:
-                yield from self._walk_runs(entry, depth + 1)
 
     def _has_inference(self, run_dir: Path, split: str = "") -> bool:
         from pipelines.shared.inference.metadata import CompletedInference

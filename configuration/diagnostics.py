@@ -47,7 +47,7 @@ class WeightXrayConfig:
     checkpoint_path : Path = Path("logs")
     output_dir      : Path = Path("results/weight_xray")
 
-    checkpoint_filename  : str  = "best_model.pt"
+    checkpoint_filename  : str  = ReferenceLayout.CHECKPOINT
     state_dict_keys      : list = field(default_factory=lambda: ["params"])
 
     thresholds : WeightXrayThresholds = field(default_factory=WeightXrayThresholds)
@@ -90,7 +90,7 @@ class WeightXrayEntryConfig:
     runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
-    checkpoint_filename : str = "best_model.pt"
+    checkpoint_filename : str = ReferenceLayout.CHECKPOINT
     output_subdir       : str = "weight_xray"
 
     make_plots   : bool = True
@@ -337,7 +337,7 @@ class ReceptiveFieldConfig:
 
     split           : str = "test"
     device          : str = "cpu"
-    checkpoint_name : str = "best_model.pt"
+    checkpoint_name : str = ReferenceLayout.CHECKPOINT
     output_subdir   : str = "receptive_field"
 
     window       : int       = 32
@@ -356,7 +356,7 @@ class ActivationXrayConfig:
 
     split           : str = "test"
     device          : str = "cpu"
-    checkpoint_name : str = "best_model.pt"
+    checkpoint_name : str = ReferenceLayout.CHECKPOINT
     output_subdir   : str = "activation_xray"
 
     batch_size  : int = 8
@@ -382,7 +382,7 @@ class InputAttributionConfig:
 
     split           : str = "test"
     device          : str = "cpu"
-    checkpoint_name : str = "best_model.pt"
+    checkpoint_name : str = ReferenceLayout.CHECKPOINT
     output_subdir   : str = "input_attribution"
 
     window       : int = 32
@@ -404,7 +404,7 @@ class LayerProbeConfig:
 
     split           : str = "test"
     device          : str = "cpu"
-    checkpoint_name : str = "best_model.pt"
+    checkpoint_name : str = ReferenceLayout.CHECKPOINT
     output_subdir   : str = "layer_probes"
 
     batch_size        : int   = 4
@@ -426,7 +426,7 @@ class LossLandscapeConfig:
 
     split           : str = "test"
     device          : str = "cpu"
-    checkpoint_name : str = "best_model.pt"
+    checkpoint_name : str = ReferenceLayout.CHECKPOINT
     output_subdir   : str = "loss_landscape"
 
     batch_size     : int   = 4
@@ -448,7 +448,7 @@ class RobustnessConfig:
 
     split           : str = "test"
     device          : str = "cpu"
-    checkpoint_name : str = "best_model.pt"
+    checkpoint_name : str = ReferenceLayout.CHECKPOINT
     output_subdir   : str = "robustness"
 
     batch_size       : int         = 4
@@ -471,7 +471,7 @@ class TrainingEvolutionConfig:
 
     split           : str = "test"
     device          : str = "cpu"
-    checkpoint_name : str = "best_model.pt"
+    checkpoint_name : str = ReferenceLayout.CHECKPOINT
     output_subdir   : str = "training_evolution"
 
     batch_size : int = 8

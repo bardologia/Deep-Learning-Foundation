@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib     import Path
 
+from configuration.reference_layout import ReferenceLayout
+
 
 @dataclass
 class GenerationConfig:
-    output_directory : Path  = Path("datasets/synthetic")
+    output_directory : Path  = ReferenceLayout.DATASET_DIR
     rows             : int   = 256
     cols             : int   = 256
     input_channels   : int   = 4

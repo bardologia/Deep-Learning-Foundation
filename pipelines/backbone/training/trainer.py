@@ -10,6 +10,7 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
+from configuration.reference_layout       import ReferenceLayout
 from pipelines.backbone.training.docs     import TrainingDocs
 from pipelines.backbone.training.loss     import Loss
 from tools.monitoring.resource_monitor    import ResourceMonitor
@@ -37,7 +38,7 @@ class Trainer:
         self._log_init_banner()
 
         self.run_dir         = Path(run_dir)
-        self.checkpoint_path = self.run_dir / "best_model.pt"
+        self.checkpoint_path = self.run_dir / ReferenceLayout.CHECKPOINT
         self.tracker         = Tracker(writer=writer, debug=config.training.log_debug)
 
         self.model = model.to(self.device)
@@ -559,7 +560,7 @@ class Trainer:
                         if stop:
                             break
 
-            last_path = Path(self.run_dir) / "final_model.pt"
+            last_path = Path(self.run_dir) / ReferenceLayout.FINAL_MODEL
             with self.ema.applied(self.model):
                 final_payload = self.capture_state(last_epoch)
 

@@ -12,9 +12,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from catalog_roots            import CatalogRoots, RunScanner
-from tools.reporting.plotting import PlotBase
-from web_logger               import WebLogger
+from catalog_roots                  import CatalogRoots, RunScanner
+from configuration.reference_layout import ReferenceLayout
+from tools.reporting.plotting       import PlotBase
+from web_logger                     import WebLogger
 
 from pipelines.shared.inference.run_layout import RunArtifacts
 
@@ -25,7 +26,7 @@ class ModelProbe:
     CONTAINER_TYPES = ("ModuleList", "ModuleDict", "Sequential")
     FUSED_LEAVES    = ("attention_dropout",)
     LOADER_NAME     = "model_probe"
-    CHECKPOINT      = "best_model.pt"
+    CHECKPOINT      = ReferenceLayout.CHECKPOINT
     CONFIG_NAME     = RunArtifacts.BACKBONE_CONFIG
 
     def __init__(self, logger: WebLogger) -> None:

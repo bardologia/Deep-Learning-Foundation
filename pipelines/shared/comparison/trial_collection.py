@@ -8,13 +8,14 @@ from pathlib     import Path
 import numpy as np
 import torch
 
-from pipelines.shared.inference.metadata       import CompletedInference
-from pipelines.shared.inference.run_layout     import InferenceLayout
-from pipelines.shared.training.seed_sweep      import SeedSet
-from tools.data.io                             import FileIO
-from tools.metrics.scoring                     import SeedAggregation
-from tools.monitoring.logger                   import Logger
-from tools.runtime.completion                  import CompletionMarker
+from configuration.reference_layout        import ReferenceLayout
+from pipelines.shared.inference.metadata   import CompletedInference
+from pipelines.shared.inference.run_layout import InferenceLayout
+from pipelines.shared.training.seed_sweep  import SeedSet
+from tools.data.io                         import FileIO
+from tools.metrics.scoring                 import SeedAggregation
+from tools.monitoring.logger               import Logger
+from tools.runtime.completion              import CompletionMarker
 
 _CHECKPOINT_KEYS = ("best_val_loss", "best_epoch", "epoch")
 
@@ -126,7 +127,7 @@ class SeedRunAggregator:
 
 class TrialArtifactReader:
 
-    CHECKPOINT_FILENAME = "best_model.pt"
+    CHECKPOINT_FILENAME = ReferenceLayout.CHECKPOINT
 
     logger          : Logger
     inference_split : str | None
