@@ -80,8 +80,6 @@ def test_prompter_choose_accepts_numbers_and_free_text(logger_stub, monkeypatch)
 def test_validators(tmp_path):
     (tmp_path / "f").write_text("")
 
-    assert Validators.existing_dir(str(tmp_path))              is None
-    assert Validators.existing_dir(str(tmp_path / "nope"))     is not None
     assert Validators.existing_file(str(tmp_path / "f"))       is None
     assert Validators.creatable_dir(str(tmp_path / "a" / "b")) is None
     assert Validators.creatable_dir("relative/path")           is not None

@@ -88,10 +88,6 @@ class Validators:
     TOPIC = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
     @staticmethod
-    def existing_dir(value: str) -> str | None:
-        return None if value and Path(value).expanduser().is_dir() else f"{value!r} is not an existing directory"
-
-    @staticmethod
     def existing_file(value: str) -> str | None:
         return None if value and Path(value).expanduser().is_file() else f"{value!r} is not an existing file"
 
