@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as functional
 
 from configuration.architectures import SwinUNetConfig
-from ..blocks                    import AttentionMath, DropPath, FeatureGeometry, LayerFactory, OutputHeadsMixin
+from ..blocks                    import AttentionMath, DropPath, FeatureGeometry, LayerFactory, OutputHeadMixin
 
 
 class WindowAttention(nn.Module):
@@ -292,7 +292,7 @@ class SwinStage(nn.Module):
         return x
 
 
-class SwinUNet(nn.Module, OutputHeadsMixin):
+class SwinUNet(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: SwinUNetConfig | None = None):
         super().__init__()

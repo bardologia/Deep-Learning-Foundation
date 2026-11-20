@@ -80,7 +80,6 @@ class BackboneEntryConfig:
     resume          : bool       = True
     resume_from     : str        = ""
     backbone_name   : str        = "resunet"
-    backbone_head   : str        = "conv"
     gpu             : int        = 0
     seed            : int        = 0
     seeds           : list[int]  = field(default_factory=standard_seeds)

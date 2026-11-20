@@ -29,7 +29,6 @@ class CrossValidationConfig:
     stage           : str  = "full"
 
     backbone_name   : str  = "resunet"
-    backbone_head   : str  = "conv"
     model_overrides : dict = field(default_factory=dict)
 
     paths      : RunPathsConfig         = field(default_factory=lambda: RunPathsConfig(log_base_dir=Path("runs/cross_validation")))

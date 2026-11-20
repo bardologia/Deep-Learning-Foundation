@@ -7,7 +7,7 @@ import pytest
 
 from backbone_model_library      import BackboneModelLibrary
 from configuration.architectures import backbone
-from models                      import BACKBONE_HEADS, BACKBONE_MODEL_REGISTRY
+from models                      import BACKBONE_MODEL_REGISTRY
 
 
 @pytest.fixture(scope="module")
@@ -52,30 +52,13 @@ def test_collect_resolves_display_defaults(collected):
             assert model["normalization"], f"{model['key']} has no normalization label"
 
 
-def test_heads_cover_the_backbone_heads_exactly_once(library):
-    keys = [head["key"] for head in library.heads()]
-
-    assert sorted(keys) == sorted(set(keys))
-    assert set(keys) == set(BACKBONE_HEADS)
-
-
-def test_head_note_files_cover_the_backbone_heads():
-    assert set(BackboneModelLibrary.HEAD_NOTE_FILES) == set(BACKBONE_HEADS)
-
-
-def test_every_head_resolves_a_note(library):
-    missing = [key for key in BackboneModelLibrary.HEAD_NOTE_FILES if library.note(key) is None]
-
-    assert not missing, f"heads without a resolvable note under notes/models: {missing}"
-
-
 def _arch(collected):
     return {model["key"]: {entry["name"]: entry for entry in model["arch"]} for family in collected for model in family["models"]}
 
 
 def test_arch_hides_the_pipeline_owned_fields(collected):
     for key, entries in _arch(collected).items():
-        for name in ("in_channels", "out_channels", "params_per_gaussian", "head", "image_size", "shape_logger_types"):
+        for name in ("in_channels", "out_channels", "image_size", "shape_logger_types"):
             assert name not in entries, f"{key} exposes pipeline-owned field {name}"
 
 
@@ -116,8 +99,7 @@ def test_arch_keeps_the_learning_rate_fields_for_the_backbone_page(collected):
 
 class TempNoteLibrary(BackboneModelLibrary):
 
-    NOTE_FILES      = {"demo": "Demo Model.md", "other": "Other Model.md"}
-    HEAD_NOTE_FILES = {}
+    NOTE_FILES = {"demo": "Demo Model.md", "other": "Other Model.md"}
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory

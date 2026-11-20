@@ -46,7 +46,7 @@ class SeedExpandedStage:
 
     @classmethod
     def unit_base(cls, config: BenchmarkConfig, model: str, component: str) -> str:
-        return RunNaming.benchmark_unit(model, replace(config.loss, kind=LossKind(component)), config.augmentation)
+        return RunNaming.tag(model, replace(config.loss, kind=LossKind(component)), config.augmentation)
 
     @classmethod
     def planned_units(cls, config: BenchmarkConfig, models: list[str]) -> list[tuple[str, tuple]]:

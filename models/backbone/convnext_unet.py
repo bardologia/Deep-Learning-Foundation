@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import ConvNeXtUNetConfig
-from ..blocks                    import ChannelLayerNorm, ConvNeXtBlock, DropPathSchedule, FeatureGeometry, LayerFactory, OutputHeadsMixin
+from ..blocks                    import ChannelLayerNorm, ConvNeXtBlock, DropPathSchedule, FeatureGeometry, LayerFactory, OutputHeadMixin
 
 
 class ConvNeXtStage(nn.Module):
@@ -22,7 +22,7 @@ class ConvNeXtStage(nn.Module):
         return self.blocks(self.projection(x))
 
 
-class ConvNeXtUNet(nn.Module, OutputHeadsMixin):
+class ConvNeXtUNet(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: ConvNeXtUNetConfig | None = None):
         super().__init__()

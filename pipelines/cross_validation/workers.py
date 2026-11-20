@@ -232,7 +232,7 @@ class FoldTrainingWorker(CrossValidationWorker):
         from pipelines.backbone.training.pipeline import TrainingPipeline
         from pipelines.shared.model.model_builder import ModelBuilder
 
-        model_config                   = ModelBuilder.config_from_registry(self.config.backbone_name, self.config.model_overrides, head=self.config.backbone_head)
+        model_config                   = ModelBuilder.config_from_registry(self.config.backbone_name, self.config.model_overrides)
         trainer_config, dataset_config = self._spatial_configs(split_regions)
 
         pipeline = TrainingPipeline(

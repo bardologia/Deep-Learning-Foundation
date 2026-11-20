@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import NAFNetConfig
-from ..blocks                    import ChannelLayerNorm, FeatureGeometry, LayerFactory, OutputHeadsMixin
+from ..blocks                    import ChannelLayerNorm, FeatureGeometry, LayerFactory, OutputHeadMixin
 
 
 class SimpleGate(nn.Module):
@@ -68,7 +68,7 @@ class NAFBlock(nn.Module):
         return x + branch * self.gamma
 
 
-class NAFNet(nn.Module, OutputHeadsMixin):
+class NAFNet(nn.Module, OutputHeadMixin):
 
     conv_head_kernel_size = 3
 

@@ -15,18 +15,18 @@ def config(tmp_path):
 
 
 @pytest.mark.dataset
-def test_run_name_encodes_model_head_loss_kind_augmentation_and_seed(config, test_data_dir):
+def test_run_name_encodes_model_loss_kind_augmentation_and_seed(config, test_data_dir):
     from pipelines.shared.training.run_naming import RunNaming
 
     config.paths.dataset_path = test_data_dir
 
     worker = BenchmarkWorker(config, "tag")
-    tag    = RunNaming.benchmark_unit("unet", config.loss, config.augmentation)
+    tag    = RunNaming.tag("unet", config.loss, config.augmentation)
 
     assert worker._run_name("unet", "mse", None) == tag
     assert worker._run_name("unet", "mse", 5)    == f"{tag}/seed5"
-    assert worker._run_name("unet", "l1", None)  == "unet-conv-l1-hv"
-    assert tag == "unet-conv-mse-hv"
+    assert worker._run_name("unet", "l1", None)  == "unet-l1-hv"
+    assert tag == "unet-mse-hv"
 
 
 @pytest.mark.dataset
@@ -51,7 +51,7 @@ def test_training_worker_trains_with_the_configured_batch_size(config, test_data
 
     monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)
 
-    worker.run("resunet-conv", loss_component="mse")
+    worker.run("resunet", loss_component="mse")
 
     assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / config.training.lr_reference_batch_size)
     assert captured["dataset_config"].batch_size         == 500

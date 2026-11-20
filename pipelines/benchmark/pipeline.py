@@ -5,7 +5,6 @@ from pathlib import Path
 
 from configuration.benchmark                        import BenchmarkConfig
 from models                                         import BACKBONE_CONFIG_REGISTRY
-from pipelines.shared.model.model_builder           import ModelBuilder
 from pipelines.shared.orchestration.staged_pipeline import StagedPipeline
 
 from pipelines.benchmark.stages import ComparisonStage, InferenceStage, TrainingStage
@@ -21,19 +20,12 @@ class BenchmarkPipeline(StagedPipeline):
         self.models         = self.select_models(config)
         self.training_stage = None
 
-    @classmethod
-    def select_models(cls, config: BenchmarkConfig) -> list[str]:
-        skip = set(config.skip_models)
-        keys = cls._model_keys(config)
-
-        return [key for key in keys if key not in skip and ModelBuilder.split_key(key)[0] not in skip]
-
-    @classmethod
-    def _model_keys(cls, config: BenchmarkConfig) -> list[str]:
-        return [ModelBuilder.model_key(name, head) for name in BACKBONE_CONFIG_REGISTRY for head in config.heads]
+    @staticmethod
+    def select_models(config: BenchmarkConfig) -> list[str]:
+        return [name for name in BACKBONE_CONFIG_REGISTRY if name not in config.skip_models]
 
     def _log_model_selection(self) -> None:
-        skipped = [key for key in self._model_keys(self.config) if key not in self.models]
+        skipped = [name for name in BACKBONE_CONFIG_REGISTRY if name not in self.models]
 
         self.logger.kv_table({
             "Selected"               : ", ".join(self.models),

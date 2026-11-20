@@ -125,7 +125,7 @@ def test_training_stage_items_carry_the_training_tag_the_worker_trains_into(tmp_
 
     assert stage.items                                   == [worker.fold_run_name(index, None) for index in range(5)]
     assert stage.stage_dir / stage.items[3]              == worker.run_dir / "folds" / worker.fold_run_name(3, None)
-    assert stage.items[3].startswith(f"{config.backbone_name}-{config.backbone_head}-")
+    assert stage.items[3].startswith(f"{config.backbone_name}-")
 
 
 @pytest.mark.dataset

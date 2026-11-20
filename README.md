@@ -240,7 +240,6 @@ Overrides work the same way for anything else:
 python main/training/train_backbone.py \
   --seeds "[0]" \
   --backbone_name unet \
-  --backbone_head conv \
   --training.epochs 5 \
   --gpu 0
 ```
@@ -248,7 +247,7 @@ python main/training/train_backbone.py \
 Runs land under `--logdir`, default `runs/backbone`. The directory name is composed from
 the configuration by `RunNaming` in `pipelines/shared/training/run_naming.py`, so a run
 carries its own settings:
-`resunet-conv-mse-hv_20260805_004432` (model, head, loss kind, augmentation). It holds
+`resunet-mse-hv_20260805_004432` (model, loss kind, augmentation). It holds
 `best_model.pt`, `last.pt`, `complete.json`, TensorBoard events, the resolved entry
 config and model documentation under `docs/`, and the dataset configuration, patch grid,
 normalization statistics and run summary (input and target channel names) under `meta/`. With `--training.use_swa True` the last quarter of
@@ -472,14 +471,13 @@ works, with plain text where the architecture notes' equations would be.
 ## 8. Experiments and analysis
 
 Three experiment entries under `main/experiments/` wrap the training loop:
-`benchmark.py` sweeps models, heads and loss kinds; `cross_validate.py` runs k-fold over
+`benchmark.py` sweeps models and loss kinds; `cross_validate.py` runs k-fold over
 the dataset rows; `tune.py` drives an Optuna study. Patch-shape sweeps run through the
 training entries themselves as `trials_mode=patch`, alongside the other fan-out modes
 (context, reach, augmentation, stability, EMA and AMP ladders). The patch sweep report
 follows the planned seeds and names the seeds a trial mean drops.
 
-`benchmark.py` refuses a `skip_models` entry that matches no model key and no backbone
-name, lists the selected and skipped models at the start, and checks its comparison
+`benchmark.py` lists the selected and skipped models at the start, and checks its comparison
 against the planned units, warning about each missing or unplanned run. A resumed
 benchmark reuses a completed inference of the scored split. Comparison summaries record
 per model the seeds each metric mean used (`n_used`) and the seeds without metrics
@@ -533,7 +531,7 @@ install.sh      one-command setup: conda, environment, dependencies, guided mach
 main/           entry points, one per verb and model type; nothing but wiring
 configuration/  dataclasses holding every default; reference_layout.py names the roots the profile rebases
 pipelines/      the pipelines behind the entry points
-models/         backbones, heads, blocks
+models/         backbones and their shared blocks
 tools/          shared components (logger, training, metrics, monitoring)
 webui/          the control console, stdlib HTTP server plus static frontend
 tests/          about 6700 tests, self-contained

@@ -230,7 +230,5 @@ No element of the paper's architectural description is silently dropped: every d
 - [[Model Zoo]] — Comparison with other architectures
 - [[Attention UNet]] — U-Net variant with attention gates on skip connections
 - [[UNet++]] — U-Net variant with nested dense skip connections
-- [[Head Multihead]] — parameter-type-specific output heads, selectable on every backbone
-- [[Head Per-Gaussian]] — one output head per Gaussian component, selectable on every backbone
 - [[Training Pipeline]] — Training context
 - [[Configuration Layer]] — UNetConfig

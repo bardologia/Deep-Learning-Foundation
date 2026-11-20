@@ -484,7 +484,7 @@ def test_seed_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directo
     run_dir = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}})
 
     results = FileIO.load_json(run_dir / "pipeline" / "training_results.json")
-    results[1]["name"] = "unet-conv/seed2"
+    results[1]["name"] = "unet-mse-hv/seed2"
     FileIO.save_json(results, run_dir / "pipeline" / "training_results.json")
 
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
@@ -493,4 +493,4 @@ def test_seed_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directo
     assert records[0].training_result["status"]     == "DONE"
     assert records[0].training_result["duration_s"] == pytest.approx(10.0)
     assert {run.name: run.training_result["status"] for run in collector.runs} == {"unet/seed1": "DONE", "unet/seed2": "DONE"}
-    assert ("info", "1 unit result(s) matched to the renamed run directory holding their worker log: ['unet-conv/seed2 -> unet/seed2']") in recording_logger.messages
+    assert ("info", "1 unit result(s) matched to the renamed run directory holding their worker log: ['unet-mse-hv/seed2 -> unet/seed2']") in recording_logger.messages

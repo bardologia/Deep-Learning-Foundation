@@ -9,7 +9,6 @@ from pathlib  import Path
 import optuna
 from optuna.trial import TrialState
 
-from pipelines.shared.model.model_builder   import ModelBuilder
 from pipelines.shared.training.run_naming   import RunNaming
 from tools.data.io                          import FileIO
 
@@ -436,8 +435,6 @@ class Tuner:
         self.emit_trial_docs     = emit_trial_docs
         self.worker_index        = worker_index
 
-        self.backbone_name, self.head = ModelBuilder.split_key(model_name)
-
         self.sampler     = ParamSampler()
         self.space       = SearchSpace.of(model_config_cls, tune_cfg)
         self.best_writer = BestConfigWriter(model_name, self.space, Path(log_dir) / "best_config.json")
@@ -459,9 +456,8 @@ class Tuner:
 
         trial.set_user_attr("worker", self.worker_index)
 
-        model_config      = self.model_config_cls()
-        model_config.head = self.head
-        sampled           = self._apply_params(trial, model_config)
+        model_config = self.model_config_cls()
+        sampled      = self._apply_params(trial, model_config)
 
         trainer_cfg = copy.deepcopy(self.base_trainer_config)
         dataset_cfg = copy.deepcopy(self.base_dataset_config)
@@ -475,12 +471,12 @@ class Tuner:
         if SearchSpace.BATCH in sampled:
             self._apply_batch(trainer_cfg, dataset_cfg, sampled[SearchSpace.BATCH])
 
-        run_tag = RunNaming.tag(self.backbone_name, self.head, trainer_cfg.loss, dataset_cfg.augmentation)
+        run_tag = RunNaming.tag(self.model_name, trainer_cfg.loss, dataset_cfg.augmentation)
 
         pipeline = TrialPipeline(
             trainer_config = trainer_cfg,
             dataset_config = dataset_cfg,
-            backbone_name  = self.backbone_name,
+            backbone_name  = self.model_name,
             model_config   = model_config,
             seed           = self.tune_cfg.base_seed + trial.number,
             run_name       = RunNaming.compose(run_tag, f"trial_{trial.number:04d}"),

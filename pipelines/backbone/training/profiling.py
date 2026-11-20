@@ -46,10 +46,8 @@ class FeedAdapter:
     def _config_factory(self):
         from configuration.training                 import BackboneEntryConfig
         from pipelines.shared.config.config_factory import ConfigFactory
-        from pipelines.shared.model.model_builder   import ModelBuilder
 
-        name, head  = ModelBuilder.split_key(self.model_name)
-        entry       = BackboneEntryConfig(backbone_name=name, backbone_head=head, seed=self.config.seed)
+        entry       = BackboneEntryConfig(backbone_name=self.model_name, seed=self.config.seed)
         entry.paths = self.config.paths
 
         return ConfigFactory(entry)
@@ -59,9 +57,8 @@ class FeedAdapter:
         from pipelines.shared.model.model_builder import ModelBuilder
 
         dataset_config           = factory.training_dataset_config()
-        name, _head              = ModelBuilder.split_key(self.model_name)
         patch                    = dataset_config.patch
-        patch.size, patch.stride = ModelBuilder.square_patch(name, patch.size, patch.stride)
+        patch.size, patch.stride = ModelBuilder.square_patch(self.model_name, patch.size, patch.stride)
 
         _train_loader, _val_loader, _test_loader, datasets, _normalizer = DatasetPipeline(dataset_config, self.work_dir, logger=self.logger, seed=self.config.seed).run()
 
@@ -71,11 +68,10 @@ class FeedAdapter:
         from models                               import BACKBONE_CONFIG_REGISTRY, get_backbone
         from pipelines.shared.model.model_builder import ModelBuilder
 
-        name, head = ModelBuilder.split_key(self.model_name)
-        overrides  = {"in_channels": dataset.input_channels, "out_channels": dataset.target_channels, "head": head}
-        overrides.update(ModelBuilder.image_size_override(name, dataset_config.patch.size))
+        overrides = {"in_channels": dataset.input_channels, "out_channels": dataset.target_channels}
+        overrides.update(ModelBuilder.image_size_override(self.model_name, dataset_config.patch.size))
 
-        model, _ = get_backbone(name, config=BACKBONE_CONFIG_REGISTRY[name](), **overrides)
+        model, _ = get_backbone(self.model_name, config=BACKBONE_CONFIG_REGISTRY[self.model_name](), **overrides)
         return model
 
     def build(self) -> FeedTarget:

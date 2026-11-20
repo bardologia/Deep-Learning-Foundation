@@ -5,10 +5,10 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import LocalCNNConfig, PixelMLPNetConfig
-from ..blocks                    import ConvBlock, LayerFactory, OutputHeadsMixin
+from ..blocks                    import ConvBlock, LayerFactory, OutputHeadMixin
 
 
-class PixelMLPNet(nn.Module, OutputHeadsMixin):
+class PixelMLPNet(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: PixelMLPNetConfig | None = None):
         super().__init__()
@@ -37,7 +37,7 @@ class PixelMLPNet(nn.Module, OutputHeadsMixin):
         return self._head_forward(self.encode_decode(x))
 
 
-class LocalCNN(nn.Module, OutputHeadsMixin):
+class LocalCNN(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: LocalCNNConfig | None = None):
         super().__init__()

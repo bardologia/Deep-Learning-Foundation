@@ -61,8 +61,8 @@ def test_the_library_envelopes_match_what_the_frontend_reads(server):
     assert list(_get(server, "/api/configs")[1]) == ["groups"]
 
 
-def test_the_model_endpoint_answers_with_families_and_heads(server):
-    assert sorted(_get(server, "/api/backbones")[1]) == ["families", "heads"]
+def test_the_model_endpoint_answers_with_the_families(server):
+    assert sorted(_get(server, "/api/backbones")[1]) == ["families"]
 
 
 def test_a_model_note_is_served_and_an_unknown_key_is_a_404(server):

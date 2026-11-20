@@ -34,7 +34,7 @@ class BackboneRouter(SubRouter):
         table.wildcard("GET", f"{self.section}/", "/note", self.note)
 
     def families(self, exchange: HttpExchange) -> None:
-        exchange.send_json({"families": self.library.collect(), "heads": self.library.heads()})
+        exchange.send_json({"families": self.library.collect()})
 
     def note(self, exchange: HttpExchange, key: str) -> None:
         note = self.library.note(key)

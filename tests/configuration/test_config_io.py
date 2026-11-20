@@ -30,17 +30,14 @@ def test_backbone_config_io_round_trips(tmp_path, name):
         assert getattr(loaded, f.name) == getattr(config, f.name)
 
 
-@pytest.mark.parametrize("head", ["multihead", "per_gaussian", "set_pred"])
-def test_backbone_config_io_round_trips_the_head_into_a_loadable_model(tmp_path, head):
+def test_backbone_config_io_round_trips_into_a_loadable_model(tmp_path):
     from models.backbone import get_backbone
 
-    trained, config = get_backbone("unet", head=head, features=[8, 16], bottleneck_factor=1)
+    trained, config = get_backbone("unet", features=[8, 16], bottleneck_factor=1)
     BackboneModelConfigIO.save(config, "unet", tmp_path)
 
     loaded, raw_name = BackboneModelConfigIO.load(tmp_path)
-    assert loaded.head == head
-
-    rebuilt, _ = get_backbone(raw_name, config=loaded)
+    rebuilt, _       = get_backbone(raw_name, config=loaded)
     rebuilt.load_state_dict(trained.state_dict())
 
 

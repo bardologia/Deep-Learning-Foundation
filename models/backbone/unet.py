@@ -5,10 +5,10 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import UNetConfig
-from ..blocks                    import ConvBlock, Decoder, Encoder, LayerFactory, OutputHeadsMixin
+from ..blocks                    import ConvBlock, Decoder, Encoder, LayerFactory, OutputHeadMixin
 
 
-class UNetBackbone(nn.Module, OutputHeadsMixin):
+class UNetBackbone(nn.Module, OutputHeadMixin):
 
     def __init__(self, config):
         super().__init__()

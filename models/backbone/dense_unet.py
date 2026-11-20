@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import DenseUNetConfig
-from ..blocks                    import FeatureGeometry, LayerFactory, OutputHeadsMixin
+from ..blocks                    import FeatureGeometry, LayerFactory, OutputHeadMixin
 
 
 class DenseLayer(nn.Module):
@@ -62,7 +62,7 @@ class TransitionDown(nn.Module):
         return self.layers(x)
 
 
-class DenseUNet(nn.Module, OutputHeadsMixin):
+class DenseUNet(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: DenseUNetConfig | None = None):
         super().__init__()

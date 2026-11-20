@@ -331,7 +331,7 @@ def test_runner_resume_off_trains_in_place(tmp_path):
 def test_resume_from_pins_the_pasted_directory(tmp_path):
     _StubPipeline.launched = []
 
-    target = tmp_path / "elsewhere" / "resunet-set_pred-K_3_myrun"
+    target = tmp_path / "elsewhere" / "resunet-mse-hv_myrun"
     target.mkdir(parents=True)
 
     config = _entry_config(tmp_path, resume=False, resume_from=str(target))
@@ -339,11 +339,11 @@ def test_resume_from_pins_the_pasted_directory(tmp_path):
     runner.run()
 
     assert runner.run_directory     == target
-    assert config.run_name          == "resunet-set_pred-K_3_myrun"
+    assert config.run_name          == "resunet-mse-hv_myrun"
     assert config.logdir            == target.parent
     assert config.resume            is True
     assert config.training.resume   is False
-    assert _StubPipeline.launched   == ["resunet-set_pred-K_3_myrun"]
+    assert _StubPipeline.launched   == ["resunet-mse-hv_myrun"]
 
 
 def test_resume_from_creates_an_absent_directory_fresh(tmp_path):

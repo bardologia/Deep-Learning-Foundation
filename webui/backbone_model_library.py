@@ -68,13 +68,6 @@ class BackboneModelLibrary:
         "nafnet"         : "NAFNet.md",
     }
 
-    HEAD_NOTE_FILES = {
-        "conv"         : "Head Conv.md",
-        "multihead"    : "Head Multihead.md",
-        "per_gaussian" : "Head Per-Gaussian.md",
-        "set_pred"     : "Head Set-Prediction.md",
-    }
-
     FALLBACK_ACTIVATION    = "gelu"
     FALLBACK_NORMALIZATION = "layer"
 
@@ -82,7 +75,7 @@ class BackboneModelLibrary:
         "nafnet" : ("simplegate", "layer"),
     }
 
-    ARCH_EXCLUDED = ("in_channels", "out_channels", "params_per_gaussian", "head", "image_size")
+    ARCH_EXCLUDED = ("in_channels", "out_channels", "image_size")
 
     ARCH_HINTS = {
         "features"                     : "channel widths per encoder stage; depth follows the list length",
@@ -340,9 +333,6 @@ class BackboneModelLibrary:
     def _is_scalar_sequence(value) -> bool:
         return isinstance(value, (list, tuple)) and len(value) > 0 and all(isinstance(item, (bool, int, float, str)) for item in value)
 
-    def _note_files(self) -> dict[str, str]:
-        return {**self.NOTE_FILES, **self.HEAD_NOTE_FILES}
-
     def _notes_dir(self) -> Path:
         return Path(__file__).resolve().parent.parent / "notes" / "models"
 
@@ -374,8 +364,7 @@ class BackboneModelLibrary:
         return collapsed
 
     def note(self, key: str) -> dict | None:
-        note_files = self._note_files()
-        filename   = note_files.get(key)
+        filename = self.NOTE_FILES.get(key)
         if filename is None:
             return None
 
@@ -384,29 +373,5 @@ class BackboneModelLibrary:
             return None
 
         markdown = self._strip_operational(path.read_text(encoding="utf-8"))
-        links    = {name[:-3]: model_key for model_key, name in note_files.items()}
+        links    = {name[:-3]: model_key for model_key, name in self.NOTE_FILES.items()}
         return {"key": key, "note": filename[:-3], "markdown": markdown, "links": links}
-
-    def heads(self) -> list[dict]:
-        return [
-            {
-                "key": "conv", "name": "Conv", "structure": "Single conv projection",
-                "default": True,
-                "when": "The default head. One convolution maps the backbone embedding straight to the packed parameter channels; every parameter shares the same projection.",
-            },
-            {
-                "key": "multihead", "name": "Multihead", "structure": "3 PixelMLP heads",
-                "default": False,
-                "when": "Systematic bias across parameter types. Separate PixelMLP heads regress amplitude, mean, and spread from the shared embedding.",
-            },
-            {
-                "key": "per_gaussian", "name": "Per-Gaussian", "structure": "K PixelMLP heads",
-                "default": False,
-                "when": "Systematic bias across Gaussian slots. One PixelMLP head per slot imposes slot independence.",
-            },
-            {
-                "key": "set_pred", "name": "Set-Prediction", "structure": "K PixelMLP heads + existence gate",
-                "default": False,
-                "when": "Attacking Gaussian slot collapse. Per-slot heads plus an existence-logit gate decouple the slot on/off decision from amplitude regression; pair with hungarian param matching.",
-            },
-        ]

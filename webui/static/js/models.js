@@ -15,7 +15,6 @@ class ModelGallery {
 
     if (data.error) {
       this.families = [];
-      this.heads = [];
       this.flat = [];
       this.listEl.innerHTML = `<div class="clist__empty">Could not load the model zoo: ${SharedCharts.esc(data.error)}</div>`;
       this.detailEl.innerHTML = `<div class="cdetail__empty"><p>The backend did not answer ${SharedCharts.esc(this.endpoint)}.</p><button class="btn btn--mini" id="models-retry">Retry</button></div>`;
@@ -25,8 +24,7 @@ class ModelGallery {
     }
 
     this.families = data.families || [];
-    this.heads = (data.heads || []).map((h) => ({ ...h, isHead: true, family: "Output heads", params: "" }));
-    this.flat = this.families.flatMap((f) => f.models.map((m) => ({ ...m, family: f.family }))).concat(this.heads);
+    this.flat = this.families.flatMap((f) => f.models.map((m) => ({ ...m, family: f.family })));
     this._renderList();
     const initial = this.flat.find((m) => m.recommended) || this.flat[0];
     if (initial) this._select(initial.key);
@@ -50,22 +48,6 @@ class ModelGallery {
       });
       this.listEl.appendChild(group);
     });
-
-    if (!this.heads.length) return;
-    const group = document.createElement("div");
-    group.className = "mlist__group";
-    group.innerHTML = `<div class="mlist__label">Output heads</div>`;
-    this.heads.forEach((h) => {
-      const item = document.createElement("button");
-      item.className = "mlist__item";
-      item.dataset.key = h.key;
-      item.innerHTML =
-        `<span class="mlist__name">${h.name}${h.default ? '<span class="mlist__star">default</span>' : ""}</span>` +
-        `<span class="mlist__params"></span>`;
-      item.addEventListener("click", () => this._select(h.key));
-      group.appendChild(item);
-    });
-    this.listEl.appendChild(group);
   }
 
   _select(key) {
@@ -78,11 +60,6 @@ class ModelGallery {
   _renderDetail(m) {
     this._pops = this._pops || [];
     this._closeFrom(0);
-
-    if (m.isHead) {
-      this._renderHeadDetail(m);
-      return;
-    }
 
     const built   = window.ModelDiagram.build(m);
     this.blockMap = built.blocks;
@@ -110,29 +87,6 @@ class ModelGallery {
     this.detailEl.classList.add("is-swap");
     this._wireSchema();
     this._loadNote(m);
-  }
-
-  _renderHeadDetail(h) {
-    this.detailEl.innerHTML =
-      `<div class="mdetail__head">` +
-      `<div><span class="mdetail__family">Output heads</span>` +
-      `<h3 class="mdetail__name">${h.name}${h.default ? `<span class="mdetail__best">default</span>` : ""}</h3></div>` +
-      `</div>` +
-      `<div class="mdetail__legend">` +
-      `<span class="legend__dot"></span>Selectable on every backbone via the head config field` +
-      `<span class="legend__sep">/</span>${h.when}` +
-      `</div>` +
-      `<div class="mdetail__specs">` +
-      `<div class="spec"><span class="spec__k">head key</span><span class="spec__v mono">${h.key}</span></div>` +
-      `<div class="spec"><span class="spec__k">structure</span><span class="spec__v">${h.structure}</span></div>` +
-      `</div>` +
-      `<div class="mdetail__notes" data-note-host><span class="mdetail__when-label">Head notes</span>` +
-      `<div class="mdetail__note-body"><span class="mdetail__note-loading">${SharedCharts.waitLine("loading notes…")}</span></div></div>`;
-
-    this.detailEl.classList.remove("is-swap");
-    void this.detailEl.offsetWidth;
-    this.detailEl.classList.add("is-swap");
-    this._loadNote(h);
   }
 
   async _loadNote(m) {
@@ -432,11 +386,10 @@ class ModelGallery {
       branch: "Parallel-resolution branches exchange features by fusion.",
       lateral: "Lateral 1x1 connections add into a top-down pyramid.",
     };
-    const headNote = s.heads === 1 ? "single output head emits all 3K channels" : s.heads === 3 ? "three heads split amplitude, mean, and spread" : "one head per Gaussian slot";
     return (
       `<div class="mdetail__legend">` +
       `<span class="legend__dot"></span>${notes[s.skipKind] || notes.concat}` +
-      `<span class="legend__sep">/</span>${headNote}.` +
+      `<span class="legend__sep">/</span>one output convolution emits every target channel.` +
       `</div>`
     );
   }

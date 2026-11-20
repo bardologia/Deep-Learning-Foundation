@@ -212,7 +212,6 @@ class LaunchView extends ConfigForm {
       const models = await Api.get("/api/backbones");
       if (seq !== this.loadSeq) return;
       this.modelFamilies = (models && models.families) || [];
-      this.modelHeads    = (models && models.heads) || [];
     }
 
     this._renderConfig(cfg);

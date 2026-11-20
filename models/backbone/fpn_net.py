@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as functional
 
 from configuration.architectures import FPNNetConfig
-from ..blocks                    import LayerFactory, OutputHeadsMixin, ResidualConvBlock
+from ..blocks                    import LayerFactory, OutputHeadMixin, ResidualConvBlock
 
 
 class SegmentationBlock(nn.Module):
@@ -32,7 +32,7 @@ class SegmentationBlock(nn.Module):
         return self.layers(x)
 
 
-class FPNNet(nn.Module, OutputHeadsMixin):
+class FPNNet(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: FPNNetConfig | None = None):
         super().__init__()

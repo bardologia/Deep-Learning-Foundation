@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as functional
 
 from configuration.architectures import HRNetLiteConfig
-from ..blocks                    import LayerFactory, OutputHeadsMixin, ResidualConvBlock
+from ..blocks                    import LayerFactory, OutputHeadMixin, ResidualConvBlock
 
 
 class BranchFusion(nn.Module):
@@ -65,7 +65,7 @@ class BranchFusion(nn.Module):
         return outputs
 
 
-class HRNetLite(nn.Module, OutputHeadsMixin):
+class HRNetLite(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: HRNetLiteConfig | None = None):
         super().__init__()

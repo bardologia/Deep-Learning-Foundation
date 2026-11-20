@@ -8,7 +8,6 @@ import optuna
 
 from models                                 import BACKBONE_CONFIG_REGISTRY
 from pipelines.shared.config.config_factory import ConfigFactory
-from pipelines.shared.model.model_builder   import ModelBuilder
 from pipelines.tuning.storage               import TuningStorage
 from pipelines.tuning.tuners                import StudyProgress, Tuner
 from tools.monitoring.logger                import Logger
@@ -37,7 +36,7 @@ class TuningWorker:
 
         return Tuner(
             model_name          = model_name,
-            model_config_cls    = BACKBONE_CONFIG_REGISTRY[ModelBuilder.split_key(model_name)[0]],
+            model_config_cls    = BACKBONE_CONFIG_REGISTRY[model_name],
             base_trainer_config = trainer_cfg,
             base_dataset_config = dataset_cfg,
             training            = self.config.training,

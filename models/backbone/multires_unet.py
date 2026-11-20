@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import MultiResUNetConfig
-from ..blocks                    import FeatureGeometry, LayerFactory, OutputHeadsMixin
+from ..blocks                    import FeatureGeometry, LayerFactory, OutputHeadMixin
 
 
 class MultiResBlock(nn.Module):
@@ -70,7 +70,7 @@ class ResPath(nn.Module):
         return x
 
 
-class MultiResUNet(nn.Module, OutputHeadsMixin):
+class MultiResUNet(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: MultiResUNetConfig | None = None):
         super().__init__()

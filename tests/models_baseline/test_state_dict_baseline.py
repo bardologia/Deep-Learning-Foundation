@@ -8,19 +8,13 @@ from pathlib import Path
 import pytest
 import torch
 
-from models import BACKBONE_HEADS, BACKBONE_MODEL_REGISTRY, get_backbone
+from models import BACKBONE_MODEL_REGISTRY, get_backbone
 
 BASELINE_PATH = Path(__file__).resolve().parents[1] / "state_dict_baseline.json"
 
 
 def _backbone_cases() -> dict:
-    cases = {}
-    for name in BACKBONE_MODEL_REGISTRY:
-        for head in BACKBONE_HEADS:
-            key        = name if head == "conv" else f"{name}-{head}"
-            cases[key] = (name, {"head": head})
-
-    return cases
+    return {name: (name, {}) for name in BACKBONE_MODEL_REGISTRY}
 
 
 def _build_case(factory, case: tuple):

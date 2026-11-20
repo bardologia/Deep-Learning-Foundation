@@ -15,7 +15,6 @@ GENERATE_DATASET_LEAVES = [
 
 BACKBONE_LEAVES = [
     {"path": "backbone_name",          "value": "resunet"},
-    {"path": "backbone_head",          "value": "conv"},
     {"path": "trials_enabled",         "value": "False"},
     {"path": "trials_mode",            "value": "augmentation"},
     {"path": "run_name",               "value": "None"},
@@ -54,7 +53,7 @@ def _describer(leaves_by_key: dict, ok: bool = True) -> JobDescriber:
 def test_backbone_defaults_read_as_single_training():
     text = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", {})
 
-    assert text.startswith("single training · resunet-conv")
+    assert text.startswith("single training · resunet")
     assert "dataset scene_a" in text
     assert "patch (64, 32)" in text
     assert "epochs 60" in text
@@ -65,14 +64,14 @@ def test_backbone_trials_read_as_experiment():
     overrides = {"trials_enabled": "True", "trials_mode": "augmentation"}
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
 
-    assert text.startswith("augmentation trials experiment · resunet-conv")
+    assert text.startswith("augmentation trials experiment · resunet")
 
 
 def test_overrides_win_over_defaults():
-    overrides = {"backbone_name": "nafnet", "backbone_head": "set_pred", "infer_after": "True"}
+    overrides = {"backbone_name": "nafnet", "infer_after": "True"}
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
 
-    assert "nafnet-set_pred" in text
+    assert "nafnet" in text
     assert "inference after" in text
 
 

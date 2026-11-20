@@ -5,7 +5,7 @@ import pytest
 import numpy as np
 import torch
 
-from models.backbone import BACKBONE_MODEL_REGISTRY, BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS, BACKBONE_IMAGE_SIZE_MODELS, get_backbone
+from models.backbone import BACKBONE_MODEL_REGISTRY, BACKBONE_CONFIG_REGISTRY, BACKBONE_IMAGE_SIZE_MODELS, get_backbone
 
 from tests.models_backbone._helpers import SMALL_OVERRIDES, WINDOW
 
@@ -13,13 +13,12 @@ from tests.models_backbone._helpers import SMALL_OVERRIDES, WINDOW
 DEVICE = torch.device("cpu")
 BATCH  = 2
 
-ALL_NAMES      = sorted(BACKBONE_MODEL_REGISTRY.keys())
-GAUSSIAN_HEADS = [head for head in BACKBONE_HEADS if head != "conv"]
+ALL_NAMES = sorted(BACKBONE_MODEL_REGISTRY.keys())
 
 
-def _build(name, head: str = "conv"):
+def _build(name):
     overrides     = dict(SMALL_OVERRIDES.get(name, {}))
-    model, config = get_backbone(name, head=head, **overrides)
+    model, config = get_backbone(name, **overrides)
     model         = model.to(DEVICE).eval()
     return model, config
 
@@ -133,23 +132,9 @@ def test_registry_covers_all_models():
     assert BACKBONE_IMAGE_SIZE_MODELS.issubset(set(ALL_NAMES))
 
 
-@pytest.mark.parametrize("head", GAUSSIAN_HEADS)
 @pytest.mark.parametrize("name", ALL_NAMES)
-def test_gaussian_head_forward_shape(name, head, make_input):
-    model, config = _build(name, head=head)
-    x             = make_input(config)
-
-    with torch.no_grad():
-        y = model(x)
-
-    assert y.shape == (BATCH, config.out_channels, WINDOW, WINDOW)
-    assert torch.isfinite(y).all()
-
-
-@pytest.mark.parametrize("head", GAUSSIAN_HEADS)
-@pytest.mark.parametrize("name", ALL_NAMES)
-def test_forward_equals_head_applied_to_encode_decode(name, head, make_input):
-    model, config = _build(name, head=head)
+def test_forward_equals_head_applied_to_encode_decode(name, make_input):
+    model, config = _build(name)
     x             = make_input(config)
 
     with torch.no_grad():
@@ -160,10 +145,9 @@ def test_forward_equals_head_applied_to_encode_decode(name, head, make_input):
     assert torch.allclose(direct, staged, atol=0.0, rtol=0.0)
 
 
-@pytest.mark.parametrize("head", BACKBONE_HEADS)
 @pytest.mark.parametrize("name", ALL_NAMES)
-def test_param_groups_cover_every_parameter(name, head):
-    model, config = _build(name, head=head)
+def test_param_groups_cover_every_parameter(name):
+    model, config = _build(name)
 
     grouped = sum(len(group["params"]) for group in config.get_param_groups(model))
     total   = sum(1 for _ in model.parameters())

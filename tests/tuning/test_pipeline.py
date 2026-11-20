@@ -696,7 +696,6 @@ def test_prepare_stage_opens_the_study_without_dispatching_or_reporting(tmp_path
 
 def test_a_skip_entry_that_matches_no_model_is_refused(tmp_path):
     orch = _orchestrator(tmp_path)
-    orch.config.heads       = ["conv"]
     orch.config.skip_models = ["resnet", "unet"]
 
     with pytest.raises(SystemExit, match=r"skip_models entries match no model: \['resnet'\]"):
@@ -710,9 +709,9 @@ def test_configuration_table_names_the_selected_and_skipped_models(tmp_path):
     orch = _orchestrator(tmp_path)
     orch.config.skip_models = ["unet"]
 
-    rows = orch._configuration(["resunet", "unet-set_pred"], resume=True)
+    rows = orch._configuration(["resunet", "unet"], resume=True)
 
-    assert rows["Models"]  == "2: resunet, unet-set_pred"
+    assert rows["Models"]  == "2: resunet, unet"
     assert rows["Skipped"] == "unet"
     assert rows["Mode"]    == "resume"
 

@@ -321,40 +321,11 @@ class ConvNeXtBlock(nn.Module):
         return residual + self.drop_path(x)
 
 
-class PixelMLP(nn.Module):
+class OutputHeadMixin:
 
-    def __init__(
-        self,
-        in_channels:     int,
-        hidden_channels: int,
-        out_channels:    int,
-        activation:      str = "relu",
-    ):
-        super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Conv2d(in_channels, hidden_channels, kernel_size=1, bias=True),
-            LayerFactory.build_activation(activation),
-            nn.Conv2d(hidden_channels, out_channels, kernel_size=1, bias=True),
-        )
+    conv_head_kernel_size : int = 1
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.mlp(x)
-
-
-class OutputHeadsMixin:
-
-    HEADS                 : tuple = ("none", "conv", "multihead", "per_gaussian", "set_pred")
-    conv_head_kernel_size : int   = 1
-
-    def _resolve_gaussian_layout(self) -> None:
-        n_params = self.config.params_per_gaussian
-        self.n_gaussians = self.config.out_channels // n_params
-        self.n_params    = n_params
-
-    def _head_activation(self) -> str:
-        return self.config.activation
-
-    def _build_conv_head(self) -> None:
+    def _build_output_head(self) -> None:
         self.output_head = nn.Conv2d(
             in_channels  = self.embedding_channels,
             out_channels = self.config.out_channels,
@@ -362,88 +333,11 @@ class OutputHeadsMixin:
             padding      = self.conv_head_kernel_size // 2,
         )
 
-    def _build_triple_heads(self) -> None:
-        self.head_amp   = PixelMLP(self.embedding_channels, self.hidden_channels, self.n_gaussians, self._head_activation())
-        self.head_mu    = PixelMLP(self.embedding_channels, self.hidden_channels, self.n_gaussians, self._head_activation())
-        self.head_sigma = PixelMLP(self.embedding_channels, self.hidden_channels, self.n_gaussians, self._head_activation())
-
-    def _triple_head_forward(self, embedding: torch.Tensor) -> torch.Tensor:
-        amp   = self.head_amp(embedding)
-        mu    = self.head_mu(embedding)
-        sigma = self.head_sigma(embedding)
-
-        B, K, H, W = amp.shape
-        out = torch.stack([amp, mu, sigma], dim=2)
-        return out.reshape(B, K * 3, H, W)
-
-    def _build_per_gaussian_heads(self) -> None:
-        self.gaussian_heads = nn.ModuleList([
-            PixelMLP(self.embedding_channels, self.hidden_channels, self.n_params, self._head_activation())
-            for _ in range(self.n_gaussians)
-        ])
-
-    def _per_gaussian_forward(self, embedding: torch.Tensor) -> torch.Tensor:
-        head_outputs = [head(embedding) for head in self.gaussian_heads]
-
-        B, _, H, W = head_outputs[0].shape
-        out = torch.stack(head_outputs, dim=1)
-        return out.reshape(B, self.n_gaussians * self.n_params, H, W)
-
-    def _build_set_prediction_heads(self) -> None:
-        self._build_per_gaussian_heads()
-        self.existence_head = PixelMLP(self.embedding_channels, self.hidden_channels, self.n_gaussians, self._head_activation())
-        self.amp_off        = nn.Parameter(torch.zeros(self.n_gaussians))
-
-    def _set_prediction_forward(self, embedding: torch.Tensor) -> torch.Tensor:
-        head_outputs = [head(embedding) for head in self.gaussian_heads]
-        gate         = torch.sigmoid(self.existence_head(embedding))
-
-        B, _, H, W = head_outputs[0].shape
-        out = torch.stack(head_outputs, dim=1)
-
-        off = self.amp_off.view(1, self.n_gaussians, 1, 1)
-        amp = gate * out[:, :, 0] + (1.0 - gate) * off
-        out = torch.cat([amp[:, :, None], out[:, :, 1:]], dim=2)
-
-        return out.reshape(B, self.n_gaussians * self.n_params, H, W)
-
-    def _build_output_head(self) -> None:
-        head = self.config.head
-        if head == "none":
-            return
-
-        self.hidden_channels = max(self.embedding_channels // 2, 16)
-
-        if head == "conv":
-            self._build_conv_head()
-            return
-
-        self._resolve_gaussian_layout()
-        {"multihead": self._build_triple_heads, "per_gaussian": self._build_per_gaussian_heads, "set_pred": self._build_set_prediction_heads}[head]()
-
     def _head_forward(self, embedding: torch.Tensor) -> torch.Tensor:
-        head = self.config.head
-        if head == "none":
-            return embedding
-        if head == "conv":
-            return self.output_head(embedding)
-        if head == "multihead":
-            return self._triple_head_forward(embedding)
-        if head == "per_gaussian":
-            return self._per_gaussian_forward(embedding)
-        return self._set_prediction_forward(embedding)
+        return self.output_head(embedding)
 
     def head_parameters(self) -> list:
-        head = self.config.head
-        if head == "none":
-            return []
-        if head == "conv":
-            return list(self.output_head.parameters())
-        if head == "multihead":
-            return list(self.head_amp.parameters()) + list(self.head_mu.parameters()) + list(self.head_sigma.parameters())
-        if head == "per_gaussian":
-            return list(self.gaussian_heads.parameters())
-        return list(self.gaussian_heads.parameters()) + list(self.existence_head.parameters()) + [self.amp_off]
+        return list(self.output_head.parameters())
 
 
 class Encoder(nn.Module):

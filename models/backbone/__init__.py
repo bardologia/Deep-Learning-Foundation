@@ -68,8 +68,6 @@ BACKBONE_CONFIG_REGISTRY: dict[str, type] = {
 }
 
 
-BACKBONE_HEADS: tuple[str, ...] = ("conv", "multihead", "per_gaussian", "set_pred")
-
 BACKBONE_IMAGE_SIZE_MODELS: frozenset[str] = frozenset({"swin_unet", "transunet", "unetr"})
 
 
@@ -120,7 +118,6 @@ __all__ = [
     "get_backbone",
     "BACKBONE_MODEL_REGISTRY",
     "BACKBONE_CONFIG_REGISTRY",
-    "BACKBONE_HEADS",
     "BACKBONE_IMAGE_SIZE_MODELS",
     "LayerFactory",
     "DropPath",

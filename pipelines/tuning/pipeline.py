@@ -8,8 +8,7 @@ import optuna
 from optuna.trial import TrialState
 
 from configuration.tuning                       import TuningConfig
-from models                                     import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
-from pipelines.shared.model.model_builder       import ModelBuilder
+from models                                     import BACKBONE_CONFIG_REGISTRY
 from pipelines.shared.orchestration.resumed_run import TuningResumedRun
 from pipelines.tuning.plots                     import StudyPlotter
 from pipelines.tuning.storage                   import TuningStorage
@@ -23,7 +22,7 @@ from tools.runtime.run_tag                      import RunTag
 
 class TuningScheduler:
 
-    STUDY_KEYS      = ("heads", "skip_models", "tuning", "loss", "paths.dataset_path")
+    STUDY_KEYS      = ("skip_models", "tuning", "loss", "paths.dataset_path")
     MUTABLE_KEYS    = ("tuning.n_trials", "tuning.plateau_patience", "tuning.plateau_min_delta", "tuning.time_budget_h")
     LAUNCH_KEYS     = (*TuningResumedRun.LAUNCH_FIELDS, *TuningResumedRun.LOCATION_FIELDS, "n_workers")
     HISTORY_DIR     = "config_history"
@@ -87,35 +86,22 @@ class TuningScheduler:
     def _study_name(self, model_name: str) -> str:
         return f"{model_name}_{self.tag}"
 
-    def _model_keys(self) -> list[str]:
-        unknown = [head for head in self.config.heads if head not in BACKBONE_HEADS]
-        if unknown:
-            sys.exit(f"ERROR: unknown head(s) {unknown}; valid: {', '.join(BACKBONE_HEADS)}")
-
-        return [ModelBuilder.model_key(name, head) for name in BACKBONE_CONFIG_REGISTRY for head in self.config.heads]
-
     def _search_space(self, model_name: str) -> dict:
-        config_cls = BACKBONE_CONFIG_REGISTRY[ModelBuilder.split_key(model_name)[0]]
-
-        return SearchSpace.of(config_cls, self.config.tuning)
+        return SearchSpace.of(BACKBONE_CONFIG_REGISTRY[model_name], self.config.tuning)
 
     def selected_models(self, target_model: str | None = None) -> list[str]:
         registry = BACKBONE_CONFIG_REGISTRY
 
         if target_model is None:
-            keys    = self._model_keys()
             skip    = set(self.config.skip_models)
-            unknown = sorted(skip - set(keys) - set(registry))
+            unknown = sorted(skip - set(registry))
             if unknown:
-                sys.exit(f"ERROR: skip_models entries match no model: {unknown}; registry keys: {', '.join(registry)}; model keys: {', '.join(keys)}")
+                sys.exit(f"ERROR: skip_models entries match no model: {unknown}; registry keys: {', '.join(registry)}")
 
-            return [key for key in keys if key not in skip and ModelBuilder.split_key(key)[0] not in skip]
+            return [name for name in registry if name not in skip]
 
-        name, head = ModelBuilder.split_key(target_model)
-        if name not in registry:
-            sys.exit(f"ERROR: unknown model '{name}'. Available: {list(registry.keys())}")
-        if head not in BACKBONE_HEADS:
-            sys.exit(f"ERROR: unknown head '{head}'. Available: {list(BACKBONE_HEADS)}")
+        if target_model not in registry:
+            sys.exit(f"ERROR: unknown model '{target_model}'. Available: {list(registry.keys())}")
 
         return [target_model]
 

@@ -24,10 +24,8 @@ def test_arch_config_instantiates_with_defaults(config_cls):
 @pytest.mark.parametrize("config_cls", BACKBONE_CONFIGS, ids=[c.__name__ for c in BACKBONE_CONFIGS])
 def test_backbone_default_channels_are_positive(config_cls):
     instance = config_cls()
-    assert instance.in_channels         > 0
-    assert instance.out_channels        > 0
-    assert instance.params_per_gaussian == 3
-    assert instance.head                == "conv"
+    assert instance.in_channels  > 0
+    assert instance.out_channels > 0
 
 
 @pytest.mark.parametrize("config_cls", BACKBONE_CONFIGS, ids=[c.__name__ for c in BACKBONE_CONFIGS])

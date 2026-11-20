@@ -61,13 +61,13 @@ def test_read_returns_the_one_best_configuration_and_refuses_none_or_several(tmp
     with pytest.raises(ValueError, match="found 0"):
         verdict.read(tmp_path)
 
-    path = tmp_path / "unet_skip-set_pred" / "best_config.json"
+    path = tmp_path / "unet_skip" / "best_config.json"
     path.parent.mkdir()
-    path.write_text(json.dumps({"model": "unet_skip-set_pred", "trial": 3, "val_loss": 0.2, "params": {"encoder_lr": 0.0003, "batch_size": 512}}))
+    path.write_text(json.dumps({"model": "unet_skip", "trial": 3, "val_loss": 0.2, "params": {"encoder_lr": 0.0003, "batch_size": 512}}))
 
     assert verdict.read(tmp_path) == {"encoder_lr": 0.0003, "batch_size": 512}
 
-    other = tmp_path / "resunet-set_pred" / "best_config.json"
+    other = tmp_path / "resunet" / "best_config.json"
     other.parent.mkdir()
     other.write_text(json.dumps({"params": {"dropout": 0.1}}))
 

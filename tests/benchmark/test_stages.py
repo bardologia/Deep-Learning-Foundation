@@ -93,7 +93,7 @@ def test_training_seed_sweep_job_uses_base_model_and_seed(data_config, logger_st
     data_config.seeds = [7]
     stage = TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
 
-    unit = "unet-conv-mse-hv"
+    unit = "unet-mse-hv"
     assert stage.items == [f"{unit}/seed7"]
 
     job = stage._job(f"{unit}/seed7")
@@ -108,7 +108,7 @@ def test_inference_seed_sweep_matches_training_run_names(data_config, logger_stu
     data_config.seeds = [3, 4]
     stage = InferenceStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
 
-    unit = "unet-conv-mse-hv"
+    unit = "unet-mse-hv"
     assert stage.items == [f"{unit}/seed3", f"{unit}/seed4"]
 
     job = stage._job(f"{unit}/seed4")
@@ -118,10 +118,10 @@ def test_inference_seed_sweep_matches_training_run_names(data_config, logger_stu
 
 
 @pytest.mark.dataset
-def test_unit_base_names_model_head_stem_and_component(data_config):
-    unit = SeedExpandedStage.unit_base(data_config, "resunet-set_pred", "l1")
+def test_unit_base_names_model_loss_kind_and_augmentation(data_config):
+    unit = SeedExpandedStage.unit_base(data_config, "resunet", "l1")
 
-    assert unit == "resunet-set_pred-l1-hv"
+    assert unit == "resunet-l1-hv"
 
 
 @pytest.mark.dataset
@@ -137,7 +137,7 @@ def test_training_stage_reuses_a_unit_found_through_its_manifest(data_config, lo
     CompletionMarker.stamp(old, {})
 
     stage   = TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
-    planned = "unet-conv-mse-hv/seed7"
+    planned = "unet-mse-hv/seed7"
 
     assert stage.unit_dirs == {planned: "renamed_unit/seed7"}
     assert stage._job(planned).command[stage._job(planned).command.index("--run-name") + 1] == "renamed_unit/seed7"
@@ -149,9 +149,9 @@ def test_training_stage_hands_a_fresh_unit_its_own_name(data_config, logger_stub
     data_config.seeds = [7]
     stage = TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
 
-    job = stage._job("unet-conv-mse-hv/seed7")
+    job = stage._job("unet-mse-hv/seed7")
 
-    assert job.command[job.command.index("--run-name") + 1] == "unet-conv-mse-hv/seed7"
+    assert job.command[job.command.index("--run-name") + 1] == "unet-mse-hv/seed7"
 
 
 def test_comparison_stage_builds_from_the_standalone_entry_config(logger_stub):
@@ -189,7 +189,7 @@ def test_a_manifestless_directory_at_a_planned_units_path_is_reported_as_that_un
     data_config.resume = True
     data_config.seeds  = [7]
 
-    planned = "unet-conv-mse-hv/seed7"
+    planned = "unet-mse-hv/seed7"
     unit    = data_config.paths.log_base_dir / "t" / "training" / planned
     (unit / "meta").mkdir(parents=True)
     CompletionMarker.stamp(unit, {"stage": "training"})
@@ -242,7 +242,7 @@ def test_comparison_stage_names_planned_units_it_did_not_collect_and_runs_outsid
 def test_comparison_stage_matches_planned_units_through_their_directories(config, recording_logger, monkeypatch):
     root  = config.paths.log_base_dir / "t" / "training"
     runs  = [_run_record(root, "renamed/seed7", True)]
-    stage = _comparison_stage(config, recording_logger, {"unet-conv-mse-hv/seed7": "renamed/seed7"}, monkeypatch, runs)
+    stage = _comparison_stage(config, recording_logger, {"unet-mse-hv/seed7": "renamed/seed7"}, monkeypatch, runs)
 
     stage.run()
 

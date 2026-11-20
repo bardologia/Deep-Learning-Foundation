@@ -43,12 +43,8 @@ class SingleTrainRunner:
         return self.config.backbone_name
 
     @property
-    def model_head(self) -> str:
-        return self.config.backbone_head
-
-    @property
     def label(self) -> str:
-        return RunNaming.tag(self.model_name, self.model_head, self.config.loss, self.config.augmentation)
+        return RunNaming.tag(self.model_name, self.config.loss, self.config.augmentation)
 
     def _apply_resume_from(self) -> None:
         target = Path(self.config.resume_from).expanduser()
@@ -74,7 +70,7 @@ class SingleTrainRunner:
         return self.unit_resume
 
     def _model_config(self):
-        return ModelBuilder.config_from_registry(self.config.backbone_name, self.config.model_overrides, head=self.config.backbone_head)
+        return ModelBuilder.config_from_registry(self.config.backbone_name, self.config.model_overrides)
 
     def _pipeline(self, logdir) -> TrainingPipeline:
         return TrainingPipeline(
@@ -144,11 +140,11 @@ class TrainScheduler(TrialSweepScheduler):
     def _build_planner(self):
         mode = self.config.trials_mode
         if mode == "patch":
-            return PatchSizeTrialPlanner(self.config.patch_trials, self.config.backbone_name, self.config.backbone_head, self.config.model_overrides, self.config.training)
+            return PatchSizeTrialPlanner(self.config.patch_trials, self.config.backbone_name, self.config.model_overrides, self.config.training)
         if mode == "context":
             return ContextTrialPlanner(self.config.context_trials, tuple(BACKBONE_CONFIG_REGISTRY))
         if mode == "reach":
-            return ReachTrialPlanner(self.config.reach_trials, tuple(BACKBONE_CONFIG_REGISTRY), self.config.backbone_head, self._out_channels())
+            return ReachTrialPlanner(self.config.reach_trials, tuple(BACKBONE_CONFIG_REGISTRY), self._out_channels())
         if mode == "augmentation":
             return AugmentationTrialPlanner(self.config.augmentation_trials)
         if mode == "stability":
@@ -158,7 +154,7 @@ class TrainScheduler(TrialSweepScheduler):
         return AmpTrialPlanner()
 
     def _model_key(self) -> str:
-        return ModelBuilder.model_key(self.config.backbone_name, self.config.backbone_head)
+        return self.config.backbone_name
 
     def _write_mode_report(self) -> None:
         if self.config.trials_mode != "patch":

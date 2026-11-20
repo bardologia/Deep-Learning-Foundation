@@ -12,9 +12,8 @@ from models.blocks import (
     DropPathSchedule,
     Encoder,
     MultiHeadSelfAttention,
-    OutputHeadsMixin,
+    OutputHeadMixin,
     PatchEmbedding,
-    PixelMLP,
     ResidualConvBlock,
     TransformerBlock,
 )
@@ -136,13 +135,6 @@ def test_convnext_block(layer_scale_init):
     assert _finite(out)
 
 
-def test_pixel_mlp():
-    block = PixelMLP(4, 16, 3)
-    out   = block(torch.randn(2, 4, 7, 7))
-    assert out.shape == (2, 3, 7, 7)
-    assert _finite(out)
-
-
 def test_encoder_decoder_roundtrip():
     feature_sizes = [4, 8, 16]
     encoder       = Encoder(3, feature_sizes)
@@ -201,44 +193,21 @@ def test_block_backward_finite_grads():
     assert _finite(x.grad)
 
 
-class _GaussianModule(OutputHeadsMixin):
-    def __init__(self, head: str = "conv"):
+class _HeadModule(OutputHeadMixin):
+    def __init__(self):
         class _Cfg:
-            params_per_gaussian = 3
-            out_channels        = 9
-            activation          = "relu"
-        _Cfg.head               = head
+            out_channels = 9
+
         self.config             = _Cfg()
         self.embedding_channels = 8
-        self.hidden_channels    = 16
-        self._resolve_gaussian_layout()
 
 
-def test_gaussian_heads_triple():
-    module = _GaussianModule()
-    module._build_triple_heads()
-    out = module._triple_head_forward(torch.randn(2, 8, 5, 5))
-    assert out.shape == (2, 9, 5, 5)
-    assert _finite(out)
-
-
-def test_gaussian_heads_per_gaussian():
-    module = _GaussianModule()
-    module._build_per_gaussian_heads()
-    out = module._per_gaussian_forward(torch.randn(2, 8, 5, 5))
-    assert out.shape == (2, 9, 5, 5)
-    assert _finite(out)
-
-
-@pytest.mark.parametrize("head", ["conv", "multihead", "per_gaussian", "set_pred"])
-def test_output_head_dispatch(head):
-    module = _GaussianModule(head=head)
+def test_output_head_maps_the_embedding_to_the_output_channels():
+    module = _HeadModule()
     module._build_output_head()
 
     out = module._head_forward(torch.randn(2, 8, 5, 5))
 
     assert out.shape == (2, 9, 5, 5)
     assert _finite(out)
-    assert len(module.head_parameters()) > 0
-
-
+    assert len(module.head_parameters()) == 2

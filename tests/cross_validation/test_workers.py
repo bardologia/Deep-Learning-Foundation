@@ -279,7 +279,7 @@ def test_inference_worker_builds_run_directory(test_data_dir, tmp_path, monkeypa
     assert captured["ran"]                  is True
     assert captured["config"].run_directory == expected_dir
     assert expected_dir.name.endswith("_fold_1")
-    assert expected_dir.name.startswith(f"{worker.config.backbone_name}-{worker.config.backbone_head}-")
+    assert expected_dir.name.startswith(f"{worker.config.backbone_name}-")
     assert "-mse-" in expected_dir.name
     assert captured["config"].split         == "test"
     assert captured["config"].output_subdir is None
@@ -361,7 +361,7 @@ def test_backbone_fold_trainer_uses_the_entry_loss(test_data_dir, tmp_path, monk
     assert trainer_config.loss is config.loss
     from pipelines.shared.training.run_naming import RunNaming
 
-    run_tag = RunNaming.tag(config.backbone_name, config.backbone_head, config.loss, config.augmentation)
+    run_tag = RunNaming.tag(config.backbone_name, config.loss, config.augmentation)
     assert captured["run_name"] == f"{run_tag}_fold_1/seed7"
 
 

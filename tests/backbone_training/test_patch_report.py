@@ -22,7 +22,7 @@ def make_planner(maximum: tuple[int, int] = (32, 16)) -> PatchSizeTrialPlanner:
     config = BackboneEntryConfig()
     trials = PatchTrialsConfig(maximum=maximum)
 
-    return PatchSizeTrialPlanner(trials, "unet", "conv", {"features": [64, 128, 256]}, config.training)
+    return PatchSizeTrialPlanner(trials, "unet", {"features": [64, 128, 256]}, config.training)
 
 
 def synthetic_loss(patch_size: tuple[int, int]) -> float:
@@ -65,7 +65,7 @@ def make_report(tmp_path: Path, planner: PatchSizeTrialPlanner, logger: Logger, 
     config       = BackboneEntryConfig()
     config.seeds = seeds or [0]
 
-    return PatchTrialsReport(config=config, planner=planner, model_label="unet-conv", runs_root=tmp_path / "runs", out_dir=tmp_path / "report", logger=logger)
+    return PatchTrialsReport(config=config, planner=planner, model_label="unet", runs_root=tmp_path / "runs", out_dir=tmp_path / "report", logger=logger)
 
 
 def test_collector_reads_every_trial(tmp_path, logger):
@@ -82,7 +82,7 @@ def test_collector_reads_every_trial(tmp_path, logger):
 
 def test_collector_resolves_label_prefixed_run_directories(tmp_path, logger):
     planner = make_planner(maximum=(16, 16))
-    populate_runs(tmp_path / "runs", planner, prefix="unet-conv_")
+    populate_runs(tmp_path / "runs", planner, prefix="unet_")
 
     records = PatchTrialCollector(runs_root=tmp_path / "runs", planner=planner, logger=logger, seeds=[0]).collect()
 
@@ -221,7 +221,7 @@ def test_markdown_names_the_ranking_metric_and_the_model(tmp_path, logger):
     text = (tmp_path / "report" / "report.md").read_text()
 
     assert "seed-mean test avg_loss" in text
-    assert "unet-conv" in text
+    assert "unet" in text
     assert "**24x16**" in text
 
 

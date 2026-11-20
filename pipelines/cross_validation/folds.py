@@ -206,7 +206,7 @@ class FoldRunNaming:
 
         config = self.config
 
-        return RunNaming.tag(config.backbone_name, config.backbone_head, config.loss, config.augmentation)
+        return RunNaming.tag(config.backbone_name, config.loss, config.augmentation)
 
     def run_name(self, fold_index: int, seed: int | None) -> str:
         from pipelines.shared.training.run_naming import RunNaming

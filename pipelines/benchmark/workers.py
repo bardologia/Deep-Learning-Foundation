@@ -37,8 +37,7 @@ class TrainingWorker(BenchmarkWorker):
         from pipelines.shared.model.model_builder import ModelBuilder
 
         stage_dir    = self.run_dir / "training"
-        name, head   = ModelBuilder.split_key(model_name)
-        model_config = ModelBuilder.config_from_registry(name, {}, head=head)
+        model_config = ModelBuilder.config_from_registry(model_name, {})
 
         trainer_config = self.factory.training_trainer_config(logdir=stage_dir)
         self._apply_loss_component(trainer_config, loss_component)
@@ -46,7 +45,7 @@ class TrainingWorker(BenchmarkWorker):
         pipeline = TrainingPipeline(
             trainer_config = trainer_config,
             dataset_config = self.factory.training_dataset_config(),
-            backbone_name  = name,
+            backbone_name  = model_name,
             model_config   = model_config,
             seed           = self.config.seed if seed is None else seed,
             run_name       = run_name,

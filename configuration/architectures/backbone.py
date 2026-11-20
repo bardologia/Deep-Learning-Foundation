@@ -9,10 +9,8 @@ import torch.nn as nn
 @dataclass
 class UNetConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     features            : list[int] = field(default_factory=lambda: [64, 128, 256, 512])
     bottleneck_factor   : int       = 2
     dropout             : float     = 0.15
@@ -74,10 +72,8 @@ class UNetConfig:
 @dataclass
 class ResUNetConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     features            : list[int] = field(default_factory=lambda: [64, 128, 256, 512])
     bottleneck_factor   : int       = 2
     dropout             : float     = 0.15
@@ -141,10 +137,8 @@ class ResUNetConfig:
 @dataclass
 class UNetSkipConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     features            : list[int] = field(default_factory=lambda: [64, 128, 256, 512])
     bottleneck_factor   : int       = 2
     dropout             : float     = 0.15
@@ -208,10 +202,8 @@ class UNetSkipConfig:
 @dataclass
 class AttentionUNetConfig:
 
-    in_channels                  : int       = 1
-    out_channels                 : int       = 6
-    params_per_gaussian          : int       = 3
-    head                         : str       = "conv"
+    in_channels                  : int       = 4
+    out_channels                 : int       = 2
     features                     : list[int] = field(default_factory=lambda: [64, 128, 256, 512])
     bottleneck_factor            : int       = 2
     dropout                      : float     = 0.15
@@ -287,10 +279,8 @@ class AttentionUNetConfig:
 @dataclass
 class UNetPlusPlusConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     features            : list[int] = field(default_factory=lambda: [56, 112, 216, 440])
     bottleneck_factor   : int       = 2
     dropout             : float     = 0.15
@@ -361,10 +351,8 @@ class UNetPlusPlusConfig:
 @dataclass
 class LinkNetConfig:
 
-    in_channels              : int       = 1
-    out_channels             : int       = 6
-    params_per_gaussian      : int       = 3
-    head                     : str       = "conv"
+    in_channels              : int       = 4
+    out_channels             : int       = 2
     features                 : list[int] = field(default_factory=lambda: [152, 312, 624, 1248])
     dropout                  : float     = 0.15
     initial_kernel_size      : int       = 7
@@ -422,10 +410,8 @@ class LinkNetConfig:
 @dataclass
 class SwinUNetConfig:
 
-    in_channels           : int       = 1
-    out_channels          : int       = 6
-    params_per_gaussian   : int       = 3
-    head                  : str       = "conv"
+    in_channels           : int       = 4
+    out_channels          : int       = 2
     image_size            : int       = 256
     patch_size            : int       = 4
     embedding_dim         : int       = 80
@@ -503,10 +489,8 @@ class SwinUNetConfig:
 @dataclass
 class TransUNetConfig:
 
-    in_channels           : int       = 1
-    out_channels          : int       = 6
-    params_per_gaussian   : int       = 3
-    head                  : str       = "conv"
+    in_channels           : int       = 4
+    out_channels          : int       = 2
     image_size            : int       = 256
     cnn_features          : list[int] = field(default_factory=lambda: [32, 72, 136, 272])
     bottleneck_factor     : int       = 2
@@ -598,10 +582,8 @@ class TransUNetConfig:
 @dataclass
 class UNETRConfig:
 
-    in_channels           : int       = 1
-    out_channels          : int       = 6
-    params_per_gaussian   : int       = 3
-    head                  : str       = "conv"
+    in_channels           : int       = 4
+    out_channels          : int       = 2
     image_size            : int       = 256
     patch_size            : int       = 16
     embedding_dim         : int       = 544
@@ -688,10 +670,8 @@ class UNETRConfig:
 @dataclass
 class DeepLabV3PlusConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     features            : list[int] = field(default_factory=lambda: [64, 128, 256, 512])
     atrous_rates        : tuple     = (1, 2, 4)
     dropout             : float     = 0.15
@@ -753,10 +733,8 @@ class DeepLabV3PlusConfig:
 @dataclass
 class SegFormerLiteConfig:
 
-    in_channels           : int       = 1
-    out_channels          : int       = 6
-    params_per_gaussian   : int       = 3
-    head                  : str       = "conv"
+    in_channels           : int       = 4
+    out_channels          : int       = 2
     embedding_dims        : list[int] = field(default_factory=lambda: [40, 80, 192, 320])
     depths                : list[int] = field(default_factory=lambda: [2, 2, 2, 2])
     num_heads             : tuple     = (1, 2, 4, 8)
@@ -817,10 +795,8 @@ class SegFormerLiteConfig:
 @dataclass
 class ConvNeXtUNetConfig:
 
-    in_channels           : int       = 1
-    out_channels          : int       = 6
-    params_per_gaussian   : int       = 3
-    head                  : str       = "conv"
+    in_channels           : int       = 4
+    out_channels          : int       = 2
     features              : list[int] = field(default_factory=lambda: [48, 96, 192, 384])
     bottleneck_factor     : int       = 2
     blocks_per_stage      : int       = 2
@@ -883,10 +859,8 @@ class ConvNeXtUNetConfig:
 @dataclass
 class DenseUNetConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     growth_rate         : int       = 16
     block_layers        : list[int] = field(default_factory=lambda: [4, 4, 4])
     bottleneck_layers   : int       = 4
@@ -950,10 +924,8 @@ class DenseUNetConfig:
 @dataclass
 class HRNetLiteConfig:
 
-    in_channels         : int   = 1
-    out_channels        : int   = 6
-    params_per_gaussian : int   = 3
-    head                : str   = "conv"
+    in_channels         : int   = 4
+    out_channels        : int   = 2
     base_channels       : int   = 48
     n_branches          : int   = 3
     blocks_per_stage    : int   = 2
@@ -1016,10 +988,8 @@ class HRNetLiteConfig:
 @dataclass
 class MultiResUNetConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     features            : list[int] = field(default_factory=lambda: [64, 128, 256, 512])
     bottleneck_factor   : int       = 2
     dropout             : float     = 0.15
@@ -1083,10 +1053,8 @@ class MultiResUNetConfig:
 @dataclass
 class FPNNetConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     features            : list[int] = field(default_factory=lambda: [64, 128, 256, 512])
     pyramid_channels    : int       = 128
     segmentation_convs  : int       = 2
@@ -1150,10 +1118,8 @@ class FPNNetConfig:
 @dataclass
 class U2NetLiteConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     features            : list[int] = field(default_factory=lambda: [64, 128, 256, 512])
     rsu_heights         : tuple     = (5, 4, 3)
     dropout             : float     = 0.15
@@ -1213,10 +1179,8 @@ class U2NetLiteConfig:
 @dataclass
 class PixelMLPNetConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     features            : list[int] = field(default_factory=lambda: [3200, 3200, 3200, 3200])
     dropout             : float     = 0.30
     activation          : str       = "relu"
@@ -1264,10 +1228,8 @@ class PixelMLPNetConfig:
 @dataclass
 class LocalCNNConfig:
 
-    in_channels         : int              = 1
-    out_channels        : int              = 6
-    params_per_gaussian : int              = 3
-    head                : str              = "conv"
+    in_channels         : int              = 4
+    out_channels        : int              = 2
     features            : list[int]        = field(default_factory=lambda: [1072, 1072])
     block_kernels       : list[int] | None = None
     dropout             : float            = 0.30
@@ -1316,10 +1278,8 @@ class LocalCNNConfig:
 @dataclass
 class NAFNetConfig:
 
-    in_channels         : int       = 1
-    out_channels        : int       = 6
-    params_per_gaussian : int       = 3
-    head                : str       = "conv"
+    in_channels         : int       = 4
+    out_channels        : int       = 2
     width               : int       = 32
     enc_blocks          : list[int] = field(default_factory=lambda: [2, 2, 4, 8])
     middle_blocks       : int       = 12

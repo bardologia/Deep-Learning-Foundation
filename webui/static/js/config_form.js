@@ -24,7 +24,6 @@ class ConfigForm {
     this.config          = null;
     this.builder         = null;
     this.modelFamilies   = null;
-    this.modelHeads      = null;
     this.layoutEl        = null;
     this.navHost         = null;
     this.pinsEl          = null;
@@ -217,10 +216,9 @@ class ConfigForm {
 
   _buildSpecialPanel(panel) {
     if (panel.panel === "model_card") {
-      const leaf     = this.byPath.get(panel.fields[0]);
-      const headLeaf = panel.fields.length > 1 ? this.byPath.get(panel.fields[1]) : null;
+      const leaf = this.byPath.get(panel.fields[0]);
       if (!leaf || !this.modelFamilies || !this.modelFamilies.length) return this._buildPathsPanel("Model", panel.fields);
-      return new window.ModelCardPanel(this, leaf, headLeaf).build();
+      return new window.ModelCardPanel(this, leaf).build();
     }
 
     if (panel.panel === "arch_overrides") {

@@ -1228,7 +1228,6 @@ class SequencesView extends ConfigForm {
     if (!this.modelFamilies) {
       const models       = await this._blockModels("/api/backbones");
       this.modelFamilies = (models && models.families) || [];
-      this.modelHeads    = (models && models.heads) || [];
     }
     if (this.editorKey !== editorKey) return;
 

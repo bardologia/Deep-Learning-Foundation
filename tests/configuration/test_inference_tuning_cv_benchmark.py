@@ -137,7 +137,6 @@ def test_cross_validation_validates_the_standard_backbone():
     cfg = CrossValidationConfig()
 
     assert cfg.backbone_name == BackboneEntryConfig.backbone_name
-    assert cfg.backbone_head == BackboneEntryConfig.backbone_head
 
 
 def test_cross_validation_fold_inference_saves_maps():

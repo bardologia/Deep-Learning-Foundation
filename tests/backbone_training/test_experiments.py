@@ -17,7 +17,7 @@ from pipelines.backbone.training.experiments import (
 
 def make_patch_planner(training: TrainingQueueConfig | None = None, **overrides) -> PatchSizeTrialPlanner:
     trials = PatchTrialsConfig(**overrides)
-    return PatchSizeTrialPlanner(trials, "unet", "conv", {"features": [64, 128, 256]}, training or TrainingQueueConfig())
+    return PatchSizeTrialPlanner(trials, "unet", {"features": [64, 128, 256]}, training or TrainingQueueConfig())
 
 
 def test_patch_planner_derives_the_step_from_the_backbone_pyramid():
@@ -170,7 +170,7 @@ def _reach_config(**overrides) -> ReachTrialsConfig:
 
 
 def test_reach_planner_pins_every_arm_to_the_same_patch():
-    planner = ReachTrialPlanner(_reach_config(), REGISTRY_NAMES, "conv", 2)
+    planner = ReachTrialPlanner(_reach_config(), REGISTRY_NAMES, 2)
 
     plans = planner.plan()
 
@@ -184,7 +184,7 @@ def test_reach_default_arms_are_size_matched_and_reach_the_whole_patch():
     from models import BACKBONE_CONFIG_REGISTRY
 
     trials  = ReachTrialsConfig()
-    planner = ReachTrialPlanner(trials, tuple(BACKBONE_CONFIG_REGISTRY), "conv", 2)
+    planner = ReachTrialPlanner(trials, tuple(BACKBONE_CONFIG_REGISTRY), 2)
 
     counts    = planner.parameter_counts
     deviation = (max(counts.values()) - min(counts.values())) / min(counts.values())
@@ -205,8 +205,8 @@ def test_reach_planner_counts_the_arms_at_the_dataset_target_channel_count():
         {"label" : "b", "backbone" : "local_cnn", "features" : [8] * 2},
     ]
 
-    two_targets  = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, "conv", 2)
-    five_targets = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, "conv", 5)
+    two_targets  = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, 2)
+    five_targets = ReachTrialPlanner(_reach_config(rungs=rungs), REGISTRY_NAMES, 5)
 
     assert five_targets.parameter_counts["a"] > two_targets.parameter_counts["a"]
 

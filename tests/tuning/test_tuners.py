@@ -681,7 +681,7 @@ def test_tuner_objective_materializes_trial_config(fake_logger, tune_cfg, tmp_pa
 
     assert captured["backbone_name"] == "unet"
     assert captured["seed"]          == tune_cfg.base_seed + 0
-    assert captured["run_name"]      == "unet-conv-mse-hv_trial_0000"
+    assert captured["run_name"]      == "unet-mse-hv_trial_0000"
     assert captured["emit_docs"]     is True
     assert captured["trial"].number  == 0
 

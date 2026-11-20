@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as functional
 
 from configuration.architectures import SegFormerLiteConfig
-from ..blocks                    import DropPath, LayerFactory, OutputHeadsMixin
+from ..blocks                    import DropPath, LayerFactory, OutputHeadMixin
 
 
 class OverlapPatchEmbedding(nn.Module):
@@ -107,7 +107,7 @@ class SegFormerStage(nn.Module):
         return x.transpose(1, 2).reshape(B, C, h, w)
 
 
-class SegFormerLite(nn.Module, OutputHeadsMixin):
+class SegFormerLite(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: SegFormerLiteConfig | None = None):
         super().__init__()

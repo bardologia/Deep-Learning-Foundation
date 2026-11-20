@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import UNetPlusPlusConfig
-from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadsMixin
+from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadMixin
 
-class UNetPlusPlus(nn.Module, OutputHeadsMixin):
+class UNetPlusPlus(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: UNetPlusPlusConfig | None = None):
         super().__init__()

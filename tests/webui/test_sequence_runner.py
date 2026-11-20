@@ -792,7 +792,7 @@ def _tune_block(block_id: str, **extra) -> dict:
     return _block(block_id, script="tune", overrides={"run_tag": "tag"}, decisions=[{"path": "model_overrides", "options": [], "waiting": "", "choice": ""}], **extra)
 
 
-def _write_best_config(runner: SequenceRunner, sequence_id: str, params: dict, model: str = "unet_skip-set_pred") -> None:
+def _write_best_config(runner: SequenceRunner, sequence_id: str, params: dict, model: str = "unet_skip") -> None:
     path = Path(runner.state(sequence_id)["run_dir"]) / "tag" / model / "best_config.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"model": model, "trial": 7, "val_loss": 0.1, "params": params}))
@@ -863,8 +863,8 @@ def test_a_tuning_block_with_two_best_configurations_fails(rig):
     sequence_id = _saved(store, [_tune_block("t1")], isolate=True)
 
     runner.start_sequence(sequence_id)
-    _write_best_config(runner, sequence_id, {"dropout": 0.1}, model="unet_skip-set_pred")
-    _write_best_config(runner, sequence_id, {"dropout": 0.2}, model="resunet-set_pred")
+    _write_best_config(runner, sequence_id, {"dropout": 0.1}, model="unet_skip")
+    _write_best_config(runner, sequence_id, {"dropout": 0.2}, model="resunet")
     processes.finish("job-0")
     runner.scan()
 
@@ -934,11 +934,11 @@ def test_study_progress_reads_the_workspace_snapshots(rig):
     snapshot    = {"trials": {"complete": 40, "pruned": 5, "fail": 1, "running": 4}, "finished": 46, "target": 3999, "best": {"trial": 12, "value": 0.39, "params": {}}, "stalled": 28, "plateau_patience": 400, "trials_per_hour": 23.0, "eta_target_h": 172.1}
 
     runner.start_sequence(sequence_id)
-    study = Path(runner.state(sequence_id)["run_dir"]) / "tag" / "unet_skip-set_pred" / "study_progress.json"
+    study = Path(runner.state(sequence_id)["run_dir"]) / "tag" / "unet_skip" / "study_progress.json"
     study.parent.mkdir(parents=True)
     study.write_text(json.dumps(snapshot))
 
-    assert runner.study_progress(sequence_id, "t1") == {"ok": True, "studies": {"unet_skip-set_pred": snapshot}}
+    assert runner.study_progress(sequence_id, "t1") == {"ok": True, "studies": {"unet_skip": snapshot}}
 
 
 def test_study_progress_refuses_what_it_cannot_read(rig):

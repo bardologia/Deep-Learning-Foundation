@@ -21,14 +21,14 @@ def test_augmentation_tag_letters_follow_enabled_probabilities():
     assert RunNaming.augmentation_tag(_aug(p_flip_h=0.0, p_flip_v=0.0, p_rot90=1.0)) == "r"
 
 
-def test_tag_orders_model_head_loss_and_augmentation():
-    assert RunNaming.tag("resunet", "conv", LossConfig(kind=LossKind.L1), _aug()) == "resunet-conv-l1-hv"
+def test_tag_orders_model_loss_and_augmentation():
+    assert RunNaming.tag("resunet", LossConfig(kind=LossKind.L1), _aug()) == "resunet-l1-hv"
 
 
-def test_benchmark_unit_splits_the_model_key():
-    assert RunNaming.benchmark_unit("unet", LossConfig(), _aug(p_flip_h=0.0, p_flip_v=0.0)) == "unet-conv-mse-noaug"
+def test_tag_names_a_run_without_augmentation():
+    assert RunNaming.tag("unet", LossConfig(), _aug(p_flip_h=0.0, p_flip_v=0.0)) == "unet-mse-noaug"
 
 
 def test_compose_appends_the_suffix():
-    assert RunNaming.compose("unet-conv-mse-hv", "seed0") == "unet-conv-mse-hv_seed0"
-    assert RunNaming.compose("unet-conv-mse-hv", None)    == "unet-conv-mse-hv"
+    assert RunNaming.compose("unet-mse-hv", "seed0") == "unet-mse-hv_seed0"
+    assert RunNaming.compose("unet-mse-hv", None)    == "unet-mse-hv"

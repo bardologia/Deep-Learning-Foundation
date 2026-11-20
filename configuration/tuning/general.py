@@ -49,7 +49,6 @@ class TuningEntryConfig:
     gpus        : list[int]  = field(default_factory=lambda: [0])
     n_workers   : int        = 0
     gpus_file   : str        = ""
-    heads       : list[str]  = field(default_factory=lambda: ["conv"])
     skip_models : list[str]  = field(default_factory=list)
     run_tag     : str | None = None
     resume_from : str        = ""

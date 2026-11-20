@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as functional
 
 from configuration.architectures import U2NetLiteConfig
-from ..blocks                    import ConvNormAct, LayerFactory, OutputHeadsMixin
+from ..blocks                    import ConvNormAct, LayerFactory, OutputHeadMixin
 
 
 class RSU(nn.Module):
@@ -92,7 +92,7 @@ class RSUDilated(nn.Module):
         return self.dropout(x + x_in)
 
 
-class U2NetLite(nn.Module, OutputHeadsMixin):
+class U2NetLite(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: U2NetLiteConfig | None = None):
         super().__init__()

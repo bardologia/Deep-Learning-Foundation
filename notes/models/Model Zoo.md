@@ -41,20 +41,13 @@ This note summarises all model architectures available in ML-Template, their key
 | `local_cnn` | [[Local CNN]] | Full-resolution 3×3 ConvBlock stack | None (single stream) | Single 1×1 conv | ~3.0M |
 | `nafnet` | [[NAFNet]] | Gated NAFBlock encoder-decoder (activation-free) | Additive skip | Single 3×3 conv | ~29.2M |
 
-Parameter counts are approximate for default configurations with $C_{\text{in}} = 1$ (`in_channels`) and $C_{\text{out}} = 6$ (`out_channels`), corresponding to $K = C_{\text{out}} / \text{params\_per\_gaussian} = 6/3 = 2$ Gaussian components. The [[Capacity Matching]] stage of the [[Benchmark Pipeline]] rescales all of them to the UNet reference budget before benchmarking.
+Parameter counts are approximate for default configurations with $C_{\text{in}} = 4$ (`in_channels`) and $C_{\text{out}} = 2$ (`out_channels`), the channel counts of the example dataset. The [[Capacity Matching]] stage of the [[Benchmark Pipeline]] rescales all of them to the UNet reference budget before benchmarking.
 
 ---
 
-## Output Heads
+## Output head
 
-Every backbone exposes the same four output heads through `OutputHeadsMixin` (`models/blocks.py`), selected by the `head` config field. Benchmark and tuning sweeps cross backbones with a `heads` list; a non-default combination is written as a compound key, e.g. `resunet-set_pred`.
-
-| Head key | Note | Structure | When |
-|---|---|---|---|
-| `conv` | [[Head Conv]] | Single conv projection (default) | Baseline shared projection of all $3K$ channels |
-| `multihead` | [[Head Multihead]] | 3 PixelMLP heads, one per parameter type | Systematic bias across parameter types |
-| `per_gaussian` | [[Head Per-Gaussian]] | $K$ PixelMLP heads, one per slot | Systematic bias across Gaussian slots |
-| `set_pred` | [[Head Set-Prediction]] | $K$ PixelMLP heads + existence gate | Slot collapse; pair with hungarian matching |
+Every backbone ends in one output convolution (`OutputHeadMixin`, `models/blocks.py`) from its embedding to `out_channels`, the number of target channels of the dataset. NAFNet uses a $3\times3$ kernel, every other backbone $1\times1$.
 
 ---
 
@@ -80,12 +73,6 @@ Computational efficiency is a priority. LinkNet's additive (rather than concaten
 
 ### Use SwinUNet / TransUNet / UNETR when
 Long-range spatial dependencies are important (e.g., large homogeneous structures spanning many pixels). Transformer-based architectures attend globally, unlike CNN-only designs that are limited by receptive field.
-
-### Use the multihead / per_gaussian heads when
-The default conv head shows systematic bias across parameter types (`head = "multihead"`) or across Gaussian slots (`head = "per_gaussian"`). The head axis is independent of the backbone, so the head-structure question can be isolated on any fixed encode-decode path — see [[Head Multihead]] and [[Head Per-Gaussian]].
-
-### Use the set_pred head when
-Attacking Gaussian slot collapse head-on. Per-slot heads plus an existence-logit gate give each slot an explicit on/off mechanism decoupled from amplitude regression, and together with `param_matching: hungarian` realise DETR-style set prediction under the unchanged $3K$-channel output contract. Pair with the hungarian matcher; under `sorted_gt` the gate merely relabels slots. See [[Head Set-Prediction]].
 
 ### Use DeepLabV3+ when
 Multi-scale context at fixed dilation rates is suspected to matter (e.g., characteristic facade/layover scales). ASPP aggregates several receptive fields in parallel without extra downsampling.
@@ -148,13 +135,12 @@ The recurring sub-modules live in a single `models/blocks.py` and are imported b
 | `ConvBlock` | Double $3\times3$ conv $\to$ Norm $\to$ Act (optional `Dropout2d`) | `unet`, `attention_unet`, `unetplusplus`, `transunet`, `unetr`, `convnext_unet` (decoder), `multires_unet`, `u2net`, `local_cnn` |
 | `ResidualConvBlock` | Pre-activation residual unit with stride and `first_unit` controls | `resunet`, `unet_skip` |
 | `Encoder` / `Decoder` | Symmetric `ConvBlock` stacks with `MaxPool2d` / `build_upsample` and concatenative skips | `unet` family (`UNetBackbone`) |
-| `PixelMLP` | $1\times1$ conv $\to$ Act $\to$ $1\times1$ conv pointwise head | multihead / per-Gaussian / set-prediction output heads |
-| `OutputHeadsMixin` | Builds the head selected by `config.head` (conv, multihead, per_gaussian, set_pred), resolves the $K = C_{\text{out}}/\texttt{params\_per\_gaussian}$ layout for the Gaussian heads, and exposes `head_parameters()` for the optimizer groups | every backbone |
+| `OutputHeadMixin` | Builds the output convolution to `out_channels` and exposes `head_parameters()` for the optimizer groups | every backbone |
 | `MultiHeadSelfAttention` / `TransformerBlock` | Pre-norm full self-attention and the transformer layer (LN $\to$ MSA $\to$ residual $\to$ LN $\to$ FFN $\to$ residual, with `DropPath`) | `transunet`, `unetr` |
 | `PatchEmbedding` / `tokens_to_feature_map` | Strided-conv patch tokeniser and the inverse token $\to$ feature-map reshape | `transunet`, `unetr`; `tokens_to_feature_map` also used by `swin_unet` |
 | `build_activation` / `build_norm2d` / `build_upsample` / `initialize_weights` / `match_spatial_size` / `DropPath` | Factory and utility helpers | all architectures |
 
-Every backbone class inherits `OutputHeadsMixin`, sets `embedding_channels` at the end of its constructor, and calls `_build_output_head()` / `_head_forward()` so the head is a pure function of `config.head`. The default `conv` head maps the backbone embedding straight to `out_channels` with one convolution (`conv_head_kernel_size` is $1$ everywhere except NAFNet's native $3\times3$), with no Gaussian-layout resolution. The Gaussian heads call `_resolve_gaussian_layout`, which sets $K = \texttt{out\_channels} / \texttt{params\_per\_gaussian}$ and raises `ValueError` when `out_channels` is not divisible by `params_per_gaussian`; `_build_triple_heads` builds three `PixelMLP` heads each emitting $K$ channels (interleaved to $3K$), `_build_per_gaussian_heads` builds $K$ `PixelMLP` heads each emitting `params_per_gaussian` channels, and `_build_set_prediction_heads` adds the existence gate on top. Backbones without a plain `activation` config field route the head activation explicitly (`_head_activation`: `ffn_activation` for SwinUNet, SegFormer, and ConvNeXt UNet; GELU for NAFNet). Swin-specific window attention (`WindowAttention`, `SwinTransformerBlock`, `PatchMerging`, `PatchExpanding`, `SwinStage`) remains local to `models/backbone/swin_unet.py` because it is not reused elsewhere.
+Every backbone class inherits `OutputHeadMixin`, sets `embedding_channels` at the end of its constructor, and calls `_build_output_head()` / `_head_forward()`. The head maps the backbone embedding straight to `out_channels` with one convolution (`conv_head_kernel_size` is $1$ everywhere except NAFNet's native $3\times3$). Swin-specific window attention (`WindowAttention`, `SwinTransformerBlock`, `PatchMerging`, `PatchExpanding`, `SwinStage`) remains local to `models/backbone/swin_unet.py` because it is not reused elsewhere.
 
 ---
 
@@ -172,5 +158,4 @@ Each training run persists the full architecture configuration so a checkpoint c
 - [[Training Pipeline]] — Model instantiation and training loop
 - [[UNet]] — Baseline architecture
 - [[Attention UNet]] — Attention-gated variant
-- [[Head Conv]] / [[Head Multihead]] / [[Head Per-Gaussian]] / [[Head Set-Prediction]] — the output-head axis
-- [[Configuration Layer]] — UNetConfig and the shared head field
+- [[Configuration Layer]] — UNetConfig

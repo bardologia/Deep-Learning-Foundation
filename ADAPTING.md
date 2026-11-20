@@ -138,7 +138,7 @@ by `webui/config_registry.py`, in both directions.
 ### Old checkpoints still load
 
 `tests/state_dict_baseline.json` records the key set, shape signature and parameter count
-of every model in every registry, at every head.
+of every model in every registry.
 
 - Fails in: `tests/models_baseline/test_state_dict_baseline.py::test_state_dict_matches_baseline`
   when an architecture changes shape, and `::test_baseline_covers_full_registries` when a
@@ -200,7 +200,7 @@ Backbones are registered in `models/backbone/__init__.py`. A new one needs, in o
 
 1. The module under `models/backbone/`, reusing the shared pieces in `models/blocks.py`
    (`build_activation`, `build_norm2d`, `build_upsample`, `DropPath`,
-   `initialize_weights`) and mixing in `OutputHeadsMixin` so it gets the four heads.
+   `initialize_weights`) and mixing in `OutputHeadMixin` for the output convolution.
 2. Its config dataclass in `configuration/architectures/backbone.py`.
 3. Entries in `BACKBONE_MODEL_REGISTRY` and `BACKBONE_CONFIG_REGISTRY` under the same key,
    plus the names in `__all__`. If it needs a fixed input size, add it to
@@ -214,8 +214,8 @@ Backbones are registered in `models/backbone/__init__.py`. A new one needs, in o
 `tests/webui/test_backbone_model_library.py` checks 3, 4 and 5 against each other:
 `test_config_classes_cover_the_backbone_registry`, `test_note_files_cover_the_backbone_registry`,
 `test_families_cover_the_backbone_registry_exactly_once` and `test_every_model_resolves_a_note`.
-`tests/models_backbone/test_backbone_architectures.py` puts the model itself through every
-head.
+`tests/models_backbone/test_backbone_architectures.py` puts the model itself through its
+forward pass and its optimizer groups.
 
 ## 6. Add an entry point
 

@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import AttentionUNetConfig
-from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadsMixin
+from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadMixin
 
 class AttentionGate(nn.Module):
 
@@ -68,7 +68,7 @@ class AttentionGate(nn.Module):
 
         return self.output_transform(skip_connection * attention_weights)
 
-class AttentionUNet(nn.Module, OutputHeadsMixin):
+class AttentionUNet(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: AttentionUNetConfig | None = None):
         super().__init__()

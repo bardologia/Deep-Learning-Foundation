@@ -332,7 +332,7 @@ def test_split_inference_dir_picks_latest_and_skips_incomplete(tmp_path):
 
 
 def test_fold_naming_recognises_tagged_and_bare_fold_names():
-    assert FoldNaming.is_fold("resunet-conv-sorted_gt_fold_0")
+    assert FoldNaming.is_fold("resunet-mse-hv_fold_0")
     assert FoldNaming.is_fold("fold_12")
     assert not FoldNaming.is_fold("fold_0_seed1")
     assert not FoldNaming.is_fold("_comparison")

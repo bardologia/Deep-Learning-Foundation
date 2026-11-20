@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as functional
 
 from configuration.architectures import DeepLabV3PlusConfig
-from ..blocks                    import ConvNormAct, LayerFactory, OutputHeadsMixin, ResidualConvBlock
+from ..blocks                    import ConvNormAct, LayerFactory, OutputHeadMixin, ResidualConvBlock
 
 
 class ASPP(nn.Module):
@@ -50,7 +50,7 @@ class ASPP(nn.Module):
         return self.project(torch.cat(branch_outputs, dim=1))
 
 
-class DeepLabV3Plus(nn.Module, OutputHeadsMixin):
+class DeepLabV3Plus(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: DeepLabV3PlusConfig | None = None):
         super().__init__()

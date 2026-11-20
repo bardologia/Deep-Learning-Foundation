@@ -5,10 +5,10 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import TransUNetConfig
-from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadsMixin, PatchEmbedding, TransformerBlock
+from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadMixin, PatchEmbedding, TransformerBlock
 
 
-class TransUNet(nn.Module, OutputHeadsMixin):
+class TransUNet(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: TransUNetConfig | None = None):
         super().__init__()

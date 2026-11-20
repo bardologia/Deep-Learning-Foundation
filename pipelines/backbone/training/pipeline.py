@@ -77,7 +77,6 @@ class TrainingPipeline:
         self.logger.section("[Model Built]")
         self.logger.kv_table({
             "Architecture" : self.backbone_name,
-            "Head"         : model_cfg.head,
             "In Channels"  : in_channels,
             "Out Channels" : out_channels,
             "Parameters"   : params,

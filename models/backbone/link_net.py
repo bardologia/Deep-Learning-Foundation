@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import LinkNetConfig
-from ..blocks                    import FeatureGeometry, LayerFactory, OutputHeadsMixin
+from ..blocks                    import FeatureGeometry, LayerFactory, OutputHeadMixin
 
 class ResidualEncoderBlock(nn.Module):
 
@@ -106,7 +106,7 @@ class BottleneckDecoderBlock(nn.Module):
         return self.layers(x)
 
 
-class LinkNet(nn.Module, OutputHeadsMixin):
+class LinkNet(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: LinkNetConfig | None = None):
         super().__init__()

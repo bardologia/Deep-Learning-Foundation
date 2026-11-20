@@ -5,10 +5,10 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import ResUNetConfig, UNetSkipConfig
-from ..blocks                    import FeatureGeometry, LayerFactory, OutputHeadsMixin, ResidualConvBlock
+from ..blocks                    import FeatureGeometry, LayerFactory, OutputHeadMixin, ResidualConvBlock
 
 
-class ResUNetBackbone(nn.Module, OutputHeadsMixin):
+class ResUNetBackbone(nn.Module, OutputHeadMixin):
 
     def __init__(self, config, downsample: str = "stride"):
         super().__init__()

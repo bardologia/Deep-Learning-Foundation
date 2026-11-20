@@ -45,7 +45,6 @@ class JobDescriber:
             ("rescoring scored runs", "skip_completed",  "unflag"),
         ],
         "benchmark": [
-            ("heads",    "heads",            "list"),
             ("losses",   "sweep_loss_kinds", "list"),
             ("seeds",    "seeds",            "list"),
             ("gpus",     "gpus",             "list"),
@@ -63,7 +62,6 @@ class JobDescriber:
         "tune": [
             ("trials",       "tuning.n_trials", "text"),
             ("epochs/trial", "tuning.n_epochs", "text"),
-            ("heads",        "heads",           "list"),
             ("tag",          "run_tag",         "opt"),
             ("resuming",     "resume_from",     "opt_tail"),
             ("stage",        "stage",           "unless", "full"),
@@ -167,22 +165,21 @@ class JobDescriber:
         return ResumeRecording.values(resume_from)
 
     def _lead_train_backbone(self, values: dict, used: set) -> list[str]:
-        used.update(("trials_enabled", "trials_mode", "backbone_name", "backbone_head"))
+        used.update(("trials_enabled", "trials_mode", "backbone_name"))
 
-        mode  = f"{values.get('trials_mode', '')} trials experiment".strip() if self._truthy(values.get("trials_enabled", "")) else "single training"
-        model = self._join(values, "backbone_name", "backbone_head")
-        return [part for part in (mode, model) if part]
+        mode = f"{values.get('trials_mode', '')} trials experiment".strip() if self._truthy(values.get("trials_enabled", "")) else "single training"
+        return [part for part in (mode, values.get("backbone_name", "")) if part]
 
     def _lead_benchmark(self, values: dict, used: set) -> list[str]:
         return ["benchmark"]
 
     def _lead_cross_validate(self, values: dict, used: set) -> list[str]:
-        used.update(("folds.n_folds", "backbone_name", "backbone_head"))
+        used.update(("folds.n_folds", "backbone_name"))
 
         folds = values.get("folds.n_folds", "")
         lead  = f"{folds}-fold cross-validation" if folds else "cross-validation"
 
-        return [part for part in (lead, self._join(values, "backbone_name", "backbone_head")) if part]
+        return [part for part in (lead, values.get("backbone_name", "")) if part]
 
     def _lead_tune(self, values: dict, used: set) -> list[str]:
         return ["Optuna search"]
@@ -261,11 +258,6 @@ class JobDescriber:
 
     def _tail(self, value: str) -> str:
         return self._compact(value).rstrip("/").rsplit("/", 1)[-1]
-
-    def _join(self, values: dict, first: str, second: str) -> str:
-        left  = values.get(first, "")
-        right = values.get(second, "")
-        return f"{left}-{right}" if left and right else left or right
 
     def _labelled(self, label: str, value: str) -> str:
         return f"{label} {value}" if label else value

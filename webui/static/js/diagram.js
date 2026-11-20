@@ -53,10 +53,6 @@ class ModelDiagram {
     else if (skip.includes("additive")) skipKind = "additive";
     else if (skip.includes("residual")) skipKind = "residual";
     else if (skip.includes("token")) skipKind = "tokens";
-    const head = (model.head || "").toLowerCase();
-    let heads = 1;
-    if (head.includes("3 ")) heads = 3;
-    else if (head.includes("k ")) heads = "K";
     const isT = (model.family || "").toLowerCase().startsWith("transformer");
     let type = isT ? "transformer" : "unet";
 
@@ -67,7 +63,7 @@ class ModelDiagram {
     const normMap = { batch: "BatchNorm", instance: "InstanceNorm", group: "GroupNorm", layer: "LayerNorm", layernorm: "LayerNorm", l2: "L2 Norm", none: null };
     const act = (model.activation || "relu").toLowerCase();
     const norm = (model.normalization || "batch").toLowerCase();
-    return { skipKind, heads, type, key: model.key, act: actMap[act] || "ReLU", norm: normMap[norm] !== undefined ? normMap[norm] : "BatchNorm" };
+    return { skipKind, type, key: model.key, act: actMap[act] || "ReLU", norm: normMap[norm] !== undefined ? normMap[norm] : "BatchNorm" };
   }
 
   /* ---------- primitives ---------- */
@@ -306,7 +302,6 @@ class ModelDiagram {
   /* ---------- block detail ---------- */
 
   static _block(block) {
-    if (block.fan) return this._fan(block);
     if (block.horizontal) return this._blockH(block);
 
     const ops = block.ops;
@@ -561,43 +556,6 @@ class ModelDiagram {
     );
   }
 
-  static _fan(block) {
-    const labels = block.fan.slice(0, 3);
-    const up = block.upward;
-    const W = 336, wb = 92, hb = 32, cx = W / 2, inH = 30, outH = 26, vgap = 28, bgap = 14;
-    let out = "";
-
-    let y = 14;
-    const P = {};
-    const order = up ? ["out", "branch", "in"] : ["in", "branch", "out"];
-    order.forEach((k) => {
-      if (k === "in") { P.in = y; y += inH + vgap; }
-      else if (k === "branch") { P.branch = y; y += hb + (up ? vgap : bgap); }
-      else { P.out = y; y += outH + (up ? bgap : vgap); }
-    });
-    const H = y;
-
-    out += this._node(cx - 96, P.in, 192, inH, block.inLabel, block.inSub, "io", 0);
-
-    const branchesBelowInput = P.branch > P.in;
-    const hubY = branchesBelowInput ? P.in + inH + 12 : P.in - 12;
-    out += this._arrow(cx, branchesBelowInput ? P.in + inH : P.in, cx, hubY, false, 1);
-
-    const slotW = wb + 14;
-    const startX = cx - ((labels.length - 1) * slotW) / 2;
-    labels.forEach((lab, i) => {
-      const bCx = startX + i * slotW;
-      const bx = bCx - wb / 2;
-      out += this._path([[cx, hubY], [bCx, hubY], [bCx, branchesBelowInput ? P.branch : P.branch + hb]], false, (2 + i) * 0.03 + 0.18);
-      out += this._node(bx, P.branch, wb, hb, lab.t, lab.sub, "op", (2 + i) * 0.03);
-      if (P.out > P.branch) out += this._arrow(bCx, P.branch + hb, bCx, P.out, false, 5 + i);
-      else out += this._arrow(bCx, P.branch, bCx, P.out + outH, false, 5 + i);
-      out += this._node(bx, P.out, wb, outH, lab.out, null, "io", (5 + i) * 0.03);
-    });
-
-    return `<svg class="dgm" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">${this._defs()}${out}</svg>`;
-  }
-
   /* ---------- op helpers ---------- */
 
   static _o = {
@@ -633,7 +591,7 @@ class ModelDiagram {
       { id: "d2", col: "right", row: 2, label: o.dec, sub: sh[8], block: "dec" },
       { id: "d1", col: "right", row: 1, label: o.dec, sub: sh[9], block: "dec" },
       { id: "hd", col: "right", yPix: 132, label: "Output head", sub: o.headSub, block: "head" },
-      { id: "out", col: "right", row: 0, type: "grid", out: true, label: "params", sub: sh[10] },
+      { id: "out", col: "right", row: 0, type: "grid", out: true, label: "targets", sub: sh[10] },
     ];
     const edges = [
       { from: "in", to: "e1", route: "V" },
@@ -658,15 +616,9 @@ class ModelDiagram {
   static _headBlock(s) {
     const o = this._o;
     if (s.key === "nafnet") {
-      return { id: "head", title: "Output head", caption: "3x3 conv to params", ops: [o.txt("Conv 3x3", "w -> 3K"), o.io("params", "3K x P x P")] };
+      return { id: "head", title: "Output head", caption: "3x3 conv to targets", ops: [o.txt("Conv 3x3", "w -> Cout"), o.io("targets", "Cout x P x P")] };
     }
-    if (s.heads === 3 || s.heads === "K") {
-      const labs = s.heads === 3
-        ? [{ t: "PixelMLP", sub: "amp", out: "a" }, { t: "PixelMLP", sub: "mean", out: "mu" }, { t: "PixelMLP", sub: "spread", out: "sig" }]
-        : [{ t: "PixelMLP", sub: "k=1", out: "a,mu,s" }, { t: "PixelMLP", sub: "k=2", out: "a,mu,s" }, { t: "PixelMLP", sub: "k=K", out: "a,mu,s" }];
-      return { id: "head", title: s.heads === 3 ? "Per-type heads" : "Per-Gaussian heads", fan: labs, inLabel: "decoder features", inSub: "d1 : F1 x P x P" };
-    }
-    return { id: "head", title: "Output head", caption: "1x1 conv to params", ops: [o.txt("Conv 1x1", "F1 -> 3K"), o.io("params", "3K x P x P")] };
+    return { id: "head", title: "Output head", caption: "1x1 conv to targets", ops: [o.txt("Conv 1x1", "F1 -> Cout"), o.io("targets", "Cout x P x P")] };
   }
 
   static _blocks(s) {
@@ -803,9 +755,9 @@ class ModelDiagram {
     if (s.type === "fpn") return this._bpFPN(s);
     if (s.type === "stack") return this._bpStack(s);
 
-    const cnnShapes = ["Cin x P x P", "F1 x P/2 x P/2", "F2 x P/4 x P/4", "F3 x P/8 x P/8", "F4 x P/16 x P/16", "Fb x P/16 x P/16", "F4 x P/8 x P/8", "F3 x P/4 x P/4", "F2 x P/2 x P/2", "F1 x P x P", "3K x P x P"];
-    const txShapes = ["Cin x P x P", "D1 x N1", "D2 x N2", "D3 x N3", "D4 x N4", "Db x N4", "D4 x N3", "D3 x N2", "D2 x N1", "D1 x N1", "3K x P x P"];
-    const headSub = s.heads === 3 ? "3 x PixelMLP" : s.heads === "K" ? "K x PixelMLP" : s.key === "nafnet" ? "3x3 conv" : "1x1 conv";
+    const cnnShapes = ["Cin x P x P", "F1 x P/2 x P/2", "F2 x P/4 x P/4", "F3 x P/8 x P/8", "F4 x P/16 x P/16", "Fb x P/16 x P/16", "F4 x P/8 x P/8", "F3 x P/4 x P/4", "F2 x P/2 x P/2", "F1 x P x P", "Cout x P x P"];
+    const txShapes = ["Cin x P x P", "D1 x N1", "D2 x N2", "D3 x N3", "D4 x N4", "Db x N4", "D4 x N3", "D3 x N2", "D2 x N1", "D1 x N1", "Cout x P x P"];
+    const headSub = s.key === "nafnet" ? "3x3 conv" : "1x1 conv";
 
     const labels = {
       unet: { enc: "Encoder", dec: "Decoder", bott: "Bridge", skip: "concat" },
@@ -942,15 +894,15 @@ class ModelDiagram {
       if (!allIn && !allOut) return;
       const t = { top: 0, bottom: 0, left: 0, right: 0 };
       ["top", "bottom", "left", "right"].forEach((s) => { t[s] = (allIn ? allIn[s] : 0) + (allOut ? allOut[s] : 0); });
-      if (!b.fan) b.horizontal = (t.left + t.right) >= (t.top + t.bottom);
-      const axis = b.horizontal && !b.fan ? ["left", "right"] : ["top", "bottom"];
-      const primIn  = pick(inMainAgg[b.id] || allIn, axis, b.horizontal && !b.fan ? "left" : "top");
-      const primOut = pick(outMainAgg[b.id] || allOut, axis, b.horizontal && !b.fan ? "right" : "bottom");
+      b.horizontal = (t.left + t.right) >= (t.top + t.bottom);
+      const axis = b.horizontal ? ["left", "right"] : ["top", "bottom"];
+      const primIn  = pick(inMainAgg[b.id] || allIn, axis, b.horizontal ? "left" : "top");
+      const primOut = pick(outMainAgg[b.id] || allOut, axis, b.horizontal ? "right" : "bottom");
       b.flowIn  = sideSet(allIn, primIn);
       b.flowOut = sideSet(allOut, primOut);
       b.flowInN  = inMaxAgg[b.id] || null;
       b.flowOutN = outMaxAgg[b.id] || null;
-      if (!b.horizontal || b.fan) b.upward = primIn === "bottom" || (primIn !== "top" && primOut === "top");
+      if (!b.horizontal) b.upward = primIn === "bottom" || (primIn !== "top" && primOut === "top");
     });
   }
 
@@ -1051,7 +1003,7 @@ class ModelDiagram {
       { id: "t1",  cx: 250, cy: y, w: 150, label: trunkLabel, sub: trunkSub1, block: "trunk" },
       { id: "t2",  cx: 420, cy: y, w: 150, label: trunkLabel, sub: isMlp ? "x L total" : "x B total", block: "trunk" },
       { id: "hd",  cx: 590, cy: y, w: 140, label: "Output head", sub: "1x1 conv", block: "head" },
-      { id: "out", type: "grid", cx: 750, cy: y, out: true, label: "params", sub: "3K x P x P" },
+      { id: "out", type: "grid", cx: 750, cy: y, out: true, label: "targets", sub: "Cout x P x P" },
     ];
     const edges = [
       { from: "in", to: "t1", route: "H" },
@@ -1071,7 +1023,6 @@ class ModelDiagram {
 
   static _bpSegformer(s) {
     const o = this._o;
-    const headSub = s.heads === 3 ? "3 x PixelMLP" : s.heads === "K" ? "K x PixelMLP" : "1x1 conv";
     const W = 860;
     const encX = 150, projX = 370, fuseX = 600, outX = 780;
     const ys = [144, 229, 314, 399];
@@ -1084,8 +1035,8 @@ class ModelDiagram {
       nodes.push({ id: "p" + i, cx: projX, cy: ys[i], w: 150, label: "Conv 1x1", sub: "-> Dc, up P/4", block: "proj" });
     });
     nodes.push({ id: "fuse", cx: fuseX, cy: 272, w: 150, h: 130, label: "Concat + fuse", sub: "4 x Dc -> Dc", block: "fuse" });
-    nodes.push({ id: "head", cx: outX, cy: 174, w: 130, label: "Output head", sub: headSub, block: "head" });
-    nodes.push({ id: "out", type: "grid", cx: outX, cy: 70, out: true, label: "params", sub: "3K x P x P" });
+    nodes.push({ id: "head", cx: outX, cy: 174, w: 130, label: "Output head", sub: "1x1 conv", block: "head" });
+    nodes.push({ id: "out", type: "grid", cx: outX, cy: 70, out: true, label: "targets", sub: "Cout x P x P" });
 
     const edges = [
       { from: "in", to: "s0", route: "V" },
@@ -1116,7 +1067,6 @@ class ModelDiagram {
 
   static _bpDeepLab(s) {
     const o = this._o;
-    const headSub = s.heads === 3 ? "3 x PixelMLP" : s.heads === "K" ? "K x PixelMLP" : "1x1 conv";
     const W = 820;
     const encX = 140, midX = 400, decX = 620, headX = 755;
     const ys = [144, 224, 304, 384];
@@ -1129,8 +1079,8 @@ class ModelDiagram {
       { id: "low", cx: midX, cy: ys[1], w: 150, label: "Conv 1x1", sub: "low-level proj", block: "low" },
       { id: "aspp", cx: midX, cy: ys[3], w: 150, h: 56, label: "ASPP", sub: "multi-rate context", block: "aspp" },
       { id: "dec", cx: decX, cy: ys[2], w: 150, h: 56, label: "Decoder", sub: "concat + 2x conv", block: "dec" },
-      { id: "head", cx: headX, cy: 174, w: 130, label: "Output head", sub: headSub, block: "head" },
-      { id: "out", type: "grid", cx: headX, cy: 70, out: true, label: "params", sub: "3K x P x P" },
+      { id: "head", cx: headX, cy: 174, w: 130, label: "Output head", sub: "1x1 conv", block: "head" },
+      { id: "out", type: "grid", cx: headX, cy: 70, out: true, label: "targets", sub: "Cout x P x P" },
     ];
     const edges = [
       { from: "in", to: "stem", route: "V" },
@@ -1157,7 +1107,6 @@ class ModelDiagram {
 
   static _bpHRNet(s) {
     const o = this._o;
-    const headSub = s.heads === 3 ? "3 x PixelMLP" : s.heads === "K" ? "K x PixelMLP" : "1x1 conv";
     const W = 860;
     const rows = [144, 264, 384];
     const stemX = 140, s2X = 310, exX = 430, s3X = 550, fuseX = 740;
@@ -1171,8 +1120,8 @@ class ModelDiagram {
       { id: "b1s3", cx: s3X, cy: rows[1], w: 130, label: "Branch P/2", sub: "residual, 2C", block: "stage" },
       { id: "b2s3", cx: s3X, cy: rows[2], w: 130, label: "Branch P/4", sub: "residual, 4C", block: "stage" },
       { id: "fuse", cx: fuseX, cy: rows[1], w: 150, h: 64, label: "Upsample concat", sub: "all -> P, fuse 3x3", block: "head_fuse" },
-      { id: "head", cx: fuseX, cy: 154, w: 130, label: "Output head", sub: headSub, block: "head" },
-      { id: "out", type: "grid", cx: fuseX, cy: 70, out: true, label: "params", sub: "3K x P x P" },
+      { id: "head", cx: fuseX, cy: 154, w: 130, label: "Output head", sub: "1x1 conv", block: "head" },
+      { id: "out", type: "grid", cx: fuseX, cy: 70, out: true, label: "targets", sub: "Cout x P x P" },
     ];
     const edges = [
       { from: "in", to: "stem", route: "V" },
@@ -1202,7 +1151,6 @@ class ModelDiagram {
 
   static _bpFPN(s) {
     const o = this._o;
-    const headSub = s.heads === 3 ? "3 x PixelMLP" : s.heads === "K" ? "K x PixelMLP" : "1x1 conv";
     const W = 860;
     const upX = 150, downX = 370, segX = 565, fuseX = 770;
     const ys = [144, 234, 324, 414];
@@ -1214,8 +1162,8 @@ class ModelDiagram {
       nodes.push({ id: "g" + i, cx: segX, cy: ys[i], w: 130, label: "Seg block", sub: i === 0 ? "conv only" : i + "x up", block: "seg" });
     });
     nodes.push({ id: "fuse", cx: fuseX, cy: 279, w: 140, h: 130, label: "Sum + fuse", sub: "4 levels -> Cp", block: "fuse" });
-    nodes.push({ id: "head", cx: fuseX, cy: 164, w: 130, label: "Output head", sub: headSub, block: "head" });
-    nodes.push({ id: "out", type: "grid", cx: fuseX, cy: 70, out: true, label: "params", sub: "3K x P x P" });
+    nodes.push({ id: "head", cx: fuseX, cy: 164, w: 130, label: "Output head", sub: "1x1 conv", block: "head" });
+    nodes.push({ id: "out", type: "grid", cx: fuseX, cy: 70, out: true, label: "targets", sub: "Cout x P x P" });
 
     const edges = [{ from: "in", to: "c0", route: "V" }];
     levels.forEach((_, i) => {

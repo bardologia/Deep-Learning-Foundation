@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from configuration.dataset                import AugmentationConfig
-from configuration.training               import LossConfig
-from pipelines.shared.model.model_builder import ModelBuilder
+from configuration.dataset  import AugmentationConfig
+from configuration.training import LossConfig
 
 
 class RunNaming:
@@ -19,13 +18,8 @@ class RunNaming:
         return letters or "noaug"
 
     @classmethod
-    def tag(cls, model_name: str, head: str, loss: LossConfig, augmentation: AugmentationConfig) -> str:
-        return "-".join((model_name, head, cls.loss_tag(loss), cls.augmentation_tag(augmentation)))
-
-    @classmethod
-    def benchmark_unit(cls, model_key: str, loss: LossConfig, augmentation: AugmentationConfig) -> str:
-        name, head = ModelBuilder.split_key(model_key)
-        return cls.tag(name, head, loss, augmentation)
+    def tag(cls, model_name: str, loss: LossConfig, augmentation: AugmentationConfig) -> str:
+        return "-".join((model_name, cls.loss_tag(loss), cls.augmentation_tag(augmentation)))
 
     @staticmethod
     def compose(tag: str, suffix: str | None) -> str:

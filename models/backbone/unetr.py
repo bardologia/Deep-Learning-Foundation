@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from configuration.architectures import UNETRConfig
-from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadsMixin, PatchEmbedding, TransformerBlock
+from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadMixin, PatchEmbedding, TransformerBlock
 
 
 class ProgressiveProjectionHead(nn.Module):
@@ -56,7 +56,7 @@ class ProgressiveProjectionHead(nn.Module):
         return self.layers(x)
 
 
-class UNETR(nn.Module, OutputHeadsMixin):
+class UNETR(nn.Module, OutputHeadMixin):
 
     def __init__(self, config: UNETRConfig | None = None):
         super().__init__()

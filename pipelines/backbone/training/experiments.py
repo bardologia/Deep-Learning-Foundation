@@ -42,11 +42,10 @@ class ReachTrialPlanner:
 
     RESERVED_KEYS = ("label", "backbone")
 
-    def __init__(self, trials, registry_names: tuple, head: str, out_channels: int) -> None:
+    def __init__(self, trials, registry_names: tuple, out_channels: int) -> None:
         self.trials         = trials
         self.rungs          = [dict(rung) for rung in trials.rungs if isinstance(rung, dict)]
         self.registry_names = tuple(registry_names)
-        self.head           = head
         self.out_channels   = out_channels
 
         self.parameter_counts = {rung["label"]: self._parameters(rung) for rung in self.rungs}
@@ -56,7 +55,7 @@ class ReachTrialPlanner:
 
     def _parameters(self, rung: dict) -> int:
         sizing   = ModelBuilder.image_size_override(rung["backbone"], self.trials.patch_size)
-        model, _ = get_backbone(rung["backbone"], in_channels=self.trials.in_channels, out_channels=self.out_channels, head=self.head, **sizing, **self._overrides(rung))
+        model, _ = get_backbone(rung["backbone"], in_channels=self.trials.in_channels, out_channels=self.out_channels, **sizing, **self._overrides(rung))
 
         return sum(parameter.numel() for parameter in model.parameters())
 
@@ -77,7 +76,7 @@ class ReachTrialPlanner:
         return {
             "Rungs"      : [f"{rung['label']}:{rung['backbone']}" for rung in self.rungs],
             "Parameters" : {label: f"{count:,}" for label, count in self.parameter_counts.items()},
-            "Counted at" : f"head '{self.head}', {self.trials.in_channels} in / {self.out_channels} out channels",
+            "Counted at" : f"{self.trials.in_channels} in / {self.out_channels} out channels",
             "Patch"      : f"{tuple(self.trials.patch_size)} stride {tuple(self.trials.patch_stride)}",
             "Total runs" : len(self.rungs),
         }
@@ -130,13 +129,12 @@ class ArchitecturePatchStep:
 
     PYRAMID_BACKBONES = frozenset({"unet", "unet_skip", "resunet", "attention_unet"})
 
-    def __init__(self, backbone_name: str, backbone_head: str, model_overrides: dict) -> None:
+    def __init__(self, backbone_name: str, model_overrides: dict) -> None:
         self.backbone_name   = backbone_name
-        self.backbone_head   = backbone_head
         self.model_overrides = model_overrides
 
     def resolve(self) -> int:
-        model_config = ModelBuilder.config_from_registry(self.backbone_name, self.model_overrides, head=self.backbone_head)
+        model_config = ModelBuilder.config_from_registry(self.backbone_name, self.model_overrides)
         features     = model_config.features
 
         return 2 ** len(features)
@@ -144,10 +142,9 @@ class ArchitecturePatchStep:
 
 class PatchSizeTrialPlanner:
 
-    def __init__(self, trials, backbone_name: str, backbone_head: str, model_overrides: dict, training) -> None:
+    def __init__(self, trials, backbone_name: str, model_overrides: dict, training) -> None:
         self.trials          = trials
         self.backbone_name   = backbone_name
-        self.backbone_head   = backbone_head
         self.model_overrides = model_overrides
         self.training        = training
 
@@ -157,7 +154,7 @@ class PatchSizeTrialPlanner:
     def patch_step(self) -> int:
         if self._patch_step is None:
             explicit         = self.trials.step
-            self._patch_step = explicit if explicit > 0 else ArchitecturePatchStep(self.backbone_name, self.backbone_head, self.model_overrides).resolve()
+            self._patch_step = explicit if explicit > 0 else ArchitecturePatchStep(self.backbone_name, self.model_overrides).resolve()
 
         return self._patch_step
 
