@@ -8,6 +8,7 @@ from pathlib     import Path
 
 import pytest
 
+from configuration.training        import BackboneEntryConfig
 from tools.runtime.config_cli      import ConfigCli, ConfigSource
 from tools.runtime.machine_profile import MachineProfile
 
@@ -332,3 +333,14 @@ def test_to_argv_round_trips_overrides():
     assert fresh.nested.lr      == 0.25
     assert fresh.nested.enabled is False
     assert fresh.betas          == (0.1, 0.2)
+
+
+def test_an_optional_leaf_set_to_none_reads_as_none():
+    config = BackboneEntryConfig()
+    config.training.scheduler_epochs = 7
+    config.run_name                  = "named"
+
+    ConfigCli(config).apply(["--training.scheduler_epochs", "None", "--run_name", "None"])
+
+    assert config.training.scheduler_epochs is None
+    assert config.run_name                  is None

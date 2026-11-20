@@ -213,6 +213,9 @@ class ConfigCli:
         return value is None or isinstance(value, (*_SUPPORTED_TYPES, Enum))
 
     def _coerce(self, raw: str, current, annotation=None):
+        if raw.strip() == "None" and self._is_optional(annotation):
+            return None
+
         if isinstance(current, Enum):
             return type(current)(raw.strip())
 
@@ -289,6 +292,10 @@ class ConfigCli:
         for part in parts[:-1]:
             target = getattr(target, part)
         return typing.get_type_hints(type(target)).get(parts[-1])
+
+    @staticmethod
+    def _is_optional(annotation) -> bool:
+        return typing.get_origin(annotation) in (typing.Union, types.UnionType) and type(None) in typing.get_args(annotation)
 
     @staticmethod
     def _unwrap_optional(annotation):
