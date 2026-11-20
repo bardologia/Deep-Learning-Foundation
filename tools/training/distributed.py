@@ -27,7 +27,7 @@ class DistributedContext:
         WORLD_VAR    : Environment variable naming the number of ranks.
         ADDR_VAR     : Environment variable naming the rendezvous host.
         PORT_VAR     : Environment variable naming the rendezvous port.
-        INIT_TIMEOUT : Rendezvous and collective timeout, generous enough to cover the per-rank dataset build and overfit gate that run before the first collective.
+        INIT_TIMEOUT : Rendezvous and collective timeout, generous enough to cover the per-rank dataset build that runs before the first collective.
         rank         : Zero-based rank of this process.
         world_size   : Number of ranks in the group; 1 means inert.
         master_addr  : Rendezvous host of the process group.

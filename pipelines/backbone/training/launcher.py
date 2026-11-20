@@ -99,7 +99,6 @@ class SingleTrainRunner:
             model_config    = self._model_config(),
             seed            = self.config.seed,
             run_name        = self.config.run_name,
-            overfit_check   = self.config.overfit_check,
             prior_bias_init = self.prior_bias_init,
         )
 

@@ -9,7 +9,6 @@ from configuration.training.backbone            import default_curriculum
 from configuration.training.general.loss        import LossConfig
 from configuration.training.general.pretraining import PretrainConfig
 from configuration.training.general.run         import RunPathsConfig, TrainingQueueConfig, standard_seeds
-from configuration.training.general.runtime     import OverfitCheckConfig
 
 
 @dataclass
@@ -124,7 +123,6 @@ class BenchmarkConfig:
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
     loss          : LossConfig           = field(default_factory=_default_base_loss)
-    overfit_check : OverfitCheckConfig   = field(default_factory=OverfitCheckConfig)
 
     gpus            : list[int]  = field(default_factory=lambda: [0])
     gpus_file       : str        = ""

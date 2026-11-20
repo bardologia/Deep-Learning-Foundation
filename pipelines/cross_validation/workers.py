@@ -244,7 +244,6 @@ class FoldTrainingWorker(CrossValidationWorker):
             model_config    = model_config,
             seed            = self.config.seed if seed is None else seed,
             run_name        = run_name,
-            overfit_check   = self.config.overfit_check,
             prior_bias_init = self.config.prior_bias_init,
         )
 

@@ -24,7 +24,6 @@ from configuration.benchmark.dataloader_tuning import DataLoaderTuningEntryConfi
 from configuration.training.general.run        import RunPathsConfig, TrainingQueueConfig
 
 from configuration.dataset                  import AugmentationConfig, InputConfig
-from configuration.training.general.runtime import OverfitCheckConfig
 from configuration.normalization.general import NormalizationConfig
 
 
@@ -158,12 +157,11 @@ def test_cross_validation_validates_the_standard_backbone():
     assert cfg.backbone_head == BackboneEntryConfig.backbone_head
 
 
-def test_cross_validation_carries_the_input_stack_and_overfit_gate():
+def test_cross_validation_carries_the_input_stack():
     cfg = CrossValidationConfig()
 
     assert isinstance(cfg.input, InputConfig)
     assert cfg.input.use_secondaries is True
-    assert isinstance(cfg.overfit_check, OverfitCheckConfig)
 
 
 def test_cross_validation_fold_inference_saves_cubes():

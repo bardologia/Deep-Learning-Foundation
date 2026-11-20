@@ -11,17 +11,6 @@ class IOConfig:
 
 
 @dataclass
-class OverfitCheckConfig:
-
-    enabled         : bool  = False
-    n_examples      : int   = 2
-    max_steps       : int   = 300
-    steps_per_epoch : int   = 25
-    pass_loss_ratio : float = 0.05
-    stop_threshold  : float = 1e-6
-
-
-@dataclass
 class TrainingLoopConfig:
 
     epochs                      : int   = 3

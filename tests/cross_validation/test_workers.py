@@ -349,11 +349,10 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path
     captured = {}
 
     class _FakePipeline:
-        def __init__(self, trainer_config, dataset_config, backbone_name, model_config, seed, run_name, overfit_check, prior_bias_init):
+        def __init__(self, trainer_config, dataset_config, backbone_name, model_config, seed, run_name, prior_bias_init):
             captured["trainer_config"]  = trainer_config
             captured["dataset_config"]  = dataset_config
             captured["run_name"]        = run_name
-            captured["overfit_check"]   = overfit_check
             captured["prior_bias_init"] = prior_bias_init
 
         def run(self):
@@ -372,7 +371,6 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path
     run_tag = RunNaming.training_tag(config.backbone_name, config.backbone_head, config.curriculum, SynthesisConfig().k_max, config.augmentation)
     assert captured["run_name"] == f"{run_tag}_fold_1/seed7"
 
-    assert captured["overfit_check"] is config.overfit_check
     assert captured["prior_bias_init"] is True
     assert captured["dataset_config"].input_config is config.input
 

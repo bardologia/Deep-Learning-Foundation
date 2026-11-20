@@ -848,7 +848,6 @@
         "input": "InputConfig sub-config selecting which channel groups (primary, secondaries, derived, Aux) feed the network, defaults to the full stack",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
-        "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before full training and aborts if the model cannot overfit them",
         "prior_bias_init": "Start the conv output head's biases at the training-label prior instead of PyTorch's random U(-1/sqrt(fan_in), 1/sqrt(fan_in)) draw: per output channel, the mean label in the model's normalized output space over the training-split pixels where that slot is active (slots in sorted_gt order, activity at the label run's threshold); every other weight keeps its default init and the values land in meta/head_prior_bias.json. Needs backbone_head conv and raises otherwise; default off",
         "infer_after": "Run the InferencePipeline automatically on the trained checkpoint once training completes",
         "infer_at_end": "Hold all inference until every training job of the fan-out has finished, then run one inference job per completed run through the same GPU queue; keeps the GPUs saturated with training first, mutually exclusive with infer_after",
@@ -1088,17 +1087,6 @@
       "summary": "Resolved run output directory for a training or check run",
       "fields": {
         "logdir": "Filesystem directory of this specific run where checkpoints, meta files, and TensorBoard events are written"
-      }
-    },
-    "training/general/runtime::OverfitCheckConfig": {
-      "summary": "Pre-training sanity gate that memorizes a handful of examples with regularization disabled and aborts training if it cannot",
-      "fields": {
-        "enabled": "Master toggle activating the overfit check before normal training; a failed check raises and aborts the run",
-        "n_examples": "Number of training examples (evenly spaced indices, clamped to dataset size) the sanitized model must memorize",
-        "max_steps": "Total optimization-step budget for the check, split across epochs of steps_per_epoch",
-        "steps_per_epoch": "Steps per check epoch, capped at max_steps; sets planned_epochs = ceil(max_steps / min(steps_per_epoch, max_steps))",
-        "pass_loss_ratio": "Check channels if best/initial train-loss ratio falls at or below this value",
-        "stop_threshold": "Check also channels if the best train loss alone falls at or below this absolute value"
       }
     },
     "training/general/runtime::TrainingLoopConfig": {
@@ -1365,7 +1353,6 @@
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
         "loss": "LossConfig base loss-term weights (the curriculum's complete stage) that each swept loss component is layered onto",
-        "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before each benchmarked model's full training and aborts on failure",
         "gpus": "list of GPU device indices across which the queued sweep's jobs are distributed and launched in parallel",
         "gpus_file": "Path of the live GPU pool control file for this queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it is in flight (added devices pick up queued jobs, removed devices retire once the job in flight ends). Empty places gpu_pool.json inside the run directory",
         "heads": "Output heads crossed with every backbone in the sweep; each backbone x head pair runs as its own unit (default [conv])",
@@ -1405,7 +1392,6 @@
         "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch, applied to every fold's trainer",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping, shared across folds' datasets",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to every fold's training patches",
-        "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before each fold's full training and aborts on failure",
         "prior_bias_init": "Start each backbone fold's conv output head biases at the prior of that fold's training labels instead of PyTorch's random U(-1/sqrt(fan_in), 1/sqrt(fan_in)) draw: per output channel, the mean label in the model's normalized output space over the fold's training pixels where that slot is active (slots in sorted_gt order, activity at the label run's threshold); every other weight keeps its default init and the values land in each fold run's meta/head_prior_bias.json. Backbone family only, needs backbone_head conv and raises otherwise; default off",
         "inference_splits": "Dataset splits inference is run on per fold, e.g. val and test; an empty list skips the inference stage and leaves the folds compared on their training checkpoints alone",
         "gpus": "List of GPU device indices across which fold training/inference jobs are distributed and launched in parallel",

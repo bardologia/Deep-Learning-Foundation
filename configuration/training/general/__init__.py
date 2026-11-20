@@ -8,7 +8,6 @@ from configuration.training.general.optimization import (
 )
 from configuration.training.general.runtime import (
     IOConfig,
-    OverfitCheckConfig,
     TrainingLoopConfig,
     MemoryConfig,
 )

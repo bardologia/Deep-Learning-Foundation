@@ -352,11 +352,6 @@ class LaunchLayout:
                 {"gate": "enabled", "fields": ["swap_epoch", "reset_lr", "reset_warmup", "reset_optimizer"]},
             ]},
         ],
-        "overfit_check": [
-            {"title": "Overfit check", "fields": [
-                {"gate": "enabled", "fields": ["n_examples", "max_steps", "steps_per_epoch", "pass_loss_ratio", "stop_threshold"]},
-            ]},
-        ],
     }
 
     TRAIN_ESSENTIALS = [
@@ -522,7 +517,6 @@ class LaunchLayout:
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
                     {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
                     {"kind": "fields", "title": "Pre-run tuning", "template": "pretrain", "at": "pretrain"},
-                    {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
@@ -583,7 +577,6 @@ class LaunchLayout:
                 ]},
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
-                    {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
                 ]},
                 {"key": "max-batch", "title": "Max-batch probe", "panels": [
                     {"kind": "fields", "groups": [
@@ -640,7 +633,6 @@ class LaunchLayout:
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
                     {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
-                    {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},

@@ -13,7 +13,6 @@ from configuration.normalization.general    import NormalizationConfig
 from configuration.training.backbone        import default_curriculum
 from configuration.training.general.loss    import LossCurriculumConfig
 from configuration.training.general.run     import RunPathsConfig, TrainingQueueConfig, standard_seeds
-from configuration.training.general.runtime import OverfitCheckConfig
 
 
 @dataclass
@@ -44,7 +43,6 @@ class CrossValidationConfig:
     curriculum    : LossCurriculumConfig = field(default_factory=default_curriculum)
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
-    overfit_check : OverfitCheckConfig   = field(default_factory=OverfitCheckConfig)
 
     prior_bias_init : bool = False
 

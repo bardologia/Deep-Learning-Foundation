@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from configuration.dataset                         import DatasetConfig
-from configuration.training                        import BackboneTrainerConfig, OverfitCheckConfig
+from configuration.training                        import BackboneTrainerConfig
 from models                                        import get_backbone
 from pipelines.backbone.dataset.datasets           import MultiRegionDataset
 from pipelines.backbone.dataset.pipeline           import DatasetPipeline
@@ -16,7 +16,6 @@ from pipelines.backbone.training.trainer           import Trainer
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
 from pipelines.shared.config.run_metadata          import TrainingRunMetadata
 from pipelines.shared.model.model_builder          import ModelBuilder
-from pipelines.shared.training.overfit_check       import OverfitCheck
 from tools.data.gaussians                          import GaussianActivity, GaussianAxis, GaussianHead, GaussianSlotSorter
 from tools.data.io                                 import FileIO
 from tools.runtime.reproducibility                 import Reproducibility
@@ -122,7 +121,6 @@ class TrainingPipeline:
         model_config    = None,
         seed            : int = 0,
         run_name        : str | None = None,
-        overfit_check   : OverfitCheckConfig | None = None,
         prior_bias_init : bool = False,
     ) -> None:
         self.trainer_config  = trainer_config
@@ -131,7 +129,6 @@ class TrainingPipeline:
         self.model_config    = model_config
         self.seed            = seed
         self.run_name        = run_name
-        self.overfit_check   = overfit_check if overfit_check is not None else OverfitCheckConfig()
         self.prior_bias_init = prior_bias_init
 
         patch                    = self.dataset_config.patch
@@ -186,44 +183,6 @@ class TrainingPipeline:
         self.dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, dataset_pipeline.layout.profile_length)
 
         return dataset_pipeline
-
-    def _run_overfit_check(self, train_dataset, in_channels: int, out_channels: int, z_axis) -> None:
-        check = OverfitCheck(self.overfit_check, self.run_metadata.run_directory, self.logger)
-        if not check.enabled:
-            return
-
-        check.announce()
-
-        gate_trainer_config = check.sanitized_trainer_config(self.trainer_config)
-
-        gate_stage                          = gate_trainer_config.curriculum.initial_stage
-        gate_stage.use_active_normalization = False
-
-        gate_trainer_config.curriculum.enabled  = False
-        gate_trainer_config.curriculum.warmup   = gate_stage
-        gate_trainer_config.curriculum.complete = gate_stage
-
-        check.record("curriculum.enabled", False)
-        check.record("gate_loss_stage", "warmup" if self.trainer_config.curriculum.enabled else "complete")
-        check.record("gate_stage.use_active_normalization", False)
-
-        base_config       = self.model_config if self.model_config is not None else ModelBuilder.config_from_registry(self.backbone_name, {})
-        gate_model_config = check.sanitized_model_config(base_config)
-
-        gate_model, gate_model_cfg = get_backbone(self.backbone_name, config=gate_model_config, **self._model_overrides(in_channels, out_channels))
-
-        gate_trainer = Trainer(
-            model      = gate_model,
-            model_cfg  = gate_model_cfg,
-            z_axis     = z_axis,
-            config     = gate_trainer_config,
-            run_dir    = check.work_directory,
-            logger     = self.logger,
-            norm_stats = train_dataset.normalizer,
-            emit_docs  = False,
-        )
-
-        check.run(gate_trainer, train_dataset)
 
     def _build_model(self, in_channels: int, out_channels: int):
         model, model_cfg = get_backbone(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
@@ -346,8 +305,6 @@ class TrainingPipeline:
                 patch_geometry   = self._patch_geometry_payload(),
             )
             self.logger.ok(f"Run metadata saved : {self.run_metadata.run_directory}")
-
-            self._run_overfit_check(train_dataset, in_channels, out_channels, z_axis)
 
             trainer = self._make_trainer(model, model_cfg, z_axis, train_dataset.normalizer, self.run_metadata.run_directory, self.logger, writer=self.run_metadata.writer)
 

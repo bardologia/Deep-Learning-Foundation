@@ -6,7 +6,6 @@ from configuration.training.general import (
     EarlyStoppingConfig,
     GradientClipperConfig,
     IOConfig,
-    OverfitCheckConfig,
     TrainingLoopConfig,
     MemoryConfig,
     CurriculumInheritance,
