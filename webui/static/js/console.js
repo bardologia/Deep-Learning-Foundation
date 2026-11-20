@@ -62,11 +62,6 @@ class TileLogPanel {
       return;
     }
 
-    if (probe.status === 404) {
-      this._fail("the running console server has no /api/jobs/<id>/log route, restart it to pick up the current code");
-      return;
-    }
-
     if (!data || !data.ok) {
       this._fail((data && data.error) || `could not read the log file (HTTP ${probe.status})`);
       return;

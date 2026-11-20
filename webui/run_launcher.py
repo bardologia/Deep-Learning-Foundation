@@ -70,7 +70,7 @@ class RunLauncher:
         info = self.processes.progress(job_id)
         if not info.get("ok") or "progress" not in info:
             return []
-        return info["progress"].get("units") or []
+        return info["progress"]["units"]
 
     def job_run_spec(self, units: list, root: Path) -> dict | None:
         run_dirs = []

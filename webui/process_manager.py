@@ -882,9 +882,7 @@ class ProcessManager:
         if "progress" not in info:
             return {"ok": False, "error": "this job has no progress snapshot yet — units appear once the fan-out starts dispatching"}
 
-        units = info["progress"].get("units")
-        if units is None:
-            return {"ok": False, "error": "this progress snapshot has no unit registry — it was written by an older run"}
+        units = info["progress"]["units"]
         if not 0 <= index < len(units):
             return {"ok": False, "error": f"unit index {index} is out of range, the registry holds {len(units)} units"}
 

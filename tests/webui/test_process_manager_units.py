@@ -94,19 +94,6 @@ def test_unit_entry_rejects_an_out_of_range_index(manager, tmp_path):
     manager.stop(job_id)
 
 
-def test_unit_entry_rejects_a_snapshot_without_units(manager, tmp_path):
-    job_id = manager.launch("train_backbone", sys.executable)["job_id"]
-    assert wait_for_status(manager, job_id, "running")
-
-    path = _progress_path(manager, job_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"total": 2, "done": 1}))
-
-    assert "no unit registry" in manager.unit_entry(job_id, 0)["error"]
-
-    manager.stop(job_id)
-
-
 def test_unit_entry_before_any_snapshot_explains_itself(manager, tmp_path):
     job_id = manager.launch("train_backbone", sys.executable)["job_id"]
     assert wait_for_status(manager, job_id, "running")
