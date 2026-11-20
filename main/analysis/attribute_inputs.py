@@ -15,7 +15,7 @@ def main() -> None:
     from tools.runtime.config_cli                                import ConfigCli
     from tools.monitoring.logger                                 import Logger
 
-    cli    = ConfigCli(InputAttributionConfig(), description="Attribute the predictions of trained backbone runs to their input channels: gradient attribution per output family (amp, mu, sigma) on probe windows, plus an occlusion pass that zeroes one normalized channel at a time and measures the prediction shift; figures, JSON and a markdown report are written into each run directory")
+    cli    = ConfigCli(InputAttributionConfig(), description="Attribute the predictions of trained backbone runs to their input channels: gradient attribution per target channel on probe windows, plus an occlusion pass that zeroes one normalized channel at a time and measures the prediction shift; figures, JSON and a markdown report are written into each run directory")
     config = cli.apply()
 
     with Logger(log_dir="logs", name="attribute_inputs") as logger:

@@ -9,7 +9,6 @@ import torch
 
 from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
 from pipelines.backbone.inference.probes             import ModelDevice
-from tools.data.gaussians                            import GaussianActivity
 from tools.data.io                                   import FileIO
 from tools.diagnostics.activation_recorder           import ActivationRecorder
 from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
@@ -77,9 +76,10 @@ class FeatureSampler:
         self.samples_per_batch = int(samples_per_batch)
         self.rng               = np.random.default_rng(seed)
 
-    def sample_coords(self, B: int, H: int, W: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        n  = min(self.samples_per_batch, B * H * W)
-        ix = self.rng.choice(B * H * W, size=n, replace=False)
+    def sample_coords(self, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        B, H, W = weights.shape
+        valid   = np.flatnonzero(weights.reshape(-1) > 0.0)
+        ix      = self.rng.choice(valid, size=min(self.samples_per_batch, valid.size), replace=False)
 
         return ix // (H * W), (ix // W) % H, ix % W
 
@@ -137,54 +137,19 @@ class FeatureGeometry:
 
 class LayerProbeCore:
 
-    TARGETS = (
-        ("count",           "active Gaussian count K"),
-        ("dominant_mu",     "dominant component z position"),
-        ("dominant_sigma",  "dominant component width"),
-        ("total_amp",       "total active amplitude"),
-        ("second_presence", "second component present"),
-    )
-
-    def __init__(self, model, layers: list[str], ppg: int, amp_thr: float, samples_per_batch: int, probe: RidgeProbe, seed: int = 0) -> None:
-        self.model   = model
-        self.layers  = list(layers)
-        self.ppg     = ppg
-        self.amp_thr = amp_thr
-        self.probe   = probe
-        self.sampler = FeatureSampler(samples_per_batch, seed)
-        self.rng     = np.random.default_rng(seed)
-
-    def _targets(self, gt_phys: np.ndarray) -> dict[str, np.ndarray]:
-        B, C, H, W = gt_phys.shape
-        p          = gt_phys.reshape(B, C // self.ppg, self.ppg, H, W)
-        amps       = p[:, :, 0]
-        mus        = p[:, :, 1]
-        sigmas     = p[:, :, 2]
-
-        active = GaussianActivity.is_active(amps, self.amp_thr)
-        counts = active.sum(axis=1).astype(np.float64)
-
-        dominant_index = amps.argmax(axis=1)[:, None]
-        dominant_mu    = np.take_along_axis(mus, dominant_index, axis=1)[:, 0]
-        dominant_sigma = np.take_along_axis(sigmas, dominant_index, axis=1)[:, 0]
-
-        with_dominant  = counts > 0
-        dominant_mu    = np.where(with_dominant, dominant_mu, np.nan)
-        dominant_sigma = np.where(with_dominant, dominant_sigma, np.nan)
-
-        return {
-            "count"           : counts,
-            "dominant_mu"     : dominant_mu,
-            "dominant_sigma"  : dominant_sigma,
-            "total_amp"       : np.where(active, amps, 0.0).sum(axis=1),
-            "second_presence" : (counts >= 2).astype(np.float64),
-        }
+    def __init__(self, model, layers: list[str], target_names: list[str], samples_per_batch: int, probe: RidgeProbe, seed: int = 0) -> None:
+        self.model        = model
+        self.layers       = list(layers)
+        self.target_names = list(target_names)
+        self.probe        = probe
+        self.sampler      = FeatureSampler(samples_per_batch, seed)
+        self.rng          = np.random.default_rng(seed)
 
     def _target_notes(self, targets: dict[str, np.ndarray]) -> tuple[dict[str, str], set[str]]:
         notes    = {}
         unscored = set()
 
-        for target, _label in self.TARGETS:
+        for target in self.target_names:
             usable = targets[target][np.isfinite(targets[target])]
 
             if usable.size < RidgeProbe.MIN_SAMPLES:
@@ -203,7 +168,7 @@ class LayerProbeCore:
 
     def _score_targets(self, features: np.ndarray, targets: dict[str, np.ndarray], unscored: set[str]) -> dict[str, dict | None]:
         scores = {}
-        for target, _label in self.TARGETS:
+        for target in self.target_names:
             y      = targets[target]
             usable = np.isfinite(y)
 
@@ -211,29 +176,28 @@ class LayerProbeCore:
 
         return scores
 
-    def collect(self, batches: list[tuple[torch.Tensor, np.ndarray]]) -> dict:
+    def collect(self, batches: list[tuple[torch.Tensor, np.ndarray, np.ndarray]]) -> dict:
         store: dict[str, list]  = {layer: [] for layer in self.layers}
         widths: dict[str, int]  = {}
         dropped: dict[str, str] = {}
         input_chunks            = []
-        target_chunks           = {target: [] for target, _label in self.TARGETS}
+        target_chunks           = {target: [] for target in self.target_names}
 
         recorder = ActivationRecorder(self.model)
         recorder.attach_store(self.layers)
 
         device = ModelDevice.of(self.model)
 
-        for images, gt_phys in batches:
+        for images, target_maps, weights in batches:
             with torch.no_grad():
                 self.model(images.to(device))
 
             stored     = recorder.stored()
             B, _, H, W = images.shape
-            b, i, j    = self.sampler.sample_coords(B, H, W)
+            b, i, j    = self.sampler.sample_coords(weights[:, 0])
 
-            targets = self._targets(gt_phys)
-            for target, _label in self.TARGETS:
-                target_chunks[target].append(targets[target][b, i, j])
+            for index, target in enumerate(self.target_names):
+                target_chunks[target].append(target_maps[b, index, i, j])
 
             input_chunks.append(self.sampler.features_at(images.cpu(), b, i, j, B, H, W))
 
@@ -275,7 +239,7 @@ class LayerProbeCore:
         }
 
         controls = {}
-        for target, _label in self.TARGETS:
+        for target in self.target_names:
             scored = {layer: entry["scores"][target]["mean"] for layer, entry in layers.items() if entry["scores"][target] is not None}
             if not scored:
                 controls[target] = None
@@ -294,7 +258,7 @@ class LayerProbeCore:
 
 class LayerProbePlots(PlotBase):
 
-    def decodability_by_depth(self, layers: list[str], results: dict, target: str, label: str, baseline: dict | None, control: dict | None, path: Path) -> Path:
+    def decodability_by_depth(self, layers: list[str], results: dict, target: str, baseline: dict | None, control: dict | None, path: Path) -> Path:
         self._apply_style()
 
         depth  = np.arange(len(layers))
@@ -320,7 +284,7 @@ class LayerProbePlots(PlotBase):
 
         ax.set_xlabel("Probed layer index (forward order)")
         ax.set_ylabel("Held-out linear-probe R²")
-        ax.set_title(f"Where '{label}' becomes linearly decodable")
+        ax.set_title(f"Where target '{target}' becomes linearly decodable")
         ax.set_ylim(-0.05, 1.05)
         ax.grid(True, alpha=0.3)
         ax.legend(loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False, fontsize=8)
@@ -342,7 +306,7 @@ class LayerProbePlots(PlotBase):
         ax.annotate(f"max {values[peak]:.1f}", xy=(depth[peak], values[peak]), xytext=(4, 6), textcoords="offset points", fontsize=7, color="0.25")
 
         ax.set_xlabel("Probed layer index (forward order)")
-        ax.set_ylabel("Participation ratio [effective dims]")
+        ax.set_ylabel("Participation ratio (effective dimensions)")
         ax.set_title("Effective feature dimensionality by depth")
         ax.grid(True, alpha=0.3)
         ax.legend(loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False, fontsize=8)
@@ -369,13 +333,12 @@ class LayerProbeRun(AnalysisRun):
 
         return selected
 
-    def _batches(self, run) -> list[tuple[torch.Tensor, np.ndarray]]:
+    def _batches(self, run) -> list[tuple[torch.Tensor, np.ndarray, np.ndarray]]:
         batches = []
-        for index, batch in enumerate(run.loader):
+        for index, (inputs, targets, weights) in enumerate(run.loader):
             if index >= self.config.max_batches:
                 break
-            gt_phys = run.dataset.normalizer.denormalize_output(batch[1].float()).numpy()
-            batches.append((batch[0], gt_phys))
+            batches.append((inputs, run.model.denormalize_target(targets.float()).numpy(), weights.numpy()))
 
         return batches
 
@@ -383,7 +346,7 @@ class LayerProbeRun(AnalysisRun):
         doc = MarkdownDoc(title=f"Layer-wise linear probes: {run.backbone_name}")
         doc.paragraph(
             f"Ridge probes (λ={self.config.ridge_lambda}, {self.config.n_folds}-fold cross-validation) on {len(layers)} layers over {n_batches} '{self.config.split}' batches: "
-            "held-out R² of a linear readout predicting five GT quantities from each layer's features. Rising curves show where a quantity becomes linearly decodable inside the network. "
+            "held-out R² of a linear readout predicting each target channel from each layer's features at sampled pixels. Rising curves show where a target becomes linearly decodable inside the network. "
             "The input-pixels baseline probes the raw input channels at the same sampled pixels: layers below it destroy linearly available information. "
             "The shuffled-targets control reruns the best layer's probe on permuted targets and should sit near zero; anything higher marks probe leakage. "
             "The participation ratio is the effective number of feature dimensions the layer spreads its variance over."
@@ -393,12 +356,12 @@ class LayerProbeRun(AnalysisRun):
 
         doc.heading("Decodability", level=2)
         doc.paragraph(f"Layers wider than {FeatureSampler.MAX_FEATURES} channels are probed on {FeatureSampler.MAX_FEATURES} evenly spaced channels; their Channels cell reads 'sampled of width', and their effective dimensionality is that of the sample.")
-        table = MarkdownTable(("#", "Layer", "Channels", "Eff. dims") + tuple(label for _target, label in LayerProbeCore.TARGETS))
+        table = MarkdownTable(("#", "Layer", "Channels", "Eff. dims") + tuple(run.target_channels))
         for index, layer in enumerate(layers):
             entry    = entries[layer]
             channels = f"{entry['n_channels_sampled']} of {entry['n_channels']}" if entry["n_channels_sampled"] < entry["n_channels"] else str(entry["n_channels"])
             row      = [str(index), f"`{layer}`", channels, f"{entry['effective_dim']:.1f}"]
-            for target, _label in LayerProbeCore.TARGETS:
+            for target in run.target_channels:
                 score = entry["scores"][target]
                 row.append(f"{score['mean']:.3f} ± {score['std']:.3f}" if score is not None else "n/a")
             table.add_row(*row)
@@ -407,9 +370,9 @@ class LayerProbeRun(AnalysisRun):
         if results["target_notes"]:
             doc.heading("Target notes", level=2)
             notes_table = MarkdownTable(("Target", "Note"))
-            for target, label in LayerProbeCore.TARGETS:
+            for target in run.target_channels:
                 if target in results["target_notes"]:
-                    notes_table.add_row(label, results["target_notes"][target])
+                    notes_table.add_row(target, results["target_notes"][target])
             doc.table(notes_table)
 
         if results["dropped_layers"]:
@@ -422,10 +385,10 @@ class LayerProbeRun(AnalysisRun):
         doc.heading("Baselines and controls", level=2)
         baseline = results["input_baseline"]
         control_table = MarkdownTable(("Target", "Input-pixel R²", "Shuffled control", "Control layer"))
-        for target, label in LayerProbeCore.TARGETS:
+        for target in run.target_channels:
             base    = baseline["scores"][target]
             control = results["shuffled_controls"][target]
-            control_table.add_row(label, f"{base['mean']:.3f}" if base is not None else "n/a", f"{control['score']:.3f}" if control is not None else "n/a", f"`{control['layer']}`" if control is not None else "—")
+            control_table.add_row(target, f"{base['mean']:.3f}" if base is not None else "n/a", f"{control['score']:.3f}" if control is not None else "n/a", f"`{control['layer']}`" if control is not None else "—")
         doc.table(control_table)
 
         doc.heading("Figures", level=2)
@@ -440,8 +403,7 @@ class LayerProbeRun(AnalysisRun):
         core = LayerProbeCore(
             model             = run.model.module,
             layers            = layers,
-            ppg               = 3,
-            amp_thr           = run.activity_threshold,
+            target_names      = run.target_channels,
             samples_per_batch = self.config.samples_per_batch,
             probe             = RidgeProbe(self.config.ridge_lambda, self.config.n_folds, self.config.seed),
             seed              = self.config.seed,
@@ -463,9 +425,9 @@ class LayerProbeRun(AnalysisRun):
 
         plots   = LayerProbePlots()
         figures = {}
-        for target, label in LayerProbeCore.TARGETS:
+        for target in run.target_channels:
             figures[f"{target}_by_depth"] = plots.decodability_by_depth(
-                layers, results["layers"], target, label,
+                layers, results["layers"], target,
                 baseline = results["input_baseline"],
                 control  = results["shuffled_controls"][target],
                 path     = self.output_dir / f"{target}_by_depth.png",
@@ -477,14 +439,15 @@ class LayerProbeRun(AnalysisRun):
 
         report_path = self._write_report(run, layers, results, figures, len(batches))
 
-        count_scores = {layer: results["layers"][layer]["scores"]["count"] for layer in layers}
-        scored       = [layer for layer in layers if count_scores[layer] is not None]
+        first        = run.target_channels[0]
+        first_scores = {layer: results["layers"][layer]["scores"][first] for layer in layers}
+        scored       = [layer for layer in layers if first_scores[layer] is not None]
 
         if scored:
-            best     = max(scored, key=lambda layer: count_scores[layer]["mean"])
-            headline = f"K most decodable at '{best}' (R² {count_scores[best]['mean']:.3f})"
+            best     = max(scored, key=lambda layer: first_scores[layer]["mean"])
+            headline = f"'{first}' most decodable at '{best}' (R² {first_scores[best]['mean']:.3f})"
         else:
-            headline = f"K not scored: {results['target_notes']['count']}"
+            headline = f"'{first}' not scored: {results['target_notes'][first]}"
 
         return AnalysisOutcome(payload, headline, report_path)
 

@@ -1224,8 +1224,8 @@
         "output_subdir": "Name of the output directory created inside each run directory for the JSON, figures and markdown report",
         "window": "Side length in pixels of the square probe window the gradients are computed over",
         "n_row_probes": "Number of probe pixels along row, spread evenly across the split region with a window/2 margin",
-        "n_col_probes": "Number of probe pixels along range, spread evenly across the split region with a window/2 margin",
-        "occlude": "Also run the occlusion pass: zero one normalized input channel at a time over a few batches and measure the mean shift of the predicted profile against the unoccluded prediction",
+        "n_col_probes": "Number of probe pixels along cols, spread evenly across the split region with a window/2 margin",
+        "occlude": "Also run the occlusion pass: zero one normalized input channel at a time over a few batches and measure the mean squared shift of the normalized prediction against the unoccluded prediction",
         "batch_size": "Batch size of the occlusion forward passes",
         "max_batches": "Number of loader batches the occlusion deltas are averaged over; cost scales with channels x batches",
         "figure_style": "PlotBase figure style the bar charts are rendered with (report or paper)"

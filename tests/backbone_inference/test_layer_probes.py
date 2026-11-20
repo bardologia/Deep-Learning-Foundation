@@ -51,15 +51,15 @@ def test_ridge_probe_leaves_constant_folds_out():
 
 
 def test_probe_core_leaves_a_constant_target_unscored_with_a_note():
-    batches = [(images, np.concatenate([gt[:, :3], np.zeros_like(gt[:, 3:])], axis=1)) for images, gt in _batches()]
+    batches = [(images, np.concatenate([targets[:, :1], np.zeros_like(targets[:, 1:])], axis=1), weights) for images, targets, weights in _batches()]
 
     results = _core(_TwoLayerNet(), ["useful"]).collect(batches)
 
-    assert results["layers"]["useful"]["scores"]["second_presence"] is None
-    assert results["input_baseline"]["scores"]["second_presence"] is None
-    assert results["shuffled_controls"]["second_presence"] is None
-    assert results["target_notes"]["second_presence"] == "zero variance in 4/4 held-out folds; R² undefined, not scored"
-    assert results["layers"]["useful"]["scores"]["count"] is not None
+    assert results["layers"]["useful"]["scores"]["noise"] is None
+    assert results["input_baseline"]["scores"]["noise"] is None
+    assert results["shuffled_controls"]["noise"] is None
+    assert results["target_notes"]["noise"] == "zero variance in 4/4 held-out folds; R² undefined, not scored"
+    assert results["layers"]["useful"]["scores"]["linear"] is not None
 
 
 def test_participation_ratio_separates_isotropic_from_collapsed():
@@ -88,18 +88,13 @@ def _batches(n: int = 3):
     batches = []
 
     for _ in range(n):
-        counts  = rng.integers(0, 3, size=(2, H, W)).astype(np.float32)
-        images  = torch.from_numpy(np.stack([counts, rng.normal(size=(2, H, W)).astype(np.float32)], axis=1))
+        signal = rng.normal(size=(2, H, W)).astype(np.float32)
+        images = torch.from_numpy(np.stack([signal, rng.normal(size=(2, H, W)).astype(np.float32)], axis=1))
 
-        gt = np.zeros((2, 6, H, W), dtype=np.float32)
-        gt[:, 0] = (counts >= 1).astype(np.float32)
-        gt[:, 3] = (counts >= 2).astype(np.float32)
-        gt[:, 1] = 20.0
-        gt[:, 4] = 40.0
-        gt[:, 2] = 2.0
-        gt[:, 5] = 3.0
+        targets = np.stack([3.0 * signal + 1.0, rng.normal(size=(2, H, W))], axis=1).astype(np.float32)
+        weights = np.ones((2, 1, H, W), dtype=np.float32)
 
-        batches.append((images, gt))
+        batches.append((images, targets, weights))
 
     return batches
 
@@ -108,8 +103,7 @@ def _core(model, layers, samples: int = 256, seed: int = 0) -> LayerProbeCore:
     return LayerProbeCore(
         model             = model,
         layers            = layers,
-        ppg               = 3,
-        amp_thr           = 1e-3,
+        target_names      = ["linear", "noise"],
         samples_per_batch = samples,
         probe             = RidgeProbe(ridge_lambda=1e-3, seed=seed),
         seed              = seed,
@@ -119,18 +113,29 @@ def _core(model, layers, samples: int = 256, seed: int = 0) -> LayerProbeCore:
 def test_probe_core_finds_the_informative_layer():
     results = _core(_TwoLayerNet(), ["useful", "useless"]).collect(_batches())
 
-    assert results["layers"]["useful"]["scores"]["count"]["mean"]  > 0.9
-    assert results["layers"]["useless"]["scores"]["count"]["mean"] < 0.2
+    assert results["layers"]["useful"]["scores"]["linear"]["mean"]  > 0.9
+    assert results["layers"]["useless"]["scores"]["linear"]["mean"] < 0.2
     assert results["layers"]["useful"]["n_channels"] == 2
 
 
-def test_probe_core_scores_all_five_targets():
+def test_probe_core_scores_every_target_channel():
     results = _core(_TwoLayerNet(), ["useful"]).collect(_batches())
     scores  = results["layers"]["useful"]["scores"]
 
-    assert set(scores) == {target for target, _label in LayerProbeCore.TARGETS}
-    assert scores["second_presence"]["mean"] == pytest.approx(0.75, abs=0.05)
-    assert scores["total_amp"]["mean"]       > 0.9
+    assert set(scores) == {"linear", "noise"}
+    assert scores["linear"]["mean"] > 0.99
+    assert scores["noise"]["mean"]  < 0.1
+
+
+def test_probe_core_samples_only_weighted_pixels():
+    batches = [(images, targets, np.zeros_like(weights)) for images, targets, weights in _batches(1)]
+    batches[0][2][:, :, :2, :2] = 1.0
+
+    sampler = FeatureSampler(1000)
+    b, i, j = sampler.sample_coords(batches[0][2][:, 0])
+
+    assert b.size == 8
+    assert i.max() < 2 and j.max() < 2
 
 
 def test_input_baseline_decodes_what_the_input_carries():
@@ -138,13 +143,13 @@ def test_input_baseline_decodes_what_the_input_carries():
     baseline = results["input_baseline"]
 
     assert baseline["n_channels"] == 2
-    assert baseline["scores"]["count"]["mean"] > 0.9
+    assert baseline["scores"]["linear"]["mean"] > 0.9
 
 
 def test_shuffled_controls_sit_near_zero():
     results = _core(_TwoLayerNet(), ["useful", "useless"]).collect(_batches())
 
-    control = results["shuffled_controls"]["count"]
+    control = results["shuffled_controls"]["linear"]
 
     assert control["layer"] == "useful"
     assert abs(control["score"]) < 0.2
@@ -226,7 +231,7 @@ def test_probe_core_records_the_true_width_of_a_subsampled_layer():
 def test_probe_core_seed_changes_the_sampled_pixels():
     def score(seed: int) -> float:
         results = _core(_TwoLayerNet(), ["useful"], samples=32, seed=seed).collect(_batches(1))
-        return results["layers"]["useful"]["scores"]["count"]["mean"]
+        return results["layers"]["useful"]["scores"]["noise"]["mean"]
 
     assert score(0) != score(3)
 
