@@ -62,24 +62,8 @@ class ConfigForm {
     bar.appendChild(search);
     bar.appendChild(count);
 
-    if (cfg.layout && cfg.layout.legacy) {
-      const legacy = document.createElement("button");
-      legacy.className = "btn btn--mini";
-      legacy.textContent = "Legacy mode";
-      legacy.title = "Set every field to the legacy masked-MSE setup (legacy term only, legacy mask on, sorted_gt matching, curriculum and augmentation off) as plain overrides, leaving the whole form editable and keeping the overrides you already set; pick a two-Gaussian parameters dataset";
-      legacy.addEventListener("click", () => this._applyLegacy());
-      bar.appendChild(legacy);
-    }
-
     bar.appendChild(reset);
     return bar;
-  }
-
-  _applyLegacy() {
-    const merged  = Object.assign({}, this.config.layout.legacy.preset, this.dirty);
-    const outcome = this.applyRunConfig(merged);
-    const parts   = [`Legacy setup applied: ${outcome.applied} override${outcome.applied === 1 ? "" : "s"} set`, ...ConfigForm.outcomeParts(outcome)];
-    Toast.show(parts.join(" · "), ConfigForm.outcomeKind(outcome));
   }
 
   applyRunConfig(values) {

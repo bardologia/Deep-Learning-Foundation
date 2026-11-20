@@ -1229,13 +1229,6 @@ class LaunchLayout:
             if widget.get("kind") == "number" and not ("min" in widget and "max" in widget):
                 problems.append(f"number widget for {path} lacks min/max bounds")
 
-        legacy = layout.get("legacy")
-        if legacy:
-            unknown_preset = sorted(set(legacy["preset"]) - known)
-
-            if unknown_preset:
-                problems.append(f"legacy mode for {key} presets unknown fields: {', '.join(unknown_preset)}")
-
         if problems:
             raise LayoutError("\n".join(problems))
 
