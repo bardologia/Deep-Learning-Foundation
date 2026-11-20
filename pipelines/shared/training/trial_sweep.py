@@ -42,18 +42,6 @@ class TrialSweepScheduler:
         self._stage   = None
 
     @property
-    def entry_label(self) -> str:
-        return self.entry_script.stem.removeprefix("train_")
-
-    @property
-    def sweep_name(self) -> str:
-        return f"sweep_{self.entry_label}_{self.config.trials_mode}"
-
-    @property
-    def entry_flags(self) -> tuple:
-        return ("--trial",)
-
-    @property
     def staged_inference(self) -> bool:
         return False
 
@@ -64,12 +52,6 @@ class TrialSweepScheduler:
     @property
     def inference_split(self) -> str | None:
         return self.config.inference.split if self.staged_inference or self.unit_inference else None
-
-    def setup_argv(self) -> list[str] | None:
-        return None
-
-    def finalize_argv(self) -> list[str] | None:
-        return None
 
     @property
     def logger(self) -> Logger:

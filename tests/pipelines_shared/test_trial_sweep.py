@@ -60,11 +60,6 @@ def _complete_run(root: Path, name: str, inference: bool = False, split: str = "
     return run
 
 
-def test_sweep_name_qualifies_the_mode_with_its_entry(tmp_path):
-    assert _scheduler(tmp_path).sweep_name             == "sweep_backbone_ema"
-    assert _scheduler(tmp_path, mode="amp").sweep_name == "sweep_backbone_amp"
-
-
 def test_run_directories_stay_under_the_mode_subdirectory(tmp_path):
     assert _scheduler(tmp_path).runs_root == tmp_path / "ema"
 
@@ -231,13 +226,6 @@ def test_run_directories_carrying_a_label_prefix_count_as_inferred(tmp_path):
     scheduler = _scheduler(tmp_path, resume_from=root, infer_at_end="true")
 
     assert all(not scheduler._inference_pending(name) for name in names)
-
-
-def test_trial_sweeps_stage_no_prepare_or_compare_job(tmp_path):
-    scheduler = _scheduler(tmp_path)
-
-    assert scheduler.setup_argv()    is None
-    assert scheduler.finalize_argv() is None
 
 
 def test_trial_argv_pins_the_unit_and_drops_the_scheduler_fields(tmp_path):

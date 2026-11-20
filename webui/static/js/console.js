@@ -750,10 +750,8 @@ class ConsoleTile {
       this.term.writeln(data.text);
     } else if (data.type === "status") {
       if (data.status === "running") {
-        if (!data.tby) {
-          this._note(this._runNote(data), data.adopted && !data.log ? "33" : "36");
-          this.metaEl.textContent = this._meta(data.adopted ? `pid ${data.pid} · adopted` : data.detached ? `pid ${data.pid} · detached` : `pid ${data.pid}`);
-        }
+        this._note(this._runNote(data), data.adopted && !data.log ? "33" : "36");
+        this.metaEl.textContent = this._meta(data.adopted ? `pid ${data.pid} · adopted` : data.detached ? `pid ${data.pid} · detached` : `pid ${data.pid}`);
         if (data.log) {
           this.job.log_path = data.log;
           this.logBtn.hidden = false;
@@ -762,7 +760,7 @@ class ConsoleTile {
       } else if (data.status === "scheduled") {
         this._note(`scheduled to run after ${data.after || "the current job"}`, "33");
       } else if (data.status === "queued") {
-        this._note(data.tby ? (data.phase === "transfer" ? "uploading data to SCRATCH — submits automatically when the transfer lands" : "pending on the SLURM queue") : `queued at position ${data.position} — ${this._queueBlocker(data.blocker)}`, "33");
+        this._note(`queued at position ${data.position} — ${this._queueBlocker(data.blocker)}`, "33");
         this.setStatus("queued");
       } else if (data.status === "cancelled") {
         this._note("cancelled before start", "33");
