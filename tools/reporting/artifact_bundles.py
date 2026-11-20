@@ -37,34 +37,6 @@ class DatasetSelector(RunSelector):
         self.logger.metrics_table(rows, columns=["#", "Dataset", "Params"], title=f"Datasets under {self.runs_dir}")
 
 
-class ParamRunSelector(RunSelector):
-
-    META_FILENAME       = "param_extraction_meta.json"
-    PARAMETERS_FILENAME = "parameters.npy"
-    SUMMARY_FILENAME    = "fit_metrics_summary.json"
-
-    def __init__(self, params_dir: Path, logger) -> None:
-        super().__init__(params_dir, self.META_FILENAME, logger, action="mail")
-
-    def _discover(self) -> list[Path]:
-        markers  = self.runs_dir.rglob(self.marker)
-        run_dirs = sorted({path.parent for path in markers if path.is_file() and (path.parent / self.PARAMETERS_FILENAME).is_file()})
-
-        return run_dirs
-
-    def _present(self, run_dirs: list[Path]) -> None:
-        rows = []
-        for index, run_dir in enumerate(run_dirs, start=1):
-            rows.append({
-                "#"        : index,
-                "Run"      : str(run_dir.relative_to(self.runs_dir)),
-                "Dataset"  : run_dir.parent.parent.name,
-                "Analysed" : "yes" if (run_dir / self.SUMMARY_FILENAME).is_file() else "no",
-            })
-
-        self.logger.metrics_table(rows, columns=["#", "Run", "Dataset", "Analysed"], title=f"Parameter runs under {self.runs_dir}")
-
-
 class RunContentSelector(RunSelector):
 
     SEARCH_ENTRY = "train_backbone"
@@ -220,20 +192,6 @@ class ArtifactBundle:
 
         return roots
 
-    def _analysis_roots(self) -> List[Path]:
-        roots = [self.source_dir / relative for relative in self.config.analysis_paths]
-        found = [path for path in roots if path.exists()]
-
-        if not found and roots:
-            self.logger.warning(f"No analysis output under {self.source_dir}; run {self.config.analysis_entry} on it to attach the analysis artifacts")
-            return []
-
-        for path in roots:
-            if not path.exists():
-                self.logger.warning(f"No '{path.relative_to(self.source_dir).as_posix()}' under {self.source_dir}; it is not attached")
-
-        return found
-
     def _entries(self, roots: List[Path]) -> List[Tuple[Path, str]]:
         files = []
         for root in roots:
@@ -255,7 +213,7 @@ class ArtifactBundle:
     def stage(self) -> List[Path]:
         self.logger.subsection(f"Gathering artifacts: {self.config.label}")
 
-        roots   = self._required_roots() + self._optional_roots() + self._analysis_roots()
+        roots   = self._required_roots() + self._optional_roots()
         entries = self._entries(roots)
 
         self._report(entries)

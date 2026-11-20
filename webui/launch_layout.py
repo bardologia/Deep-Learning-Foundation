@@ -438,48 +438,6 @@ class LaunchLayout:
                 ]},
             ],
         },
-        "extract_params": {
-            "sections": [
-                {"key": "config", "title": "Configuration", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Datasets", "fields": [
-                            "dataset_base_path",
-                            {"path": "dataset_filter", "widget": PICK_DATASETS},
-                        ]},
-                        {"title": "Output", "fields": ["output_prefix", "output_suffix", "z_range", "overwrite"]},
-                        {"title": "Fit sweep", "fields": [
-                            {"path": "fit_k_values", "widget": MULTI_K},
-                            {"path": "fit_lambda_values", "widget": MULTI_LAMBDA},
-                            {"path": "fit_modes", "widget": MULTI_FIT_MODES},
-                            "fit_sigma_init_divisor",
-                        ]},
-                        {"title": "Fit constants", "fields": [
-                            "fit_threshold_factor",
-                            "fit_truncation_index",
-                            "fit_prominence_frac",
-                            "fit_activity_threshold",
-                            "adam_steps",
-                            "adam_lr",
-                        ]},
-                        {"title": "Execution", "fields": [
-                            {"path": "gpu_device_ids", "widget": GPU_MANY},
-                            "col_batch_size",
-                            "gpu_pixel_batch_size",
-                            {"path": "parameter_workers", "widget": NUM_WORKERS},
-                        ]},
-                        {"title": "Resource monitor", "fields": [
-                            "resources.enabled",
-                            {"path": "resources.poll_interval_sec", "widget": NUM_SECONDS},
-                            "resources.warn_ram_pct",
-                            "resources.warn_vram_pct",
-                            "resources.warn_shm_pct",
-                            "resources.warn_cooldown_sec",
-                        ]},
-                    ]},
-                    {"kind": "hidden", "fields": ["resources.log_to_tensorboard"]},
-                ]},
-            ],
-        },
         "train_backbone": {
             "essentials": TRAIN_ESSENTIALS,
             "sections": [
@@ -645,19 +603,6 @@ class LaunchLayout:
                 ]},
             ],
         },
-        "analyze_param_extraction": {
-            "sections": [
-                {"key": "config", "title": "Configuration", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Runs", "fields": [
-                            "params_dir",
-                            {"path": "run_tags", "widget": {"kind": "dataset", "mode": "param_trials", "multi": True, "baseFrom": "params_dir"}},
-                        ]},
-                        {"title": "Report", "fields": ["make_plots"]},
-                    ]},
-                ]},
-            ],
-        },
         "compare_trials": {
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [
@@ -693,20 +638,6 @@ class LaunchLayout:
                         {"title": "Report", "fields": ["split", "inference_subdir", "output_subdir", "metrics_filename", "report_filename"]},
                         {"title": "Disagreement maps", "fields": ["compute_disagreement", "cubes_subdir"]},
                         {"title": "Seed ensemble", "fields": ["compute_ensemble"]},
-                    ]},
-                ]},
-            ],
-        },
-        "compare_param_extraction_trials": {
-            "sections": [
-                {"key": "config", "title": "Configuration", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Runs", "fields": [
-                            "params_dir",
-                            {"path": "run_tags", "widget": {"kind": "dataset", "mode": "param_trials", "multi": True, "baseFrom": "params_dir"}},
-                        ]},
-                        {"title": "Sampling", "fields": ["pixel_sample", "block_size"]},
-                        {"title": "Report", "fields": ["make_plots", "output_dir"]},
                     ]},
                 ]},
             ],
@@ -1018,7 +949,7 @@ class LaunchLayout:
             ],
         },
         "mail_experiment_reports": {
-            "type_tab": {"field": "target", "options": [["experiments", "Experiments"], ["runs", "Runs"], ["datasets", "Datasets"], ["param_extraction", "Param extraction"]]},
+            "type_tab": {"field": "target", "options": [["experiments", "Experiments"], ["runs", "Runs"], ["datasets", "Datasets"]]},
             "sections": [
                 {"key": "experiments", "title": "Experiments", "when": {"field": "target", "in": ["experiments"]}, "panels": [
                     {"kind": "fields", "note": "Mails one message per experiment found at or below the path: a sweep of trial runs, a cross-validation run, a benchmark run, a sequence workspace holding several of them, or a whole runs tree. Each message carries the seed-aggregate report of every trial, the trial-comparison reports, a cross-validation run's cross-fold report and the configuration the experiment ran with; a missing seed aggregate, comparison or cross-fold report is written first, so nothing has to be run by hand before mailing.", "groups": [
@@ -1058,19 +989,6 @@ class LaunchLayout:
                         {"title": "Gathered paths", "fields": [
                             {"path": "dataset_required_paths", "widget": {"kind": "multi"}},
                             {"path": "dataset_optional_paths", "widget": {"kind": "multi"}},
-                        ]},
-                    ]},
-                ]},
-                {"key": "params", "title": "Param extraction", "when": {"field": "target", "in": ["param_extraction"]}, "panels": [
-                    {"kind": "fields", "note": "Mails one parameter-extraction run's outputs plus the metrics and figures analyze_param_extraction wrote, packed into zip volumes. The fitted arrays are left out unless you name them.", "groups": [
-                        {"title": "Parameter runs", "fields": [
-                            "params_dir",
-                            {"path": "param_run_filter", "widget": {"kind": "dataset", "mode": "param_trials", "multi": True, "baseFrom": "params_dir", "hint": "nothing selected = every parameter run is mailed"}},
-                        ]},
-                        {"title": "Gathered paths", "fields": [
-                            {"path": "param_required_paths", "widget": {"kind": "multi"}},
-                            {"path": "param_optional_paths", "widget": {"kind": "multi"}},
-                            {"path": "param_analysis_paths", "widget": {"kind": "multi"}},
                         ]},
                     ]},
                 ]},

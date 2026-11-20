@@ -10,7 +10,6 @@ from cube_explorer                     import CubeExplorer, SliceCollectionMaile
 from dataset_browser                   import DatasetBrowser
 from energy_meter                      import JobEnergyMeter
 from ab_autopsy                        import AbAutopsy
-from fit_lab                           import FitLab
 from model_probe                       import ModelProbe
 from model_survey                      import ModelSurvey
 from triage_board                      import TriageBoard
@@ -41,7 +40,7 @@ from system_monitor                    import SystemMonitor
 from tensorboard_manager               import TensorboardManager
 from web_logger                        import WebLogger
 
-from routers.analysis_routers   import AutopsyRouter, FitLabRouter, ProbeRouter, SurveyRouter, TriageRouter
+from routers.analysis_routers   import AutopsyRouter, ProbeRouter, SurveyRouter, TriageRouter
 from routers.cube_routers       import CubeRouter, SliceRouter
 from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
 from routers.sequence_router    import SequenceRouter
@@ -115,7 +114,6 @@ class WebUIServer:
         self.slices            = SliceCollector(self.cubes, self.logger)
         self.slice_mail        = SliceCollectionMailer(self.slices, self.logger)
         self.datasets          = DatasetBrowser(self.logger)
-        self.fitlab            = FitLab(self.logger)
         self.probe             = ModelProbe(self.logger)
         self.survey            = ModelSurvey(self.logger)
         self.triage            = TriageBoard(self.paths, self.cubes.roots, self.logger)
@@ -132,7 +130,6 @@ class WebUIServer:
             DatasetRouter(self.datasets),
             CubeRouter(self.cubes),
             SliceRouter(self.slices, self.slice_mail),
-            FitLabRouter(self.fitlab),
             ProbeRouter(self.probe),
             SurveyRouter(self.survey),
             TriageRouter(self.triage),

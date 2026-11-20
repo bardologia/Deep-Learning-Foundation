@@ -67,7 +67,6 @@
         <a href="#/survey" data-route="survey">Survey</a>
         <a href="#/triage" data-route="triage">Triage</a>
         <a href="#/autopsy" data-route="autopsy">Autopsy</a>
-        <a href="#/fitlab" data-route="fitlab">Fit Lab</a>
       </div>
     </div>
   </nav>
@@ -948,112 +947,6 @@
     <div id="survey-root"></div>
   </section>
 
-  <!-- FIT LAB -->
-  <section class="page page--pad" data-page="fitlab">
-    <div class="page__head page__head--figure">
-      <h2 class="page__title">Param extraction lab</h2>
-      <p class="page__lead">
-        Load a preprocessing dataset, pick pixels on the cube, and run the Gaussian
-        parameter-extraction fit on just those pixels under different configurations &mdash;
-        compare K, &lambda;, free parameters and preprocessing constants before committing
-        to a full extraction run.
-      </p>
-      <hairline-figure name="transect" class="page__figure" aria-hidden="true"></hairline-figure>
-    </div>
-
-    <div class="cube-pick">
-      <div class="fl-src" role="group" aria-label="Datasets directory">
-        <label for="fl-base">Datasets dir</label>
-        <input id="fl-base" type="text" spellcheck="false" autocomplete="off" placeholder="/path/to/datasets" />
-        <button type="button" class="btn btn--mini" id="fl-scan">Scan</button>
-      </div>
-      <div class="cube-grouplist" id="fl-strip" aria-label="Datasets"></div>
-      <p class="cube-hint" id="fl-hint">Point the scanner at a directory of preprocessing datasets.</p>
-      <div class="cube-progress" id="fl-progress" hidden>
-        <div class="cube-progress__track"><i class="cube-progress__fill" id="fl-progress-fill"></i></div>
-        <p class="cube-progress__label" id="fl-progress-label">loading&hellip;</p>
-      </div>
-    </div>
-
-    <div class="fl-stage" id="fl-stage" hidden>
-      <div class="fl-deck">
-        <aside class="fl-map">
-          <div class="fl-map__head">
-            <h3 class="cube-panel-title">Pixel selection</h3>
-            <div class="cube-spaces" id="fl-map-src" role="group" aria-label="Map source">
-              <button type="button" class="cube-space is-active" data-src="primary">Primary amplitude</button>
-              <button type="button" class="cube-space" data-src="peak">Cube peak</button>
-            </div>
-          </div>
-          <div class="fl-map__frame">
-            <span class="cube-axis cube-axis--y">range &rarr;</span>
-            <div class="fl-map__wrap">
-              <img id="fl-map-img" alt="Dataset map" />
-              <div class="fl-marks" id="fl-marks"></div>
-            </div>
-            <span class="cube-axis cube-axis--x">row &rarr;</span>
-          </div>
-          <p class="cube-coords" id="fl-coords">Click the map to add pixels &middot; click a marker to remove it.</p>
-          <div class="fl-pixrow" role="group" aria-label="Add a pixel by index">
-            <span class="cube-jump__cell">
-              <label for="fl-row">row</label>
-              <input type="number" id="fl-row" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-              <span class="cube-jump__range" id="fl-row-range"></span>
-            </span>
-            <span class="cube-jump__cell">
-              <label for="fl-col">col</label>
-              <input type="number" id="fl-col" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-              <span class="cube-jump__range" id="fl-col-range"></span>
-            </span>
-            <button type="button" class="btn btn--mini" id="fl-add">Add</button>
-            <button type="button" class="btn btn--mini" id="fl-clear">Clear</button>
-          </div>
-          <div class="fl-pixels" id="fl-pixels"></div>
-        </aside>
-
-        <aside class="fl-config">
-          <h3 class="cube-panel-title">Fit configuration</h3>
-          <div class="fl-modes" id="fl-mode" role="group" aria-label="Free parameters">
-            <button type="button" data-comp="sigma" class="is-active" aria-pressed="true">&sigma; width</button>
-            <button type="button" data-comp="amp" aria-pressed="false">A amplitude</button>
-            <button type="button" data-comp="mu" aria-pressed="false">&mu; mean</button>
-          </div>
-          <div class="fl-fields">
-            <label>K max<input id="fl-kmax" type="number" min="1" max="8" step="1" value="5" /></label>
-            <label>lambda per K<input id="fl-lambda" type="number" step="any" value="0.01" /></label>
-            <label>threshold factor<input id="fl-threshold" type="number" min="0" max="0.999" step="any" value="0.25" /></label>
-            <label>truncation index<input id="fl-truncation" type="number" min="1" step="1" value="170" /></label>
-            <label>prominence frac<input id="fl-prominence" type="number" step="any" value="0.05" /></label>
-            <label>sigma init divisor<input id="fl-sigdiv" type="number" step="any" value="4" /></label>
-            <label>activity threshold<input id="fl-activity" type="number" step="any" value="0.001" /></label>
-            <label>Adam steps<input id="fl-steps" type="number" min="1" step="1" value="3000" /></label>
-            <label>Adam lr<input id="fl-lr" type="number" step="any" value="0.2" /></label>
-          </div>
-          <div class="fl-actions">
-            <button type="button" class="btn btn--primary" id="fl-run">Run fit</button>
-            <span class="fl-runmsg" id="fl-run-msg"></span>
-          </div>
-          <div class="cube-progress" id="fl-fit-progress" hidden>
-            <div class="cube-progress__track"><i class="cube-progress__fill" id="fl-fit-progress-fill"></i></div>
-            <p class="cube-progress__label" id="fl-fit-progress-label">fitting&hellip;</p>
-          </div>
-          <div class="fl-runs" id="fl-runs"></div>
-        </aside>
-      </div>
-
-      <div class="fl-results" id="fl-results" hidden>
-        <div class="fl-results__bar">
-          <h3 class="cube-panel-title">Fitted profiles</h3>
-          <div class="cube-spaces" id="fl-comps" role="group" aria-label="Curve detail">
-            <button type="button" class="cube-space is-active" data-comps="on">Components</button>
-            <button type="button" class="cube-space" data-comps="off">Totals only</button>
-          </div>
-        </div>
-        <div class="fl-cards" id="fl-cards"></div>
-      </div>
-    </div>
-  </section>
-
   <!-- TENSORBOARD -->
   <section class="page page--pad page--tb" data-page="tensorboard">
     <div class="page__head page__head--row">
@@ -1152,7 +1045,6 @@
 <script src="/static/js/run_strip.js"></script>
 <script src="/static/js/cube_view.js"></script>
 <script src="/static/js/slice_collector.js"></script>
-<script src="/static/js/fit_lab.js"></script>
 <script src="/static/js/microscope.js"></script>
 <script src="/static/js/survey.js"></script>
 <script src="/static/js/triage.js"></script>

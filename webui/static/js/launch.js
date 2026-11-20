@@ -89,15 +89,6 @@ class LaunchView extends ConfigForm {
     benchmark      : LaunchView.BACKBONE_MEANING,
     cross_validate : LaunchView.BACKBONE_MEANING,
     tune           : LaunchView.BACKBONE_MEANING,
-    extract_params: {
-      title  : "Extract Parameters",
-      summary: "Fits a per-pixel Gaussian mixture to the reference cube to build the supervised profile-parameter targets.",
-      flow   : [
-        { kind: "input",  glyph: "cube",   label: "Reference cube", sub: "profile intensities" },
-        { kind: "model",  glyph: "fit",    label: "Gaussian-mixture fit", tag: "operation", sub: "per pixel" },
-        { kind: "output", glyph: "params", label: "Params array",        sub: "amp, μ, σ, amp, μ, σ, …" },
-      ],
-    },
     infer: {
       title  : "Inference",
       summary: "Runs a trained model over the image stack with a sliding window, stitches the predicted cube, and renders reports.",
@@ -116,12 +107,10 @@ class LaunchView extends ConfigForm {
     [/^train(_|$)/, "surface"],
     [/^(infer(_|$)|export_onnx$)/, "shelf"],
     [/^generate_dataset$/, "slots"],
-    [/^extract_params$/, "threshold"],
     [/^benchmark$/, "podium"],
     [/^cross_validate$/, "folds"],
     [/^tune$/, "dial"],
     [/^profile_training$/, "feed"],
-    [/^analyze_param_extraction$/, "transect"],
     [/^map_loss_landscape$/, "landscape"],
     [/^compare(_|$)/, "balance"],
     [/^(collect_reports|mail_experiment_reports|export_paper_figures|export_tensorboard_plots|export_result_tables)$/, "tray"],

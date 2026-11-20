@@ -1,6 +1,5 @@
 {
   "sections": {
-    "param_extraction": "The stage that fits parametric z profiles to focused cubes, producing the per-pixel Gaussian-mixture ground truth the backbone learns to predict. It runs constrained optimization over each preprocessed cube and recomputes fit metrics and diagnostic plots for existing trials. The configs here control optimizer iteration caps and fit hyperparameters, the single-run extraction driver, the batch entry point that sweeps datasets and hyperparameter grids, and the inference config that regenerates metrics and summaries.",
     "normalization": "The stage that standardizes network inputs and outputs, mapping heavy-tailed input channels and Gaussian parameters onto stable numeric ranges for training and inference. It fits per-channel location/scale transforms from pixel statistics, persists them, and bounds predicted outputs to a physically valid range. The configs here control per-channel normalization recipes, per-slot strategy selection for input and output channels, runtime output clamping, and the persisted fitted statistics applied at train and inference time.",
     "dataset": "The stage that assembles trainable examples from a preprocessed dataset run. It selects input and target channels, tiles cropped scenes into overlapping patches, applies augmentation, and builds the train/val/test dataloaders. The configs here control which stack channels and Aux form the input, which per-Gaussian parameters are predicted, patch tiling and augmentation, and the parallel assembly of the image-patch datasets.",
     "architectures": "The stage that defines the backbone architectures. Each config specifies one model variant's layer geometry, output-head structure, and per-group optimizer settings. The configs here cover U-Net and transformer backbones predicting per-pixel Gaussian-mixture parameters.",
@@ -15,78 +14,6 @@
     "synthesis": "The stage that generates the bundled example dataset, so the template runs end to end without external data. It draws smooth per-pixel Gaussian-mixture parameter fields, renders them into z profiles, derives a multi-channel input stack with a matching Aux, and writes the dataset, its parameter run and the metadata the downstream stages expect. The configs here control the scene extent and z axis, the mixture statistics, the channel synthesis and noise levels, the fit metadata written alongside the parameters, and the entry point that runs the generator."
   },
   "configs": {
-    "param_extraction::FitConfig": {
-      "summary": "Gaussian-fit hyperparameters and per-parameter free/frozen toggles for one profile-fitting run",
-      "fields": {
-        "threshold_factor": "profile preprocessing floor: samples below this fraction of the per-pixel profile maximum are zeroed before fitting",
-        "truncation_index": "profile preprocessing cut: z-axis samples at or above this index are zeroed before fitting",
-        "k_max": "maximum number of Gaussian components; every K from 1 to k_max is fitted and the penalised best is kept",
-        "lambda_k": "component-count regularization strength added as lambda_k * K to each K's MSE for best-K selection",
-        "prominence_frac": "peak prominence threshold for the CPU initialiser as a fraction of the per-pixel profile maximum",
-        "sigma_init_divisor": "divisor shrinking the z-span-derived base width (h_span/(8*k_max), floored at 2 bin spacings) into each Gaussian's initial sigma guess",
-        "activity_threshold": "per-pixel profile maximum at or below which the pixel is skipped by the fit and keeps zero parameters; recorded in param_extraction_meta.json as the activity_threshold every training, inference and analysis stage reads for this parameter run",
-        "fit_sigma": "toggle freeing the Gaussian widths during the Adam fit; off masks their gradients so they stay at the initial guess",
-        "fit_amplitude": "toggle freeing the Gaussian amplitudes during the Adam fit; off masks their gradients so they stay at the initial guess",
-        "fit_mean": "toggle freeing the Gaussian mean z values during the Adam fit; off masks their gradients so they stay at the initial guess"
-      }
-    },
-    "param_extraction::FitSettings": {
-      "summary": "Gaussian-fit hyperparameters for one profile-fitting run",
-      "fields": {
-        "fit_config": "FitConfig sub-config with k_max, lambda_k, sigma_init_divisor, thresholds, and the fit_sigma/fit_amplitude/fit_mean free-parameter toggles"
-      }
-    },
-    "param_extraction::ExtractionConfig": {
-      "summary": "Drives one Gaussian-mixture parameter-extraction run over a single preprocessed cube",
-      "fields": {
-        "processed_data_path": "root of the preprocessed run holding data/ and meta/ subfolders, source of the cube to fit",
-        "output_prefix": "leading token of the generated output subdirectory name, joined with the hyperparameter suffix",
-        "output_suffix": "optional fixed naming tag overriding the auto-derived k/lambda/sigma/free-params suffix",
-        "z_range": "reconstruction z-axis extent as (min, max); None reads it from meta/config_state.json",
-        "fit_settings": "FitSettings sub-config bundling the iteration cap and Gaussian-fit hyperparameters (k_max, lambda_k, sigma_init_divisor, free-parameter flags)",
-        "parameter_workers": "number of CPU worker processes in the PeakInitialiser pool used for per-pixel peak-based initial guesses",
-        "col_batch_size": "number of range bins loaded and fit together per batch while streaming the cube",
-        "gpu_pixel_batch_size": "fixed number of pixels per GPU batch the JAX Adam-fit kernel is compiled and iterated over, with padding to keep every batch this size",
-        "adam_steps": "number of Adam optimizer steps run per pixel batch during Gaussian curve fitting",
-        "adam_lr": "Adam learning rate for the per-pixel Gaussian curve-fitting optimizer",
-        "adam_b1": "Adam beta1 first-moment decay coefficient for the Gaussian curve-fitting optimizer",
-        "adam_b2": "Adam beta2 second-moment decay coefficient for the Gaussian curve-fitting optimizer"
-      }
-    },
-    "param_extraction::ExtractParamsEntryConfig": {
-      "summary": "Batch entry point sweeping Gaussian-parameter extraction across datasets and fit hyperparameter grids",
-      "fields": {
-        "dataset_base_path": "root directory scanned for dataset subdirectories, each requiring a data/ folder, to process",
-        "dataset_filter": "list of dataset directory names selecting which datasets under the base path run; empty processes all",
-        "output_prefix": "leading token of each generated output subdirectory name, shared across the sweep",
-        "output_suffix": "optional fixed naming tag overriding the auto-derived suffix; rejected when the sweep expands to more than one permutation",
-        "z_range": "reconstruction z-axis extent as (min, max) applied to every plan; None reads it per-dataset from metadata",
-        "overwrite": "toggle allowing an existing parameter run under a permutation's directory name to be deleted and refitted; off, a sweep landing on an existing run is refused before any fitting, since the run name encodes only k_max, lambda, the sigma divisor and the free parameters",
-        "fit_k_values": "list of maximum Gaussian-component counts (k_max) to sweep, one extraction plan per value",
-        "fit_lambda_values": "list of component-count regularization strengths (lambda_k) to sweep, one extraction plan per value",
-        "fit_modes": "fit modes to sweep, each an underscore-joined composition of free parameters from sigma, amp, mu (e.g. sigma, amp_mu, sigma_amp_mu); every non-empty composition is valid",
-        "fit_sigma_init_divisor": "divisor shrinking the z-span-derived base width (h_span/(8*k_max), floored at 2 bin spacings) into each Gaussian's initial sigma guess, shared across the sweep",
-        "fit_threshold_factor": "profile preprocessing floor shared across the sweep: samples below this fraction of the per-pixel profile maximum are zeroed before fitting",
-        "fit_truncation_index": "profile preprocessing cut shared across the sweep: z-axis samples at or above this index are zeroed before fitting",
-        "fit_prominence_frac": "peak prominence threshold for the CPU initialiser as a fraction of the per-pixel profile maximum, shared across the sweep",
-        "fit_activity_threshold": "per-pixel profile maximum at or below which the pixel is skipped by the fit, shared across the sweep and recorded in every trial's param_extraction_meta.json as the activity threshold later stages read",
-        "adam_steps": "number of Adam optimizer steps run per pixel batch during Gaussian curve fitting, shared across the sweep",
-        "adam_lr": "Adam learning rate for the per-pixel Gaussian curve-fitting optimizer, shared across the sweep",
-        "gpu_device_ids": "GPU indices pinned via EnvironmentPinner.gpus before extraction runs",
-        "col_batch_size": "number of range bins loaded and fit together per batch, shared across the sweep",
-        "gpu_pixel_batch_size": "fixed number of pixels per GPU batch the JAX Adam-fit kernel is compiled and iterated over, shared across the sweep",
-        "parameter_workers": "CPU worker count for the shared PeakInitialiser pool, defaulting to min(64, cpu_count)",
-        "resources": "ResourceConfig sub-config of the host and GPU resource monitor that samples RAM, swap, /dev/shm, CPU and NVML counters while each extraction group fits, warns at the RAM/VRAM/shm thresholds and logs the peaks; the TensorBoard flag has no effect here since extraction writes no TensorBoard run"
-      }
-    },
-    "param_extraction::ParamExtractionInferenceConfig": {
-      "summary": "Recomputes fit metrics, summaries, and diagnostic plots for existing parameter-extraction trials",
-      "fields": {
-        "params_dir": "root directory recursively scanned for param_extraction_meta.json markers identifying completed trials",
-        "run_tags": "trial subdirectory paths (relative to params_dir) selecting which trials to process; empty auto-discovers all",
-        "make_plots": "whether FittingResultPlotter renders diagnostic plots in addition to the JSON metrics summary"
-      }
-    },
     "normalization/general::ChannelStrategy": {
       "summary": "Per-channel normalization recipe: fits a location/scale pair from pixel statistics, or returns a fixed constant for fixed_div_pi",
       "fields": {
@@ -1353,17 +1280,6 @@
         "paths": "ComparisonPathsConfig sub-config giving the benchmark log_base_dir the run_tag is resolved against"
       }
     },
-    "comparison::ParamExtractionComparisonConfig": {
-      "summary": "Entry config for comparing Gaussian-fit parameter-extraction trials grouped by number of Gaussians",
-      "fields": {
-        "params_dir": "Root directory holding the extracted-parameter dataset run subdirectories to compare",
-        "run_tags": "Run subfolder names to include, empty auto-discovers every parameter-extraction run",
-        "pixel_sample": "Maximum number of fitted pixels sampled when computing the dominant-z separation metric, the block-standard-deviation coherence metric ignores it",
-        "block_size": "Square block edge length in pixels (tiled over both rows and cols) used by the block-standard-deviation dominant-z coherence metric",
-        "make_plots": "Whether to render comparison plots for the collected parameter-extraction trials",
-        "output_dir": "Destination for the comparison report; None writes to a _fit_comparison subfolder under params_dir"
-      }
-    },
     "diagnostics::WeightXrayThresholds": {
       "summary": "Numeric thresholds classifying weight-tensor pathologies during the weight-xray checkpoint diagnostic",
       "fields": {
@@ -1473,15 +1389,13 @@
       }
     },
     "diagnostics::ArtifactMailConfig": {
-      "summary": "Per-source artifact gathering for a dataset, a parameter-extraction run or a training run: resolves the three path lists against the source directory, drops whatever the exclusion rules leave out, packs the rest into deflate archives that each stay under the attachment cap, and keeps the source tree inside them so unpacking every archive into one folder rebuilds it",
+      "summary": "Per-source artifact gathering for a dataset or a training run: resolves the path lists against the source directory, drops whatever the exclusion rules leave out, packs the rest into deflate archives that each stay under the attachment cap, and keeps the source tree inside them so unpacking every archive into one folder rebuilds it",
       "fields": {
         "source_dir": "dataset folder, parameter-extraction run folder or training run folder whose artifacts are packed",
         "staging_dir": "directory that receives this source's archives; re-gathering deletes the archives of the previous run first",
         "label": "identity of the source in the subject line and the root folder every archived file sits under, also the stem of the archive filenames with the slash replaced by a double underscore",
         "required_paths": "paths relative to the source directory that must exist, each a file or a directory whose whole subtree is taken; a missing one aborts the gathering loudly",
         "optional_paths": "paths relative to the source directory attached when present, each a file or a directory whose whole subtree is taken; a missing one only warns",
-        "analysis_paths": "paths written by the analysis entry, attached when present; when none of them exist the source has not been analysed and one warning names the entry to run",
-        "analysis_entry": "name of the analysis entry that writes the analysis paths, quoted in the warning raised when none of them exist",
         "excluded_paths": "globs of content never packed, matched against a file's path relative to the source directory, against each of its parent directories and against the bare name of each of them, so 'cubes' drops a directory of that name wherever it sits while 'inference/*/cubes' drops only the ones inside an inference stamp",
         "excluded_suffixes": "file extensions never packed, matched case-insensitively against the file name, .pt for the checkpoints and .npy for the arrays among them",
         "max_file_mb": "upper bound of one packed file in megabytes, above which the file is left out and named in the left-out table; zero turns the size rule off and packs every file the other two rules keep",
@@ -1489,9 +1403,9 @@
       }
     },
     "diagnostics::ReportMailEntryConfig": {
-      "summary": "Entry config of the report mailer: picks one of four targets (experiments, runs, datasets, param_extraction), names the path each target scans and how each source is gathered, and carries the shared SMTP settings, the staging directory and the attachment size cap",
+      "summary": "Entry config of the report mailer: picks one of three targets (experiments, runs, datasets), names the path each target scans and how each source is gathered, and carries the shared SMTP settings, the staging directory and the attachment size cap",
       "fields": {
-        "target": "which source the run mails: experiments (sweeps of trial runs, cross-validation runs and benchmark runs found at or below experiments_dir), runs (the content of the training runs found at or below runs_dir), datasets (generated datasets) or param_extraction (fitted parameter runs); only that target's root, filter and gathered paths are read",
+        "target": "which source the run mails: experiments (sweeps of trial runs, cross-validation runs and benchmark runs found at or below experiments_dir), runs (the content of the training runs found at or below runs_dir) or datasets (generated datasets); only that target's root, filter and gathered paths are read",
         "experiments_dir": "path searched for experiments at or below it: a sweep directory of trial runs, a cross-validation run (or its folds directory), a benchmark run (or its training directory), a sequence workspace holding several of them, or a whole runs tree; experiments are recognised by the trial runs they hold, never by their names, and the scan stops at each one so run trees are never entered",
         "experiment_filter": "experiment paths relative to experiments_dir, or experiment names, restricting the mailing; empty mails every experiment found",
         "comparison_dirname": "name of the subdirectory inside each sweep holding the timestamped trial-comparison outputs, where a missing comparison is written before mailing",
@@ -1509,11 +1423,6 @@
         "dataset_filter": "exact dataset folder names selecting which datasets to mail; empty triggers interactive selection on a tty, else all datasets",
         "dataset_required_paths": "dataset generation outputs that must exist in a dataset, each a file or a directory whose whole subtree is attached; a missing one aborts that dataset loudly",
         "dataset_optional_paths": "dataset generation outputs attached when present; a missing one only warns. The arrays under data/ are deliberately absent from the default: they run to hundreds of megabytes and would need dozens of messages",
-        "params_dir": "root directory searched recursively for parameter-extraction runs, normally the same dataset root; only runs carrying both the extraction metadata and parameters.npy are offered",
-        "param_run_filter": "parameter-run paths relative to that root, as <dataset>/params/<run>; empty triggers interactive selection on a tty, else all runs",
-        "param_required_paths": "extraction outputs that must exist in a run, each a file or a directory whose whole subtree is attached; a missing one aborts that run loudly",
-        "param_optional_paths": "extraction outputs attached when present; a missing one only warns. The fitted arrays parameters.npy and fit_diagnostics.npz are deliberately absent from the default: together they run to tens of megabytes",
-        "param_analysis_paths": "outputs written by analyze_param_extraction, attached when present; when none of them exist the run has not been analysed and one warning names that entry",
         "staging_dir": "directory that receives the gathered files, one subfolder per source; re-gathering overwrites the previous copies and deletes the archives of the previous run",
         "max_attachment_mb": "upper bound of one archive in megabytes, measured on the uncompressed sources; a run, dataset or parameter run whose artifacts exceed it is split across as many messages as it needs, and a single file above it aborts loudly. Keep it under the mail server limit with room for the roughly one third that base64 encoding adds on the wire",
         "recipient": "address every message is sent to",

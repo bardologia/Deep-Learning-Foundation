@@ -2,49 +2,10 @@
 from __future__ import annotations
 
 from ab_autopsy       import AbAutopsy
-from fit_lab          import FitLab
 from model_probe      import ModelProbe
 from model_survey     import ModelSurvey
 from routers.dispatch import HttpExchange, RouteTable, SubRouter
 from triage_board     import TriageBoard
-
-
-class FitLabRouter(SubRouter):
-
-    def __init__(self, fitlab: FitLab) -> None:
-        self.fitlab = fitlab
-
-        super().__init__(("/api/fitlab",))
-
-    def declare(self, table: RouteTable) -> None:
-        table.add("GET",  "/api/fitlab/datasets",   self.datasets)
-        table.add("GET",  "/api/fitlab/status",     self.status)
-        table.add("GET",  "/api/fitlab/map",        self.map_view)
-        table.add("GET",  "/api/fitlab/fit_status", self.fit_status)
-        table.add("GET",  "/api/fitlab/fit_result", self.fit_result)
-        table.add("POST", "/api/fitlab/load",       self.load)
-        table.add("POST", "/api/fitlab/fit",        self.fit)
-
-    def datasets(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.fitlab.datasets(exchange.text("base")))
-
-    def status(self, exchange: HttpExchange) -> None:
-        exchange.send_json(self.fitlab.load_status())
-
-    def map_view(self, exchange: HttpExchange) -> None:
-        exchange.send_png(self.fitlab.map_png(exchange.text("src", "primary")))
-
-    def fit_status(self, exchange: HttpExchange) -> None:
-        exchange.send_json(self.fitlab.fit_status())
-
-    def fit_result(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.fitlab.fit_result_payload(), 404)
-
-    def load(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.fitlab.start_load(exchange.body.get("path", "")))
-
-    def fit(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.fitlab.start_fit(exchange.body))
 
 
 class ProbeRouter(SubRouter):

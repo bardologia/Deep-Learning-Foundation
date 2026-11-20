@@ -14,7 +14,6 @@ class ConfigRegistry:
 
     SECTION_TITLES = {
         "synthesis"        : "Dataset Synthesis",
-        "param_extraction" : "Parameter Extraction",
         "normalization"    : "Normalization",
         "dataset"          : "Dataset",
         "architectures"    : "Model Architectures",
@@ -28,7 +27,7 @@ class ConfigRegistry:
         "diagnostics"      : "Diagnostics",
     }
 
-    SECTION_ORDER = ["synthesis", "param_extraction", "normalization", "dataset", "architectures", "training", "resources", "inference", "benchmark", "cross_validation", "tuning", "comparison", "diagnostics"]
+    SECTION_ORDER = ["synthesis", "normalization", "dataset", "architectures", "training", "resources", "inference", "benchmark", "cross_validation", "tuning", "comparison", "diagnostics"]
 
     def __init__(self, paths: ProjectPaths) -> None:
         self.paths        = paths

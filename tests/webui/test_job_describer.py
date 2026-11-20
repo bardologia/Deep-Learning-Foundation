@@ -27,14 +27,6 @@ BACKBONE_LEAVES = [
     {"path": "training.epochs",        "value": "60"},
 ]
 
-EXTRACT_LEAVES = [
-    {"path": "dataset_filter",    "value": "[]"},
-    {"path": "fit_k_values",      "value": "[5]"},
-    {"path": "fit_lambda_values", "value": "[0.01]"},
-    {"path": "fit_modes",         "value": "['sigma', 'sigma_amp', 'sigma_amp_mu']"},
-    {"path": "output_suffix",     "value": "None"},
-]
-
 
 class KnownScriptPaths:
 
@@ -101,15 +93,6 @@ def test_generate_dataset_output_override_appears():
     assert "synthetic_big" in text
 
 
-def test_extract_params_empty_filter_reads_all_datasets():
-    text = _describer({"extract_params": EXTRACT_LEAVES}).describe("extract_params", "python", {})
-
-    assert "datasets all datasets" in text
-    assert "K [5]" in text
-    assert "lambda [0.01]" in text
-    assert "modes [sigma, sigma_amp, sigma_amp_mu]" in text
-
-
 def test_unconsumed_overrides_surface_as_extras():
     overrides = {"training.batch_size": "512", "gpu": "2"}
     text      = _describer({"train_backbone": BACKBONE_LEAVES}).describe("train_backbone", "python", overrides)
@@ -154,8 +137,6 @@ MAIL_LEAVES = [
     {"path": "run_filter",        "value": "[]"},
     {"path": "datasets_dir",      "value": "/data/datasets"},
     {"path": "dataset_filter",    "value": "[]"},
-    {"path": "params_dir",        "value": "/data/datasets"},
-    {"path": "param_run_filter",  "value": "[]"},
     {"path": "recipient",         "value": "victor@example.com"},
 ]
 

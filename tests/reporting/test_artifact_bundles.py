@@ -8,7 +8,7 @@ import zipfile
 import pytest
 
 from configuration.diagnostics        import ReportMailEntryConfig
-from tools.reporting.artifact_bundles import ArtifactBundle, DatasetSelector, ExcludedContent, ParamRunSelector, RunContentBundle, RunContentSelector
+from tools.reporting.artifact_bundles import ArtifactBundle, DatasetSelector, ExcludedContent, RunContentBundle, RunContentSelector
 from tools.reporting.report_mailer    import ReportMailBatch
 
 from tests.conftest import RecordingLogger
@@ -28,20 +28,7 @@ def _write(path, payload):
     return path
 
 
-def _write_param_run(run_dir, analysed=True):
-    _write(run_dir / "param_extraction_meta.json", json.dumps({"k_max": 2}))
-    _write(run_dir / "parameters.npy", b"\x00" * 64)
-    _write(run_dir / "fit_diagnostics.npz", b"\x00" * 32)
-    _write(run_dir / "logs" / "param_extraction.log", "fitted\n")
-
-    if analysed:
-        _write(run_dir / "fit_metrics_summary.json", json.dumps({"global_summary": {}}))
-        _write(run_dir / "images" / "metrics" / "mse.png", PNG_BYTES)
-
-    return run_dir
-
-
-def _write_dataset(root, name, param_runs=("params_k2",)):
+def _write_dataset(root, name):
     dataset_dir = root / name
 
     _write(dataset_dir / "data" / "dataset.json", json.dumps({"dataset_type": "synthetic", "channel_labels": ["CH00", "CH01"]}))
@@ -50,9 +37,6 @@ def _write_dataset(root, name, param_runs=("params_k2",)):
     _write(dataset_dir / "meta" / "config_state.json", json.dumps({"crop": {"row_start": 0, "row_end": 64, "col_start": 0, "col_end": 64}}))
     _write(dataset_dir / "meta" / "environment.json", json.dumps({"python": "3.11", "torch": "2.11", "numpy": "2.4"}))
     _write(dataset_dir / "logs" / "generate_dataset.log", "scene synthesised, arrays written, layout saved\n")
-
-    for run_name in param_runs:
-        _write_param_run(dataset_dir / "params" / run_name)
 
     return dataset_dir
 
@@ -89,7 +73,7 @@ def runs_dir(tmp_path):
 def datasets_dir(tmp_path):
     root = tmp_path / "datasets"
     _write_dataset(root, "ds_alpha")
-    _write_dataset(root, "ds_beta", param_runs=())
+    _write_dataset(root, "ds_beta")
     return root
 
 
@@ -98,7 +82,6 @@ def entry_config(datasets_dir, runs_dir, tmp_path):
     return ReportMailEntryConfig(
         target       = "datasets",
         datasets_dir = datasets_dir,
-        params_dir   = datasets_dir,
         runs_dir     = runs_dir,
         staging_dir  = tmp_path / "staging",
         recipient    = "victor@example.com",
@@ -118,14 +101,6 @@ def test_dataset_selector_discovers_only_folders_with_a_layout(datasets_dir):
     datasets = DatasetSelector(datasets_dir, RecordingLogger()).all()
 
     assert [dataset.name for dataset in datasets] == ["ds_alpha", "ds_beta"]
-
-
-def test_param_run_selector_skips_runs_without_the_parameter_stack(datasets_dir):
-    _write(datasets_dir / "ds_beta" / "params" / "half_written" / "param_extraction_meta.json", "{}")
-
-    runs = ParamRunSelector(datasets_dir, RecordingLogger()).all()
-
-    assert [run.name for run in runs] == ["params_k2"]
 
 
 def test_dataset_bundle_packs_the_layout_metadata_and_logs(entry_config, datasets_dir):
@@ -158,30 +133,6 @@ def test_dataset_bundle_warns_for_a_missing_optional_path(entry_config, datasets
 
     assert [message for message in warnings if "'docs'" in message]
     assert "datasets/ds_beta/data/dataset.json" in _archived_names(archives[0])
-
-
-def test_param_bundle_packs_extraction_and_analysis_artifacts(entry_config, datasets_dir):
-    config   = entry_config.to_param_config(datasets_dir / "ds_alpha" / "params" / "params_k2")
-    archives = ArtifactBundle(config, RecordingLogger()).stage()
-
-    assert [path.name for path in archives] == ["ds_alpha__params_k2.zip"]
-    assert _archived_names(archives[0]) == [
-        "ds_alpha/params_k2/fit_metrics_summary.json",
-        "ds_alpha/params_k2/images/metrics/mse.png",
-        "ds_alpha/params_k2/logs/param_extraction.log",
-        "ds_alpha/params_k2/param_extraction_meta.json",
-    ]
-
-
-def test_param_bundle_warns_and_names_the_analysis_entry(entry_config, tmp_path):
-    run_dir  = _write_param_run(tmp_path / "ds_gamma" / "params" / "params_k2", analysed=False)
-    logger   = RecordingLogger()
-    archives = ArtifactBundle(entry_config.to_param_config(run_dir), logger).stage()
-
-    warnings = [message for level, message in logger.messages if level == "warning"]
-
-    assert any("analyze_param_extraction" in message for message in warnings)
-    assert not any("/images/" in name for name in _archived_names(archives[0]))
 
 
 def test_bundle_splits_into_numbered_volumes_over_the_cap(entry_config, datasets_dir):
@@ -239,17 +190,6 @@ def test_batch_numbers_the_subject_of_a_split_bundle(entry_config, monkeypatch, 
 
     assert total > 1
     assert subjects == [f"{entry_config.subject_prefix}: datasets/ds_alpha [{index}/{total}]" for index in range(1, total + 1)]
-
-
-def test_batch_mails_the_selected_parameter_run(entry_config, monkeypatch, fake_smtp):
-    monkeypatch.setenv(entry_config.password_env, "app-password")
-    entry_config.target           = "param_extraction"
-    entry_config.param_run_filter = ["ds_alpha/params/params_k2"]
-
-    results = ReportMailBatch(entry_config, RecordingLogger()).run()
-
-    assert [result["label"] for result in results] == ["ds_alpha/params_k2"]
-    assert results[0]["subjects"] == [f"{entry_config.subject_prefix}: ds_alpha/params_k2"]
 
 
 def test_run_selector_lists_every_run_below_the_root(runs_dir):

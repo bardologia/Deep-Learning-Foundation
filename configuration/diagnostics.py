@@ -213,8 +213,6 @@ class ArtifactMailConfig:
 
     required_paths : List[str] = field(default_factory=list)
     optional_paths : List[str] = field(default_factory=list)
-    analysis_paths : List[str] = field(default_factory=list)
-    analysis_entry : str       = ""
 
     excluded_paths    : List[str] = field(default_factory=list)
     excluded_suffixes : List[str] = field(default_factory=list)
@@ -238,7 +236,7 @@ class ArtifactMailConfig:
 @dataclass
 class ReportMailEntryConfig:
 
-    TARGETS = ("experiments", "runs", "datasets", "param_extraction")
+    TARGETS = ("experiments", "runs", "datasets")
 
     target : str = "experiments"
 
@@ -266,13 +264,6 @@ class ReportMailEntryConfig:
 
     dataset_required_paths : List[str] = field(default_factory=lambda: ["data/dataset.json", "meta"])
     dataset_optional_paths : List[str] = field(default_factory=lambda: ["logs", "docs"])
-
-    params_dir       : Path      = Path("datasets")
-    param_run_filter : List[str] = field(default_factory=list)
-
-    param_required_paths : List[str] = field(default_factory=lambda: ["param_extraction_meta.json"])
-    param_optional_paths : List[str] = field(default_factory=lambda: ["logs", "docs"])
-    param_analysis_paths : List[str] = field(default_factory=lambda: ["fit_metrics_summary.json", "images"])
 
     staging_dir : Path = Path("results/mailed_reports")
 
@@ -333,24 +324,6 @@ class ReportMailEntryConfig:
             label             = label,
             required_paths    = list(self.dataset_required_paths),
             optional_paths    = list(self.dataset_optional_paths),
-            max_attachment_mb = self.max_attachment_mb,
-        )
-
-    def param_run_label(self, run_dir: Path) -> str:
-        path = Path(run_dir)
-        return f"{path.parent.parent.name}/{path.name}"
-
-    def to_param_config(self, run_dir: Path) -> ArtifactMailConfig:
-        label = self.param_run_label(run_dir)
-
-        return ArtifactMailConfig(
-            source_dir        = Path(run_dir),
-            staging_dir       = Path(self.staging_dir) / label,
-            label             = label,
-            required_paths    = list(self.param_required_paths),
-            optional_paths    = list(self.param_optional_paths),
-            analysis_paths    = list(self.param_analysis_paths),
-            analysis_entry    = "analyze_param_extraction",
             max_attachment_mb = self.max_attachment_mb,
         )
 

@@ -14,8 +14,6 @@ class DatasetBrowser:
     DATA_MARKER     = "data"
     PARAMS_DIR      = "params"
     PARAM_SUFFIX    = ".npy"
-    PARAM_META      = "param_extraction_meta.json"
-    PARAM_FILE      = "parameters.npy"
     LAYOUT_FILE     = "dataset.json"
     MAX_DEPTH       = 3
     CHECKPOINT_NAME = "best_model.pt"
@@ -193,28 +191,6 @@ class DatasetBrowser:
 
         self.logger.info(f"secondaries: {len(entries)} of {dataset}, reference {channel_labels[0]}")
         return {"ok": True, "dataset": str(dataset), "reference": channel_labels[0], "standard": standard, "secondaries": entries}
-
-    def param_trials(self, raw_base: str) -> dict:
-        base = self._directory(raw_base)
-        if base is None:
-            return {"ok": False, "error": f"not a directory: {raw_base}"}
-
-        entries = []
-        for marker in sorted(base.rglob(self.PARAM_META)):
-            run_dir = marker.parent
-            if not (run_dir / self.PARAM_FILE).is_file():
-                continue
-
-            rel   = run_dir.relative_to(base)
-            parts = rel.parts
-            entries.append({
-                "name"    : str(rel),
-                "path"    : str(run_dir),
-                "dataset" : parts[0] if len(parts) > 1 else "",
-            })
-
-        self.logger.info(f"param_trials: listed {len(entries)} under {base}")
-        return {"ok": True, "base": str(base), "trials": entries}
 
     def _run_dirs(self, base: Path):
         if (base / self.RUN_MARKER).is_dir():

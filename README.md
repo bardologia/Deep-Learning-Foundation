@@ -56,8 +56,7 @@ webui/run.sh          # http://127.0.0.1:8772
 A Linux machine with an NVIDIA GPU and driver for training and inference at a useful
 speed. The tests, the dataset generator and the web console run fine on CPU. Training
 falls back to CPU on its own, with a warning, when no CUDA device is visible; inference
-has to be told, with `--inference.device cpu`. Fitting parameter runs with
-`extract_params` needs a GPU that JAX can see. You also need conda.
+has to be told, with `--inference.device cpu`. You also need conda.
 
 ## 1. Environment
 
@@ -66,7 +65,7 @@ conda create -n Dune python=3.11
 conda activate Dune
 
 pip install -r requirements.txt
-pip install "jax>=0.4.30" pytest==9.0.3 pyflakes==3.4.0
+pip install onnx==1.22.0 pytest==9.0.3 pyflakes==3.4.0
 ```
 
 Keep the name `Dune` unless you have a reason not to. The installer records the
@@ -80,12 +79,10 @@ first and then run the requirements file, which will leave the existing torch al
 Progress bars come from the project `Logger`, which draws them with rich, so tqdm is not
 a dependency.
 
-The second pip line covers the optional extras declared in `pyproject.toml`: `fitting`
-installs `jax` for the Gaussian-fit kernels under
-`pipelines/processing/param_extraction/sigma/` and the console fit lab, `export`
-installs `onnx` for the ONNX export entry, and `dev` installs `pytest` and
-`pyflakes`. Everything else in the repository works without jax or onnx; the tests
-that need them skip themselves.
+The second pip line covers the optional extras declared in `pyproject.toml`: `export`
+installs `onnx` for the ONNX export entry, and `dev` installs `pytest` and `pyflakes`.
+Everything else in the repository works without onnx; the tests that need it skip
+themselves.
 
 Check the result:
 
@@ -446,7 +443,7 @@ webui/run.sh 9000     # different port
 `run.sh` reads the interpreter, bind address and port from the machine profile's shell
 twin (`~/.config/ml-template/machine.env`) and refuses to start without one, pointing at
 `./install.sh`. The HTTP layer is standard library only, but the console runs inside the
-project environment: the cube explorer, fit lab and model probe are imported at boot, so numpy, matplotlib, scipy, torch, scikit-image, tensorboard and
+project environment: the cube explorer and model probe are imported at boot, so numpy, matplotlib, scipy, torch, scikit-image, tensorboard and
 psutil all have to be there, which is why the profile records the project environment's
 interpreter. Each launch page also has an interpreter picker filled from the conda envs
 the server discovers, with the profile's environment preselected.
@@ -522,18 +519,7 @@ each model's status (`DONE`, `PARTIAL` or `FAILED`) and stop reason, and the ent
 non-zero when a reported model is not `DONE`. The `prepare` and `full` stages refuse an
 existing study without `--resume` or `resume_from`.
 
-`main/processing/extract_params.py` fits parameter runs onto a dataset. It refuses a
-permutation whose `params/<run>` already exists unless `overwrite` is on, which deletes
-and refits it; refuses repeated sweep values, a dataset queued twice and modes that
-collide on one run name; refuses to fit when JAX sees no GPU; and raises when no pixel
-clears the activity threshold. Its `resources` block samples RAM, VRAM and shared memory
-around every group. Each parameter run records the commit, the fit outcome (active
-pixels, truncation, backend, devices, duration), where its z range came from and the
-share of slots that ended on the sigma and mean clamp bounds, and keeps its own copy of
-the group log under `logs/`. `analyze_param_extraction` writes `fit_metrics_summary.json`
-after every figure, so a run counts as analysed only once the analysis finished.
-
-Twenty-two analysis entries under `main/analysis/` read finished runs rather than
+Eighteen analysis entries under `main/analysis/` read finished runs rather than
 producing them: trial, seed and run comparisons (the seed comparison also reports 95%
 confidence intervals and scores the across-seed mean prediction as a deep ensemble),
 weight and activation x-rays, receptive field measurement, input attribution and
@@ -586,8 +572,6 @@ where the console's figures and palette live.
 Formats change without migration scripts; artifacts written by an older checkout are
 regenerated, not converted. These changes, made in October 2026, affect existing files:
 
-- Parameter runs need `activity_threshold` in `param_extraction_meta.json`. Generate or
-  extract them again.
 - Trainer states saved before `last.pt` recorded the batch geometry cannot be resumed.
   Retrain them.
 - Inference stamps scored before `metrics.json` recorded the activity threshold are

@@ -31,8 +31,6 @@ DEFER_HEAVY_IMPORTS = (
     "benchmark",
     "cross_validate",
     "profile_training",
-    "extract_params",
-    "analyze_param_extraction",
     "export_tensorboard_plots",
     "collect_reports",
     "mail_experiment_reports",
@@ -40,36 +38,30 @@ DEFER_HEAVY_IMPORTS = (
 
 CLI_MODULES = (
     "infer_backbone",
-    "analyze_param_extraction",
     "generate_dataset",
-    "extract_params",
     "tune",
     "profile_training",
     "benchmark",
     "cross_validate",
     "compare_runs",
     "compare_trials",
-    "compare_param_extraction_trials",
     "export_tensorboard_plots",
     "collect_reports",
     "mail_experiment_reports",
 )
 
 ENTRY_CONFIGS = {
-    "infer_backbone"                  : ("configuration.inference",          "BackboneInferenceEntryConfig"),
-    "extract_params"                  : ("configuration.param_extraction", "ExtractParamsEntryConfig"),
-    "generate_dataset"                : ("configuration.synthesis",       "GenerateDatasetEntryConfig"),
-    "analyze_param_extraction"        : ("configuration.param_extraction",      "ParamExtractionInferenceConfig"),
-    "tune"                            : ("configuration.tuning",                       "TuningEntryConfig"),
-    "profile_training"                : ("configuration.diagnostics",                  "TrainingProfileEntryConfig"),
-    "benchmark"                       : ("configuration.benchmark",                    "BenchmarkConfig"),
-    "cross_validate"                  : ("configuration.cross_validation",             "CrossValidationConfig"),
-    "compare_runs"                    : ("configuration.comparison",                   "ComparisonEntryConfig"),
-    "compare_trials"                  : ("configuration.comparison",                   "TrialComparisonConfig"),
-    "compare_param_extraction_trials" : ("configuration.comparison",             "ParamExtractionComparisonConfig"),
-    "export_tensorboard_plots"        : ("configuration.diagnostics",                  "TensorboardExportEntryConfig"),
-    "collect_reports"                 : ("configuration.diagnostics",                  "ReportCollectionEntryConfig"),
-    "mail_experiment_reports"         : ("configuration.diagnostics",                  "ReportMailEntryConfig"),
+    "infer_backbone"           : ("configuration.inference",        "BackboneInferenceEntryConfig"),
+    "generate_dataset"         : ("configuration.synthesis",        "GenerateDatasetEntryConfig"),
+    "tune"                     : ("configuration.tuning",           "TuningEntryConfig"),
+    "profile_training"         : ("configuration.diagnostics",      "TrainingProfileEntryConfig"),
+    "benchmark"                : ("configuration.benchmark",        "BenchmarkConfig"),
+    "cross_validate"           : ("configuration.cross_validation", "CrossValidationConfig"),
+    "compare_runs"             : ("configuration.comparison",       "ComparisonEntryConfig"),
+    "compare_trials"           : ("configuration.comparison",       "TrialComparisonConfig"),
+    "export_tensorboard_plots" : ("configuration.diagnostics",      "TensorboardExportEntryConfig"),
+    "collect_reports"          : ("configuration.diagnostics",      "ReportCollectionEntryConfig"),
+    "mail_experiment_reports"  : ("configuration.diagnostics",      "ReportMailEntryConfig"),
 }
 
 ENTRY_SCRIPTS = sorted(script for subdir in _SUBDIRS for script in (_MAIN_DIR / subdir).glob("*.py") if not script.stem.startswith("_"))
@@ -174,7 +166,7 @@ def test_train_main_defers_heavy_imports(tmp_path):
     assert result.stdout.strip() == "[]"
 
 
-@pytest.mark.parametrize("module_path", ("pipelines.processing.synthesis.pipeline", "pipelines.processing.param_extraction.pipeline"))
+@pytest.mark.parametrize("module_path", ("pipelines.processing.synthesis.pipeline",))
 def test_processing_pipeline_loads_no_torch(module_path, tmp_path):
     code   = f"import sys; sys.path.insert(0, {str(_MAIN_DIR.parent)!r}); import {module_path}; print(sorted(module for module in sys.modules if module.split('.')[0] == 'torch'))"
     result = subprocess.run([sys.executable, "-u", "-c", code], cwd=str(tmp_path), capture_output=True, text=True, timeout=180)
@@ -183,7 +175,7 @@ def test_processing_pipeline_loads_no_torch(module_path, tmp_path):
     assert result.stdout.strip() == "[]"
 
 
-@pytest.mark.parametrize("name", ("generate_dataset", "profile_training", "extract_params"))
+@pytest.mark.parametrize("name", ("generate_dataset", "profile_training"))
 def test_entry_pins_the_environment_before_the_numeric_stack_loads(name, tmp_path):
     script = _script_path(name)
     code   = (
@@ -191,7 +183,7 @@ def test_entry_pins_the_environment_before_the_numeric_stack_loads(name, tmp_pat
         f"sys.path.insert(0, {str(script.parent)!r})\n"
         f"import {name} as entry\n"
         "from _bootstrap import EnvironmentPinner\n"
-        "heavy = {'numpy', 'torch', 'pipelines', 'models', 'scipy', 'jax'}\n"
+        "heavy = {'numpy', 'torch', 'pipelines', 'models', 'scipy'}\n"
         "class Stop(Exception): pass\n"
         "def record(*args, **kwargs):\n"
         "    print(sorted({module.split('.')[0] for module in sys.modules} & heavy))\n"

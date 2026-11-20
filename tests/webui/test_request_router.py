@@ -7,7 +7,7 @@ from collections import Counter
 import pytest
 
 from request_router             import RequestRouter
-from routers.analysis_routers   import AutopsyRouter, FitLabRouter, ProbeRouter, SurveyRouter, TriageRouter
+from routers.analysis_routers   import AutopsyRouter, ProbeRouter, SurveyRouter, TriageRouter
 from routers.cube_routers       import CubeRouter, SliceRouter
 from routers.dispatch           import HttpExchange, RouteTable, SubRouter
 from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
@@ -20,8 +20,8 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 142
-SECTION_COUNT = 33
+ROUTE_COUNT   = 134
+SECTION_COUNT = 32
 
 RESOLUTIONS = [
     ("GET",  "/",                                  StaticRouter),
@@ -42,7 +42,6 @@ RESOLUTIONS = [
     ("GET",  "/api/fs/secondaries",                DatasetRouter),
     ("GET",  "/api/slices/mail_settings",          SliceRouter),
     ("POST", "/api/slices/mail",                   SliceRouter),
-    ("GET",  "/api/fitlab/map",                    FitLabRouter),
     ("POST", "/api/probe/predict",                 ProbeRouter),
     ("GET",  "/api/probe/runs",                    ProbeRouter),
     ("GET",  "/api/survey/runs",                   SurveyRouter),
@@ -143,7 +142,6 @@ def build_routers() -> list:
         DatasetRouter(None),
         CubeRouter(None),
         SliceRouter(None, None),
-        FitLabRouter(None),
         ProbeRouter(None),
         SurveyRouter(None),
         TriageRouter(None),

@@ -29,13 +29,6 @@ class JobDescriber:
             ("params", "synthesis.params_run_name",  "opt"),
             ("seed",   "synthesis.seed",             "text"),
         ],
-        "extract_params": [
-            ("datasets", "dataset_filter",    "list", "all datasets"),
-            ("K",        "fit_k_values",      "list"),
-            ("lambda",   "fit_lambda_values", "list"),
-            ("modes",    "fit_modes",         "list"),
-            ("suffix",   "output_suffix",     "opt"),
-        ],
         "train_backbone": [
             ("dataset",          "paths.dataset_path",    "opt_tail"),
             ("params",           "paths.parameters_path", "opt_tail"),
@@ -78,10 +71,6 @@ class JobDescriber:
             ("stage",        "stage",           "unless", "full"),
             ("workers",      "n_workers",       "unless", "0"),
         ],
-        "analyze_param_extraction": [
-            ("trials", "run_tags",   "list", "all trials"),
-            ("root",   "params_dir", "opt_tail"),
-        ],
         "analyze_normalization": [
             ("dataset", "dataset_dir",     "opt_tail"),
             ("params",  "parameters_path", "opt_tail"),
@@ -89,10 +78,6 @@ class JobDescriber:
         "compare_trials": [
             ("runs", "run_tags", "list", "all runs"),
             ("root", "runs_dir", "opt_tail"),
-        ],
-        "compare_param_extraction_trials": [
-            ("trials", "run_tags",   "list", "all trials"),
-            ("root",   "params_dir", "opt_tail"),
         ],
         "compare_runs": [
             ("tag", "run_tag", "opt"),
@@ -158,10 +143,9 @@ class JobDescriber:
     }
 
     MAIL_TARGETS = {
-        "experiments"      : ("experiment reports", "experiments_dir", "experiment_filter", "all experiments"),
-        "runs"             : ("run contents",       "runs_dir",        "run_filter",        "all runs"),
-        "datasets"         : ("dataset results",    "datasets_dir",    "dataset_filter",    "all datasets"),
-        "param_extraction" : ("param run results",  "params_dir",      "param_run_filter",  "all parameter runs"),
+        "experiments" : ("experiment reports", "experiments_dir", "experiment_filter", "all experiments"),
+        "runs"        : ("run contents",       "runs_dir",        "run_filter",        "all runs"),
+        "datasets"    : ("dataset results",    "datasets_dir",    "dataset_filter",    "all datasets"),
     }
 
     def __init__(self, paths: ProjectPaths, resolver: ScriptConfigResolver) -> None:

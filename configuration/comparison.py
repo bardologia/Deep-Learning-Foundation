@@ -55,16 +55,3 @@ class ComparisonEntryConfig:
     inference_split : str           = "test"
 
     paths : ComparisonPathsConfig = field(default_factory=ComparisonPathsConfig)
-
-
-@dataclass
-class ParamExtractionComparisonConfig:
-
-    params_dir : Path      = Path("datasets")
-    run_tags   : List[str] = field(default_factory=list)
-
-    pixel_sample : int = 200000
-    block_size   : int = 8
-
-    make_plots : bool           = True
-    output_dir : Optional[Path] = None

@@ -1600,80 +1600,6 @@ class MetricTilesFigure extends HairlineFigureBase {
   }
 }
 
-class TransectFigure extends HairlineFigureBase {
-  static RANGE     = [6, 11, 18];
-  static COLUMNS   = 9;
-  static PITCH     = 13;
-  static BINS      = 7;
-  static BIN       = 4;
-  static DISC      = 2;
-  static REACH     = 1.6;
-  static STAGGER   = 45;
-  static REST      = 5;
-  static REST_PULL = 0.45;
-
-  constructor({ stage, svg }, value) {
-    super(svg, value, 2.55);
-    this.length = (TransectFigure.COLUMNS - 1) * TransectFigure.PITCH;
-    this._camera(this._extent(), 168);
-    this._plinth(-9, -9, this.length + 9, 9 + TransectFigure.RANGE[2], 7, 4);
-    HL.mk("path", { class: "dash nf", d: HL.seg(this.P(-5, 0, 0), this.P(this.length + 5, 0, 0)) }, this.g);
-    this._buildColumns();
-    this._start(stage, svg);
-  }
-
-  _extent() {
-    const far = 9 + TransectFigure.RANGE[2];
-    const top = TransectFigure.BINS * TransectFigure.BIN;
-    return [[-9, -9, -4], [this.length + 9, far, -4], [this.length + 9, -9, -4], [-9, far, -4], [0, 0, top], [this.length, 0, top]];
-  }
-
-  _radius(bin, upper) {
-    return 1.3 + 4.4 * Math.exp(-((bin / 0.8) ** 2)) + 4.2 * Math.exp(-(((bin - upper) / 1.2) ** 2));
-  }
-
-  _buildColumns() {
-    this.columns = Array.from({ length: TransectFigure.COLUMNS }, (_, k) => {
-      const x      = k * TransectFigure.PITCH;
-      const upper  = 3.2 + 1.8 * Math.sin((k / (TransectFigure.COLUMNS - 1)) * Math.PI);
-      const group  = HL.mk("g", {}, this.g);
-      const lit    = k === TransectFigure.REST;
-      const discs  = Array.from({ length: TransectFigure.BINS }, (_, b) => {
-        const r  = this._radius(b, upper);
-        const el = HL.solid(group);
-        el.sil.classList.toggle("hi", lit);
-        return { b, el, ring: HL.circ(r, 40).map((q) => ({ ...q, u: q.u + x })), inner: HL.circ(Math.max(0.4, r - 0.8), 40).map((q) => ({ ...q, u: q.u + x })) };
-      });
-      return { k, discs, tw: HL.tween(lit ? this.amount * TransectFigure.REST_PULL : 0), drawn: NaN, restX: this.P(x, 0, 0)[0] };
-    });
-  }
-
-  _tick(dt, now) {
-    return this._advance(this.columns, now);
-  }
-
-  _draw(column, out) {
-    const moved = this._shifted(0, out, 0);
-    for (const disc of column.discs) HL.put(disc.el, HL.prism(moved, this.front, disc.ring, disc.inner, disc.b * TransectFigure.BIN, disc.b * TransectFigure.BIN + TransectFigure.DISC));
-  }
-
-  _move(p) {
-    this._choose(HairlineFigureBase.nearest(this.columns.map((column) => column.restX), p[0]));
-  }
-
-  _retarget(now) {
-    const anchor = this.chosen === null ? TransectFigure.REST : this.chosen;
-    for (const column of this.columns) {
-      const distance = Math.abs(column.k - anchor);
-      const reach    = Math.max(0, 1 - distance / TransectFigure.REACH) ** 2;
-      const target   = this.chosen === null ? (column.k === TransectFigure.REST ? this.amount * TransectFigure.REST_PULL : 0) : this.amount * reach;
-      HL.tset(column.tw, target, now, distance * TransectFigure.STAGGER);
-      for (const disc of column.discs) disc.el.sil.classList.toggle("hi", column.k === anchor);
-    }
-    this.loop.wake();
-  }
-}
-
 class FilmStripFigure extends HairlineFigureBase {
   static RANGE     = [5, 9, 15];
   static FRAMES    = 5;
@@ -1975,102 +1901,6 @@ class LrDialFigure extends HairlineFigureBase {
     this.turn.k  = this.amount;
     this.turn.t  = this._angle(k);
     this.ticks.forEach((dot, i) => dot.setAttribute("class", i === k ? "dot" : i < k ? "dot m" : "dot off"));
-    this.loop.wake();
-  }
-}
-
-class ThresholdFigure extends HairlineFigureBase {
-  static RANGE = [40, 100, 220];
-  static COLS  = 8;
-  static ROWS  = 6;
-  static CELL  = 10;
-  static FOOT  = 7.6;
-  static FLOOR = 6;
-  static REST  = 0.45;
-
-  constructor({ stage, svg }, value) {
-    super(svg, value, 2.7);
-    this.width   = ThresholdFigure.COLS * ThresholdFigure.CELL;
-    this.depth   = ThresholdFigure.ROWS * ThresholdFigure.CELL;
-    this.pillars = this._layout();
-    this.peak    = Math.max(...this.pillars.map((pillar) => pillar.h));
-    this._camera(this._extent(), 168);
-    this._plinth(-4, -4, this.width + 4, this.depth + 4, 7, 4);
-    this.plane = HL.mk("path", { class: "dash nf" }, this.g);
-    this._buildPillars();
-    this.level = HL.spring(this.peak * ThresholdFigure.REST, { k: this.amount });
-    this.drawn = NaN;
-    this._start(stage, svg);
-  }
-
-  _layout() {
-    const pillars = [];
-    for (let i = 0; i < ThresholdFigure.COLS; i++) {
-      for (let j = 0; j < ThresholdFigure.ROWS; j++) {
-        const u = i / (ThresholdFigure.COLS - 1);
-        const v = j / (ThresholdFigure.ROWS - 1);
-        const h = 2.5 + 2 * (0.5 + 0.5 * Math.sin(i * 4.1 + j * 2.7)) + 24 * Math.exp(-((u - 0.68) ** 2 + (v - 0.4) ** 2) / 0.04) + 13 * Math.exp(-((u - 0.22) ** 2 + (v - 0.72) ** 2) / 0.03);
-        pillars.push({ i, j, h });
-      }
-    }
-    return pillars.sort((a, b) => a.i + a.j - (b.i + b.j));
-  }
-
-  _extent() {
-    return [[-4, -4, -4], [this.width + 4, this.depth + 4, -4], [this.width + 4, -4, -4], [-4, this.depth + 4, -4], [0, 0, this.peak + 2], [this.width, 0, this.peak + 2]];
-  }
-
-  _buildPillars() {
-    const inset = (ThresholdFigure.CELL - ThresholdFigure.FOOT) / 2;
-    for (const pillar of this.pillars) {
-      const x0            = pillar.i * ThresholdFigure.CELL + inset;
-      const y0            = pillar.j * ThresholdFigure.CELL + inset;
-      const [ring, inner] = HL.rings(x0, y0, x0 + ThresholdFigure.FOOT, y0 + ThresholdFigure.FOOT, 1.8, 0.7);
-      pillar.ring         = ring;
-      pillar.inner        = inner;
-      pillar.el           = HL.solid(this.g);
-      pillar.cap          = HL.solid(this.g);
-      pillar.above        = false;
-      pillar.cap.sil.classList.add("hi");
-      HL.put(pillar.el, HL.prism(this.P, this.front, ring, inner, 0, pillar.h));
-    }
-    this.top    = this.P(this.width / 2, this.depth / 2, this.peak)[1];
-    this.bottom = this.P(this.width / 2, this.depth / 2, 0)[1];
-  }
-
-  _tick(dt) {
-    const moving = HL.stepS(this.level, dt);
-    if (this.level.x !== this.drawn) {
-      this.drawn = this.level.x;
-      this._drawLevel(this.level.x);
-    }
-    return moving;
-  }
-
-  _drawLevel(z) {
-    const corners = [[-2, -2], [this.width + 2, -2], [this.width + 2, this.depth + 2], [-2, this.depth + 2]];
-    this.plane.setAttribute("d", HL.poly(corners.map(([x, y]) => this.P(x, y, z))));
-    for (const pillar of this.pillars) {
-      const above = pillar.h > z;
-      if (!above && !pillar.above) continue;
-      pillar.above = above;
-      HL.put(pillar.cap, above ? HL.prism(this.P, this.front, pillar.ring, pillar.inner, z, pillar.h) : { sil: "", crease: "" });
-    }
-  }
-
-  _move(p) {
-    const share  = HL.clamp((this.bottom - p[1]) / (this.bottom - this.top), 0, 1);
-    this.level.t = HL.lerp(ThresholdFigure.FLOOR, this.peak - 1.5, share);
-    this.loop.wake();
-  }
-
-  _leave() {
-    this.level.t = this.peak * ThresholdFigure.REST;
-    this.loop.wake();
-  }
-
-  _retarget() {
-    this.level.k = this.amount;
     this.loop.wake();
   }
 }
@@ -4750,12 +4580,10 @@ class ProjectFigures {
     balance:    ProjectFigures.entry(BalanceFigure, "A balance weighing run A against run B, its pans numbered with dots. The pointer's side tips the beam, and the heavier pan lights."),
     podium:     ProjectFigures.entry(PodiumFigure, "A podium of five ranks, each step numbered with dots. The pointer picks a step and it rises with its neighbours."),
     tiles:      ProjectFigures.entry(MetricTilesFigure, "A metric map as a field of tiles with a hot spot and a fold seam. The pointer picks a tile and the region around it rises."),
-    transect:   ProjectFigures.entry(TransectFigure, "Nine vertical profiles standing along a dashed transect line, each a column of discs tracing a low and a high peak. The pointer picks a profile and it slides out of the line."),
     film:       ProjectFigures.entry(FilmStripFigure, "Inference stamps as frames on a dated rail, each holding a profile that sharpens from the first stamp to the latest. The pointer picks a frame and it rises."),
     tray:       ProjectFigures.entry(ReportTrayFigure, "A loose stack of printed plots on a tray. The pointer's height picks a sheet and it slides out of the stack."),
     shelf:      ProjectFigures.entry(CheckpointShelfFigure, "Checkpoints standing on a shelf as cartridges, the best one pulled forward. The pointer picks a cartridge and it slides out."),
     dial:       ProjectFigures.entry(LrDialFigure, "A learning-rate dial with a detent at each decade. The pointer's angle turns the knob and it settles on the nearest detent."),
-    threshold:  ProjectFigures.entry(ThresholdFigure, "A field of pixel activity pillars cut by a dashed threshold plane. The pointer's height moves the plane and the part of each pillar above it lights."),
     scheduler:  ProjectFigures.entry(SchedulerFigure, "A job rack with four sockets on its top and a staircase of steps leading up to it. Running jobs stand as crates in the sockets, waiting jobs stand on the steps, and the waiting job nearest the front climbs toward the rack. The pointer picks the rack or a step and what stands there lifts."),
     sampler:    ProjectFigures.entry(PatchSamplerFigure, "A scene of striped tiles, with a batch of patches stacked on a tray beside it. The pointer picks a tile and that patch lifts out of the scene, leaving its hole behind."),
     feed:       ProjectFigures.entry(FeedLineFigure, "A DataLoader feeding a GPU: one belt per worker carries crates to a rail, a prefetch tray holds the batches waiting, and the GPU at the end draws them in while its fans spin with its load. The pointer picks a worker, the tray or the GPU and it lifts."),

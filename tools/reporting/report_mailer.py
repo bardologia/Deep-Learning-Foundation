@@ -15,7 +15,7 @@ from pipelines.shared.inference.metadata       import CompletedInference
 from pipelines.shared.inference.run_classifier import InferenceLayout, RunDirectoryWalk
 from pipelines.shared.training.seed_sweep      import SeedSet
 from tools.data.io                             import FileIO
-from tools.reporting.artifact_bundles          import ArtifactBundle, DatasetSelector, ParamRunSelector, RunContentBundle, RunContentSelector
+from tools.reporting.artifact_bundles          import ArtifactBundle, DatasetSelector, RunContentBundle, RunContentSelector
 from tools.reporting.report_collector          import ReportImageRewriter
 from tools.runtime.completion                  import CompletionMarker
 from tools.runtime.run_selector                import RunSelector
@@ -677,35 +677,12 @@ class DatasetMailTarget(MailTarget):
         return [[archive] for archive in ArtifactBundle(config, self.logger).stage()]
 
 
-class ParamRunMailTarget(MailTarget):
-
-    NOUN         = "parameter run"
-    BUNDLE_LABEL = "Artifact bundle of parameter run"
-
-    def settings(self) -> dict:
-        return {
-            "Params dir" : str(self.entry_config.params_dir),
-            "Filter"     : ", ".join(self.entry_config.param_run_filter) or "all",
-        }
-
-    def select(self) -> List[Path]:
-        return ParamRunSelector(self.entry_config.params_dir, self.logger).resolve(self.entry_config.param_run_filter)
-
-    def label(self, source_dir: Path) -> str:
-        return self.entry_config.param_run_label(source_dir)
-
-    def stage(self, source_dir: Path) -> List[List[Path]]:
-        config = self.entry_config.to_param_config(source_dir)
-        return [[archive] for archive in ArtifactBundle(config, self.logger).stage()]
-
-
 class ReportMailBatch:
 
     TARGETS = {
-        "experiments"      : ExperimentMailTarget,
-        "runs"             : RunContentMailTarget,
-        "datasets"         : DatasetMailTarget,
-        "param_extraction" : ParamRunMailTarget,
+        "experiments" : ExperimentMailTarget,
+        "runs"        : RunContentMailTarget,
+        "datasets"    : DatasetMailTarget,
     }
 
     def __init__(self, entry_config: ReportMailEntryConfig, logger) -> None:

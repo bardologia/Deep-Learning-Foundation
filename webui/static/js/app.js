@@ -165,46 +165,6 @@ class App {
     this.triageView        = new window.TriageView(document.getElementById("triage-root"));
     this.autopsyView       = new window.AutopsyView(document.getElementById("autopsy-root"));
 
-    this.fitLabView = new window.FitLabView({
-      baseInput        : document.getElementById("fl-base"),
-      scanBtn          : document.getElementById("fl-scan"),
-      strip            : document.getElementById("fl-strip"),
-      hint             : document.getElementById("fl-hint"),
-      progress         : document.getElementById("fl-progress"),
-      progressFill     : document.getElementById("fl-progress-fill"),
-      progressLabel    : document.getElementById("fl-progress-label"),
-      stage            : document.getElementById("fl-stage"),
-      mapSrcWrap       : document.getElementById("fl-map-src"),
-      mapImg           : document.getElementById("fl-map-img"),
-      marks            : document.getElementById("fl-marks"),
-      coords           : document.getElementById("fl-coords"),
-      rowInput         : document.getElementById("fl-row"),
-      colInput         : document.getElementById("fl-col"),
-      rowRange         : document.getElementById("fl-row-range"),
-      colRange         : document.getElementById("fl-col-range"),
-      addBtn           : document.getElementById("fl-add"),
-      clearBtn         : document.getElementById("fl-clear"),
-      pixels           : document.getElementById("fl-pixels"),
-      modeWrap         : document.getElementById("fl-mode"),
-      kmaxInput        : document.getElementById("fl-kmax"),
-      lambdaInput      : document.getElementById("fl-lambda"),
-      thresholdInput   : document.getElementById("fl-threshold"),
-      truncationInput  : document.getElementById("fl-truncation"),
-      prominenceInput  : document.getElementById("fl-prominence"),
-      sigdivInput      : document.getElementById("fl-sigdiv"),
-      activityInput    : document.getElementById("fl-activity"),
-      stepsInput       : document.getElementById("fl-steps"),
-      lrInput          : document.getElementById("fl-lr"),
-      runBtn           : document.getElementById("fl-run"),
-      runMsg           : document.getElementById("fl-run-msg"),
-      fitProgress      : document.getElementById("fl-fit-progress"),
-      fitProgressFill  : document.getElementById("fl-fit-progress-fill"),
-      fitProgressLabel : document.getElementById("fl-fit-progress-label"),
-      runs             : document.getElementById("fl-runs"),
-      results          : document.getElementById("fl-results"),
-      compsWrap        : document.getElementById("fl-comps"),
-      cards            : document.getElementById("fl-cards"),
-    });
 
     this.cubeView = new window.CubeView({
       strip         : document.getElementById("cube-strip"),
@@ -435,7 +395,6 @@ class App {
       survey      : this.surveyView,
       triage      : this.triageView,
       autopsy     : this.autopsyView,
-      fitlab      : this.fitLabView,
       cube        : this.cubeView,
       slices      : this.sliceCollectorView,
       results     : this.resultsView,
@@ -480,7 +439,6 @@ class App {
     if (route === "cube") this.cubeView.enter(param);
     else this.cubeView.leave();
     if (route === "slices") this.sliceCollectorView.enter();
-    if (route === "fitlab") this.fitLabView.enter();
     if (route === "microscope") this.microscopeView.enter();
     if (route === "survey") this.surveyView.enter();
     if (route === "triage") this.triageView.enter();

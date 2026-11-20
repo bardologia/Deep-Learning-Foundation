@@ -26,7 +26,7 @@ them in the facts rail.
 
 The HTTP transport is standard library only (`http.server` plus server-sent events), but
 the console itself needs the project environment. `web_ui_server.py` imports the cube
-explorer, fit lab, model probe, A/B autopsy, triage board and system monitor at boot, and those pull numpy, matplotlib, scipy, torch, scikit-image,
+explorer, model probe, A/B autopsy, triage board and system monitor at boot, and those pull numpy, matplotlib, scipy, torch, scikit-image,
 tensorboard and psutil. On a bare interpreter the server fails with an ImportError before
 it binds the port, which is why `run.sh` starts from the interpreter the profile records.
 
@@ -57,14 +57,13 @@ talking to one group of JSON endpoints.
 | Results | `#/results` | `/api/results/*`, `/api/fs/*` | Browse any run or dataset directory: rendered markdown reports, figure galleries with compare pinning, configs, and inline log and text files. |
 | Cube | `#/cube` | `/api/cubes/*` | Cube explorer over saved inference cubes: live cuts with profiles (whose readout names the pixel's seed disagreement when the stamp stores `seed_std_profile`) and SSIM and an optional overlay of the Gaussian mixture rebuilt from the extracted parameters with one stem per active slot, axis sweeps, Gaussian parameter maps with per-pixel slot readout, one locked pixel shared by the cuts, parameter and metric views (a Params here button opens the parameter map at it), per-pixel metric overlays with thresholding and named class legends for the failure-mode and label-suspect layers, a layer histogram that shades the colour range and marks the keep threshold, a selective-prediction panel whose mask paints only the pixels the chosen coverage keeps and whose Play button sweeps the coverage from 100% down to 5% and back, region statistics comparing a shift-dragged rectangle's metric means and mean z profiles against the whole scene, polyline transects traced click by click with undo, an along-line strip of any metric layer and named lines the browser remembers per cube footprint, a 3D component point cloud coloured by z, amplitude or the seed disagreement (`seed_std_profile`) of each point's pixel, with a section-cut plane that can sweep back and forth along row, col or z, a ray-marched WebGL2 volume view of any loaded source (strided to at most 192 voxels per axis and quantised over the source's colour range) with a transfer-function window, opacity, step count and a clip plane along row, col or z, a Timeline view that replays one cut at the locked pixel across the run's inference stamps covering the same region and z axis, in stamp order, with play, a scrubber and each stamp's curve MSE, a Figures view over the PNG, GIF, JPEG and SVG files inference saved under the stamp's `figures/` and `animations/` trees (grouped by folder and served only from inside those trees), run-vs-run comparison with signed delta metric layers (A minus B for every continuous metric map both runs carry, on a diverging palette), a Link button that copies a `#/cube/<state>` link reopening the cube, view, locked pixel, metric layer, value space and colormap (a link to another cube loads it first, and one naming a view the cube lacks opens without it and says so), a Story panel that records named steps in the browser with a PNG snapshot each, replays them in order, copies each step's link and downloads the snapshots, client-side PNG downloads of the visible cuts, metric overlay and transect panels and a CSV of the profiles at the locked pixel, selectable colormaps and paper-style figure export. A load reads every source whole into memory through a process-wide read pool (`NpyReader`, up to 32 threads) that splits each file into 16 MB `pread` chunks and keeps them in flight together, since concurrent whole-file reads beat memory-mapped page faults on a network mount, and the sources after the prediction cube are fetched in parallel. The progress bar follows the bytes read against the byte plan of the load and names the files still in flight; a load whose status has not moved for 5 s also shows how long it has been silent and the innermost frames of its thread. Every stage books its wall time: the ready line in the console log lists the stage times, the ready payload carries them under `timings`, and the tab shows the total next to the slowest stage. The full reference cube is read as the row band the cube covers, one contiguous read per z plane, and the last eight loaded cubes stay in memory (`CubeExplorer.CUBE_CACHE_ENTRIES`), so switching back to one is immediate and drops any attached comparison. `kill -USR1 <pid>` dumps every thread's stack of the console to its stderr without stopping it. |
 | Slices | `#/slices` | `/api/slices/*` | Multi-run slice collector: tick any number of cubes, hover the primary map to preview the same cuts from every run side by side, and click the map (or a slice's own button) to put cuts in a basket that persists in the browser. Every basket entry keeps its own run, source, cut, point, value space and colormap. The basket renders into one `slice_collections/<name>/` folder with a `collection.json` manifest, and can be mailed as zip volumes through the report mailer (`REPORT_MAIL_PASSWORD`); a basket already saved under the same name is mailed from that folder. A slice that cannot be rendered clears its cell and names the reason in the console log. |
-| Fit Lab | `#/fitlab` | `/api/fitlab/*` | Parameter-extraction playground over a dataset: pick pixels on the input or profile-peak map, then run the real Gaussian-fit stack (`PeakInitialiser` plus `SigmaAdamKernel` on CPU) on just those pixels. Each run is a labelled overlay with a per-K mixture, a per-run K override and a penalised-MSE K sweep. |
 | Microscope | `#/microscope` | `/api/probe/*` | Model microscope over a trained run: load the checkpoint with its real dataset, click a pixel, and inspect the predicted profile against ground truth, gradient attribution of every output family to every input channel with per-pair spatial maps, feature-map grids along a clickable architecture strip, and live what-if perturbations with per-slot deltas. |
 | Triage | `#/triage` | `/api/triage/*` | Error triage over a saved inference: the worst blocks ranked by pixel MSE, tagged with dominant failure mode, label fit, seed disagreement and flip disagreement where those cubes exist. Each case opens the cube explorer at its worst pixel and takes a persisted verdict plus a note under `logs/triage/`. |
 | Autopsy | `#/autopsy` | `/api/autopsy/*` | Guided A/B comparison of two inferences over the same region: the largest relative metric gaps with an orientation-aware winner per row, plus the blocks where the runs disagree most, each rendered as both predicted profiles against the ground truth. |
 
 ## Saving figures
 
-The tabs that show images have a figure saver: Microscope, Survey, Triage, Autopsy, Fit Lab,
+The tabs that show images have a figure saver: Microscope, Survey, Triage, Autopsy,
 Results, Cube and Slices. It runs in the browser over what is already on
 screen, so the server renders nothing extra and no run directory is written.
 
@@ -176,16 +175,16 @@ tests under `tests/webui/`: `config_descriptions.json` and the model library
 
 **Analysis surfaces.** `results_browser.py`, `dataset_browser.py`,
 `cube_explorer.py` which also carries the slice collector,
-`fit_lab.py`, `model_probe.py`, `triage_board.py`, `ab_autopsy.py`.
+`model_probe.py`, `triage_board.py`, `ab_autopsy.py`.
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`,
 `static/vendor/hairline-kernel.js`,
-`static/vendor/hairline-figures.js` and 40 modules under `static/js/`. `app.js` and
+`static/vendor/hairline-figures.js` and 39 modules under `static/js/`. `app.js` and
 `router.js` wire the views; one module per tab (`home`, `models`, `scripts`, `launch` with its widget
 modules (`python_literal`, `form_widgets`, `model_panels`, `gpu_pickers`,
 `experiment_builder`, `config_form`) and `launch_pickers`, `saved_runs`,
 `templates`, `sequences`, `configs`, `console`, `tensorboard`, `results`,
-`cube_view`, `slice_collector`, `fit_lab`, `microscope`, `survey`, `triage`, `autopsy`);
+`cube_view`, `slice_collector`, `microscope`, `survey`, `triage`, `autopsy`);
 the rest are shared helpers (`api`, `stream_hub` with the page's single live-output channel, `shared_charts`,
 `results_sources`, `run_strip`, `canvas_base`, `figure_export`, `figure_saver`, `diagram`,
 `gauges`, `training_anim`, `hairline_figure` with
@@ -226,7 +225,7 @@ The stock `drawer`, `terminal` (turned to face right), `plug`, `riffle`, `loupe`
 `folds`, `slices`, `slots`, `gpus`, `guard`, `backbone` (the backbone zoo as a
 bench of swappable cartridges), `landscape`,
 `surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
-`balance`, `podium`, `tiles`, `transect`, `film`, `tray`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,
+`balance`, `podium`, `tiles`, `film`, `tray`, `shelf`, `dial`, `scheduler`, `sampler`, `feed`, `field`,
 `watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `guillotine`, `chips`, `calendar` and
 `hourglass`. Fourteen of them take `state`: `gpus` (`{devices: [{holder, util}]}`),
 `balance` and `chips` (`{mine, others, alarm}`), `guard` (`{gpus, invaded, critical}`), `scheduler`
@@ -245,8 +244,7 @@ is given.
 Every page shows at least one figure, and the element remounts when its `name` changes,
 so a page can swap it with what is on screen: Results through `ResultsView.FIGURES` (folder `tray`, all plots `film`,
 compare `tiles`) and Launch through `LaunchView.FIGURES`, a pattern table over script
-keys (for example `infer_*` `shelf`, `generate_dataset` `slots`, `extract_params`
-`threshold`, `tune` `dial`, `measure_receptive_field`
+keys (for example `infer_*` `shelf`, `generate_dataset` `slots`, `tune` `dial`, `measure_receptive_field`
 `field`; a generic `train_*` script and an unmatched key show `surface`). Standard pages
 carry the figure in a `page__head--figure` header, Launch puts it at the end of its top
 bar, and Configuration (`sampler`) and TensorBoard (`landscape`) at the end of their row
