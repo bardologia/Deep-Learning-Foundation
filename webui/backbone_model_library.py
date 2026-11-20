@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import fields
 from pathlib     import Path
 
-from configuration.architectures import backbone
+from models import BACKBONE_CONFIG_REGISTRY
 
 
 class BackboneModelLibrary:
@@ -15,59 +15,11 @@ class BackboneModelLibrary:
         "upsample_mode" : ("convtranspose", "bilinear"),
     }
 
-    CONFIG_MODULE = backbone
-
-    CONFIG_CLASSES = {
-        "unet"           : "UNetConfig",
-        "unet_skip"      : "UNetSkipConfig",
-        "resunet"        : "ResUNetConfig",
-        "attention_unet" : "AttentionUNetConfig",
-        "unetplusplus"   : "UNetPlusPlusConfig",
-        "linknet"        : "LinkNetConfig",
-        "swin_unet"      : "SwinUNetConfig",
-        "transunet"      : "TransUNetConfig",
-        "unetr"          : "UNETRConfig",
-        "deeplabv3plus"  : "DeepLabV3PlusConfig",
-        "segformer"      : "SegFormerLiteConfig",
-        "convnext_unet"  : "ConvNeXtUNetConfig",
-        "dense_unet"     : "DenseUNetConfig",
-        "hrnet"          : "HRNetLiteConfig",
-        "multires_unet"  : "MultiResUNetConfig",
-        "fpn"            : "FPNNetConfig",
-        "u2net"          : "U2NetLiteConfig",
-        "pixel_mlp"      : "PixelMLPNetConfig",
-        "local_cnn"      : "LocalCNNConfig",
-        "nafnet"         : "NAFNetConfig",
-    }
-
-    NOTE_FILES = {
-        "unet"           : "UNet.md",
-        "unet_skip"      : "UNet Skip.md",
-        "resunet"        : "ResUNet.md",
-        "attention_unet" : "Attention UNet.md",
-        "unetplusplus"   : "UNet++.md",
-        "linknet"        : "LinkNet.md",
-        "swin_unet"      : "SwinUNet.md",
-        "transunet"      : "TransUNet.md",
-        "unetr"          : "UNETR.md",
-        "deeplabv3plus"  : "DeepLabV3+.md",
-        "segformer"      : "SegFormer.md",
-        "convnext_unet"  : "ConvNeXt UNet.md",
-        "dense_unet"     : "DenseUNet.md",
-        "hrnet"          : "HRNet.md",
-        "multires_unet"  : "MultiResUNet.md",
-        "fpn"            : "FPN.md",
-        "u2net"          : "U2-Net.md",
-        "pixel_mlp"      : "PixelMLP.md",
-        "local_cnn"      : "Local CNN.md",
-        "nafnet"         : "NAFNet.md",
-    }
-
-    FALLBACK_ACTIVATION    = "gelu"
-    FALLBACK_NORMALIZATION = "layer"
-
     DISPLAY_DEFAULTS = {
-        "nafnet" : ("simplegate", "layer"),
+        "swin_unet"     : ("gelu", "layer"),
+        "segformer"     : ("gelu", "layer"),
+        "convnext_unet" : ("gelu", "layer"),
+        "nafnet"        : ("simplegate", "layer"),
     }
 
     ARCH_EXCLUDED = ("in_channels", "out_channels", "image_size")
@@ -154,12 +106,12 @@ class BackboneModelLibrary:
                     {
                         "key": "unet_skip", "name": "UNet Skip", "skip": "Skip + residual",
                         "head": "Single 1x1 conv", "params": "~32.4M", "recommended": True,
-                        "when": "Pooling instead of strided convolution. Residual blocks at stride 1 with MaxPool downsampling, otherwise identical to ResUNet down to the first-unit stem; checkpoints saved before 2026-08-14 predate that stem and no longer load.",
+                        "when": "Pooling instead of strided convolution. Residual blocks at stride 1 with MaxPool downsampling, otherwise identical to ResUNet down to the first-unit stem.",
                     },
                     {
                         "key": "attention_unet", "name": "Attention UNet", "skip": "Attention-gated concat",
                         "head": "Single 1x1 conv", "params": "~32.4M", "recommended": False,
-                        "when": "Spatially heterogeneous scenes with region-dependent structure. Gates suppress irrelevant skip features per region.",
+                        "when": "Spatially heterogeneous inputs with region-dependent structure. Gates suppress irrelevant skip features per region.",
                     },
                     {
                         "key": "unetplusplus", "name": "UNet++", "skip": "Nested dense skips",
@@ -198,7 +150,7 @@ class BackboneModelLibrary:
                 "blurb"  : "Global attention for long-range spatial dependencies, at a higher parameter cost.",
                 "models" : [
                     {
-                        "key": "swin_unet", "name": "Swin-UNet", "skip": "Hierarchical Swin",
+                        "key": "swin_unet", "name": "SwinUNet", "skip": "Hierarchical Swin",
                         "head": "1x1 conv", "params": "~28.8M", "recommended": False,
                         "when": "Large homogeneous structures spanning many pixels. Windowed attention scales better than full ViT.",
                     },
@@ -209,7 +161,7 @@ class BackboneModelLibrary:
                     },
                     {
                         "key": "unetr", "name": "UNETR", "skip": "Transformer skip outputs",
-                        "head": "CNN decoder", "params": "~34.4M", "recommended": False,
+                        "head": "CNN decoder", "params": "~34.9M", "recommended": False,
                         "when": "Pure ViT encoder with a CNN decoder. Global receptive field from the first layer.",
                     },
                     {
@@ -262,7 +214,7 @@ class BackboneModelLibrary:
                     },
                     {
                         "key": "local_cnn", "name": "Local CNN", "skip": "None (single stream)",
-                        "head": "Single 1x1 conv", "params": "~31.2M", "recommended": False,
+                        "head": "Single 1x1 conv", "params": "~31.1M", "recommended": False,
                         "when": "The local-context-only control. Full-resolution 3x3 ConvBlocks with a fixed small receptive field, between PixelMLP and the encode-decode backbones.",
                     },
                 ],
@@ -272,20 +224,18 @@ class BackboneModelLibrary:
     def _resolve_defaults(self) -> dict[str, tuple[str, str]]:
         resolved = {}
 
-        for key, class_name in self.CONFIG_CLASSES.items():
+        for key, config_class in BACKBONE_CONFIG_REGISTRY.items():
             if key in self.DISPLAY_DEFAULTS:
                 resolved[key] = self.DISPLAY_DEFAULTS[key]
                 continue
 
-            config        = getattr(self.CONFIG_MODULE, class_name)()
-            activation    = getattr(config, "activation", self.FALLBACK_ACTIVATION)
-            normalization = getattr(config, "normalization", self.FALLBACK_NORMALIZATION)
-            resolved[key] = (str(activation).lower(), str(normalization).lower())
+            config        = config_class()
+            resolved[key] = (config.activation.lower(), config.normalization.lower())
 
         return resolved
 
     def _arch_fields(self, key: str) -> list[dict]:
-        config_class = getattr(self.CONFIG_MODULE, self.CONFIG_CLASSES[key])
+        config_class = BACKBONE_CONFIG_REGISTRY[key]
         config       = config_class()
         tunable      = config_class.tunable_arch_params()
         excluded     = set(self.ARCH_EXCLUDED)
@@ -331,16 +281,19 @@ class BackboneModelLibrary:
     def _notes_dir(self) -> Path:
         return Path(__file__).resolve().parent.parent / "notes" / "models"
 
+    def _note_names(self) -> dict[str, str]:
+        return {model["key"]: model["name"] for family in self._families() for model in family["models"]}
+
     def note(self, key: str) -> dict | None:
-        filename = self.NOTE_FILES.get(key)
-        if filename is None:
+        names = self._note_names()
+        if key not in names:
             return None
 
-        path = self._notes_dir() / filename
+        path = self._notes_dir() / f"{names[key]}.md"
         if not path.exists():
             return None
 
         text     = path.read_text(encoding="utf-8")
         markdown = text.split("\n---\n", 1)[1] if text.startswith("---\n") else text
-        links    = {name[:-3]: model_key for model_key, name in self.NOTE_FILES.items()}
-        return {"key": key, "note": filename[:-3], "markdown": markdown, "links": links}
+        links    = {name: model_key for model_key, name in names.items()}
+        return {"key": key, "note": names[key], "markdown": markdown, "links": links}

@@ -24,14 +24,6 @@ def _model_keys(collected):
     return [model["key"] for family in collected for model in family["models"]]
 
 
-def test_config_classes_cover_the_backbone_registry():
-    assert set(BackboneModelLibrary.CONFIG_CLASSES) == set(BACKBONE_MODEL_REGISTRY)
-
-
-def test_note_files_cover_the_backbone_registry():
-    assert set(BackboneModelLibrary.NOTE_FILES) == set(BACKBONE_MODEL_REGISTRY)
-
-
 def test_families_cover_the_backbone_registry_exactly_once(collected):
     keys = _model_keys(collected)
 
@@ -40,7 +32,7 @@ def test_families_cover_the_backbone_registry_exactly_once(collected):
 
 
 def test_every_model_resolves_a_note(library):
-    missing = [key for key in BackboneModelLibrary.NOTE_FILES if library.note(key) is None]
+    missing = [key for key in BACKBONE_MODEL_REGISTRY if library.note(key) is None]
 
     assert not missing, f"models without a resolvable note under notes/models: {missing}"
 
@@ -99,10 +91,11 @@ def test_arch_keeps_the_learning_rate_fields_for_the_backbone_page(collected):
 
 class TempNoteLibrary(BackboneModelLibrary):
 
-    NOTE_FILES = {"demo": "Demo Model.md", "other": "Other Model.md"}
-
     def __init__(self, directory: Path) -> None:
         self.directory = directory
+
+    def _families(self) -> list[dict]:
+        return [{"family": "Demo", "models": [{"key": "demo", "name": "Demo Model"}, {"key": "other", "name": "Other Model"}]}]
 
     def _notes_dir(self) -> Path:
         return self.directory
