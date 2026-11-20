@@ -387,11 +387,11 @@ class ConfigCli:
         with open(path, "r", encoding="utf-8") as f:
             mapping = json.load(f)
 
-        for leaf, current in list(cls._leaves(config)):
-            if leaf not in mapping:
-                continue
+        leaves = {leaf: current for leaf, current in cls._leaves(config) if cls.is_editable(current)}
 
-            value = mapping[leaf]
+        for leaf in leaves.keys() | mapping.keys():
+            current = leaves[leaf]
+            value   = mapping[leaf]
             if isinstance(current, Path) and isinstance(value, str):
                 value = Path(value)
             elif isinstance(current, Enum) and not isinstance(value, Enum):

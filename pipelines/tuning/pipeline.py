@@ -63,7 +63,7 @@ class TuningScheduler:
         if changed:
             sys.exit(f"ERROR: --resume cannot change the fields that define the study '{self.tag}'; trials already stored were optimised under {', '.join(f'{key}={old!r} (now {new!r})' for key, (old, new) in sorted(changed.items()))}; start a new run tag instead")
 
-        return {key: (stored[key], value) for key, value in sorted(current.items()) if key in stored and stored[key] != value and not self._defines_study(key) and key not in self.MUTABLE_KEYS and key not in self.LAUNCH_KEYS}
+        return {key: (stored[key], value) for key, value in sorted(current.items()) if stored[key] != value and not self._defines_study(key) and key not in self.MUTABLE_KEYS and key not in self.LAUNCH_KEYS}
 
     def _archive_previous_config(self, resolved_path: Path) -> Path | None:
         if not resolved_path.is_file() or FileIO.load_json(resolved_path) == ConfigCli.to_mapping(self.config):

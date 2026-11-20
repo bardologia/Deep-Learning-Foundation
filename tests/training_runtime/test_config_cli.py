@@ -295,6 +295,26 @@ def test_load_resolved_restores_path_and_tuple_types(tmp_path):
     assert fresh.betas == (0.5, 0.6)
 
 
+def test_load_resolved_refuses_an_unknown_key(tmp_path):
+    out     = ConfigCli.save_resolved(_config(), tmp_path / "r.json")
+    mapping = json.loads(out.read_text())
+    mapping["removed_field"] = 1
+    out.write_text(json.dumps(mapping))
+
+    with pytest.raises(KeyError, match="removed_field"):
+        ConfigCli.load_resolved(_config(), out)
+
+
+def test_load_resolved_refuses_a_missing_key(tmp_path):
+    out     = ConfigCli.save_resolved(_config(), tmp_path / "r.json")
+    mapping = json.loads(out.read_text())
+    del mapping["seed"]
+    out.write_text(json.dumps(mapping))
+
+    with pytest.raises(KeyError, match="seed"):
+        ConfigCli.load_resolved(_config(), out)
+
+
 def test_load_resolved_missing_file_raises():
     with pytest.raises(FileNotFoundError):
         ConfigCli.load_resolved(_config(), Path("/nonexistent/path.json"))
