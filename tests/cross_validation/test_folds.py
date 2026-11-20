@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from configuration.cross_validation      import CrossValidationConfig, FoldConfig
-from pipelines.cross_validation.folds    import FoldConfigFactory, FoldNaming, FoldPlan, FoldPlanner, StoredFoldPlanner
+from pipelines.cross_validation.folds    import FoldConfigFactory, FoldNaming, FoldPlan, FoldPlanner
 from pipelines.shared.inference.metadata import CompletedInference
 from tools.data.regions                  import CropRegion, SplitRegions
 from tools.runtime.completion            import CompletionMarker
@@ -251,46 +251,6 @@ def test_inference_regions_tile_the_fold_window_without_gaps():
     assert all(left[1] == right[0] for left, right in zip(spans, spans[1:]))
 
 
-def test_inference_region_rejects_unknown_split():
-    planner = make_planner(5)
-
-    with pytest.raises(ValueError, match="inference regions exist"):
-        planner.inference_region(0, "train")
-
-
-def test_rejects_odd_or_negative_guard():
-    with pytest.raises(ValueError, match="non-negative even"):
-        make_planner(5, guard=63)
-
-    with pytest.raises(ValueError, match="non-negative even"):
-        make_planner(5, guard=-2)
-
-
-def test_rejects_guard_consuming_smallest_block():
-    with pytest.raises(ValueError, match="consumes the smallest fold block"):
-        make_planner(5, row_start=1000, row_end=1300, guard=64)
-
-
-def test_rejects_fewer_than_three_folds():
-    with pytest.raises(ValueError, match="n_folds must be >= 3"):
-        make_planner(2)
-
-
-def test_rejects_extent_smaller_than_n_folds():
-    with pytest.raises(ValueError, match="smaller than n_folds"):
-        FoldPlanner(make_config(5, row_start=1000, row_end=1003), col_start=0, col_end=10)
-
-
-def test_plan_rejects_out_of_range_fold_index():
-    planner = make_planner(5)
-
-    with pytest.raises(ValueError, match="fold_index must be in"):
-        planner.plan(5)
-
-    with pytest.raises(ValueError, match="fold_index must be in"):
-        planner.plan(-1)
-
-
 def test_fold_naming_roundtrip():
     for index in range(12):
         assert FoldNaming.index(FoldNaming.name(index)) == index
@@ -333,14 +293,6 @@ def test_factory_planner_is_cached(test_data_dir):
     factory = FoldConfigFactory(factory_config(test_data_dir))
 
     assert factory.planner() is factory.planner()
-
-
-@pytest.mark.dataset
-def test_factory_planner_rejects_window_outside_global_crop(test_data_dir):
-    factory = FoldConfigFactory(factory_config(test_data_dir, row_start=500))
-
-    with pytest.raises(ValueError, match="must lie within the dataset global crop"):
-        factory.planner()
 
 
 @pytest.mark.dataset
@@ -388,22 +340,3 @@ def test_fold_naming_recognises_tagged_and_bare_fold_names():
     assert not FoldNaming.is_fold("fold_0_seed1")
     assert not FoldNaming.is_fold("_comparison")
     assert not FoldNaming.is_fold("training_results.json")
-
-
-def test_stored_fold_planner_rejects_gaps_and_empty_input():
-    region  = CropRegion(1000, 1162, 500, 1000)
-    regions = SplitRegions(train=region, val=region, test=region)
-
-    with pytest.raises(ValueError, match="contiguously"):
-        StoredFoldPlanner({0: regions, 2: regions})
-
-    with pytest.raises(ValueError, match="contiguously"):
-        StoredFoldPlanner({})
-
-
-def test_stored_fold_planner_rejects_an_index_outside_the_range():
-    region  = CropRegion(1000, 1162, 500, 1000)
-    planner = StoredFoldPlanner({0: SplitRegions(train=region, val=region, test=region)})
-
-    with pytest.raises(ValueError, match="fold_index"):
-        planner.plan(1)

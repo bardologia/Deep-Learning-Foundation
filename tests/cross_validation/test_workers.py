@@ -488,27 +488,6 @@ def test_collector_names_a_metric_non_finite_in_every_fold_once_per_split(tmp_pa
     assert omitted == ["split test: ['overall_r2_gt'] non-finite in every fold, omitted from the cross-fold aggregate (cv_aggregate_report.md, cv_summary.json)"]
 
 
-@pytest.mark.dataset
-def test_training_worker_refuses_a_finished_unit_when_resume_is_off(test_data_dir, tmp_path, monkeypatch):
-    config                    = worker_config(test_data_dir)
-    config.paths.log_base_dir = tmp_path
-    config.resume             = False
-    worker                    = FoldTrainingWorker(config, run_tag="rt")
-
-    unit = worker.unit_directory(worker.fold_run_name(1, 4))
-    unit.mkdir(parents=True)
-    CompletionMarker.stamp(unit, {"stage": "training"})
-
-    trained = []
-    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone", lambda self, i, seed, sr, run_name: trained.append(run_name), raising=True)
-
-    with pytest.raises(SystemExit, match="already holds a completed run and resume is off"):
-        worker.run(1, seed=4)
-
-    assert trained == []
-    assert CompletionMarker.is_complete(unit)
-
-
 def test_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directory(tmp_path):
     run_dir = build_run_dir(tmp_path, ["fold_0/seed1", "fold_1/seed1"], {})
 

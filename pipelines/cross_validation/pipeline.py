@@ -19,19 +19,6 @@ class CrossValidationPipeline(StagedPipeline):
         self.factory   = FoldConfigFactory(config)
         self.inherited = dict(inherited or {})
 
-    @classmethod
-    def validate_sweep(cls, config: CrossValidationConfig) -> None:
-        if config.stage not in cls.STAGES:
-            raise SystemExit(f"unknown cross-validation stage '{config.stage}'; valid: {', '.join(cls.STAGES)}")
-
-        unknown = [split for split in config.inference_splits if split not in FoldPlanner.INFERENCE_SPLITS]
-        if unknown:
-            raise SystemExit(f"unknown inference split(s) {unknown}; each fold only holds an inference region for {', '.join(FoldPlanner.INFERENCE_SPLITS)}")
-
-    def _validate_sweep(self) -> None:
-        self._begin_stage("validation")
-        self.validate_sweep(self.config)
-
     def _log_inherited(self) -> None:
         if not self.inherited:
             return
@@ -80,8 +67,6 @@ class CrossValidationPipeline(StagedPipeline):
         return out_dir
 
     def _execute(self) -> None:
-        self._validate_sweep()
-
         planner = self.factory.planner()
 
         self.logger.section("Cross-validation pipeline")

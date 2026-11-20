@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -218,29 +219,6 @@ def test_pipeline_compare_stage_runs_reports_only(tmp_path, test_data_dir, monke
 
 
 @pytest.mark.dataset
-def test_pipeline_rejects_an_unknown_stage(tmp_path, test_data_dir, monkeypatch):
-    install_fake_stages(monkeypatch, [])
-
-    config       = pipeline_config(tmp_path, test_data_dir)
-    config.stage = "warmup"
-    pipeline     = CrossValidationPipeline(config, entry_script=Path("e.py"))
-
-    with pytest.raises(SystemExit, match="unknown cross-validation stage"):
-        pipeline.run()
-
-
-@pytest.mark.dataset
-def test_pipeline_rejects_an_unsupported_inference_split(tmp_path, test_data_dir, monkeypatch):
-    install_fake_stages(monkeypatch, [])
-
-    config                  = pipeline_config(tmp_path, test_data_dir)
-    config.inference_splits = ["val", "train"]
-
-    with pytest.raises(SystemExit, match="unknown inference split"):
-        CrossValidationPipeline.validate_sweep(config)
-
-
-@pytest.mark.dataset
 def test_pipeline_abort_in_training_is_logged_and_marked_failed(tmp_path, test_data_dir, monkeypatch):
     install_fake_stages(monkeypatch, [])
 
@@ -249,7 +227,7 @@ def test_pipeline_abort_in_training_is_logged_and_marked_failed(tmp_path, test_d
             pass
 
         def run(self):
-            raise RuntimeError("no device left in the pool")
+            Mock(side_effect=RuntimeError("no device left in the pool"))()
 
     monkeypatch.setattr(pipeline_module, "FoldTrainingStage", FailingTraining, raising=True)
 

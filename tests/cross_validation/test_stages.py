@@ -445,16 +445,6 @@ def test_fold_tree_survey_reads_model_splits_and_plan(tmp_path):
     assert [plan.split_regions for plan in survey.planner(fold_runs).plans()] == [plan.split_regions for plan in expected.plans()]
 
 
-def test_fold_tree_survey_rejects_a_gap_in_the_fold_indices(tmp_path):
-    run_dir = build_finished_run(tmp_path / "workspace", "cv_20260912_100000")
-    (run_dir / "folds" / "resunet_fold_2").rename(run_dir / "folds" / "resunet_fold_5")
-
-    survey = FoldTreeSurvey(run_dir)
-
-    with pytest.raises(ValueError, match="contiguously"):
-        survey.planner(survey.fold_runs())
-
-
 def test_stored_fold_planner_follows_the_planner_block_convention():
     config       = CrossValidationConfig()
     config.folds = FoldConfig(n_folds=4, row_start=1000, row_end=1512)

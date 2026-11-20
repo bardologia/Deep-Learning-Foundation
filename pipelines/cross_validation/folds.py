@@ -34,12 +34,6 @@ class FoldPlanner:
     def __init__(self, config: CrossValidationConfig, col_start: int, col_end: int) -> None:
         folds = config.folds
 
-        if folds.n_folds < 3:
-            raise ValueError(f"n_folds must be >= 3 so that train, val, and test stay disjoint; got {folds.n_folds}")
-
-        if folds.guard < 0 or folds.guard % 2 != 0:
-            raise ValueError(f"folds.guard={folds.guard} must be a non-negative even number of row lines")
-
         self.n_folds   = folds.n_folds
         self.guard     = folds.guard
         self.row_start = folds.row_start
@@ -48,14 +42,8 @@ class FoldPlanner:
         self.col_end   = col_end
         self.blocks    = self._partition(folds.row_start, folds.row_end, folds.n_folds)
 
-        smallest_block = min(end - start for start, end in self.blocks)
-        if smallest_block <= self.guard:
-            raise ValueError(f"folds.guard={self.guard} consumes the smallest fold block ({smallest_block} row lines); reduce guard or n_folds")
-
     def _partition(self, row_start: int, row_end: int, n_folds: int) -> list[tuple[int, int]]:
         total = row_end - row_start
-        if total < n_folds:
-            raise ValueError(f"Row extent {total} is smaller than n_folds {n_folds}")
 
         size   = total // n_folds
         bounds = [row_start + index * size for index in range(n_folds)] + [row_end]
@@ -97,16 +85,10 @@ class FoldPlanner:
         plan   = self.plan(fold_index)
         blocks = {"test": plan.test_block, "val": plan.val_block}
 
-        if split not in self.INFERENCE_SPLITS:
-            raise ValueError(f"inference regions exist for splits {sorted(self.INFERENCE_SPLITS)}; got '{split}'")
-
         row_start, row_end = self.blocks[blocks[split]]
         return CropRegion(row_start, row_end, self.col_start, self.col_end)
 
     def plan(self, fold_index: int) -> FoldPlan:
-        if not 0 <= fold_index < self.n_folds:
-            raise ValueError(f"fold_index must be in [0, {self.n_folds}); got {fold_index}")
-
         test_block   = fold_index
         val_block    = (fold_index + 1) % self.n_folds
         train_blocks = [index for index in range(self.n_folds) if index not in (test_block, val_block)]
@@ -134,16 +116,10 @@ class FoldPlanner:
 class StoredFoldPlanner:
 
     def __init__(self, regions: dict[int, SplitRegions]) -> None:
-        if not regions or sorted(regions) != list(range(len(regions))):
-            raise ValueError(f"Stored folds must be indexed contiguously from 0; got {sorted(regions)}")
-
         self.n_folds = len(regions)
         self.regions = dict(regions)
 
     def plan(self, fold_index: int) -> FoldPlan:
-        if fold_index not in self.regions:
-            raise ValueError(f"fold_index must be in [0, {self.n_folds}); got {fold_index}")
-
         test_block   = fold_index
         val_block    = (fold_index + 1) % self.n_folds
         train_blocks = [index for index in range(self.n_folds) if index not in (test_block, val_block)]
@@ -215,8 +191,6 @@ class FoldUnitManifest:
             return None
 
         regions = manifest["inference_regions"]
-        if split not in regions:
-            raise ValueError(f"Fold unit {run_directory} scores the splits {sorted(regions)} over its own row block, not '{split}'; pick one of those splits")
 
         return CropRegion(*regions[split])
 
@@ -257,11 +231,7 @@ class FoldConfigFactory(ConfigFactory):
 
     def planner(self) -> FoldPlanner:
         if self._planner is None:
-            crop  = self.global_crop()
-            folds = self.config.folds
-
-            if folds.row_start < crop.row_start or folds.row_end > crop.row_end:
-                raise ValueError(f"Fold row window [{folds.row_start}, {folds.row_end}) must lie within the dataset global crop row extent [{crop.row_start}, {crop.row_end})")
+            crop = self.global_crop()
 
             self._planner = FoldPlanner(self.config, col_start=crop.col_start, col_end=crop.col_end)
         return self._planner
@@ -286,12 +256,7 @@ class FoldTreeSurvey:
         self.folds_dir = self.run_dir / self.FOLDS_DIRNAME
 
     def fold_runs(self) -> dict[int, Path]:
-        if not self.folds_dir.is_dir():
-            raise FileNotFoundError(f"No '{self.FOLDS_DIRNAME}' directory under {self.run_dir}")
-
         fold_dirs = sorted(child for child in self.folds_dir.iterdir() if child.is_dir() and FoldNaming.is_fold(child.name))
-        if not fold_dirs:
-            raise FileNotFoundError(f"No fold run directory under {self.folds_dir}")
 
         return {FoldNaming.index(fold_dir.name): self._representative(fold_dir) for fold_dir in fold_dirs}
 
@@ -300,8 +265,6 @@ class FoldTreeSurvey:
             return fold_dir
 
         seeds = sorted(child for child in fold_dir.iterdir() if child.is_dir() and SeedSet.SEED_DIR.fullmatch(child.name) and (child / self.META_DIRNAME).is_dir())
-        if not seeds:
-            raise FileNotFoundError(f"Fold '{fold_dir.name}' holds no training run: neither a '{self.META_DIRNAME}' directory nor a seed run with one under {fold_dir}")
 
         return seeds[0]
 

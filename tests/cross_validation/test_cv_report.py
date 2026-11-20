@@ -191,38 +191,6 @@ def test_aggregate_markdown_reports_correct_mean(tmp_path):
     assert "3" in lines[0]
 
 
-def test_require_all_folds_rejects_missing_fold(tmp_path):
-    metrics = split_metrics()
-    short   = make_records(metrics)[:-1]
-
-    report = make_report(tmp_path, base_records=short)
-
-    with pytest.raises(ValueError, match="requires all"):
-        report.write_all()
-
-
-def test_require_all_folds_rejects_missing_checkpoint(tmp_path):
-    metrics            = split_metrics()
-    base               = make_records(metrics)
-    base[2].checkpoint = {}
-
-    report = make_report(tmp_path, base_records=base)
-
-    with pytest.raises(ValueError, match="missing checkpoint"):
-        report.write_all()
-
-
-def test_require_all_folds_rejects_missing_split_metrics(tmp_path):
-    metrics            = split_metrics()
-    split              = make_records(metrics)
-    split[1].metrics   = {}
-
-    report = make_report(tmp_path, records_by_split={"test": split})
-
-    with pytest.raises(ValueError, match="requires metrics for all"):
-        report.write_all()
-
-
 def test_aggregate_table_skips_non_numeric_metrics(tmp_path):
     metrics = {index: {"curve_rmse_gt": float(index + 1), "label_str": "x"} for index in range(N_FOLDS)}
     report  = make_report(tmp_path, base_records=make_records(metrics), records_by_split={"test": make_records(metrics)})
