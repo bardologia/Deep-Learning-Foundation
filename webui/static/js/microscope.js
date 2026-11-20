@@ -60,12 +60,12 @@ class MicroscopeView {
 
   _build() {
     this.root.innerHTML = `
-      <div class="cube-pick">
+      <div class="view-pick">
         <div class="run-strip" id="probe-strip" aria-label="Trained backbone runs"></div>
-        <p class="cube-hint" id="probe-hint">${SharedCharts.waitLine("Scanning the runs directory for loadable backbone runs…")}</p>
-        <div class="cube-progress" id="probe-progress" hidden>
-          <div class="cube-progress__track"><i class="cube-progress__fill" id="probe-progress-fill"></i></div>
-          <p class="cube-progress__label" id="probe-progress-label">loading&hellip;</p>
+        <p class="view-hint" id="probe-hint">${SharedCharts.waitLine("Scanning the runs directory for loadable backbone runs…")}</p>
+        <div class="view-progress" id="probe-progress" hidden>
+          <div class="view-progress__track"><i class="view-progress__fill" id="probe-progress-fill"></i></div>
+          <p class="view-progress__label" id="probe-progress-label">loading&hellip;</p>
         </div>
       </div>
 
@@ -73,29 +73,29 @@ class MicroscopeView {
         <section class="ms-card ms-scene">
           <div class="ms-scene__map">
             <div class="fl-map__frame">
-              <span class="cube-axis cube-axis--y">row &darr;</span>
+              <span class="view-axis view-axis--y">row &darr;</span>
               <div class="fl-map__wrap" id="probe-map-wrap">
                 <img id="probe-map-img" alt="First target channel of the split" />
                 <div class="fl-marks" id="probe-marks"></div>
               </div>
-              <span class="cube-axis cube-axis--x">col &rarr;</span>
+              <span class="view-axis view-axis--x">col &rarr;</span>
             </div>
           </div>
           <div class="ms-scene__info">
             <div class="ms-card__head">
-              <h3 class="cube-panel-title">Split</h3>
+              <h3 class="view-panel-title">Split</h3>
               <span class="ms-badge" id="probe-model-badge"></span>
             </div>
             <div class="ms-meta" id="probe-meta"></div>
-            <p class="cube-coords" id="probe-coords">Click the map to probe a pixel.</p>
+            <p class="view-coords" id="probe-coords">Click the map to probe a pixel.</p>
             <div class="fl-pixrow" role="group" aria-label="Probe a pixel by index">
-              <span class="cube-jump__cell">
+              <span class="view-jump__cell">
                 <label for="probe-row">row</label>
-                <input type="number" id="probe-row" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+                <input type="number" id="probe-row" class="view-jump__input" min="0" step="1" inputmode="numeric" />
               </span>
-              <span class="cube-jump__cell">
+              <span class="view-jump__cell">
                 <label for="probe-col">col</label>
-                <input type="number" id="probe-col" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+                <input type="number" id="probe-col" class="view-jump__input" min="0" step="1" inputmode="numeric" />
               </span>
               <button type="button" class="btn btn--mini" id="probe-go">Probe</button>
             </div>
@@ -111,22 +111,22 @@ class MicroscopeView {
             <section class="ms-page" data-page="prediction">
             <section class="ms-card ms-card--snug">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Prediction</h3>
+                <h3 class="view-panel-title">Prediction</h3>
                 <span class="ms-card__note">every target channel at the probed pixel, in target units</span>
               </div>
-              <table class="ms-slots" id="probe-targets"></table>
+              <table class="ms-table" id="probe-targets"></table>
               <div class="ms-subhead">
-                <h4 class="cube-panel-title">Inputs</h4>
+                <h4 class="view-panel-title">Inputs</h4>
                 <span class="ms-card__note">raw input channel values at the probed pixel</span>
               </div>
-              <table class="ms-slots" id="probe-inputs"></table>
+              <table class="ms-table" id="probe-inputs"></table>
             </section>
             </section>
 
             <section class="ms-page" data-page="fields" hidden>
             <section class="ms-card">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Local target fields</h3>
+                <h3 class="view-panel-title">Local target fields</h3>
                 <span class="ms-card__note">one forward pass over the input window: prediction, target and absolute error around the pixel</span>
               </div>
               <div class="ms-ctlrow">
@@ -140,13 +140,13 @@ class MicroscopeView {
             <section class="ms-page" data-page="attribution" hidden>
             <section class="ms-card">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Input attribution</h3>
+                <h3 class="view-panel-title">Input attribution</h3>
                 <span class="ms-card__note">share of |&part;output/&part;input| per input channel, every target channel side by side</span>
               </div>
               <div class="ms-bars" id="probe-bars"></div>
               <div class="ms-legend" id="probe-bars-legend"></div>
               <div class="ms-subhead">
-                <h4 class="cube-panel-title">Spatial gradients</h4>
+                <h4 class="view-panel-title">Spatial gradients</h4>
                 <span class="ms-card__note">|&part;output/&part;input| over the input window; pick an input channel or view all</span>
               </div>
               <div class="ms-ctlrow">
@@ -155,7 +155,7 @@ class MicroscopeView {
               </div>
               <div class="ms-gridwrap"><div class="ms-grid" id="probe-grid"></div></div>
               <div class="ms-subhead">
-                <h4 class="cube-panel-title">Effective receptive field</h4>
+                <h4 class="view-panel-title">Effective receptive field</h4>
                 <span class="ms-card__note">share of each target's gradient energy within a radius of the probed pixel</span>
               </div>
               <canvas id="probe-erf" data-fig="effective receptive field" width="640" height="180" hidden></canvas>
@@ -166,7 +166,7 @@ class MicroscopeView {
             <section class="ms-page" data-page="robustness" hidden>
             <section class="ms-card">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Channel ablation</h3>
+                <h3 class="view-panel-title">Channel ablation</h3>
                 <span class="ms-card__note">zero one input channel at a time and re-run: causal damage to the prediction, unlike the attribution page's local gradients</span>
               </div>
               <div class="ms-abl" id="probe-ablation"></div>
@@ -174,7 +174,7 @@ class MicroscopeView {
 
             <section class="ms-card ms-card--third">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Occlusion sensitivity</h3>
+                <h3 class="view-panel-title">Occlusion sensitivity</h3>
                 <span class="ms-card__note">slide a zero-patch across the window and re-run: where the model's evidence for this pixel sits</span>
               </div>
               <div class="ms-fieldrow" id="probe-occlusion"></div>
@@ -183,10 +183,10 @@ class MicroscopeView {
 
             <section class="ms-card ms-card--twothird">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Symmetry</h3>
+                <h3 class="view-panel-title">Symmetry</h3>
                 <span class="ms-card__note">re-run the model on flipped windows and flip the outputs back; a flip-equivariant model repeats itself exactly</span>
               </div>
-              <table class="ms-slots" id="probe-flips"></table>
+              <table class="ms-table" id="probe-flips"></table>
               <p class="ms-wifacts" id="probe-flips-facts"></p>
             </section>
             </section>
@@ -194,23 +194,23 @@ class MicroscopeView {
             <section class="ms-page" data-page="features" hidden>
             <section class="ms-card">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Feature maps</h3>
+                <h3 class="view-panel-title">Feature maps</h3>
                 <span class="ms-card__note" id="probe-feat-note"></span>
               </div>
               <div class="ms-arch" id="probe-arch" aria-label="Model blocks in forward order"></div>
               <div class="ms-arch__layers" id="probe-arch-layers"></div>
               <div class="ms-feat"><img id="probe-features" alt="Feature maps" hidden /></div>
               <div class="ms-subhead">
-                <h4 class="cube-panel-title">Learned kernels</h4>
+                <h4 class="view-panel-title">Learned kernels</h4>
                 <span class="ms-card__note" id="probe-kern-note"></span>
               </div>
               <div class="ms-feat"><img id="probe-kernels" alt="Learned convolution kernels" hidden /></div>
               <div class="ms-subhead">
-                <h4 class="cube-panel-title">Layer vitals</h4>
+                <h4 class="view-panel-title">Layer vitals</h4>
                 <span class="ms-card__note">one hooked forward pass at the probed window; click a row to open that layer's feature maps</span>
               </div>
               <p class="ms-wifacts" id="probe-vitals-summary"></p>
-              <div class="ms-vitals"><table class="ms-slots ms-vitals__table" id="probe-vitals"></table></div>
+              <div class="ms-vitals"><table class="ms-table ms-vitals__table" id="probe-vitals"></table></div>
             </section>
             </section>
 
@@ -446,7 +446,7 @@ class MicroscopeView {
     if (t.includes("norm")) return "norm";
     if (/relu|gelu|silu|elu|sigmoid|tanh|softmax|mish|swish|activation/.test(t)) return "act";
     if (/linear|attention|embed|mlp/.test(t)) return "dense";
-    return "aux";
+    return "other";
   }
 
   _buildArch(layers) {
@@ -571,11 +571,11 @@ class MicroscopeView {
   }
 
   _renderPrediction(out) {
-    const targets = out.targets.map((t) => `<tr><td class="ms-slots__key">${SharedCharts.esc(t.name)}</td><td>${SharedCharts.fmt(t.prediction)}</td><td>${SharedCharts.fmt(t.target)}</td><td>${t.error >= 0 ? "+" : ""}${SharedCharts.fmt(t.error)}</td></tr>`);
-    const inputs  = out.inputs.map((i) => `<tr><td class="ms-slots__key">${SharedCharts.esc(i.name)}</td><td>${SharedCharts.fmt(i.value)}</td></tr>`);
+    const targets = out.targets.map((t) => `<tr><td class="ms-table__key">${SharedCharts.esc(t.name)}</td><td>${SharedCharts.fmt(t.prediction)}</td><td>${SharedCharts.fmt(t.target)}</td><td>${t.error >= 0 ? "+" : ""}${SharedCharts.fmt(t.error)}</td></tr>`);
+    const inputs  = out.inputs.map((i) => `<tr><td class="ms-table__key">${SharedCharts.esc(i.name)}</td><td>${SharedCharts.fmt(i.value)}</td></tr>`);
 
-    this.refs.targets.innerHTML = `<thead><tr><th class="ms-slots__key">TARGET</th><th>PREDICTION</th><th>TARGET VALUE</th><th>ERROR</th></tr></thead><tbody>${targets.join("")}</tbody>`;
-    this.refs.inputs.innerHTML  = `<thead><tr><th class="ms-slots__key">INPUT</th><th>VALUE</th></tr></thead><tbody>${inputs.join("")}</tbody>`;
+    this.refs.targets.innerHTML = `<thead><tr><th class="ms-table__key">TARGET</th><th>PREDICTION</th><th>TARGET VALUE</th><th>ERROR</th></tr></thead><tbody>${targets.join("")}</tbody>`;
+    this.refs.inputs.innerHTML  = `<thead><tr><th class="ms-table__key">INPUT</th><th>VALUE</th></tr></thead><tbody>${inputs.join("")}</tbody>`;
   }
 
   async _loadAttribution() {
@@ -593,7 +593,7 @@ class MicroscopeView {
 
     if (!out.ok) {
       this.attrib = null;
-      this.refs.bars.innerHTML = `<p class="cube-hint">${SharedCharts.esc(out.error)}</p>`;
+      this.refs.bars.innerHTML = `<p class="view-hint">${SharedCharts.esc(out.error)}</p>`;
       return;
     }
 
@@ -656,7 +656,7 @@ class MicroscopeView {
     if (token !== this.ablToken) return;
 
     if (!out.ok) {
-      this.refs.ablation.innerHTML = `<p class="cube-hint">${SharedCharts.esc(out.error)}</p>`;
+      this.refs.ablation.innerHTML = `<p class="view-hint">${SharedCharts.esc(out.error)}</p>`;
       return;
     }
 
@@ -673,7 +673,7 @@ class MicroscopeView {
     if (token !== this.occlToken) return;
 
     if (!out.ok) {
-      this.refs.occlusion.innerHTML = `<p class="cube-hint">${SharedCharts.esc(out.error)}</p>`;
+      this.refs.occlusion.innerHTML = `<p class="view-hint">${SharedCharts.esc(out.error)}</p>`;
       return;
     }
 
@@ -704,7 +704,7 @@ class MicroscopeView {
 
     if (!out.ok) {
       this.fieldsData = null;
-      this.refs.fieldMaps.innerHTML = `<p class="cube-hint">${SharedCharts.esc(out.error)}</p>`;
+      this.refs.fieldMaps.innerHTML = `<p class="view-hint">${SharedCharts.esc(out.error)}</p>`;
       return;
     }
 
@@ -762,8 +762,8 @@ class MicroscopeView {
     }
 
     const labels = MicroscopeView.FLIP_LABELS;
-    const head   = `<thead><tr><th class="ms-slots__key">FLIP</th>${out.channels.map((name) => `<th>${SharedCharts.esc(name)}</th>`).join("")}<th>SHIFT</th></tr></thead>`;
-    const rows   = out.entries.map((e) => `<tr><td class="ms-slots__key">${labels[e.flip]}</td>${e.values.map((v) => `<td>${SharedCharts.fmt(v)}</td>`).join("")}<td>${e.delta.toExponential(2)}</td></tr>`);
+    const head   = `<thead><tr><th class="ms-table__key">FLIP</th>${out.channels.map((name) => `<th>${SharedCharts.esc(name)}</th>`).join("")}<th>SHIFT</th></tr></thead>`;
+    const rows   = out.entries.map((e) => `<tr><td class="ms-table__key">${labels[e.flip]}</td>${e.values.map((v) => `<td>${SharedCharts.fmt(v)}</td>`).join("")}<td>${e.delta.toExponential(2)}</td></tr>`);
 
     this.refs.flips.innerHTML      = `${head}<tbody>${rows.join("")}</tbody>`;
     this.refs.flipsFacts.innerHTML = "values in target units; the shift is the squared change of the normalized prediction against the original window";

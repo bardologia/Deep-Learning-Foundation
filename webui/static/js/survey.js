@@ -40,49 +40,49 @@ class SurveyView {
 
   _build() {
     this.root.innerHTML = `
-      <div class="cube-pick">
+      <div class="view-pick">
         <div class="run-strip" id="survey-strip" aria-label="Trained backbone runs"></div>
-        <p class="cube-hint" id="survey-hint">${SharedCharts.waitLine("Scanning the runs directory for loadable backbone runs…")}</p>
-        <div class="cube-progress sv-progress" id="survey-progress" hidden>
-          <div class="cube-progress__track"><i class="cube-progress__fill" id="survey-progress-fill"></i></div>
-          <p class="cube-progress__label" id="survey-progress-label">starting&hellip;</p>
+        <p class="view-hint" id="survey-hint">${SharedCharts.waitLine("Scanning the runs directory for loadable backbone runs…")}</p>
+        <div class="view-progress sv-progress" id="survey-progress" hidden>
+          <div class="view-progress__track"><i class="view-progress__fill" id="survey-progress-fill"></i></div>
+          <p class="view-progress__label" id="survey-progress-label">starting&hellip;</p>
           <button type="button" class="btn btn--mini" id="survey-cancel">Cancel</button>
         </div>
       </div>
 
       <section class="ms-card sv-setup" id="survey-setup" hidden>
         <div class="ms-card__head">
-          <h3 class="cube-panel-title">Survey setup</h3>
+          <h3 class="view-panel-title">Survey setup</h3>
           <span class="ms-badge" id="survey-setup-run"></span>
         </div>
         <div class="ms-ctlrow">
           <span class="ms-ctlrow__label">split</span>
-          <div class="cube-spaces" id="survey-split" role="group" aria-label="Split">
-            <button type="button" class="cube-space" data-value="train">train</button>
-            <button type="button" class="cube-space" data-value="val">val</button>
-            <button type="button" class="cube-space is-active" data-value="test">test</button>
+          <div class="view-spaces" id="survey-split" role="group" aria-label="Split">
+            <button type="button" class="view-space" data-value="train">train</button>
+            <button type="button" class="view-space" data-value="val">val</button>
+            <button type="button" class="view-space is-active" data-value="test">test</button>
           </div>
         </div>
         <div class="ms-ctlrow">
           <span class="ms-ctlrow__label">device</span>
-          <div class="cube-spaces" id="survey-device" role="group" aria-label="Device">
-            <button type="button" class="cube-space is-active" data-value="cpu">cpu</button>
-            <button type="button" class="cube-space" data-value="cuda">cuda</button>
+          <div class="view-spaces" id="survey-device" role="group" aria-label="Device">
+            <button type="button" class="view-space is-active" data-value="cpu">cpu</button>
+            <button type="button" class="view-space" data-value="cuda">cuda</button>
           </div>
         </div>
         <div class="ms-ctlrow">
           <span class="ms-ctlrow__label">tile cap</span>
-          <input type="number" id="survey-tiles" class="cube-jump__input" min="0" step="1" value="64" />
+          <input type="number" id="survey-tiles" class="view-jump__input" min="0" step="1" value="64" />
           <span class="ms-card__note">evenly strided tiles to survey &mdash; 0 surveys every tile of the region</span>
         </div>
         <div class="ms-ctlrow">
           <span class="ms-ctlrow__label">ERF samples</span>
-          <input type="number" id="survey-erf-samples" class="cube-jump__input" min="0" step="1" value="24" />
+          <input type="number" id="survey-erf-samples" class="view-jump__input" min="0" step="1" value="24" />
           <span class="ms-card__note">pixels sampled for the receptive-field profile &mdash; 0 skips that phase</span>
         </div>
         <div class="ms-ctlrow">
           <span class="ms-ctlrow__label">CPU threads</span>
-          <input type="number" id="survey-threads" class="cube-jump__input" min="1" step="1" value="64" />
+          <input type="number" id="survey-threads" class="view-jump__input" min="1" step="1" value="64" />
           <span class="ms-card__note">torch thread cap while the survey runs; restored afterwards</span>
         </div>
         <div class="ms-ctlrow">
@@ -95,7 +95,7 @@ class SurveyView {
         <div class="sv-results" id="survey-cards" hidden>
           <section class="ms-card">
             <div class="ms-card__head">
-              <h3 class="cube-panel-title">Surveyed model</h3>
+              <h3 class="view-panel-title">Surveyed model</h3>
               <span class="ms-badge" id="survey-badge"></span>
             </div>
             <div class="ms-meta" id="survey-meta"></div>
@@ -107,23 +107,23 @@ class SurveyView {
             <section class="ms-page" data-page="prediction">
             <section class="ms-card ms-card--snug">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Prediction fit</h3>
+                <h3 class="view-panel-title">Prediction fit</h3>
                 <span class="ms-card__note">error of every target channel over the whole surveyed region, in target units</span>
               </div>
-              <table class="ms-slots" id="survey-fit"></table>
+              <table class="ms-table" id="survey-fit"></table>
             </section>
             </section>
 
             <section class="ms-page" data-page="attribution" hidden>
             <section class="ms-card">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Input attribution</h3>
+                <h3 class="view-panel-title">Input attribution</h3>
                 <span class="ms-card__note">share of |&part;output/&part;input| per input channel, gradients of the summed outputs over every pixel</span>
               </div>
               <div class="ms-bars" id="survey-bars"></div>
               <div class="ms-legend" id="survey-bars-legend"></div>
               <div class="ms-subhead">
-                <h4 class="cube-panel-title">Mean spatial gradients</h4>
+                <h4 class="view-panel-title">Mean spatial gradients</h4>
                 <span class="ms-card__note" id="survey-grid-note"></span>
               </div>
               <div class="ms-ctlrow" id="survey-grid-ctl">
@@ -132,7 +132,7 @@ class SurveyView {
               </div>
               <div class="ms-gridwrap"><div class="ms-grid" id="survey-grid"></div></div>
               <div class="ms-subhead">
-                <h4 class="cube-panel-title">Effective receptive field</h4>
+                <h4 class="view-panel-title">Effective receptive field</h4>
                 <span class="ms-card__note" id="survey-erf-note"></span>
               </div>
               <canvas id="survey-erf" data-fig="effective receptive field" width="640" height="180" hidden></canvas>
@@ -143,7 +143,7 @@ class SurveyView {
             <section class="ms-page" data-page="robustness" hidden>
             <section class="ms-card">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Channel ablation</h3>
+                <h3 class="view-panel-title">Channel ablation</h3>
                 <span class="ms-card__note">zero one input channel at a time and re-run &mdash; mean causal damage over every pixel</span>
               </div>
               <div class="ms-abl" id="survey-ablation"></div>
@@ -151,15 +151,15 @@ class SurveyView {
 
             <section class="ms-card ms-card--third">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Symmetry</h3>
+                <h3 class="view-panel-title">Symmetry</h3>
                 <span class="ms-card__note">mean disagreement between the model and its flipped self over every pixel</span>
               </div>
-              <table class="ms-slots" id="survey-flips"></table>
+              <table class="ms-table" id="survey-flips"></table>
             </section>
 
             <section class="ms-card ms-card--twothird">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Noise robustness</h3>
+                <h3 class="view-panel-title">Noise robustness</h3>
                 <span class="ms-card__note">normal noise added to every input channel, one fresh draw per tile; mean squared prediction shift against &sigma;</span>
               </div>
               <canvas id="survey-noise" data-fig="noise robustness" width="640" height="200"></canvas>
@@ -168,7 +168,7 @@ class SurveyView {
 
             <section class="ms-card ms-card--snug">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Occlusion distance profile</h3>
+                <h3 class="view-panel-title">Occlusion distance profile</h3>
                 <span class="ms-card__note">mean damage to a pixel when a zero-patch lands at a given distance from it</span>
               </div>
               <canvas id="survey-occl" data-fig="occlusion distance profile" width="640" height="200"></canvas>
@@ -179,11 +179,11 @@ class SurveyView {
             <section class="ms-page" data-page="vitals" hidden>
             <section class="ms-card">
               <div class="ms-card__head">
-                <h3 class="cube-panel-title">Layer vitals</h3>
+                <h3 class="view-panel-title">Layer vitals</h3>
                 <span class="ms-card__note">activation statistics accumulated over every surveyed tile</span>
               </div>
               <p class="ms-wifacts" id="survey-vitals-summary"></p>
-              <div class="ms-vitals"><table class="ms-slots ms-vitals__table" id="survey-vitals"></table></div>
+              <div class="ms-vitals"><table class="ms-table ms-vitals__table" id="survey-vitals"></table></div>
             </section>
             </section>
 
@@ -255,9 +255,9 @@ class SurveyView {
   }
 
   _bindChips(group, key) {
-    group.querySelectorAll(".cube-space").forEach((btn) => {
+    group.querySelectorAll(".view-space").forEach((btn) => {
       btn.addEventListener("click", () => {
-        group.querySelectorAll(".cube-space").forEach((b) => b.classList.toggle("is-active", b === btn));
+        group.querySelectorAll(".view-space").forEach((b) => b.classList.toggle("is-active", b === btn));
         this.cfg[key] = btn.dataset.value;
       });
     });
@@ -436,8 +436,8 @@ class SurveyView {
   }
 
   _renderFit(r) {
-    const head = `<thead><tr><th class="ms-slots__key">TARGET</th><th>RMSE</th><th>MAE</th><th>R&sup2;</th></tr></thead>`;
-    const rows = r.fit.map((t) => `<tr><td class="ms-slots__key">${SharedCharts.esc(t.name)}</td><td>${SharedCharts.fmt(t.rmse)}</td><td>${SharedCharts.fmt(t.mae)}</td><td>${t.r2 === null ? "&ndash;" : t.r2.toFixed(4)}</td></tr>`);
+    const head = `<thead><tr><th class="ms-table__key">TARGET</th><th>RMSE</th><th>MAE</th><th>R&sup2;</th></tr></thead>`;
+    const rows = r.fit.map((t) => `<tr><td class="ms-table__key">${SharedCharts.esc(t.name)}</td><td>${SharedCharts.fmt(t.rmse)}</td><td>${SharedCharts.fmt(t.mae)}</td><td>${t.r2 === null ? "&ndash;" : t.r2.toFixed(4)}</td></tr>`);
 
     this.refs.fit.innerHTML = `${head}<tbody>${rows.join("")}</tbody>`;
   }
@@ -511,11 +511,11 @@ class SurveyView {
   }
 
   _renderFlips(r) {
-    const head = `<thead><tr><th class="ms-slots__key">FLIP</th><th>MEAN SQUARED SHIFT</th></tr></thead>`;
+    const head = `<thead><tr><th class="ms-table__key">FLIP</th><th>MEAN SQUARED SHIFT</th></tr></thead>`;
 
     const rows = r.flips.filter((e) => e.flip !== "none").map((e) => `
       <tr>
-        <td class="ms-slots__key">${SurveyView.FLIP_LABELS[e.flip]}</td>
+        <td class="ms-table__key">${SurveyView.FLIP_LABELS[e.flip]}</td>
         <td>${e.delta.toExponential(2)}</td>
       </tr>`);
 

@@ -181,7 +181,7 @@ def test_jsonsafe_keeps_bools_and_none():
 
 
 def test_query_accessors_apply_defaults():
-    exchange = HttpExchange.of(FakeHandler("GET", "/api/cubes/plane?id=run&row=7&frac=0.5&vmax="))
+    exchange = HttpExchange.of(FakeHandler("GET", "/api/results/plane?id=run&row=7&frac=0.5&vmax="))
 
     assert exchange.text("id")             == "run"
     assert exchange.text("space", "phys")  == "phys"

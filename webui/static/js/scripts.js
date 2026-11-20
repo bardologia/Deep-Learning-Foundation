@@ -4,7 +4,7 @@ class ScriptPanel {
   static SECTIONS = [
     { category: "Data",        blurb: "From the bundled generator to training targets: synthesise the example dataset, then fit the Gaussian targets." },
     { category: "Training",    blurb: "Train one stage end to end, or fan an experiment ladder across GPUs." },
-    { category: "Inference",   blurb: "Turn trained checkpoints into stitched cubes, metrics, and reports." },
+    { category: "Inference",   blurb: "Turn trained checkpoints into stitched target maps, metrics, and reports." },
     { category: "Analysis",    blurb: "Post-hoc work on finished runs: rebuild trial reports, diagnose trained models, and collect artifacts for publication." },
     { category: "Experiments", blurb: "Structured studies with their own orchestration: benchmarks, cross-validation, sweeps, and tuning." },
   ];
@@ -145,7 +145,7 @@ class ScriptPanel {
       this.gridEl.appendChild(section);
     });
 
-    if (!shown) this.gridEl.innerHTML = `<p class="cube-hint">No entry points match this search.</p>`;
+    if (!shown) this.gridEl.innerHTML = `<p class="view-hint">No entry points match this search.</p>`;
 
     window.revealScan();
   }

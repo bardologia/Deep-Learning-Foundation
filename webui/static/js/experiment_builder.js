@@ -287,7 +287,7 @@ class ExperimentBuilder {
 
   _patchPanel() {
     const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-patch";
+    panel.className = "exp-panel exp-patch";
 
     const head     = document.createElement("div");
     head.className = "exp-col__head";
@@ -300,7 +300,7 @@ class ExperimentBuilder {
     if (budgetLeaf) head.appendChild(this._patchFlag(budgetLeaf, "pixel budget", "rescale each trial's batch size and lr_reference_batch_size together so every patch shape sees the same pixels per optimizer step"));
 
     const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
+    note.className   = "exp-panel__note";
     note.textContent = "each (row x col) shape trains the same model end to end; stride = round(length x stride_ratio) per axis; step 0 derives the admissible step from the backbone pyramid (2^levels) at launch; the pixel budget keeps batch x pixels and the batch-linear LR scale identical across shapes";
 
     const grid     = document.createElement("div");
@@ -472,25 +472,25 @@ class ExperimentBuilder {
 
   _architecturePanel() {
     const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
+    panel.className = "exp-panel exp-list";
 
     const head     = document.createElement("div");
     head.className = "exp-col__head";
     head.innerHTML = `<span class="exp-col__name">architectures</span>`;
     const reset    = LaunchWidgetDom.mini("reset backbones", () => this._resetArchitecture());
-    reset.classList.add("exp-presence__reset");
+    reset.classList.add("exp-list__reset");
     head.appendChild(reset);
 
     const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
+    note.className   = "exp-panel__note";
     note.textContent = "One training run per listed architecture on the shared base config. Every entry is a label plus a backbone from the registry and optional model overrides; add entries by editing architecture_trials, use reset backbones to restore the default.";
 
     const cellHead       = document.createElement("div");
-    cellHead.className    = "exp-presence__sub";
+    cellHead.className    = "exp-list__sub";
     cellHead.textContent  = "backbones";
 
     const cells              = document.createElement("div");
-    cells.className          = "exp-builder__names exp-presence__cells";
+    cells.className          = "exp-builder__names exp-list__cells";
     this.architectureCellsEl = cells;
 
     panel.appendChild(head);
@@ -581,13 +581,13 @@ class ExperimentBuilder {
 
   _augmentationPanel() {
     const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
+    panel.className = "exp-panel exp-list";
 
     const head     = document.createElement("div");
     head.className = "exp-col__head";
     head.innerHTML = `<span class="exp-col__name">augmentation ladder</span>`;
     const reset    = LaunchWidgetDom.mini("reset ladder", () => this._resetAugmentation());
-    reset.classList.add("exp-presence__reset");
+    reset.classList.add("exp-list__reset");
     head.appendChild(reset);
     head.appendChild(LaunchWidgetDom.mini("Add std", () => {
       const stds = this._augNoiseStds();
@@ -596,11 +596,11 @@ class ExperimentBuilder {
     }));
 
     const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
+    note.className   = "exp-panel__note";
     note.textContent = "Cumulative ladder on the shared base config: rung 0 trains without augmentation, rung 1 adds horizontal flips, rung 2 adds vertical flips, and one final rung per noise std adds additive Gaussian input noise on top of both flips; rot90 stays off everywhere and every rung repeats across the seeds list.";
 
     const grid     = document.createElement("div");
-    grid.className = "exp-secondary__grid";
+    grid.className = "exp-panel__grid";
 
     const flipLeaf = this.augTrials.get("flip_probability");
     if (flipLeaf) grid.appendChild(this._ladderNumberRow(flipLeaf, "flip_probability", "probability of each enabled flip", "any", "0"));
@@ -609,7 +609,7 @@ class ExperimentBuilder {
     if (noiseLeaf) grid.appendChild(this._ladderNumberRow(noiseLeaf, "noise_probability", "probability of injecting noise on the noise rungs", "any", "0"));
 
     const stdsHead       = document.createElement("div");
-    stdsHead.className   = "exp-presence__sub";
+    stdsHead.className   = "exp-list__sub";
     stdsHead.textContent = "noise stds (one rung each, normalised input units)";
 
     const stds     = document.createElement("div");
@@ -694,13 +694,13 @@ class ExperimentBuilder {
 
   _stabilityPanel() {
     const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
+    panel.className = "exp-panel exp-list";
 
     const head     = document.createElement("div");
     head.className = "exp-col__head";
     head.innerHTML = `<span class="exp-col__name">stability ladder</span>`;
     const reset    = LaunchWidgetDom.mini("reset ladder", () => this._resetStability());
-    reset.classList.add("exp-presence__reset");
+    reset.classList.add("exp-list__reset");
     head.appendChild(reset);
     head.appendChild(LaunchWidgetDom.mini("Add fraction", () => {
       const steps = this._stabilitySteps();
@@ -714,11 +714,11 @@ class ExperimentBuilder {
     }));
 
     const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
+    note.className   = "exp-panel__note";
     note.textContent = "Cumulative ladder on the shared base config: rung 0 trains without lr warmup and without gradient clipping, then one rung per warmup fraction of the total optimizer steps adds the ramp, then one rung per norm threshold adds gradient clipping on top of the first warmup; every rung repeats across the seeds list.";
 
     const grid     = document.createElement("div");
-    grid.className = "exp-secondary__grid";
+    grid.className = "exp-panel__grid";
 
     const modeLeaf = this.stabilityTrials.get("warmup_mode");
     if (modeLeaf) grid.appendChild(this._stabilitySelectRow(modeLeaf, "warmup_mode", "shape of the warmup ramp", ExperimentBuilder.STABILITY_WARMUP_MODES));
@@ -727,7 +727,7 @@ class ExperimentBuilder {
     if (clipLeaf) grid.appendChild(this._stabilitySelectRow(clipLeaf, "clip_mode", "gradient-clipping strategy of the clipping rungs; only fixed sweeps several norms", ExperimentBuilder.STABILITY_CLIP_MODES));
 
     const stepsHead       = document.createElement("div");
-    stepsHead.className   = "exp-presence__sub";
+    stepsHead.className   = "exp-list__sub";
     stepsHead.textContent = "warmup fractions of the total optimizer steps (one warmup rung each; the first also underlies the clipping rungs)";
 
     const steps          = document.createElement("div");
@@ -735,7 +735,7 @@ class ExperimentBuilder {
     this.stabilityStepsEl = steps;
 
     const normsHead       = document.createElement("div");
-    normsHead.className   = "exp-presence__sub";
+    normsHead.className   = "exp-list__sub";
     normsHead.textContent = "max grad norms (one clipping rung each, fixed strategy only)";
 
     const norms          = document.createElement("div");
@@ -770,7 +770,7 @@ class ExperimentBuilder {
     name.innerHTML = `${label}<span>str</span>`;
 
     const select     = document.createElement("select");
-    select.className = "run-select exp-secondary__strategy";
+    select.className = "run-select exp-panel__strategy";
     options.forEach((option) => {
       const opt       = document.createElement("option");
       opt.value       = option;
@@ -843,13 +843,13 @@ class ExperimentBuilder {
 
   _emaPanel() {
     const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
+    panel.className = "exp-panel exp-list";
 
     const head     = document.createElement("div");
     head.className = "exp-col__head";
     head.innerHTML = `<span class="exp-col__name">weight-EMA ladder</span>`;
     const reset    = LaunchWidgetDom.mini("reset ladder", () => this._resetEma());
-    reset.classList.add("exp-presence__reset");
+    reset.classList.add("exp-list__reset");
     head.appendChild(reset);
     head.appendChild(LaunchWidgetDom.mini("Add decay", () => {
       const decays = this._emaDecays();
@@ -858,11 +858,11 @@ class ExperimentBuilder {
     }));
 
     const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
+    note.className   = "exp-panel__note";
     note.textContent = "Rung 0 trains, evaluates and checkpoints the raw weights; then one rung per decay below tracks an exponential moving average of the weights at that decay, everything else unchanged; every rung repeats across the seeds list.";
 
     const decaysHead       = document.createElement("div");
-    decaysHead.className   = "exp-presence__sub";
+    decaysHead.className   = "exp-list__sub";
     decaysHead.textContent = "EMA decays (one on-rung each, strictly between 0 and 1)";
 
     const decays     = document.createElement("div");
@@ -899,14 +899,14 @@ class ExperimentBuilder {
 
   _ampPanel() {
     const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
+    panel.className = "exp-panel exp-list";
 
     const head     = document.createElement("div");
     head.className = "exp-col__head";
     head.innerHTML = `<span class="exp-col__name">mixed-precision pair</span>`;
 
     const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
+    note.className   = "exp-panel__note";
     note.textContent = "Two rungs on the shared base config: rung 0 trains in full precision, rung 1 wraps the forward pass in mixed-precision autocast; nothing else changes and both rungs repeat across the seeds list.";
 
     panel.appendChild(head);
@@ -950,7 +950,7 @@ class ExperimentBuilder {
 
   _cellChip(text, title, removeTitle, remove) {
     const chip     = document.createElement("span");
-    chip.className = "exp-name exp-presence__cell";
+    chip.className = "exp-name exp-list__cell";
     if (title != null) chip.title = title;
 
     const body       = document.createElement("span");
@@ -958,7 +958,7 @@ class ExperimentBuilder {
     chip.appendChild(body);
 
     const drop = LaunchWidgetDom.mini("×", remove);
-    drop.classList.add("exp-presence__remove");
+    drop.classList.add("exp-list__remove");
     drop.title = removeTitle;
     chip.appendChild(drop);
     return chip;

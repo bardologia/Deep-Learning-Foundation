@@ -86,7 +86,7 @@ class SharedCharts {
     summaryEl.innerHTML = `${s.n_layers} live layers &middot; ${s.total_params.toLocaleString("en-US")} parameters &middot; ${flagged}`;
 
     const head = `<thead><tr>
-      <th>#</th><th class="ms-slots__key">LAYER</th><th class="ms-vitals__type">TYPE</th><th>OUT</th><th>PARAMS</th>
+      <th>#</th><th class="ms-table__key">LAYER</th><th class="ms-vitals__type">TYPE</th><th>OUT</th><th>PARAMS</th>
       <th>ZERO %</th><th>DEAD CH</th><th>EFF CH %</th><th>MAX |ACT|</th><th class="ms-vitals__flags">FLAGS</th>
     </tr></thead>`;
 
@@ -97,7 +97,7 @@ class SharedCharts {
       return `
         <tr class="${classes}" data-layer="${SharedCharts.esc(e.name)}">
           <td>${index + 1}</td>
-          <td class="ms-slots__key" title="${SharedCharts.esc(e.name)}">${SharedCharts.esc(e.name)}</td>
+          <td class="ms-table__key" title="${SharedCharts.esc(e.name)}">${SharedCharts.esc(e.name)}</td>
           <td class="ms-vitals__type">${SharedCharts.esc(e.type)}</td>
           <td>${(e.shape || []).join("&times;")}</td>
           <td>${e.params.toLocaleString("en-US")}</td>

@@ -55,12 +55,12 @@ class RunStrip {
     const parts  = RunStrip.parseName(entry.run);
     const pieces = [];
 
-    if (parts.when)   pieces.push(`<span class="cube-run__when">${SharedCharts.esc(parts.when)}</span>`);
-    if (entry.stamp)  pieces.push(`<span class="cube-run__when">cube ${SharedCharts.esc(RunStrip.prettyStamp(entry.stamp))}</span>`);
-    if (parts.suffix) pieces.push(`<span class="cube-run__badge">${SharedCharts.esc(parts.suffix)}</span>`);
+    if (parts.when)   pieces.push(`<span class="view-run__when">${SharedCharts.esc(parts.when)}</span>`);
+    if (entry.stamp)  pieces.push(`<span class="view-run__when">inference ${SharedCharts.esc(RunStrip.prettyStamp(entry.stamp))}</span>`);
+    if (parts.suffix) pieces.push(`<span class="view-run__badge">${SharedCharts.esc(parts.suffix)}</span>`);
 
     if (!pieces.length) return "";
-    return `<span class="cube-run__meta">${pieces.join("")}</span>`;
+    return `<span class="view-run__meta">${pieces.join("")}</span>`;
   }
 
   open(group)  { this.openGroups.add(group); }
@@ -112,18 +112,18 @@ class RunStrip {
     const row   = document.createElement(tag);
 
     if (tag === "button") row.type = "button";
-    row.className = "cube-run" + (this.opts.rowClass ? ` ${this.opts.rowClass}` : "") + (state ? " is-active" : "");
+    row.className = "view-run" + (this.opts.rowClass ? ` ${this.opts.rowClass}` : "") + (state ? " is-active" : "");
     row.title     = entry.id;
     row.style.paddingLeft = `${9 + depth * 18}px`;
 
     const main = document.createElement("span");
-    main.className = "cube-run__main";
+    main.className = "view-run__main";
     main.innerHTML = RunStrip.nameHtml(entry.run) + RunStrip.metaHtml(entry);
     row.appendChild(main);
 
     if (this.opts.extras) {
       const extras = document.createElement("span");
-      extras.className = "cube-run__extras";
+      extras.className = "view-run__extras";
       this.opts.extras(entry).forEach((node) => extras.appendChild(node));
       row.appendChild(extras);
     }
@@ -260,14 +260,14 @@ class AnalysisPickerView {
   _build() {
     const p = this.prefix;
     this.root.innerHTML = `
-      <div class="cube-pick">
+      <div class="view-pick">
         <div class="fl-src" role="group" aria-label="Datasets directory">
           <label for="${p}-base">Datasets dir</label>
           <input id="${p}-base" type="text" spellcheck="false" autocomplete="off" placeholder="${ResultsSources.datasets()}" />
           <button type="button" class="btn btn--mini" id="${p}-scan">Scan</button>
         </div>
         <div class="run-strip" id="${p}-strip" aria-label="${this.stripLabel}"></div>
-        <p class="cube-hint" id="${p}-hint">${this.introHint}</p>
+        <p class="view-hint" id="${p}-hint">${this.introHint}</p>
       </div>
       <div id="${p}-out"></div>`;
 
@@ -316,7 +316,7 @@ class AnalysisPickerView {
     const data = await Api.get(`${this.endpoint}/report?id=${encodeURIComponent(id)}`);
     if (seq !== this.pickSeq) return;
     if (!data.ok) {
-      this.refs.out.innerHTML = `<p class="cube-hint">${SharedCharts.esc(data.error || "failed to load the analysis")}</p>`;
+      this.refs.out.innerHTML = `<p class="view-hint">${SharedCharts.esc(data.error || "failed to load the analysis")}</p>`;
       return;
     }
 

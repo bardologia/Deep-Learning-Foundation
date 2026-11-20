@@ -31,21 +31,21 @@ class AutopsyView {
 
   _build() {
     this.root.innerHTML = `
-      <div class="cube-pick">
+      <div class="view-pick">
         <div class="run-strip" id="autopsy-strip" aria-label="Saved inferences"></div>
         <div class="fl-src" role="group" aria-label="Chosen pair">
-          <span class="autopsy-slot" id="autopsy-slot-a"><b>A</b> <span>none</span></span>
-          <span class="autopsy-slot" id="autopsy-slot-b"><b>B</b> <span>none</span></span>
+          <span class="autopsy-pick" id="autopsy-pick-a"><b>A</b> <span>none</span></span>
+          <span class="autopsy-pick" id="autopsy-pick-b"><b>B</b> <span>none</span></span>
           <button type="button" class="btn btn--mini" id="autopsy-go" disabled>Compare</button>
         </div>
-        <p class="cube-hint" id="autopsy-hint">Assign one saved inference to A and one to B (same region).</p>
+        <p class="view-hint" id="autopsy-hint">Assign one saved inference to A and one to B (same region).</p>
       </div>
       <div id="autopsy-out"></div>`;
 
     this.refs = {
       strip : this.root.querySelector("#autopsy-strip"),
-      slotA : this.root.querySelector("#autopsy-slot-a"),
-      slotB : this.root.querySelector("#autopsy-slot-b"),
+      slotA : this.root.querySelector("#autopsy-pick-a"),
+      slotB : this.root.querySelector("#autopsy-pick-b"),
       goBtn : this.root.querySelector("#autopsy-go"),
       hint  : this.root.querySelector("#autopsy-hint"),
       out   : this.root.querySelector("#autopsy-out"),
@@ -141,7 +141,7 @@ class AutopsyView {
   }
 
   _render(data) {
-    let html = `<div class="fl-card"><h3 class="cube-panel-title">Largest metric gaps</h3>`;
+    let html = `<div class="fl-card"><h3 class="view-panel-title">Largest metric gaps</h3>`;
     html += `<div class="tbl-scroll"><table class="tbl tbl--diff"><thead><tr>` +
       `<th class="tbl-th">metric</th><th class="tbl-th">A</th><th class="tbl-th">B</th><th class="tbl-th">Δ rel</th><th class="tbl-th">winner</th></tr></thead><tbody>`;
 
@@ -159,14 +159,14 @@ class AutopsyView {
       data.hotspots.forEach((spot, index) => {
         html += `
           <article class="fl-card">
-            <h3 class="cube-panel-title">${spot.winner} wins · row ${spot.row}, col ${spot.col}</h3>
-            <p class="cube-hint">block Δ standardized squared error (A−B): ${spot.mean_delta.toExponential(2)}</p>
+            <h3 class="view-panel-title">${spot.winner} wins · row ${spot.row}, col ${spot.col}</h3>
+            <p class="view-hint">block Δ standardized squared error (A−B): ${spot.mean_delta.toExponential(2)}</p>
             <div class="tbl-scroll" id="autopsy-spot-${index}"></div>
           </article>`;
       });
       html += `</div>`;
     } else {
-      html += `<p class="cube-hint">no disagreement hotspots; the runs behave almost identically pixelwise</p>`;
+      html += `<p class="view-hint">no disagreement hotspots; the runs behave almost identically pixelwise</p>`;
     }
 
     this.refs.out.innerHTML = html;
