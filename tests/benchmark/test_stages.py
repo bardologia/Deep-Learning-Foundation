@@ -9,16 +9,13 @@ from pipelines.benchmark.stages import (
     ComparisonStage,
     InferenceStage,
     SeedExpandedStage,
-    SizeMatchStage,
     TrainingStage,
 )
 from configuration.benchmark                      import BenchmarkConfig
 from pipelines.shared.comparison.trial_collection import TrialRecord
-from tools.data.io                                import FileIO
 from tools.orchestration                          import QueuedInferenceStage, QueuedTrainingStage
 from configuration.training.general.run           import DEFAULT_PARAMS_RUN
 from configuration.synthesis                      import SynthesisConfig
-from tools.runtime.git_state                      import GitState
 
 
 SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
@@ -40,81 +37,6 @@ def data_config(config, test_data_dir):
 
 
 ENTRY = Path("/entry/run_benchmark.py")
-
-
-def test_sizematch_reference_record_is_zero_deviation(config, logger_stub):
-    stage  = SizeMatchStage(config=config, run_tag="t", models=["unet"], logger=logger_stub)
-    record = stage._reference_record("unet", 1234)
-
-    assert record["model"]         == "unet"
-    assert record["scale"]         == 1.0
-    assert record["parameters"]    == 1234
-    assert record["target"]        == 1234
-    assert record["deviation_pct"] == 0.0
-    assert record["iterations"]    == 0
-
-
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_sizematch_run_emits_reference_and_matched(monkeypatch, logger_stub, test_data_dir, tmp_path):
-    config                       = BenchmarkConfig()
-    config.paths.log_base_dir    = tmp_path
-    config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
-    config.resume                = False
-    config.skip_models           = []
-
-    stage = SizeMatchStage(config=config, run_tag="t", models=["unet", "resunet"], logger=logger_stub)
-
-    records = stage.run()
-
-    assert "unet" in records
-    assert "resunet" in records
-    assert records["unet"]["scale"] == 1.0
-    assert stage.records_path.exists()
-    assert FileIO.load_json(stage.records_path)["resunet"]["provenance"]["git_commit"] == GitState.commit()
-
-
-def test_sizematch_load_cached_requires_all_models(config, logger_stub):
-    config.resume = True
-    stage = SizeMatchStage(config=config, run_tag="t", models=["unet", "resunet"], logger=logger_stub)
-
-    FileIO.save_json({"unet": {}}, stage.records_path)
-
-    assert stage._load_cached() is None
-
-
-def test_sizematch_load_cached_returns_when_complete(config, logger_stub):
-    config.resume = True
-    stage = SizeMatchStage(config=config, run_tag="t", models=["unet", "resunet"], logger=logger_stub)
-
-    settings = config.size_match_settings()
-    FileIO.save_json({"unet": {"settings": settings}, "resunet": {"settings": settings}}, stage.records_path)
-
-    cached = stage._load_cached()
-    assert set(cached) == {"unet", "resunet"}
-
-
-def test_sizematch_load_cached_rejects_changed_matching_inputs(config, logger_stub):
-    config.resume = True
-    stage = SizeMatchStage(config=config, run_tag="t", models=["unet", "resunet"], logger=logger_stub)
-
-    settings = config.size_match_settings()
-    FileIO.save_json({"unet": {"settings": settings}, "resunet": {"settings": settings}}, stage.records_path)
-
-    config.size_match.in_channels = settings["in_channels"] + 1
-    assert stage._load_cached() is None
-
-    config.size_match.in_channels     = settings["in_channels"]
-    config.size_match.reference_model = "resunet"
-    assert stage._load_cached() is None
-
-    config.size_match.reference_model = settings["reference_model"]
-    config.training.patch_size        = [settings["patch_size"][0] * 2, settings["patch_size"][1]]
-    assert stage._load_cached() is None
-
-    config.training.patch_size = settings["patch_size"]
-    assert stage._load_cached() is not None
 
 
 @pytest.mark.dataset
@@ -140,7 +62,7 @@ def test_fresh_run_stages_report_no_unidentified_directory(data_config, logger_s
 
 
 def test_comparison_stage_run_invokes_collector_and_report(config, logger_stub, monkeypatch):
-    stage = ComparisonStage(config=config, run_tag="t", logger=logger_stub, reference_model=config.size_match.reference_model, embed_images=config.comparison.embed_images, inference_split=config.inference.split)
+    stage = ComparisonStage(config=config, run_tag="t", logger=logger_stub, embed_images=config.comparison.embed_images, inference_split=config.inference.split)
 
     collected = {}
 
@@ -166,7 +88,6 @@ def test_comparison_stage_run_invokes_collector_and_report(config, logger_stub, 
 
     assert collected["run_dir"]         == stage.run_dir
     assert collected["inference_split"] == config.inference.split
-    assert collected["kwargs"]["reference_model"] == config.size_match.reference_model
     assert collected["kwargs"]["seed_dispersion"] == {"unet": {"n_seeds": 2}}
     assert "comparison" in str(out_dir)
 
@@ -241,7 +162,7 @@ def test_comparison_stage_builds_from_the_standalone_entry_config(logger_stub):
     from configuration.comparison import ComparisonEntryConfig
 
     entry = ComparisonEntryConfig(run_tag="t")
-    stage = ComparisonStage(config=entry, run_tag="t", logger=logger_stub, reference_model=entry.reference_model, embed_images=entry.embed_images, inference_split=entry.inference_split)
+    stage = ComparisonStage(config=entry, run_tag="t", logger=logger_stub, embed_images=entry.embed_images, inference_split=entry.inference_split)
 
     assert stage.inference_split == "test"
     assert stage.run_dir == Path(entry.paths.log_base_dir) / "t"
@@ -283,7 +204,7 @@ def test_a_manifestless_directory_at_a_planned_units_path_is_reported_as_that_un
 
 
 def _comparison_stage(config, logger, planned_units, monkeypatch, runs):
-    stage = ComparisonStage(config=config, run_tag="t", logger=logger, reference_model="unet", embed_images=False, inference_split="test", planned_units=planned_units)
+    stage = ComparisonStage(config=config, run_tag="t", logger=logger, embed_images=False, inference_split="test", planned_units=planned_units)
 
     class FakeCollector:
         def __init__(self, run_dir, logger, inference_split):

@@ -34,8 +34,8 @@ class FoldCollector(TrialCollector):
     def _run_dirs(self) -> list[tuple[str, Path]]:
         return [(name, run_dir) for name, run_dir in super()._run_dirs() if FoldNaming.is_fold(FoldNaming.base(name))]
 
-    def _aggregate_sources(self, runs: list[tuple[str, Path]]) -> tuple[dict, dict]:
-        return {}, UnitResultsByRun(self.training_dir, self.logger).build(TrainingResultsIndex(self.pipeline_dir, self.logger), runs)
+    def _training_results_index(self, runs: list[tuple[str, Path]]) -> dict:
+        return UnitResultsByRun(self.training_dir, self.logger).build(TrainingResultsIndex(self.pipeline_dir, self.logger), runs)
 
     def _attach_inference(self, record: TrialRecord) -> None:
         scored = []

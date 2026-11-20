@@ -560,11 +560,6 @@ class LaunchLayout:
                         {"title": "Loss components", "fields": [{"path": "sweep_loss_components", "widget": MULTI_SWEEP_LOSSES}]},
                     ]},
                 ]},
-                {"key": "size-match", "title": "Size match", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Capacity matching", "fields": ["size_match.reference_model", "size_match.tolerance", "size_match.max_iterations", "size_match.scale_low", "size_match.scale_high", "size_match.scale_ceiling", "size_match.in_channels", "size_match.locked_params"]},
-                    ]},
-                ]},
                 {"key": "data", "title": "Data", "panels": [
                     {"kind": "fields", "title": "Paths", "template": "paths_rest", "at": "paths"},
                 ]},
@@ -731,7 +726,7 @@ class LaunchLayout:
                 {"key": "config", "title": "Configuration", "panels": [
                     {"kind": "fields", "groups": [
                         {"title": "Run", "fields": ["paths.log_base_dir", "run_tag", "inference_split"]},
-                        {"title": "Report", "fields": ["reference_model", "embed_images"]},
+                        {"title": "Report", "fields": ["embed_images"]},
                     ]},
                 ]},
             ],

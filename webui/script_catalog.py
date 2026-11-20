@@ -31,7 +31,7 @@ class ScriptCatalog:
         "benchmark": {
             "title"     : "Benchmark",
             "category"  : "Experiments",
-            "purpose"   : "Benchmark capacity-matched architecture trade-offs, sweeping every permutation of architecture and selected loss component (one architecture + one loss component per run). Point resume_from at an existing run to finish its missing units with the configuration it recorded.",
+            "purpose"   : "Benchmark architecture trade-offs, each model at its own configured size, sweeping every permutation of architecture and selected loss component (one architecture + one loss component per run). Point resume_from at an existing run to finish its missing units with the configuration it recorded.",
         },
         "cross_validate": {
             "title"     : "Cross-validate",
@@ -66,7 +66,7 @@ class ScriptCatalog:
         "compare_runs": {
             "title"     : "Compare Benchmark Runs",
             "category"  : "Analysis",
-            "purpose"   : "Rebuild the benchmark comparison report for an existing benchmark run: seed-aggregated leaderboard against the capacity-matched reference, without re-running training or inference.",
+            "purpose"   : "Rebuild the benchmark comparison report for an existing benchmark run: seed-aggregated leaderboard, without re-running training or inference.",
         },
         "compare_seeds": {
             "title"     : "Compare Seeds",

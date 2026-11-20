@@ -46,23 +46,22 @@ def test_pipeline_writes_resolved_config(tmp_path):
 def test_mark_stage_persists_state(tmp_path):
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
-    pipeline._mark_stage("size_match", "completed")
+    pipeline._mark_stage("training", "completed")
 
     state = FileIO.load_json(pipeline.state_path)
-    assert state["stages"]["size_match"]["status"] == "completed"
+    assert state["stages"]["training"]["status"] == "completed"
     assert state["run_tag"] == "unit_run"
 
 
 def test_a_later_stage_process_keeps_the_earlier_stage_history(tmp_path):
     prepare = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
-    prepare._mark_stage("size_match", "completed")
     prepare._mark_stage("prepare", "completed")
 
     compare = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
     compare._mark_stage("pipeline", "completed")
 
     state = FileIO.load_json(compare.state_path)
-    assert set(state["stages"]) == {"size_match", "prepare", "pipeline"}
+    assert set(state["stages"]) == {"prepare", "pipeline"}
 
 
 def test_runs_inference_follows_infer_after(tmp_path):
@@ -71,7 +70,6 @@ def test_runs_inference_follows_infer_after(tmp_path):
 
 
 def _patch_stage_methods(pipeline, monkeypatch, order):
-    monkeypatch.setattr(pipeline, "_run_size_match",  lambda: order.append("size_match") or {})
     monkeypatch.setattr(pipeline, "_run_training",    lambda: order.append("training") or [{"name": "unet/seed0", "status": "DONE"}])
     monkeypatch.setattr(pipeline, "_run_inference",   lambda: order.append("inference") or [{"name": "unet/seed0", "status": "DONE"}])
     monkeypatch.setattr(pipeline, "_run_comparison",  lambda: order.append("comparison") or (Path("/tmp/cmp")))
@@ -86,7 +84,7 @@ def test_run_executes_stages_in_expected_order(tmp_path, monkeypatch):
 
     pipeline.run()
 
-    assert order == ["size_match", "training", "inference", "comparison"]
+    assert order == ["training", "inference", "comparison"]
 
     state = FileIO.load_json(pipeline.state_path)
     assert state["stages"]["pipeline"]["status"] == "completed"
@@ -114,7 +112,6 @@ def _recording_pipeline(tmp_path, monkeypatch, **kwargs):
     pipeline = BenchmarkPipeline(_config(tmp_path, **kwargs), entry_script=ENTRY)
     calls    = []
     returns  = {
-        "_run_size_match"  : {},
         "_log_unit_status" : None,
         "_run_training"    : [],
         "_run_inference"   : [],
@@ -132,7 +129,7 @@ def test_prepare_stage_stops_before_training(tmp_path, monkeypatch):
 
     pipeline.run()
 
-    assert calls == ["_run_size_match", "_log_unit_status"]
+    assert calls == ["_log_unit_status"]
     state = FileIO.load_json(pipeline.state_path)
     assert state["stages"]["prepare"]["status"] == "completed"
 
@@ -154,8 +151,7 @@ def test_an_exception_in_a_stage_is_logged_with_its_stage_and_marked_failed(tmp_
         pipeline._begin_stage("training")
         Mock(side_effect=RuntimeError("training queue died"))()
 
-    monkeypatch.setattr(pipeline, "_run_size_match", lambda: {})
-    monkeypatch.setattr(pipeline, "_run_training",   failing_training)
+    monkeypatch.setattr(pipeline, "_run_training", failing_training)
 
     with pytest.raises(RuntimeError, match="training queue died"):
         pipeline.run()
@@ -177,15 +173,19 @@ def test_an_abort_overrides_the_completed_mark_of_an_earlier_launch(tmp_path, mo
 
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
-    monkeypatch.setattr(BenchmarkPipeline, "validate_sweep", Mock(side_effect=SystemExit("bogus")))
+    def failing_training():
+        pipeline._begin_stage("training")
+        Mock(side_effect=SystemExit("bogus"))()
+
+    monkeypatch.setattr(pipeline, "_run_training", failing_training)
 
     with pytest.raises(SystemExit, match="bogus"):
         pipeline.run()
 
     state = FileIO.load_json(pipeline.state_path)
 
-    assert state["stages"]["validation"]["status"] == "failed"
-    assert state["stages"]["pipeline"]["status"]   == "failed"
+    assert state["stages"]["training"]["status"] == "failed"
+    assert state["stages"]["pipeline"]["status"] == "failed"
 
 
 def test_a_clean_system_exit_is_not_recorded_as_an_abort(tmp_path, monkeypatch):

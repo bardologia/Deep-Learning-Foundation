@@ -6,7 +6,6 @@ from pipelines.shared.config.config_factory  import ConfigFactory
 from pipelines.shared.training.seed_sweep    import SeedSet
 from pipelines.shared.training.unit_resume   import UnitResume
 from pipelines.shared.training.worker_base   import WorkerBase
-from tools.data.io                           import FileIO
 
 
 class BenchmarkWorker(WorkerBase):
@@ -32,15 +31,6 @@ class BenchmarkWorker(WorkerBase):
 
         trainer_config.curriculum = LossComponentCatalog.curriculum(component, base=self.config.loss)
 
-    def _size_overrides(self, model_name: str) -> dict:
-        size_match_path = self.run_dir / "pipeline" / "size_match.json"
-        if not size_match_path.exists():
-            return {}
-
-        records = FileIO.load_json(size_match_path)
-
-        return records[model_name]["overrides"]
-
 class TrainingWorker(BenchmarkWorker):
 
     def _run_backbone(self, model_name: str, run_name: str, seed: int | None, loss_component: str | None) -> None:
@@ -49,7 +39,7 @@ class TrainingWorker(BenchmarkWorker):
 
         stage_dir    = self.run_dir / "training"
         name, head   = ModelBuilder.split_key(model_name)
-        model_config = ModelBuilder.config_from_registry(name, self._size_overrides(model_name), head=head)
+        model_config = ModelBuilder.config_from_registry(name, {}, head=head)
 
         trainer_config          = self.factory.training_trainer_config(logdir=stage_dir)
         self._apply_loss_component(trainer_config, loss_component)

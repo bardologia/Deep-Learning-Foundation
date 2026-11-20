@@ -15,10 +15,8 @@ class BenchmarkSeedCollector(TrialCollector):
         self.runs            = []
         self.seed_dispersion = {}
 
-    def _aggregate_sources(self, runs: list[tuple[str, Path]]) -> tuple[dict, dict]:
-        size_match = self._optional_json(self.pipeline_dir / "size_match.json")
-
-        return size_match, UnitResultsByRun(self.training_dir, self.logger).build(TrainingResultsIndex(self.pipeline_dir, self.logger), runs)
+    def _training_results_index(self, runs: list[tuple[str, Path]]) -> dict:
+        return UnitResultsByRun(self.training_dir, self.logger).build(TrainingResultsIndex(self.pipeline_dir, self.logger), runs)
 
     def _log_seed_coverage(self) -> None:
         short = []

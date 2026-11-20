@@ -286,7 +286,7 @@ class BenchmarkExperiment(Experiment):
         from pipelines.benchmark.stages import ComparisonStage
 
         config = self._recorded_config()
-        stage  = ComparisonStage(config=config, run_tag=self.root.name, logger=logger, reference_model=config.size_match.reference_model, embed_images=config.comparison.embed_images, inference_split=config.inference.split, run_dir=self.root)
+        stage  = ComparisonStage(config=config, run_tag=self.root.name, logger=logger, embed_images=config.comparison.embed_images, inference_split=config.inference.split, run_dir=self.root)
 
         return stage.run()
 

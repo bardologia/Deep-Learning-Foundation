@@ -1254,19 +1254,6 @@
         "output_dir": "base directory; every sweep writes into its own <model>_<launch time> subdirectory holding logs/, figures/, resolved_config.json and results.json (with the sweep's settings, code version, device and status), while work/ is the scratch directory the sweeps share"
       }
     },
-    "benchmark/general::SizeMatchConfig": {
-      "summary": "Governs bisection-search scaling of each backbone's width to match a reference model's parameter count",
-      "fields": {
-        "reference_model": "name of the backbone whose parameter count every other model is scaled to match, defaults to unet",
-        "tolerance": "allowed fractional deviation between a scaled model's parameter count and the reference target before the search stops, e.g. 0.05 = 5 percent",
-        "max_iterations": "maximum bisection-search iterations allowed to converge the width scale on the target parameter count",
-        "scale_low": "lower bound of the width-scale bisection search",
-        "scale_high": "upper bound of the width-scale bisection search, doubled outward while still below target until it hits scale_ceiling",
-        "scale_ceiling": "hard ceiling for the outward doubling of scale_high; a model that still misses the target parameter count at this scale aborts the run",
-        "in_channels": "input channel count assumed when counting model parameters; must match the input config's expected channel count for the configured secondaries or size matching aborts",
-        "locked_params": "hyperparameter names a model's width rule may not target without explicitly opting in via unlock, guarding attention-embedding widths like embedding_dim/embedding_dims from accidental scaling"
-      }
-    },
     "benchmark/general::InferenceQueueConfig": {
       "summary": "Configures batched inference execution and which diagnostic artifacts it writes for each benchmarked model",
       "fields": {
@@ -1318,7 +1305,6 @@
       "fields": {
         "stage": "portion of the pipeline to run: full does everything, prepare stops after size match and max batch, compare runs the comparison report only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
         "paths": "RunPathsConfig sub-config holding the dataset, extracted-parameters, and benchmark run/output directories",
-        "size_match": "SizeMatchConfig sub-config for matching each backbone's parameter count to the reference model",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every model in the sweep",
         "inference": "InferenceQueueConfig sub-config for batched inference and diagnostic-artifact output",
         "comparison": "ComparisonReportConfig sub-config controlling the cross-model comparison report",
@@ -1454,7 +1440,6 @@
       "summary": "Entry config that rebuilds the benchmark comparison report for an existing run without re-running training or inference",
       "fields": {
         "run_tag": "Benchmark run tag to compare; None picks the most recent run with a training subdirectory under log_base_dir",
-        "reference_model": "Model whose parameter count anchored the size-matched capacity comparison, highlighted in the report",
         "embed_images": "Base64-embed figures inline in the generated markdown report instead of linking external files",
         "inference_split": "Dataset split whose completed inference stamps supply each model's metrics in the rebuilt comparison; defaults to test, the split a full benchmark scores last",
         "paths": "ComparisonPathsConfig sub-config giving the benchmark log_base_dir the run_tag is resolved against"

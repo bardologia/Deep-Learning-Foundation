@@ -11,19 +11,6 @@ from configuration.training.general.run         import RunPathsConfig, TrainingQ
 
 
 @dataclass
-class SizeMatchConfig:
-
-    reference_model : str             = "unet"
-    tolerance       : float           = 0.05
-    max_iterations  : int             = 100
-    scale_low       : float           = 0.05
-    scale_high      : float           = 8.0
-    scale_ceiling   : float           = 64.0
-    in_channels     : int             = 9
-    locked_params   : tuple[str, ...] = ("embedding_dim", "embedding_dims")
-
-
-@dataclass
 class InferenceQueueConfig:
 
     split           : str        = "test"
@@ -86,7 +73,6 @@ class BenchmarkConfig:
     stage : str = "full"
 
     paths      : RunPathsConfig         = field(default_factory=RunPathsConfig)
-    size_match : SizeMatchConfig        = field(default_factory=SizeMatchConfig)
     training   : TrainingQueueConfig    = field(default_factory=TrainingQueueConfig)
     inference  : InferenceQueueConfig   = field(default_factory=InferenceQueueConfig)
     comparison : ComparisonReportConfig = field(default_factory=ComparisonReportConfig)
@@ -112,11 +98,3 @@ class BenchmarkConfig:
 
     def runs_inference(self) -> bool:
         return self.infer_after
-
-    def size_match_settings(self) -> dict:
-        return {
-            "reference_model" : self.size_match.reference_model,
-            "in_channels"     : self.size_match.in_channels,
-            "locked_params"   : list(self.size_match.locked_params),
-            "patch_size"      : list(self.training.patch_size),
-        }

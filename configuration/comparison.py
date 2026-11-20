@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib     import Path
 from typing      import List, Optional
 
-from configuration.benchmark.general    import ComparisonReportConfig, SizeMatchConfig
+from configuration.benchmark.general    import ComparisonReportConfig
 from configuration.training.general.run import RunPathsConfig
 
 
@@ -51,7 +51,6 @@ class ComparisonPathsConfig:
 class ComparisonEntryConfig:
 
     run_tag         : Optional[str] = None
-    reference_model : str           = SizeMatchConfig.reference_model
     embed_images    : bool          = ComparisonReportConfig.embed_images
     inference_split : str           = "test"
 

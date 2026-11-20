@@ -73,6 +73,4 @@ class BenchmarkLauncher:
         if config.resume_from:
             config = ResumedRun(BenchmarkConfig, config, cli.overrides).load()
 
-        BenchmarkPipeline.validate_sweep(config)
-
         return BenchmarkClusterScheduler(config=config, cli_overrides=cli.overrides, entry_script=self.entry_script)

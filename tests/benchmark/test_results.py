@@ -41,7 +41,6 @@ def test_collector_raises_without_training_dir(tmp_path, logger_stub):
 
 def test_collector_warns_about_unfinished_runs_and_missing_artifacts(tmp_path):
     (tmp_path / "pipeline").mkdir(parents=True)
-    _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
     (tmp_path / "training" / "unet").mkdir(parents=True)
 
@@ -64,7 +63,6 @@ def test_collector_warns_about_unfinished_runs_and_missing_artifacts(tmp_path):
 
 def test_collector_reads_the_checkpoint_at_the_run_root_only(tmp_path, logger_stub):
     (tmp_path / "pipeline").mkdir(parents=True)
-    _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
     trial_dir = tmp_path / "training" / "unet"
@@ -79,7 +77,6 @@ def test_collector_reads_the_checkpoint_at_the_run_root_only(tmp_path, logger_st
 
 def test_collector_parses_parameters_from_model_doc(tmp_path, logger_stub):
     (tmp_path / "pipeline").mkdir(parents=True)
-    _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
     trial_docs = tmp_path / "training" / "unet" / "docs"
@@ -92,21 +89,8 @@ def test_collector_parses_parameters_from_model_doc(tmp_path, logger_stub):
     assert records[0].parameters == 12345678
 
 
-def test_collector_falls_back_to_size_match_parameters(tmp_path, logger_stub):
-    (tmp_path / "pipeline").mkdir(parents=True)
-    _write_json(tmp_path / "pipeline" / "size_match.json", {"unet": {"parameters": 999}})
-    _write_json(tmp_path / "pipeline" / "training_results.json", [])
-
-    (tmp_path / "training" / "unet").mkdir(parents=True)
-
-    records = TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()
-
-    assert records[0].parameters == 999
-
-
 def test_collector_reads_checkpoint_with_weights_only_false(tmp_path, logger_stub):
     (tmp_path / "pipeline").mkdir(parents=True)
-    _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
     trial_dir = tmp_path / "training" / "unet"
@@ -132,7 +116,6 @@ def test_collector_reads_checkpoint_with_weights_only_false(tmp_path, logger_stu
 
 def test_collector_omits_epoch_count_without_completion_marker(tmp_path, logger_stub):
     (tmp_path / "pipeline").mkdir(parents=True)
-    _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
     trial_dir = tmp_path / "training" / "unet"
@@ -147,7 +130,6 @@ def test_collector_omits_epoch_count_without_completion_marker(tmp_path, logger_
 
 def test_collector_attaches_inference_metrics_and_media(tmp_path, logger_stub):
     (tmp_path / "pipeline").mkdir(parents=True)
-    _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
     (tmp_path / "training" / "unet").mkdir(parents=True)
@@ -173,7 +155,6 @@ def test_collector_attaches_inference_metrics_and_media(tmp_path, logger_stub):
 
 def test_collector_ignores_inference_of_another_split(tmp_path, logger_stub):
     (tmp_path / "pipeline").mkdir(parents=True)
-    _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
     (tmp_path / "training" / "unet").mkdir(parents=True)
@@ -191,7 +172,6 @@ def test_collector_ignores_inference_of_another_split(tmp_path, logger_stub):
 
 def test_collector_ignores_inference_without_completion_marker(tmp_path, logger_stub):
     (tmp_path / "pipeline").mkdir(parents=True)
-    _write_json(tmp_path / "pipeline" / "size_match.json", {})
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
     (tmp_path / "training" / "unet").mkdir(parents=True)
@@ -205,7 +185,6 @@ def test_collector_ignores_inference_without_completion_marker(tmp_path, logger_
 def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
     pipe = tmp_path / "pipeline"
     pipe.mkdir(parents=True)
-    _write_json(pipe / "size_match.json", {"unet": {"parameters": 100, "overrides": {}}})
     _write_json(pipe / "training_results.json", [
         {"name": "unet/seed1", "status": "DONE", "duration_s": 10.0, "log_file": str(tmp_path / "training" / "unet" / "seed1" / "worker.log")},
         {"name": "unet/seed2", "status": "DONE", "duration_s": 20.0, "log_file": str(tmp_path / "training" / "unet" / "seed2" / "worker.log")},
@@ -224,7 +203,6 @@ def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
 
     record = records[0]
     assert record.metrics["curve_rmse_gt"]      == 3.0
-    assert record.parameters                    == 100
     assert record.training_result["duration_s"] == pytest.approx(15.0)
 
     dispersion = collector.seed_dispersion["unet"]
@@ -233,38 +211,9 @@ def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
     assert dispersion["metrics"]["curve_rmse_gt"] == pytest.approx(float(np.std([2.0, 4.0], ddof=1)))
 
 
-def test_model_of_strips_head_stem_loss_component_and_seed():
-    assert TrialCollector._model_of("unet-conv-K_3-hv-A__moments/seed3")            == "unet"
-    assert TrialCollector._model_of("resunet-multihead-K_3-hv-A__mse_curve")                 == "resunet-multihead"
-    assert TrialCollector._model_of("unet-set_pred-K_5-noaug-none__param_l1/seed0")          == "unet-set_pred"
-    assert TrialCollector._model_of("convnext_unet-conv-K_3-hv-AB__param_l1")                == "convnext_unet"
-    assert TrialCollector._model_of("unet-per_gaussian-K_3-hv-A__param_l1")                  == "unet-per_gaussian"
-    assert TrialCollector._model_of("unet-conv-K_5-hv-A-param_l1_1_cosine_curve_0.05/seed2") == "unet"
-    assert TrialCollector._model_of("unet/seed2")                                            == "unet"
-    assert TrialCollector._model_of("unet")                                                  == "unet"
-
-
-def test_size_match_attaches_to_every_component(tmp_path, logger_stub):
-    pipe = tmp_path / "pipeline"
-    pipe.mkdir(parents=True)
-    _write_json(pipe / "size_match.json", {"unet": {"parameters": 12345, "overrides": {}}})
-    _write_json(pipe / "training_results.json", [])
-
-    for component in ("param_l1", "moments"):
-        (tmp_path / "training" / f"unet__{component}").mkdir(parents=True)
-
-    records = TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()
-
-    assert {record.name for record in records} == {"unet__param_l1", "unet__moments"}
-    for record in records:
-        assert record.size_match["parameters"] == 12345
-        assert record.parameters               == 12345
-
-
 def test_seed_collector_single_run_is_identity(tmp_path, logger_stub):
     pipe = tmp_path / "pipeline"
     pipe.mkdir(parents=True)
-    _write_json(pipe / "size_match.json", {})
     _write_json(pipe / "training_results.json", [])
     (tmp_path / "training" / "unet").mkdir(parents=True)
 
@@ -280,7 +229,6 @@ def test_metric_table_annotates_seed_dispersion(tmp_path, logger_stub):
     report  = ComparisonReport(
         records         = records,
         out_dir         = tmp_path,
-        reference_model = "unet",
         embed_images    = False,
         logger          = logger_stub,
         seed_dispersion = {"unet": {"n_seeds": 2, "n_used": {"overall_r2_gt": 2}, "best_val_loss_std": 0.01, "metrics": {"overall_r2_gt": 0.05}}},
@@ -298,7 +246,6 @@ def test_summary_json_includes_seed_dispersion(tmp_path, logger_stub):
     report  = ComparisonReport(
         records         = records,
         out_dir         = tmp_path / "out",
-        reference_model = "unet",
         embed_images    = False,
         logger          = logger_stub,
         seed_dispersion = {"unet": {"n_seeds": 2, "n_used": {}, "best_val_loss_std": None, "metrics": {}}},
@@ -330,7 +277,6 @@ def _report(records, out_dir, logger_stub, rank=True):
     return ComparisonReport(
         records         = records,
         out_dir         = out_dir,
-        reference_model = "unet",
         embed_images    = False,
         logger          = logger_stub,
         rank_models     = rank,
@@ -388,14 +334,13 @@ def test_metric_table_does_not_bold_in_fold_mode(tmp_path, logger_stub):
     assert "**" not in lines
 
 
-def test_capacity_table_renders_defaults_marker(tmp_path, logger_stub):
+def test_capacity_table_lists_the_parameter_count(tmp_path, logger_stub):
     record = TrialRecord(name="unet", run_dir=tmp_path / "unet", parameters=1000)
     report = _report([record], tmp_path, logger_stub)
 
     lines = "\n".join(report._capacity_table())
 
-    assert "1,000" in lines
-    assert "_(defaults)_" in lines
+    assert "| `unet` | 1,000      |" in lines
 
 
 def test_write_all_round_trips_summary_json(tmp_path, logger_stub):
@@ -420,7 +365,6 @@ def test_training_table_shows_seed_counts_under_a_sweep(tmp_path, logger_stub):
     report  = ComparisonReport(
         records         = records,
         out_dir         = tmp_path,
-        reference_model = "unet",
         embed_images    = False,
         logger          = logger_stub,
         seed_dispersion = {"unet": {"n_seeds": 3, "n_used": {"curve_rmse_gt": 3}, "best_val_loss_std": 0.01, "metrics": {}}},
@@ -437,7 +381,6 @@ def test_training_table_shows_used_over_total_when_a_seed_dropped_out(tmp_path, 
     report  = ComparisonReport(
         records         = records,
         out_dir         = tmp_path,
-        reference_model = "unet",
         embed_images    = False,
         logger          = logger_stub,
         seed_dispersion = {"unet": {"n_seeds": 3, "n_used": {"curve_rmse_gt": 3, "overall_r2_gt": 2}, "best_val_loss_std": 0.01, "metrics": {}}},
@@ -451,7 +394,6 @@ def test_training_table_shows_used_over_total_when_a_seed_dropped_out(tmp_path, 
 def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_path, logger_stub):
     pipe = tmp_path / "pipeline"
     pipe.mkdir(parents=True)
-    _write_json(pipe / "size_match.json", {})
 
     done = tmp_path / "training" / "unet" / "seed1"
     done.mkdir(parents=True)
@@ -468,7 +410,6 @@ def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_p
 def _seeded_benchmark_run(tmp_path: Path, seed_metrics: dict) -> Path:
     pipe = tmp_path / "pipeline"
     pipe.mkdir(parents=True)
-    _write_json(pipe / "size_match.json", {})
     _write_json(pipe / "training_results.json", [{"name": f"unet/{seed}", "status": "DONE", "duration_s": 10.0, "log_file": str(tmp_path / "training" / "unet" / seed / "worker.log")} for seed in seed_metrics])
 
     for seed, metrics in seed_metrics.items():

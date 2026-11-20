@@ -37,31 +37,6 @@ def test_run_name_encodes_model_head_matching_gaussians_aug_presence_component_a
     assert tag.startswith(f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB-param_l1_1")
 
 
-def test_size_overrides_empty_without_file(config):
-    worker = BenchmarkWorker(config, "tag")
-
-    assert worker._size_overrides("unet") == {}
-
-
-def test_size_overrides_reads_overrides(config):
-    worker = BenchmarkWorker(config, "tag")
-    path   = worker.run_dir / "pipeline" / "size_match.json"
-
-    FileIO.save_json({"unet": {"overrides": {"features": [32, 64]}}}, path)
-
-    assert worker._size_overrides("unet") == {"features": [32, 64]}
-
-
-def test_size_overrides_missing_model_exits(config):
-    worker = BenchmarkWorker(config, "tag")
-    path   = worker.run_dir / "pipeline" / "size_match.json"
-
-    FileIO.save_json({"other_model": {"overrides": {}}}, path)
-
-    with pytest.raises(KeyError, match="unet"):
-        worker._size_overrides("unet")
-
-
 @pytest.mark.dataset
 def test_training_worker_trains_with_the_configured_batch_size(config, test_data_dir, params_dir, monkeypatch):
     from pipelines.benchmark.workers import TrainingWorker

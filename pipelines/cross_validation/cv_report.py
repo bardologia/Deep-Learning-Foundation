@@ -251,12 +251,12 @@ class CrossValidationReport:
 
         for split, records in self.records_by_split.items():
             report = ComparisonReport(
-                records         = records,
-                out_dir         = self.out_dir / split,
-                reference_model = self.model_name,
-                embed_images    = self.embed_images,
-                logger          = self.logger,
-                rank_models     = False,
+                records      = records,
+                out_dir      = self.out_dir / split,
+                model_name   = self.model_name,
+                embed_images = self.embed_images,
+                logger       = self.logger,
+                rank_models  = False,
             )
             written.extend(report.write_all())
 

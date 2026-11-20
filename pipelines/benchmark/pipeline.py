@@ -8,7 +8,7 @@ from models                                         import BACKBONE_CONFIG_REGIS
 from pipelines.shared.model.model_builder           import ModelBuilder
 from pipelines.shared.orchestration.staged_pipeline import StagedPipeline
 
-from pipelines.benchmark.stages import ComparisonStage, InferenceStage, SizeMatchStage, TrainingStage
+from pipelines.benchmark.stages import ComparisonStage, InferenceStage, TrainingStage
 
 
 class BenchmarkPipeline(StagedPipeline):
@@ -32,14 +32,6 @@ class BenchmarkPipeline(StagedPipeline):
     def _model_keys(cls, config: BenchmarkConfig) -> list[str]:
         return [ModelBuilder.model_key(name, head) for name in BACKBONE_CONFIG_REGISTRY for head in config.heads]
 
-    @classmethod
-    def validate_sweep(cls, config: BenchmarkConfig) -> None:
-        config.size_match.reference_model = SizeMatchStage.resolve_reference(config.size_match.reference_model, cls.select_models(config), config.heads)
-
-    def _validate_sweep(self) -> None:
-        self._begin_stage("validation")
-        self.validate_sweep(self.config)
-
     def _log_model_selection(self) -> None:
         skipped = [key for key in self._model_keys(self.config) if key not in self.models]
 
@@ -47,15 +39,6 @@ class BenchmarkPipeline(StagedPipeline):
             "Selected"               : ", ".join(self.models),
             "Skipped by skip_models" : ", ".join(skipped) or "none",
         }, title=f"Model selection: {len(self.models)} benchmarked, {len(skipped)} skipped")
-
-    def _run_size_match(self) -> dict:
-        self._begin_stage("size_match")
-
-        stage   = SizeMatchStage(config=self.config, run_tag=self.run_tag, models=self.models, logger=self.logger)
-        records = stage.run()
-
-        self._mark_stage("size_match", "completed")
-        return records
 
     def _log_unit_status(self) -> None:
         self._begin_stage("prepare")
@@ -98,7 +81,7 @@ class BenchmarkPipeline(StagedPipeline):
     def _run_comparison(self) -> Path:
         self._begin_stage("comparison")
 
-        stage   = ComparisonStage(config=self.config, run_tag=self.run_tag, logger=self.logger, reference_model=self.config.size_match.reference_model, embed_images=self.config.comparison.embed_images, inference_split=self.config.inference.split, planned_units=self._unit_plan())
+        stage   = ComparisonStage(config=self.config, run_tag=self.run_tag, logger=self.logger, embed_images=self.config.comparison.embed_images, inference_split=self.config.inference.split, planned_units=self._unit_plan())
         out_dir = stage.run()
 
         self._mark_stage("comparison", "completed")
@@ -110,14 +93,12 @@ class BenchmarkPipeline(StagedPipeline):
             "Run tag"   : self.run_tag,
             "Models"    : len(self.models),
             "GPUs"      : self.config.gpus,
-            "Reference" : self.config.size_match.reference_model,
             "Epochs"    : self.config.training.epochs,
             "Resume"    : self.config.resume,
             "Run dir"   : str(self.run_dir),
         }, title="Configuration")
 
         self._log_launch()
-        self._validate_sweep()
         self._log_model_selection()
 
         if self.config.stage == "compare":
@@ -126,12 +107,10 @@ class BenchmarkPipeline(StagedPipeline):
             self.logger.info(f"Comparison stage done: {comparison_dir}")
             return
 
-        self._run_size_match()
-
         if self.config.stage == "prepare":
             self._log_unit_status()
             self._mark_stage("prepare", "completed")
-            self.logger.info(f"Prepare stage done: size match and unit status written to {self.pipeline_dir}")
+            self.logger.info(f"Prepare stage done: resolved configuration and unit status written to {self.pipeline_dir}")
             return
 
         training_results  = self._run_training()

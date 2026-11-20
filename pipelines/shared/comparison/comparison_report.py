@@ -211,10 +211,10 @@ class ComparisonReport(ComparisonReportBase):
         ("Col slices",                  re.compile(r"^slice_col_")),
     ]
 
-    def __init__(self, records: list[TrialRecord], out_dir: Path, reference_model: str, embed_images: bool, logger: Logger, rank_models: bool = True, seed_dispersion: dict | None = None) -> None:
+    def __init__(self, records: list[TrialRecord], out_dir: Path, embed_images: bool, logger: Logger, rank_models: bool = True, seed_dispersion: dict | None = None, model_name: str | None = None) -> None:
         self.records         = records
         self.out_dir         = out_dir
-        self.reference_model = reference_model
+        self.model_name      = model_name
         self.embed_images    = embed_images
         self.logger          = logger
         self.rank_models     = rank_models
@@ -228,11 +228,10 @@ class ComparisonReport(ComparisonReportBase):
             lines = self.assets.header("Benchmark Overview")
         else:
             lines  = self.assets.header("Cross-Validation Fold Overview")
-            lines += [f"Folds of the single model `{self.reference_model}`; each fold tests a different disjoint row region, so fold-to-fold differences reflect data heterogeneity, not model quality. No ranking is implied.\n"]
+            lines += [f"Folds of the single model `{self.model_name}`; each fold tests a different disjoint row region, so fold-to-fold differences reflect data heterogeneity, not model quality. No ranking is implied.\n"]
 
         if self.rank_models:
             lines += ["## Model Capacity\n"]
-            lines += [f"Reference model: `{self.reference_model}`.\n"]
             lines += self._capacity_table()
             lines.append("")
 
@@ -254,15 +253,12 @@ class ComparisonReport(ComparisonReportBase):
         return out
 
     def _capacity_table(self) -> list[str]:
-        table = MarkdownTable(["Model", "Parameters", "Δ vs reference", "Width scale", "Scaled attributes"])
+        table = MarkdownTable(["Model", "Parameters"])
 
         for r in self.records:
             parameters = f"{r.parameters:,}" if r.parameters is not None else "—"
-            deviation  = f"{r.size_match['deviation_pct']:+.3f} %" if "deviation_pct" in r.size_match else "—"
-            scale      = f"{r.size_match['scale']:.4f}" if "scale" in r.size_match else "—"
-            overrides  = ", ".join(f"`{k}={v}`" for k, v in r.size_match["overrides"].items()) if "overrides" in r.size_match and r.size_match["overrides"] else "_(defaults)_"
 
-            table.add_row(f"`{r.name}`", parameters, deviation, scale, overrides)
+            table.add_row(f"`{r.name}`", parameters)
 
         return table.render()
 
@@ -433,7 +429,6 @@ class ComparisonReport(ComparisonReportBase):
                 "name"            : r.name,
                 "run_dir"         : str(r.run_dir),
                 "parameters"      : r.parameters,
-                "size_match"      : r.size_match,
                 "training_result" : r.training_result,
                 "checkpoint"      : r.checkpoint,
                 "run_summary"     : r.run_summary,

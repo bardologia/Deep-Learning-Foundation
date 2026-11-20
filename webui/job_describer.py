@@ -104,8 +104,7 @@ class JobDescriber:
             ("root",   "params_dir", "opt_tail"),
         ],
         "compare_runs": [
-            ("tag",       "run_tag",         "opt"),
-            ("reference", "reference_model", "text"),
+            ("tag", "run_tag", "opt"),
         ],
         "compare_seeds": [
             ("groups", "group_tags", "list", "all groups"),

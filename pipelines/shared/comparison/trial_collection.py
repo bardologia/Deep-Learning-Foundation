@@ -8,10 +8,8 @@ from pathlib     import Path
 import numpy as np
 import torch
 
-from models                                    import BACKBONE_HEADS
 from pipelines.shared.inference.metadata       import CompletedInference
 from pipelines.shared.inference.run_classifier import InferenceLayout
-from pipelines.shared.model.model_builder      import ModelBuilder
 from pipelines.shared.training.seed_sweep      import SeedSet
 from tools.data.io                             import FileIO
 from tools.metrics.scoring                     import SeedAggregation
@@ -28,7 +26,6 @@ class TrialRecord:
     name            : str
     run_dir         : Path
     parameters      : int | None  = None
-    size_match      : dict        = field(default_factory=dict)
     trainer_config  : dict        = field(default_factory=dict)
     run_summary     : dict        = field(default_factory=dict)
     checkpoint      : dict        = field(default_factory=dict)
@@ -246,11 +243,6 @@ class TrialCollector(TrialArtifactReader):
         self.logger          = logger
         self.inference_split = inference_split
 
-    def _optional_json(self, path: Path) -> dict:
-        if not path.exists():
-            return {}
-        return FileIO.load_json(path)
-
     def _run_json(self, record: TrialRecord, path: Path) -> dict:
         if not path.is_file():
             self.logger.warning(f"{record.name}: no {path.relative_to(record.run_dir).as_posix()} under {record.run_dir}; its report cells stay empty")
@@ -265,7 +257,7 @@ class TrialCollector(TrialArtifactReader):
         self.logger.warning(f"{record.name}: absent from {TrainingResultsIndex.FILENAME}; training status and duration unknown")
         return {}
 
-    def _parse_parameters(self, trial_dir: Path, size_match: dict) -> int | None:
+    def _parse_parameters(self, trial_dir: Path) -> int | None:
         summary_path = trial_dir / "docs" / "model_doc.md"
 
         if summary_path.exists():
@@ -273,17 +265,7 @@ class TrialCollector(TrialArtifactReader):
             if match:
                 return int(match.group(1).replace(",", ""))
 
-        return size_match["parameters"] if "parameters" in size_match else None
-
-    @staticmethod
-    def _model_of(trial_name: str) -> str:
-        base  = SeedSet.base(trial_name).split("__")[0]
-        parts = base.split("-")
-
-        if len(parts) >= 2 and parts[1] in BACKBONE_HEADS:
-            return ModelBuilder.model_key(parts[0], parts[1])
-
-        return base
+        return None
 
     @staticmethod
     def _seed_dirs(trial_dir: Path) -> list[Path]:
@@ -301,11 +283,8 @@ class TrialCollector(TrialArtifactReader):
 
         return runs
 
-    def _aggregate_sources(self, runs: list[tuple[str, Path]]) -> tuple[dict, dict]:
-        size_match       = self._optional_json(self.pipeline_dir / "size_match.json")
-        training_results = TrainingResultsIndex(self.pipeline_dir, self.logger).build(runs)
-
-        return size_match, training_results
+    def _training_results_index(self, runs: list[tuple[str, Path]]) -> dict:
+        return TrainingResultsIndex(self.pipeline_dir, self.logger).build(runs)
 
     def _summarise(self, records: list[TrialRecord]) -> None:
         n_inferred   = sum(1 for record in records if record.has_inference)
@@ -318,17 +297,16 @@ class TrialCollector(TrialArtifactReader):
     def collect(self) -> list[TrialRecord]:
         runs = self._run_dirs()
 
-        size_match, training_results = self._aggregate_sources(runs)
+        training_results = self._training_results_index(runs)
 
         records = []
         for name, trial_dir in runs:
             record = TrialRecord(name=name, run_dir=trial_dir)
 
-            record.size_match      = size_match.get(self._model_of(name), {})
             record.trainer_config  = self._run_json(record, trial_dir / "docs" / "trainer_config.json")
             record.run_summary     = self._run_json(record, trial_dir / "meta" / "run_summary.json")
             record.training_result = self._training_result(record, training_results)
-            record.parameters      = self._parse_parameters(trial_dir, record.size_match)
+            record.parameters      = self._parse_parameters(trial_dir)
             record.checkpoint      = self._read_checkpoint(trial_dir)
 
             self._attach_inference(record)

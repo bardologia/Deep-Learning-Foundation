@@ -14,7 +14,6 @@ from configuration.tuning.general import TuningConfig, TuningEntryConfig
 from configuration.cross_validation.general import FoldConfig, CrossValidationConfig
 
 from configuration.benchmark.general import (
-    SizeMatchConfig,
     InferenceQueueConfig,
     ComparisonReportConfig,
     BenchmarkConfig,
@@ -34,7 +33,6 @@ DEFAULT_CONFIGS = [
     FoldConfig,
     CrossValidationConfig,
     RunPathsConfig,
-    SizeMatchConfig,
     TrainingQueueConfig,
     InferenceQueueConfig,
     ComparisonReportConfig,
@@ -188,21 +186,9 @@ def test_training_queue_config_axis_tuples():
     assert cfg.train_rows[1] > cfg.train_rows[0]
 
 
-def test_size_match_locked_params_tuple():
-    cfg = SizeMatchConfig()
-    assert isinstance(cfg.locked_params, tuple)
-    assert cfg.scale_high > cfg.scale_low
-    assert cfg.in_channels > 0
-
-
 def test_benchmark_config_runs_inference_when_infer_after_is_on():
     assert BenchmarkConfig().runs_inference() is True
     assert BenchmarkConfig(infer_after=False).runs_inference() is False
-
-
-def test_benchmark_config_subconfigs():
-    cfg = BenchmarkConfig()
-    assert isinstance(cfg.size_match, SizeMatchConfig)
 
 
 def test_benchmark_config_exposes_training_recipe_sections():
