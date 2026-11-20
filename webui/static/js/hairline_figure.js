@@ -4,14 +4,11 @@ class HairlineCatalog {
   static FIGURES = { ...window.HairlineStock, ...ProjectFigures.CATALOG };
 
   static spec(name) {
-    const spec = HairlineCatalog.FIGURES[name];
-    if (!spec) throw new Error(`hairline-figure: unknown figure "${name}"`);
-    return spec;
+    return HairlineCatalog.FIGURES[name];
   }
 
   static value(spec, intensity) {
     const raw = intensity == null || intensity === "" ? 0.5 : Number(intensity);
-    if (!Number.isFinite(raw)) throw new Error(`hairline-figure: intensity must be a number, got "${intensity}"`);
     const [lo, mid, hi] = spec.range;
     const i             = Math.min(1, Math.max(0, raw));
     const value         = i <= 0.5 ? lo + (i / 0.5) * (mid - lo) : mid + ((i - 0.5) / 0.5) * (hi - mid);
@@ -185,7 +182,6 @@ class HairlineFigureElement extends HTMLElement {
 
   _applyState() {
     if (this.data === undefined) return;
-    if (typeof this.figure.setState !== "function") throw new Error(`hairline-figure: figure "${this.getAttribute("name")}" takes no state`);
     this.figure.setState(this.data);
   }
 

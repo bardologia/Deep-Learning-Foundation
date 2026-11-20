@@ -346,7 +346,6 @@ class GpuShelfFigure extends HairlineFigureBase {
 
   setState(state) {
     const devices = (state && state.devices) || [];
-    if (!devices.length) throw new Error("gpus figure: state.devices must list at least one device");
     const recount = devices.length !== this.devices.length;
     this.devices  = devices.map((device) => ({ holder: GpuShelfFigure.LIGHT[device.holder] ? device.holder : "idle", util: device.util || 0 }));
     this.rest     = this._restCard();
@@ -574,7 +573,6 @@ class GpuGuardFigure extends HairlineFigureBase {
     const count   = Math.max(1, Math.round(state.gpus));
     const invaded = state.invaded === null ? null : HL.clamp(Math.round(state.invaded), 0, count - 1);
     const now     = performance.now();
-    if (!Number.isFinite(count)) throw new Error("guard figure: state.gpus must be a number");
 
     if (count !== this.count) {
       this.count   = count;
@@ -1204,7 +1202,6 @@ class BalanceFigure extends HairlineFigureBase {
     const others = Math.max(0, state.others);
     const total  = mine + others;
     const heavy  = Math.max(mine, others);
-    if (!Number.isFinite(total)) throw new Error("balance figure: state.mine and state.others must be numbers");
     this.sway    = BalanceFigure.SWAY;
     this.alarm   = !!state.alarm;
     this.bias    = total > 0 ? ((mine - others) / total) * Math.min(1, total / BalanceFigure.FULL) : 0;
@@ -2607,7 +2604,6 @@ class WatchdogFigure extends HairlineFigureBase {
   }
 
   setState(state) {
-    if (!Array.isArray(state.gauges) || state.gauges.length !== this.targets.length) throw new Error(`watchdog figure: state.gauges must hold ${this.targets.length} gauges`);
     const now   = performance.now();
     this.armed  = !!state.armed;
     this.alerts = state.gauges.map((reading) => !!reading.alert);
@@ -3195,7 +3191,6 @@ class CoresFigure extends HairlineFigureBase {
   }
 
   setState(state) {
-    if (!Array.isArray(state.cores)) throw new Error("cores figure: state.cores must be an array of busy percentages");
     const loads = state.cores.map((u) => HL.clamp(Number(u) || 0, 0, 100));
     const now   = performance.now();
     this.loads  = loads;
@@ -3363,7 +3358,6 @@ class GpuWireFigure extends HairlineFigureBase {
 
   setState(state) {
     const util = HL.clamp(Number(state.util) || 0, 0, 100) / 100;
-    if (!Number.isFinite(util)) throw new Error("gpuwire figure: state.util must be a percentage");
     this.util   = util;
     this.energy = Number.isFinite(state.power) ? HL.clamp(state.power, 0, 1) : util;
     this.spin.t = this._spinFor(util);
@@ -3770,7 +3764,6 @@ class ChipsFigure extends HairlineFigureBase {
   setState(state) {
     const mine   = Math.max(0, state.mine);
     const others = Math.max(0, state.others);
-    if (!Number.isFinite(mine + others)) throw new Error("chips figure: state.mine and state.others must be numbers");
     const pull   = (share) => 1 + Math.round(HL.clamp(share / ChipsFigure.FULL, 0, 1) * (ChipsFigure.MAX - 1));
     const theirs = pull(others);
     const first  = Math.max(1, Math.round(theirs / 2));
@@ -3964,7 +3957,6 @@ class DeskCalendarFigure extends HairlineFigureBase {
   }
 
   setState(state) {
-    if (!Array.isArray(state.days) || !state.days.length) throw new Error("calendar figure: state.days must list at least one day");
     this.days  = state.days;
     this.drawn = NaN;
     if (this.pos.t > this.days.length - 1) this.pos.t = this.days.length - 1;
@@ -4140,7 +4132,6 @@ class HourglassFigure extends HairlineFigureBase {
   }
 
   setState(state) {
-    if (!state || typeof state.wait_s !== "number" || !Number.isFinite(state.wait_s) || state.wait_s < 0) throw new Error("hourglass figure: state.wait_s must be a non-negative number of seconds");
     const share = this.mode === "flow" ? this.clock / this._flowTime() : 0;
     this.period = HL.clamp(5 + 3 * Math.log2(1 + state.wait_s / 300), 5, 20);
     if (this.mode === "flow") this.clock = share * this._flowTime();
