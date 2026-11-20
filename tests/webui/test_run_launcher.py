@@ -428,39 +428,6 @@ def test_a_unit_resolving_to_the_logdir_itself_is_not_wrapped_in_a_spec(tmp_path
     assert launcher.tensorboard.spec_ensured == []
 
 
-def _ddp_units(run_dir: Path, ranks: int) -> list:
-    return [_unit(f"rank{rank}", str(run_dir / "ddp" / "logs" / f"rank{rank}.log")) for rank in range(1, ranks)]
-
-
-@pytest.mark.parametrize("mirror", ["resunet_rank", "rank"])
-def test_a_ddp_job_is_served_rank_zeros_event_folder_only(tmp_path, mirror):
-    run_dir  = tmp_path / "resunet_ddp_run"
-    launcher = _job_launcher(tmp_path, _ddp_units(run_dir, 3))
-
-    _run_dir(tmp_path, "resunet_ddp_run/tensorboard", launcher)
-    _run_dir(tmp_path, f"resunet_ddp_run/ddp/{mirror}1", launcher)
-    _run_dir(tmp_path, f"resunet_ddp_run/ddp/{mirror}2", launcher)
-    launcher.tensorboard.pid_run_dirs = [tmp_path / "other_run"]
-
-    launcher.job_tensorboard(_record(pid=42))
-
-    assert launcher.tensorboard.spec_ensured == [({"resunet_ddp_run": str(run_dir / "tensorboard")}, "/envs/Dune/bin/python")]
-    assert launcher.tensorboard.ensured      == []
-    assert launcher.tensorboard.pid_queries  == []
-
-
-def test_a_fanout_with_one_unit_outside_ddp_logs_is_not_taken_for_ddp(tmp_path):
-    run_dir  = tmp_path / "resunet_ddp_run"
-    units    = _ddp_units(run_dir, 2) + [_unit("run_a", str(tmp_path / "batch_train_logs" / "run_a.log"))]
-    launcher = _job_launcher(tmp_path, units)
-
-    _run_dir(tmp_path, "run_a", launcher)
-
-    launcher.job_tensorboard(_record())
-
-    assert launcher.tensorboard.spec_ensured == [({"run_a": str(tmp_path / "run_a")}, "/envs/Dune/bin/python")]
-
-
 def test_a_single_run_is_served_the_directory_its_pid_wrote(tmp_path):
     launcher = _launcher(StubResolver({"logdir": str(tmp_path)}))
     launcher.tensorboard.pid_run_dirs = [tmp_path / "run_a"]

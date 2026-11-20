@@ -24,7 +24,7 @@ from tools.runtime.run_tag                     import RunTag
 
 class TrialTree:
 
-    SKIP = ("logs", "batch_train_logs", "pipeline", "reports", "comparison", "inference", "meta", "docs", "tensorboard", "cubes", "figures", "animations", "data", "ddp")
+    SKIP = ("logs", "batch_train_logs", "pipeline", "reports", "comparison", "inference", "meta", "docs", "tensorboard", "cubes", "figures", "animations", "data")
 
     @staticmethod
     def is_run(directory: Path) -> bool:

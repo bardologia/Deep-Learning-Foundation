@@ -45,7 +45,7 @@ class SweepRecording:
 
 class TrainingResume:
 
-    LAUNCH_FIELDS = ("gpu", "gpus", "gpus_file", "poll_interval_s", "ddp", "resume", "resume_from")
+    LAUNCH_FIELDS = ("gpu", "gpus", "gpus_file", "poll_interval_s", "resume", "resume_from")
     UNIT_FIELDS   = ("seed", "seeds", "run_name", "logdir", "infer_after", "infer_at_end")
 
     RUN         = "run"

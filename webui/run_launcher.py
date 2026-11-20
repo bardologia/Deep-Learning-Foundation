@@ -15,7 +15,6 @@ from web_logger             import WebLogger
 
 class RunLauncher:
 
-    DDP_LOG_PARTS = ("ddp", "logs")
 
     def __init__(self, paths: ProjectPaths, logger: WebLogger, resolver: ScriptConfigResolver, processes: ProcessManager, tensorboard: TensorboardManager, notifier) -> None:
         self.paths       = paths
@@ -72,13 +71,6 @@ class RunLauncher:
         if not info.get("ok") or "progress" not in info:
             return []
         return info["progress"].get("units") or []
-
-    def _ddp_run_dir(self, units: list) -> Path | None:
-        logs = [self._unit_log(unit) for unit in units]
-        if not logs or any(log is None or log.parent.parts[-2:] != self.DDP_LOG_PARTS for log in logs):
-            return None
-
-        return logs[0].parent.parent.parent
 
     def job_run_spec(self, units: list, root: Path) -> dict | None:
         run_dirs = []
@@ -154,12 +146,8 @@ class RunLauncher:
         if not root:
             return {"ok": False, "error": "could not resolve the job's log directory"}
 
-        units   = self._job_units(record["job_id"])
-        ddp_run = self._ddp_run_dir(units)
-        if ddp_run is not None:
-            return self.tensorboard.ensure_spec({ddp_run.name: str(ddp_run / self.tensorboard.RUN_EVENT_FOLDER)}, record["interpreter"])
-
-        spec = self.job_run_spec(units, Path(root))
+        units = self._job_units(record["job_id"])
+        spec  = self.job_run_spec(units, Path(root))
         if spec:
             return self.tensorboard.ensure_spec(spec, record["interpreter"])
 

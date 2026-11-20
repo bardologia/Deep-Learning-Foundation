@@ -184,6 +184,5 @@ class BackboneEntryConfig:
     ema_trials           : EmaTrialsConfig           = field(default_factory=EmaTrialsConfig)
 
     gpus            : list[int] = field(default_factory=lambda: [0])
-    ddp             : bool      = False
     gpus_file       : str       = ""
     poll_interval_s : float     = 5.0

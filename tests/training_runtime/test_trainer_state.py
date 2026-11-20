@@ -60,7 +60,6 @@ def _trainer(tmp_path, seed: int = 0, batch_size: int = 8, lr_scale: float = 1.0
         config             = SimpleNamespace(optimizer=SimpleNamespace(lr_scale=lr_scale)),
         micro_batch        = batch_size,
         accumulation_steps = 1,
-        distributed        = SimpleNamespace(world_size=1),
         restored_states    = [],
     )
 
@@ -127,7 +126,7 @@ def test_restore_missing_file_raises(tmp_path):
 def test_capture_records_the_batch_geometry(tmp_path):
     state = TrainerState.capture(_trainer(tmp_path, batch_size=16, lr_scale=2.0), epoch=0)
 
-    assert state["batch_geometry"] == {"batch_size": 16, "accumulation_steps": 1, "world_size": 1, "lr_scale": 2.0}
+    assert state["batch_geometry"] == {"batch_size": 16, "accumulation_steps": 1, "lr_scale": 2.0}
 
 
 def test_restore_refuses_a_different_batch_geometry(tmp_path):

@@ -1,25 +1,12 @@
 
 from __future__ import annotations
 
-from typing import Iterator, Tuple
+from typing import Tuple
 
-from torch.utils.data import DataLoader, Dataset, DistributedSampler, Sampler
+from torch.utils.data import DataLoader, Dataset
 
 from tools.monitoring.logger       import Logger
 from tools.runtime.reproducibility import Reproducibility
-from tools.training.distributed    import DistributedContext
-
-
-class EvaluationShardSampler(Sampler):
-
-    def __init__(self, dataset: Dataset, num_replicas: int, rank: int) -> None:
-        self.indices = list(range(rank, len(dataset), num_replicas))
-
-    def __iter__(self) -> Iterator[int]:
-        return iter(self.indices)
-
-    def __len__(self) -> int:
-        return len(self.indices)
 
 
 class Loader:
@@ -38,16 +25,9 @@ class Loader:
         prefetch_factor : int  = 8,
         section_label   : str  = "[Loaders]",
     ) -> Tuple[DataLoader, DataLoader, DataLoader]:
-        context = DistributedContext.current()
-
-        if context.active:
-            global_batch = batch_size
-            batch_size   = context.shard_batch(batch_size)
-
         logger.section(section_label)
         logger.kv_table({
-            "Batch size"         : f"{batch_size} per rank ({global_batch} global over {context.world_size} DDP ranks)" if context.active else batch_size,
-            "DDP sharding"       : f"rank {context.rank + 1}/{context.world_size} (all splits sharded; train shards padded to equal length, val/test shards unpadded)" if context.active else "off",
+            "Batch size"         : batch_size,
             "Num workers"        : num_workers,
             "Pin memory"         : pin_memory,
             "Prefetch factor"    : prefetch_factor if num_workers > 0 else f"{prefetch_factor} (inactive: num_workers=0)",
@@ -69,16 +49,9 @@ class Loader:
             worker_init_fn     = worker_init,
         )
 
-        if context.active:
-            _shard = dict(num_replicas=context.world_size, rank=context.rank)
-
-            train_loader = DataLoader(train_dataset, sampler = DistributedSampler(train_dataset, shuffle=shuffle_train, seed=seed, **_shard), drop_last = True,  generator = Reproducibility.generator(seed), **_base)
-            val_loader   = DataLoader(val_dataset,   sampler = EvaluationShardSampler(val_dataset,  **_shard),                               drop_last = False, **_base)
-            test_loader  = DataLoader(test_dataset,  sampler = EvaluationShardSampler(test_dataset, **_shard),                               drop_last = False, **_base)
-        else:
-            train_loader = DataLoader(train_dataset, shuffle = shuffle_train, drop_last = True,  generator = Reproducibility.generator(seed), **_base)
-            val_loader   = DataLoader(val_dataset,   shuffle = False,         drop_last = False, **_base)
-            test_loader  = DataLoader(test_dataset,  shuffle = False,         drop_last = False, **_base)
+        train_loader = DataLoader(train_dataset, shuffle = shuffle_train, drop_last = True,  generator = Reproducibility.generator(seed), **_base)
+        val_loader   = DataLoader(val_dataset,   shuffle = False,         drop_last = False, **_base)
+        test_loader  = DataLoader(test_dataset,  shuffle = False,         drop_last = False, **_base)
 
         logger.kv_table({
             "Train samples" : len(train_dataset),

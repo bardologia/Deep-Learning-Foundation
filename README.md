@@ -482,7 +482,7 @@ dataset's channel labels, and the cross-validation form shows the architecture
 fields of the selected backbone. An ended job's console tile has a Retry
 button that reopens the launch page with the job's overrides, interpreter and finalize
 switches. A dropped job stream reconnects and replays from its last event. TensorBoard
-runs are picked from a folder tree, and a data-parallel job opens rank zero's run.
+runs are picked from a folder tree.
 Finalize steps chain onto blocks of plain sequences as well as isolated ones, and a
 tuning block records its best configuration as its verdict while the sequence board
 shows its study progress. The cube explorer reads cubes whole through a shared read

@@ -739,20 +739,13 @@ class ConfigForm {
     }
 
     const fanout = parsed.length > 1;
-    const ddp    = this.byPath.get("ddp");
-    const ddpOn  = Boolean(ddp) && !fanout && this._effective(ddp) === "True";
 
-    const gpuHint = fanout ? `unused with ${parsed.length} seeds · each seed trains on its own GPU from the gpus pool` : "unused with ddp on · each rank trains on its own GPU from the gpus pool";
-    control.setInactive(fanout || ddpOn, gpuHint);
+    control.setInactive(fanout, `unused with ${parsed.length} seeds · each seed trains on its own GPU from the gpus pool`);
 
     this.states.forEach(({ leaf, row }) => {
       if (leaf.path === "gpu") {
-        row.classList.toggle("cfg-edit__row--inactive", fanout || ddpOn);
-        row.title = fanout ? "--gpu · unused: multi-seed runs fan out across the gpus pool" : ddpOn ? "--gpu · unused: DDP ranks fan out across the gpus pool" : `--${leaf.path}`;
-      }
-      if (leaf.path === "ddp") {
         row.classList.toggle("cfg-edit__row--inactive", fanout);
-        row.title = fanout ? "--ddp · unavailable: DDP trains exactly one seed, clear seeds to enable it" : `--${leaf.path}`;
+        row.title = fanout ? "--gpu · unused: multi-seed runs fan out across the gpus pool" : `--${leaf.path}`;
       }
     });
   }

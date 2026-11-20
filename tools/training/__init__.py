@@ -4,7 +4,6 @@ from .scheduling       import Scheduler, Warmup
 from .stopping         import EarlyStopping
 from .gradients        import GradientClipper
 from .checkpoint       import Checkpoint, TorchIO, TrainerState, WeightEma
-from .distributed      import DistributedContext
 from .trainer          import BaseTrainer
 from .vram_reservation import VramReservation
 
@@ -19,7 +18,6 @@ __all__ = [
     "TorchIO",
     "TrainerState",
     "WeightEma",
-    "DistributedContext",
     "BaseTrainer",
     "VramReservation",
 ]

@@ -9,14 +9,13 @@ from pathlib import Path
 
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader
 
 from tools.monitoring.tracker          import Tracker
 from tools.monitoring.resource_monitor import ResourceMonitor
 
 from tools.training.activation_checkpoint import ActivationCheckpointing
 from tools.training.aggregation      import MetricAggregator, ScalarsPage
-from tools.training.distributed      import DistributedContext
 from tools.training.scheduling       import Scheduler, Warmup
 from tools.training.stopping         import EarlyStopping
 from tools.training.gradients        import GradientClipper
@@ -37,16 +36,6 @@ class BaseTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._warn_cpu_device()
 
-        self.distributed = DistributedContext.current()
-
-        if self.distributed.active and self.distributed.device is None:
-            self.logger.info(f"DDP rank {self.distributed.rank}/{self.distributed.world_size}: joining the process-group rendezvous at tcp://{self.distributed.master_addr}:{self.distributed.master_port}; this blocks until every rank has built its dataset and arrived, and the other ranks stream their progress into the run's ddp/logs directory, not this console")
-
-        self.distributed.initialise(self.device)
-
-        if self.distributed.active:
-            self.logger.info(f"DDP rank {self.distributed.rank}/{self.distributed.world_size}: process group ready on {self.distributed.device}")
-
         self._log_init_banner()
 
         self.run_dir         = Path(run_dir)
@@ -66,7 +55,6 @@ class BaseTrainer:
         if config.training.compile_model:
             self.model.forward = torch.compile(self.model.forward, mode=config.training.compile_mode)
 
-        self.distributed.broadcast_parameters(self.model)
 
         self.epochs                  = config.training.epochs
         self.validation_frequency    = config.training.validation_frequency
@@ -150,7 +138,6 @@ class BaseTrainer:
             "Restore best at end"      : self.restore_best,
             "Resume"                   : self.resume,
             "Abort on non-finite loss" : self.abort_on_nonfinite_loss,
-            "DDP"                      : self._ddp_row(),
             "Debug logging"            : training.log_debug,
             "LR scale (batch-size rule)": f"x{self.config.optimizer.lr_scale:.4f} (from the micro-batch, ignores accumulation)",
             "Optimizer"                : self._optimizer_banner(),
@@ -159,20 +146,7 @@ class BaseTrainer:
             "cudnn"                    : f"deterministic={torch.backends.cudnn.deterministic}, benchmark={torch.backends.cudnn.benchmark}",
         })
 
-        self._log_ddp_scope()
         self._log_param_groups()
-
-    def _ddp_row(self) -> str:
-        if not self.distributed.active:
-            return "off"
-
-        return f"rank {self.distributed.rank + 1}/{self.distributed.world_size} (gradients averaged; loss/train and loss/val reduced across ranks; per-term diagnostics from this rank's shard only)"
-
-    def _log_ddp_scope(self) -> None:
-        if not self.distributed.active:
-            return
-
-        self.logger.info(f"DDP: loss_terms, loss_monitor, occupancy and param_error are reduced over this rank's shard only, 1/{self.distributed.world_size} of the patches, while loss/train and loss/val are reduced across all ranks; compare the per-term values with a single-GPU run as shard estimates, not as the same sample set")
 
     def _log_param_groups(self) -> None:
         rows = []
@@ -212,9 +186,8 @@ class BaseTrainer:
         }
 
         if self.micro_batch is not None:
-            world                        = self.distributed.world_size
             info["Micro-batch size"]     = self.micro_batch
-            info["Effective batch size"] = f"{self.micro_batch * self.accumulation_steps * world} (micro-batch x {self.accumulation_steps} accumulation steps" + (f" x {world} DDP ranks)" if world > 1 else ")")
+            info["Effective batch size"] = f"{self.micro_batch * self.accumulation_steps} (micro-batch x {self.accumulation_steps} accumulation steps)"
         else:
             info["Micro-batch size"]     = "in-memory batch list (gate/probe run)"
 
@@ -322,10 +295,6 @@ class BaseTrainer:
         self._set_train_mode()
         self.optimizer.zero_grad(set_to_none=True)
 
-        sampler = getattr(loader, "sampler", None)
-        if isinstance(sampler, DistributedSampler):
-            sampler.set_epoch(epoch)
-
         loss_sum, n = 0.0, 0
         aggregator  = MetricAggregator()
         n_batches   = len(loader)
@@ -366,8 +335,6 @@ class BaseTrainer:
                     self.logger.warning(f"{self.stage_name} loss is non-finite at step {self.global_step}{self._nonfinite_detail(loss_dict, batch)}; skipping batch (abort_on_nonfinite_loss disabled).")
 
                 if (batch_idx + 1) % self.accumulation_steps == 0 or (batch_idx + 1) == n_batches:
-                    window_has_grads = self.distributed.sync_window(self.model, window_has_grads)
-
                     if window_has_grads:
                         self.apply_gradients(self.global_step)
                         self.ema.update(self.model)
@@ -385,7 +352,7 @@ class BaseTrainer:
 
         epoch_time = time.perf_counter() - epoch_start
 
-        avg = self.distributed.mean_scalar(loss_sum / n if n > 0 else float("nan"))
+        avg = loss_sum / n if n > 0 else float("nan")
         self.tracker.log_scalar("loss/train", avg, epoch)
         self._log_epoch_metrics("train", aggregator, epoch)
         self._log_throughput(epoch_time, data_wait, sample_count, nonfinite_count, epoch)
@@ -439,10 +406,8 @@ class BaseTrainer:
 
                 _prog.advance(_task)
 
-        loss_sum, batch_count, sample_count = self.distributed.sum_scalars(loss_sum, float(batch_count), float(sample_count))
-
         if sample_count == 0:
-            self.logger.warning(f"{self.stage_name} {stage} epoch {epoch + 1}: no finite batch out of {len(loader)}{' on this rank' if self.distributed.active else ''}; the {stage} loss is NaN")
+            self.logger.warning(f"{self.stage_name} {stage} epoch {epoch + 1}: no finite batch out of {len(loader)}; the {stage} loss is NaN")
 
         avg = loss_sum / sample_count if sample_count > 0 else float("nan")
         self._log_epoch_metrics(stage, aggregator, epoch)
@@ -502,7 +467,7 @@ class BaseTrainer:
             "Next epoch"     : f"{start_epoch + 1}/{self.epochs}",
             "Global step"    : self.global_step,
             "Best val"       : f"{self.checkpoint.best_val_loss:.4f} @ epoch {self.checkpoint.best_epoch + 1}",
-            "Batch geometry" : f"micro-batch {geometry['batch_size'] if geometry['batch_size'] is not None else 'in-memory batch list'}, {geometry['accumulation_steps']} accumulation step(s), {geometry['world_size']} rank(s), lr_scale x{geometry['lr_scale']:.4g} (matches the saved state)",
+            "Batch geometry" : f"micro-batch {geometry['batch_size'] if geometry['batch_size'] is not None else 'in-memory batch list'}, {geometry['accumulation_steps']} accumulation step(s), lr_scale x{geometry['lr_scale']:.4g} (matches the saved state)",
             "Early stopping" : f"{stopping.counter}/{stopping.patience} validation rounds without improvement, triggered={stopping.triggered}",
             "Warmup"         : f"step {warmup.current_step}/{warmup.warmup_steps}, {'finished' if warmup.is_finished() else 'ramping'}",
             "Current LRs"    : ", ".join(f"{lr:.4g}" for lr in self.lr_scheduler.effective_lrs()),

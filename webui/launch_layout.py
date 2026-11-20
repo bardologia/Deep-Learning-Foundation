@@ -350,7 +350,6 @@ class LaunchLayout:
         {"path": "paths.parameters_path", "widget": PICK_PARAMS},
         {"path": "seed", "widget": NUM_SEED},
         "seeds",
-        "ddp",
     ]
 
     EXPERIMENT_TRIALS = [

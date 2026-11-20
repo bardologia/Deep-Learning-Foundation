@@ -162,7 +162,6 @@ def test_evaluate_without_a_finite_batch_warns_that_the_loss_is_nan(recording_lo
     shim.device                  = torch.device("cpu")
     shim.use_amp                 = False
     shim.abort_on_nonfinite_loss = False
-    shim.distributed             = SimpleNamespace(active=False, sum_scalars=lambda loss_sum, batches, samples: (loss_sum, batches, samples))
     shim._apply_memory_format    = lambda batch: batch
     shim._eval_step              = lambda batch: {"total_loss": torch.tensor(float("nan")), "components": {"param": torch.tensor(float("nan"))}}
     shim._log_epoch_metrics      = lambda stage, aggregator, epoch: None
@@ -180,30 +179,3 @@ def test_nonfinite_detail_says_when_every_weighted_term_is_finite():
     detail = BaseTrainer._nonfinite_detail(TrainerShim(), {"components": {"param": torch.tensor(1.0)}}, batch=None)
 
     assert detail == "; non-finite terms: none (every weighted term is finite)"
-
-
-def test_ddp_scope_names_the_rank_local_diagnostics(recording_logger):
-    shim             = TrainerShim()
-    shim.logger      = recording_logger
-    shim.distributed = SimpleNamespace(active=True, rank=0, world_size=2)
-
-    row = BaseTrainer._ddp_row(shim)
-    BaseTrainer._log_ddp_scope(shim)
-
-    [(level, message)] = recording_logger.messages
-
-    assert row.startswith("rank 1/2") and "per-term diagnostics from this rank's shard only" in row
-    assert level == "info"
-    assert "1/2 of the patches" in message
-
-
-def test_ddp_scope_is_silent_without_ddp(recording_logger):
-    shim             = TrainerShim()
-    shim.logger      = recording_logger
-    shim.distributed = SimpleNamespace(active=False)
-
-    assert BaseTrainer._ddp_row(shim) == "off"
-
-    BaseTrainer._log_ddp_scope(shim)
-
-    assert recording_logger.messages == []

@@ -293,7 +293,6 @@ def test_runner_trains_when_unit_is_fresh(tmp_path):
 
     assert result == "trained"
     assert _StubPipeline.launched == ["stub_unit"]
-    assert (tmp_path / "stub_unit" / "docs" / "run_directory_settled.marker").is_file()
 
 
 def test_runner_skips_completed_unit(tmp_path):

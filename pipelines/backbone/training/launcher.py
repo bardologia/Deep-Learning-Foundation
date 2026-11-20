@@ -19,11 +19,9 @@ from pipelines.backbone.training.patch_report     import PatchTrialsReport
 from pipelines.backbone.training.pipeline         import TrainingPipeline
 from pipelines.shared.config.config_factory       import ConfigFactory
 from pipelines.shared.model.model_builder         import ModelBuilder
-from pipelines.shared.training.ddp_fanout         import DdpDispatch
 from pipelines.shared.training.resume_source      import ResumeLauncher
 from pipelines.shared.training.run_naming         import RunNaming
 from pipelines.shared.training.seed_sweep         import SeedFanoutScheduler, SeedSet, SeedSweepRunner
-from pipelines.shared.training.training_runner    import RunDirectorySettledMarker
 from pipelines.shared.training.trial_planners     import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
 from pipelines.shared.training.trial_sweep        import TrialSweepScheduler
 from pipelines.shared.training.unit_resume        import UnitResume
@@ -116,8 +114,6 @@ class SingleTrainRunner:
         if self._build_unit_resume().skip_training():
             results = None
         else:
-            RunDirectorySettledMarker.write(self.run_directory)
-
             pipeline = self._pipeline(self.config.logdir)
             results  = pipeline.run(resolved_entry_config=self.config)
 
@@ -263,11 +259,8 @@ class BackboneTrainingLauncher:
         if trial.trial or not config.trials_enabled:
             seeds = SeedSet.resolve(config.seeds, config.seed)
 
-            if trial.trial:
+            if trial.trial or len(seeds) == 1:
                 SeedSweepRunner(config, SingleTrainRunner).run()
-            elif len(seeds) == 1:
-                if not DdpDispatch.single_seed(config, cli.overrides, self.entry_script, SingleTrainRunner):
-                    SeedSweepRunner(config, SingleTrainRunner).run()
             else:
                 SeedFanoutScheduler.for_runner(config, cli.overrides, self.entry_script, SingleTrainRunner, infer_at_end=config.infer_at_end, infer_after=config.infer_after).run()
             return

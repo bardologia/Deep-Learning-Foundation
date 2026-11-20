@@ -218,7 +218,6 @@ class TrainerState:
         return {
             "batch_size"         : trainer.micro_batch,
             "accumulation_steps" : int(trainer.accumulation_steps),
-            "world_size"         : int(trainer.distributed.world_size),
             "lr_scale"           : float(trainer.config.optimizer.lr_scale),
         }
 
