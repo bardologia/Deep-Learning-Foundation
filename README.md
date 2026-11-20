@@ -16,6 +16,7 @@ model, loss and metrics.
 
 ```bash
 ./install.sh                                     # conda env, dependencies, machine profile
+conda activate ml-template
 python main/processing/generate_dataset.py       # writes datasets/synthetic
 python main/training/train_backbone.py --seeds "[0]" --training.epochs 5
 python main/inference/infer_backbone.py --runs_dir runs/backbone
@@ -174,11 +175,26 @@ Three experiment entries under `main/experiments/` wrap training and inference:
 - `cross_validate.py` runs k-fold cross-validation over row blocks of the dataset.
 - `tune.py` runs an Optuna study over learning rates, architecture fields and batch size.
 
+Their defaults are sized for a real study: the benchmark trains all twenty backbones, the
+cross-validation ten folds and the tuning a hundred trials per backbone, each under two
+seeds or for tens of epochs. A first launch on the example dataset can be much smaller:
+
+```bash
+python main/experiments/benchmark.py --seeds "[0]" --training.epochs 2 --skip_models unet_skip,resunet,attention_unet,unetplusplus,linknet,swin_unet,transunet,unetr,deeplabv3plus,segformer,convnext_unet,dense_unet,hrnet,multires_unet,fpn,u2net,local_cnn,nafnet
+python main/experiments/cross_validate.py --backbone_name unet --folds.n_folds 3 --seeds "[0]" --training.epochs 2
+python main/experiments/tune.py --model unet --tuning.n_trials 3 --tuning.n_epochs 2
+```
+
+The benchmark line keeps unet and pixel_mlp; the console's model toggle builds the same
+skip list by clicking.
+
 The eighteen entries under `main/analysis/` read finished runs: trial, seed and run
 comparisons, weight and activation x-rays, receptive field measurement, input attribution
 and stress tests, layer probes, loss-landscape maps, training animations, a training-step
 profiler, and exporters for reports, figures, TensorBoard plots, result tables and ONNX.
-Every entry takes `--help-config`.
+Every entry takes `--help-config`. The training animation needs epoch snapshots, which
+training writes only when asked: train with `--training.snapshot_every_n_epochs 1` (or any
+N) before running `animate_training.py`.
 
 ## 7. The web console
 

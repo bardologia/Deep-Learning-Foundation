@@ -19,7 +19,7 @@ Usage: ./install.sh [options] [wizard options]
 Sets up ML-Template on this machine: finds or installs Miniconda, creates the
 project environment, installs the pinned dependencies with the torch build that
 matches the NVIDIA driver, then runs the guided setup that writes the machine
-profile and starts the console. Safe to run again at any time.
+profile and prints how to start the console. Safe to run again at any time.
 
 Options:
   --env NAME            conda environment name (default: the profile's name, else ml-template)
