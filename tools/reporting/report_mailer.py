@@ -580,9 +580,13 @@ class ReportMailer:
         password = self._password()
         start    = time.monotonic()
 
-        with smtplib.SMTP_SSL(self.entry_config.smtp_host, self.entry_config.smtp_port, timeout=self.entry_config.smtp_timeout_s) as smtp:
-            smtp.login(self.entry_config.sender, password)
-            smtp.send_message(message)
+        try:
+            with smtplib.SMTP_SSL(self.entry_config.smtp_host, self.entry_config.smtp_port, timeout=self.entry_config.smtp_timeout_s) as smtp:
+                smtp.login(self.entry_config.sender, password)
+                smtp.send_message(message)
+        except OSError as error:
+            self.logger.error(f"SMTP submission of '{subject}' failed after {time.monotonic() - start:.1f} s: {type(error).__name__}: {error}")
+            raise
 
         self.logger.ok(f"Sent '{subject}' to {self.entry_config.recipient} with {len(attachments)} attachment(s) in {time.monotonic() - start:.1f} s")
 
