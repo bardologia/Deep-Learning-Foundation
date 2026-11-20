@@ -128,7 +128,6 @@ class ConfigFactory:
             num_workers              = inference.num_workers,
             stitch_window            = inference.stitch_window,
             cube_dtype               = inference.cube_dtype,
-            render_amp_floor         = inference.render_amp_floor,
             save_cubes               = inference.save_cubes,
             save_plots               = inference.save_plots,
             save_animations          = inference.save_animations,

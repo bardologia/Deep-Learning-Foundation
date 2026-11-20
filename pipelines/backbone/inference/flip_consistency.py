@@ -12,12 +12,12 @@ class FlipConsistencyEvaluator:
 
     FLIP_AXES = {"row": 2, "col": 3}
 
-    def __init__(self, run, logger, *, window_kind: str, render_amp_floor: float = 0.0) -> None:
+    def __init__(self, run, logger, *, window_kind: str) -> None:
 
         self.loaded      = run
         self.logger      = logger
         self.window_kind = window_kind
-        self.renderer    = PredictionCurves(run.n_gaussians, run.z_axis, render_amp_floor)
+        self.renderer    = PredictionCurves(run.n_gaussians, run.z_axis)
 
     def _curves(self, output: np.ndarray) -> np.ndarray:
 

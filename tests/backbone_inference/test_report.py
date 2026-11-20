@@ -99,7 +99,7 @@ def _cfg_stub():
         save_animations=False, n_best_profiles=4, n_worst_profiles=4, n_random_profiles=4,
         n_col_slices=3, n_row_slices=3, n_z_slices=3, gif_axes=["col"],
         gif_fps=12, gif_duration=None, gif_max_frames=10, gif_separate_panels=False, device="cpu", num_workers=2,
-        checkpoint_name="last_model.pt", region_override=None, render_amp_floor=0.02,
+        checkpoint_name="last_model.pt", region_override=None,
     )
 
 
@@ -130,7 +130,6 @@ def test_report_payload_inference_config_records_the_scoring_settings_and_commit
 
     assert payload["checkpoint_name"]  == "last_model.pt"
     assert payload["target_dataset"]   == "none (scored on its own split)"
-    assert payload["render_amp_floor"] == 0.02
     assert payload["region_override"] is None
     assert payload["code_commit"]      == GitState.commit()
 

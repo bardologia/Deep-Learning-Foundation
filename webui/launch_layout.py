@@ -130,7 +130,7 @@ class LaunchLayout:
 
 
     INFERENCE_REPORT_GROUPS = [
-        {"title": "Artifacts", "fields": ["save_plots", "save_animations", "save_cubes", "stitch_window", "cube_dtype", "render_amp_floor"]},
+        {"title": "Artifacts", "fields": ["save_plots", "save_animations", "save_cubes", "stitch_window", "cube_dtype"]},
         {"title": "Cube SSIM", "fields": ["compute_cube_ssim"]},
         {"title": "Flip consistency", "fields": ["compute_flip_consistency"]},
         {"title": "Stratified errors", "fields": ["compute_stratified"]},
@@ -824,7 +824,6 @@ class LaunchLayout:
                             {"path": "gain_factors",    "widget": {"kind": "multi", "numeric": True}},
                             {"path": "shift_pixels",    "widget": {"kind": "multi", "numeric": True}},
                             {"path": "draws_per_count", "widget": {"kind": "number", "min": 1, "max": 16, "step": 1}},
-                            "render_amp_floor",
                             {"path": "seed", "widget": NUM_SEED},
                         ]},
                         {"title": "Figures", "fields": [{"path": "figure_style", "widget": CH_FIGSTYLE}]},
@@ -905,7 +904,6 @@ class LaunchLayout:
                             {"gate": "occlude", "fields": [
                                 {"path": "batch_size",  "widget": {"kind": "number", "min": 1, "max": 128, "step": 1}},
                                 {"path": "max_batches", "widget": {"kind": "number", "min": 1, "max": 64, "step": 1}},
-                                "render_amp_floor",
                             ]},
                         ]},
                         {"title": "Figures", "fields": [{"path": "figure_style", "widget": CH_FIGSTYLE}]},

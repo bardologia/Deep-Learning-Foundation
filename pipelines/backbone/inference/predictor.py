@@ -149,7 +149,6 @@ class Predictor:
         save_cubes       : bool,
         meta             : InferenceMetadata,
         cpu_workers      : int | None = None,
-        render_amp_floor : float = 0.0,
     ) -> None:
         self.run              = run
         self.logger           = logger
@@ -158,7 +157,6 @@ class Predictor:
         self.save_cubes       = save_cubes
         self.cube_dir         = meta.cube_dir
         self.cpu_workers      = cpu_workers if cpu_workers is not None else min(8, os.cpu_count() or 1)
-        self.render_amp_floor = float(render_amp_floor)
 
     def _device_rows(self) -> dict:
         device = torch.device(self.run.model.device)
@@ -200,17 +198,6 @@ class Predictor:
         return all_indices, all_pred_params, all_gt_params
 
     @staticmethod
-    def _render_masked(gauss: np.ndarray, amp_floor: float) -> np.ndarray:
-        if amp_floor <= 0.0:
-            return gauss
-
-        masked           = gauss.copy()
-        amp              = masked[:, :, 0]
-        masked[:, :, 0]  = np.where(amp >= amp_floor, amp, 0.0)
-
-        return masked
-
-    @staticmethod
     def _sort_by_mu(gauss: np.ndarray, activity_threshold: float) -> np.ndarray:
         sort_key   = np.where(GaussianActivity.is_active(gauss[:, :, 0], activity_threshold), gauss[:, :, 1], np.inf)
         sort_idx   = np.argsort(sort_key, axis=1)
@@ -220,7 +207,7 @@ class Predictor:
 
     @staticmethod
     def _cpu_worker(args: tuple) -> tuple:
-        pred_params_chunk, gt_params_chunk, z_axis, n_gaussians, render_amp_floor, activity_threshold = args
+        pred_params_chunk, gt_params_chunk, z_axis, n_gaussians, activity_threshold = args
 
         x          = z_axis.reshape(1, 1, -1, 1, 1).astype(np.float32)
         B, _, H, W = pred_params_chunk.shape
@@ -234,8 +221,8 @@ class Predictor:
         pred_gauss_flat = pred_gauss.reshape(      B, n_K * 3, H, W)
         gt_gauss_flat   = gt_gauss_matched.reshape(B, n_K * 3, H, W)
 
-        pred_curves = GaussianReconstructor.reconstruct_batch(Predictor._render_masked(pred_gauss,       render_amp_floor), x)
-        gt_curves   = GaussianReconstructor.reconstruct_batch(Predictor._render_masked(gt_gauss_matched, render_amp_floor), x)
+        pred_curves = GaussianReconstructor.reconstruct_batch(pred_gauss,       x)
+        gt_curves   = GaussianReconstructor.reconstruct_batch(gt_gauss_matched, x)
 
         return (
             pred_curves,
@@ -255,7 +242,7 @@ class Predictor:
         param_pred_stitcher = self._create_param_stitcher(out_ch,  "params_pred")
         gt_param_stitcher   = self._create_param_stitcher(n_K * 3, "params_gt")
 
-        tasks     = [(pred, gt, run.z_axis, n_K, self.render_amp_floor, run.activity_threshold) for pred, gt in zip(all_pred_params, all_gt_params)]
+        tasks     = [(pred, gt, run.z_axis, n_K, run.activity_threshold) for pred, gt in zip(all_pred_params, all_gt_params)]
         in_flight = self._result_window(all_pred_params)
 
         with self.logger.track(transient=True) as prog:

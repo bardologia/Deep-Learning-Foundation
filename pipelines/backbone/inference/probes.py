@@ -4,8 +4,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from pipelines.backbone.inference.predictor import Predictor
-from tools.data.gaussians                   import GaussianReconstructor
+from tools.data.gaussians import GaussianReconstructor
 
 
 class ModelDevice:
@@ -48,10 +47,9 @@ class ProbeWindows:
 
 class PredictionCurves:
 
-    def __init__(self, n_gaussians: int, z_axis: np.ndarray, render_amp_floor: float = 0.0) -> None:
-        self.n_gaussians      = int(n_gaussians)
-        self.z_axis           = np.asarray(z_axis, dtype=np.float32)
-        self.render_amp_floor = float(render_amp_floor)
+    def __init__(self, n_gaussians: int, z_axis: np.ndarray) -> None:
+        self.n_gaussians = int(n_gaussians)
+        self.z_axis      = np.asarray(z_axis, dtype=np.float32)
 
     def render(self, params: np.ndarray) -> np.ndarray:
         n_K        = self.n_gaussians
@@ -59,6 +57,5 @@ class PredictionCurves:
 
         x     = self.z_axis.reshape(1, 1, -1, 1, 1)
         gauss = params[:, :n_K * 3].reshape(B, n_K, 3, H, W).astype(np.float32)
-        gauss = Predictor._render_masked(gauss, self.render_amp_floor)
 
         return GaussianReconstructor.reconstruct_batch(gauss, x)

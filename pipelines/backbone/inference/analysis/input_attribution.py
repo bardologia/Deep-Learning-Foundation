@@ -311,7 +311,7 @@ class InputAttributionRun(AnalysisRun):
         if not self.config.occlude:
             return None, None
 
-        renderer     = PredictionCurves(run.n_gaussians, run.z_axis, self.config.render_amp_floor)
+        renderer     = PredictionCurves(run.n_gaussians, run.z_axis)
         channel_sets = [[c] for c in range(run.in_channels)]
         track_sets   = per_track if per_track is not None else []
         n_batches    = min(self.config.max_batches, len(run.loader))

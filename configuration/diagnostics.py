@@ -418,7 +418,6 @@ class InputAttributionConfig:
     occlude          : bool  = True
     batch_size       : int   = 8
     max_batches      : int   = 2
-    render_amp_floor : float = 0.0
 
     figure_style : str = "report"
 
@@ -485,7 +484,6 @@ class RobustnessConfig:
     gain_factors     : List[float] = field(default_factory=lambda: [0.5, 0.8, 1.25, 2.0])
     shift_pixels     : List[int]   = field(default_factory=lambda: [1, 2, 4, 8])
     draws_per_count  : int         = 3
-    render_amp_floor : float       = 0.0
     seed             : int         = 0
 
     figure_style : str = "report"

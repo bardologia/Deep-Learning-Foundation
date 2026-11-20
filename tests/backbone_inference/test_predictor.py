@@ -174,30 +174,6 @@ def test_select_stitcher_rectangular_patches_reconstruct():
     assert np.allclose(cube, data)
 
 
-def test_cpu_worker_render_floor_drops_weak_components():
-    z_axis = np.linspace(0.0, 40.0, 32).astype(np.float32)
-
-    pred       = np.zeros((1, 6, 4, 4), dtype=np.float32)
-    pred[:, 0] = 1.0
-    pred[:, 1] = 5.0
-    pred[:, 2] = 2.0
-    pred[:, 3] = 5e-4
-    pred[:, 4] = 20.0
-    pred[:, 5] = 3.0
-
-    gt = pred.copy()
-
-    unmasked = Predictor._cpu_worker((pred, gt, z_axis, 2, 0.0,  1e-4))
-    masked   = Predictor._cpu_worker((pred, gt, z_axis, 2, 1e-3, 1e-4))
-
-    idx20 = int(np.argmin(np.abs(z_axis - 20.0)))
-
-    assert unmasked[0][0, idx20, 0, 0] > 1e-4
-    assert masked[0][0, idx20, 0, 0] == pytest.approx(0.0, abs=1e-6)
-    assert masked[1][0, idx20, 0, 0] == pytest.approx(0.0, abs=1e-6)
-    assert masked[2][0, 3, 0, 0] == pytest.approx(5e-4)
-
-
 def test_result_window_is_bounded_by_the_byte_budget(tmp_path):
     run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)

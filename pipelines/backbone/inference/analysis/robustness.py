@@ -325,7 +325,7 @@ class RobustnessRun(AnalysisRun):
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
     def _analyse(self, run) -> AnalysisOutcome:
-        renderer = PredictionCurves(run.n_gaussians, run.z_axis, self.config.render_amp_floor)
+        renderer = PredictionCurves(run.n_gaussians, run.z_axis)
         batches  = self._batches(run, renderer)
 
         sigmas        = list(self.config.noise_sigmas)

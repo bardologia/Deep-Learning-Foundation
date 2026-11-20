@@ -26,7 +26,6 @@ class InferenceQueueConfig:
     save_cubes       : bool  = False
     stitch_window    : str   = "hann"
     cube_dtype       : str   = "float32"
-    render_amp_floor : float = 0.0
 
     compute_cube_ssim : bool = False
 

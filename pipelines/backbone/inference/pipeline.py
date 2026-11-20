@@ -68,7 +68,6 @@ class InferencePipeline:
             "Target dataset"      : self.target.describe() if self.target is not None else "none (scored on its own split)",
             "Device"              : cfg.device,
             "Checkpoint"          : cfg.checkpoint_name,
-            "Render amp floor"    : cfg.render_amp_floor,
             "Code commit"         : GitState.commit(),
             "Resolved config"     : meta.config_path,
         }
@@ -94,7 +93,6 @@ class InferencePipeline:
             save_cubes       = cfg.save_cubes,
             meta             = meta,
             cpu_workers      = cfg.cpu_workers,
-            render_amp_floor = cfg.render_amp_floor,
         )
         return predictor.run_inference()
 
@@ -194,7 +192,7 @@ class InferencePipeline:
 
         logger.section("[Inference: Flip Consistency]")
 
-        evaluator = FlipConsistencyEvaluator(run, logger, window_kind=cfg.stitch_window, render_amp_floor=cfg.render_amp_floor)
+        evaluator = FlipConsistencyEvaluator(run, logger, window_kind=cfg.stitch_window)
         flip_map  = evaluator.run()
 
         result.flip_consistency = flip_map
