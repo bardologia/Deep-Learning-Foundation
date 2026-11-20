@@ -96,29 +96,6 @@ class SeedAggregation:
         return intervals, counts
 
 
-class R2:
-
-    EPSILON = 1e-12
-
-    @staticmethod
-    def pixel_map(pred: np.ndarray, ref: np.ndarray, axis: int) -> np.ndarray:
-        ref_mean = ref.mean(axis=axis, keepdims=True, dtype=np.float64)
-
-        ss_res = ((pred - ref) ** 2).sum(axis=axis, dtype=np.float64)
-        ss_tot = ((ref - ref_mean) ** 2).sum(axis=axis, dtype=np.float64)
-
-        defined = ss_tot > R2.EPSILON
-        r2      = np.full(ss_tot.shape, np.nan, dtype=np.float64)
-
-        r2[defined] = 1.0 - ss_res[defined] / ss_tot[defined]
-
-        return r2.astype(np.float32)
-
-    @staticmethod
-    def undefined_count(r2_map: np.ndarray) -> int:
-        return int(np.count_nonzero(~np.isfinite(r2_map)))
-
-
 class RankCorrelation:
 
     MIN_PAIRS = 3
@@ -171,24 +148,3 @@ class MetricOrientation:
     def higher_is_better(cls, key: str) -> bool | None:
         direction = cls.direction(key)
         return None if direction is None else direction == "higher"
-
-
-class RelativeImprovement:
-
-    @staticmethod
-    def fraction(baseline: Any, model: Any, higher_is_better: bool = False) -> float:
-        baseline_value = FiniteScalar.coerce(baseline)
-        model_value    = FiniteScalar.coerce(model)
-
-        if baseline_value is None or model_value is None or baseline_value == 0.0:
-            return float("nan")
-
-        delta = (model_value - baseline_value) if higher_is_better else (baseline_value - model_value)
-        return delta / abs(baseline_value)
-
-    @staticmethod
-    def percent(baseline: Any, model: Any, higher_is_better: bool = False, empty: str = "n/a") -> str:
-        value = RelativeImprovement.fraction(baseline, model, higher_is_better)
-        if not np.isfinite(value):
-            return empty
-        return f"{value * 100.0:+.1f}%"

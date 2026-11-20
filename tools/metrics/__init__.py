@@ -1,9 +1,6 @@
-
-from .scoring import FiniteScalar, MetricOrientation, R2, RelativeImprovement
+from .scoring import FiniteScalar, MetricOrientation
 
 __all__ = [
     "FiniteScalar",
     "MetricOrientation",
-    "R2",
-    "RelativeImprovement",
 ]
