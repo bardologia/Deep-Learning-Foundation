@@ -36,7 +36,7 @@ class StubProbe:
 
 def _setup(tmp_path: Path, logger_stub, answers: dict | None = None, assume: bool = True, saved: dict | None = None, handed: bool = True) -> MachineSetup:
     repo        = tmp_path / "repo"
-    interpreter = tmp_path / "envs" / "Dune" / "bin" / "python"
+    interpreter = tmp_path / "envs" / "ml-template" / "bin" / "python"
     interpreter.parent.mkdir(parents=True, exist_ok=True)
     interpreter.write_text("")
     (repo / "webui").mkdir(parents=True, exist_ok=True)
@@ -48,7 +48,7 @@ def _setup(tmp_path: Path, logger_stub, answers: dict | None = None, assume: boo
     profile = MachineProfile.load(path) if path.is_file() else MachineProfile(path)
     presets = {"data_root": str(tmp_path / "data"), "runs_root": str(tmp_path / "runs"), "results_root": str(tmp_path / "results"), **(answers or {})}
 
-    return MachineSetup(repo, Prompter(presets, assume, logger_stub), StubProbe(FACTS, interpreter), profile, logger_stub, "Dune", interpreter if handed else None, verify=False, desktop=False)
+    return MachineSetup(repo, Prompter(presets, assume, logger_stub), StubProbe(FACTS, interpreter), profile, logger_stub, "ml-template", interpreter if handed else None, verify=False, desktop=False)
 
 
 def test_prompter_prefers_presets_then_defaults_then_the_terminal(logger_stub, monkeypatch):
@@ -108,8 +108,8 @@ def test_the_unattended_run_writes_a_complete_profile(tmp_path, logger_stub):
 
     profile = MachineProfile.load(tmp_path / "cfg" / "machine.json")
 
-    assert profile.machine["env_name"]    == "Dune"
-    assert profile.machine["interpreter"] == str(tmp_path / "envs" / "Dune" / "bin" / "python")
+    assert profile.machine["env_name"]    == "ml-template"
+    assert profile.machine["interpreter"] == str(tmp_path / "envs" / "ml-template" / "bin" / "python")
     assert profile.machine["gpus"]        == FACTS["gpus"]
     assert profile.console                == {"host": ReferenceLayout.CONSOLE_HOST, "port": ReferenceLayout.CONSOLE_PORT}
     assert profile.roots["data"]          == str(tmp_path / "data")
@@ -151,7 +151,7 @@ def test_a_detected_dataset_becomes_the_default(tmp_path, logger_stub):
 def test_the_handed_over_interpreter_skips_the_question_unless_a_preset_names_one(tmp_path, logger_stub):
     handed = _setup(tmp_path, logger_stub)
     handed.run()
-    assert MachineProfile.load(tmp_path / "cfg" / "machine.json").machine["interpreter"] == str(tmp_path / "envs" / "Dune" / "bin" / "python")
+    assert MachineProfile.load(tmp_path / "cfg" / "machine.json").machine["interpreter"] == str(tmp_path / "envs" / "ml-template" / "bin" / "python")
 
     other = tmp_path / "other_python"
     other.write_text("")
@@ -161,7 +161,7 @@ def test_the_handed_over_interpreter_skips_the_question_unless_a_preset_names_on
 
     detected = _setup(tmp_path, logger_stub, handed=False)
     detected.run()
-    assert MachineProfile.load(tmp_path / "cfg" / "machine.json").machine["interpreter"] == str(tmp_path / "envs" / "Dune" / "bin" / "python")
+    assert MachineProfile.load(tmp_path / "cfg" / "machine.json").machine["interpreter"] == str(tmp_path / "envs" / "ml-template" / "bin" / "python")
 
 
 def test_hardware_and_notification_answers_are_stored(tmp_path, logger_stub):

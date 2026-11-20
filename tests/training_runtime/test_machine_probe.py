@@ -117,14 +117,14 @@ def test_conda_root_prefers_the_active_installation(tmp_path, monkeypatch):
 def test_env_interpreter_requires_the_python_to_exist(tmp_path):
     probe = MachineProbe()
 
-    assert probe.env_interpreter(None, "Dune")     is None
-    assert probe.env_interpreter(tmp_path, "Dune") is None
+    assert probe.env_interpreter(None, "ml-template")     is None
+    assert probe.env_interpreter(tmp_path, "ml-template") is None
 
-    python = tmp_path / "envs" / "Dune" / "bin" / "python"
+    python = tmp_path / "envs" / "ml-template" / "bin" / "python"
     python.parent.mkdir(parents=True)
     python.write_text("")
 
-    assert probe.env_interpreter(tmp_path, "Dune") == python
+    assert probe.env_interpreter(tmp_path, "ml-template") == python
 
 
 def test_facts_carry_every_key_the_wizard_reads(monkeypatch):

@@ -210,7 +210,7 @@ class MachineSetup:
         self._step(2, "Python environment")
 
         conda_root = self.facts["conda_root"] or self._previous("machine", "conda_root", "")
-        env_name   = self.env_name or self.prompter.ask("env_name", "Name of the conda environment holding the project", self._previous("machine", "env_name", "Dune"), "install.sh created it; keep the name unless you made your own.")
+        env_name   = self.env_name or self.prompter.ask("env_name", "Name of the conda environment holding the project", self._previous("machine", "env_name", "ml-template"), "install.sh created it; keep the name unless you made your own.")
         handed     = self.interpreter is not None and Path(self.interpreter).is_file() and "interpreter" not in self.prompter.answers
 
         if handed:

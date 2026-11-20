@@ -25,12 +25,12 @@ def _profile(tmp_path: Path, **sections) -> MachineProfile:
 def test_project_paths_prefer_the_profile_environment(tmp_path):
     profile = _profile(tmp_path, machine={"env_name": "ProjectEnv"})
     paths   = ProjectPaths(REPO_ROOT, profile)
-    found   = [{"label": "conda:base", "path": "/c/bin/python", "current": False}, {"label": "conda:Dune", "path": "/c/envs/d/bin/python", "current": False}, {"label": "conda:ProjectEnv", "path": "/c/envs/p/bin/python", "current": False}]
+    found   = [{"label": "conda:base", "path": "/c/bin/python", "current": False}, {"label": "conda:ml-template", "path": "/c/envs/d/bin/python", "current": False}, {"label": "conda:ProjectEnv", "path": "/c/envs/p/bin/python", "current": False}]
 
     assert paths.priority                                       == ["conda:ProjectEnv"]
     assert paths.preferred_interpreter(found)                   == "/c/envs/p/bin/python"
     assert paths.preferred_interpreter(found, "train_backbone") == "/c/envs/p/bin/python"
-    assert ProjectPaths(REPO_ROOT, MachineProfile(None)).priority == ["conda:Dune"]
+    assert ProjectPaths(REPO_ROOT, MachineProfile(None)).priority == ["conda:ml-template"]
 
 
 def test_project_paths_take_the_runs_and_data_roots_from_the_profile(tmp_path):

@@ -30,7 +30,7 @@ class MachineProfile:
     SCHEMA        = 1
 
     DEFAULTS = {
-        "machine"  : {"hostname": "", "conda_root": "", "env_name": "Dune", "interpreter": "", "torch_index": "", "driver": "", "cpu_count": 0, "ram_gb": 0.0, "gpus": []},
+        "machine"  : {"hostname": "", "conda_root": "", "env_name": "ml-template", "interpreter": "", "torch_index": "", "driver": "", "cpu_count": 0, "ram_gb": 0.0, "gpus": []},
         "console"  : {"host": ReferenceLayout.CONSOLE_HOST, "port": ReferenceLayout.CONSOLE_PORT},
         "roots"    : {"repo": "", "data": "", "runs": "", "results": ""},
         "dataset"  : {"path": ""},

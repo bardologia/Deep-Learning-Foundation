@@ -22,7 +22,7 @@ matches the NVIDIA driver, then runs the guided setup that writes the machine
 profile and starts the console. Safe to run again at any time.
 
 Options:
-  --env NAME            conda environment name (default: the profile's name, else Dune)
+  --env NAME            conda environment name (default: the profile's name, else ml-template)
   --torch-index INDEX   cu130, cu128, cpu or auto (default: auto, from the driver)
   --skip-install        do not touch conda or pip, only run the guided setup
   --yes                 unattended: accept every default, install Miniconda if missing
@@ -74,7 +74,7 @@ if [ -f "$ENV_FILE" ]; then
   note "existing profile found: ${MLTEMPLATE_MACHINE_PROFILE}"
 fi
 
-ENV_NAME="${ENV_NAME:-${MLTEMPLATE_ENV_NAME:-Dune}}"
+ENV_NAME="${ENV_NAME:-${MLTEMPLATE_ENV_NAME:-ml-template}}"
 
 find_conda_root() {
   if [ -n "${MLTEMPLATE_CONDA_ROOT:-}" ] && [ -x "$MLTEMPLATE_CONDA_ROOT/bin/conda" ]; then echo "$MLTEMPLATE_CONDA_ROOT"; return; fi

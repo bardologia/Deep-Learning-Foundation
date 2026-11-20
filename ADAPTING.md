@@ -307,7 +307,7 @@ Nothing derives the name at runtime, so it is spelled out in a handful of places
   `webui/tools/visual/refresh.sh` and `webui/tools/visual/snap_ui.js` hold the screenshot
   harness default.
 - The interpreter and environment name: `MachineProfile.DEFAULTS["machine"]` in
-  `tools/runtime/machine_profile.py` and `install.sh` both name the `Dune` env; the
+  `tools/runtime/machine_profile.py` and `install.sh` both name the `ml-template` env; the
   profile written by the installer carries the interpreter `webui/run.sh` starts from.
 - The profile location, `~/.config/ml-template/` and `MLTEMPLATE_MACHINE_PROFILE`:
   `MachineProfile` in `tools/runtime/machine_profile.py`, `install.sh` and `webui/run.sh`.
