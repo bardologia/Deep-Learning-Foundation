@@ -76,8 +76,10 @@ next to the channel means, returning its own `WeightedMean` so the pooling stays
 
 Inference scores the stitched prediction in target units. `Metrics` in
 `pipelines/backbone/inference/metrics.py` computes the RMSE, MAE, bias and R2 of every
-target channel and their means; add a metric there and give its key an orientation
-(section 4) so the comparison reports can rank it.
+target channel and their means, written as flat keys (`rmse_<channel>`, `rmse_mean` and
+so on) that every comparison, aggregate and result table reads. Add a metric there and
+give its key an orientation (section 4) so the comparison reports can rank it; the
+leaderboards rank on `HEADLINE_METRICS` in `pipelines/shared/comparison/comparison_report.py`.
 
 ## 3. Normalization
 
@@ -171,13 +173,14 @@ points every other machine at a directory it does not have.
 
 `MetricOrientation` in `tools/metrics/scoring.py` decides from a metric key whether a
 larger value is better, worse or neither, and the comparison reports and the A/B autopsy
-rank by it. A key that matches no declared rule raises `KeyError`
+rank by it. A key that matches no declared rule raises `StopIteration`
 instead of being ranked as an error by default.
 
 - Fails in: the `test_orientation_*` tests in `tests/loss_metrics/test_scoring.py` for
   the rules themselves.
-- Fix: name the key so an existing rule covers it, or add it to `_HIGHER_OVERRIDES` or
-  to the neutral, lower or higher patterns. Counts, settings and spreads belong in the
+- Fix: name the key so an existing rule covers it (`rmse_`, `mae_` and `mse_` prefixes and
+  any key holding `loss` are lower-is-better, `r2_` is higher-is-better), or extend the
+  neutral, lower or higher pattern. Counts, signed biases and settings belong in the
   neutral pattern, so they are reported but never ranked.
 
 ### Every figure a page names exists
