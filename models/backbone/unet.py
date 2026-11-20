@@ -8,10 +8,11 @@ from configuration.architectures import UNetConfig
 from ..blocks                    import ConvBlock, Decoder, Encoder, LayerFactory, OutputHeadMixin
 
 
-class UNetBackbone(nn.Module, OutputHeadMixin):
+class UNet(nn.Module, OutputHeadMixin):
 
-    def __init__(self, config):
+    def __init__(self, config: UNetConfig | None = None):
         super().__init__()
+        config      = config if config is not None else UNetConfig()
         self.config = config
 
         feature_sizes       = config.features
@@ -46,20 +47,14 @@ class UNetBackbone(nn.Module, OutputHeadMixin):
         )
 
         self.embedding_channels = feature_sizes[0]
+        self._build_output_head()
+
+        LayerFactory.initialize_weights(module=self, mode=self.config.init_mode)
 
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
         x, skip_connections = self.encoder(x)
         x = self.bottleneck(x)
         return self.decoder(x, skip_connections[::-1])
-
-
-class UNet(UNetBackbone):
-
-    def __init__(self, config: UNetConfig | None = None):
-        super().__init__(config if config is not None else UNetConfig())
-        self._build_output_head()
-
-        LayerFactory.initialize_weights(module=self, mode=self.config.init_mode)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._head_forward(self.encode_decode(x))
