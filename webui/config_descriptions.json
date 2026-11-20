@@ -896,12 +896,10 @@
       }
     },
     "cross_validation/general::FoldConfig": {
-      "summary": "Defines the partitioning of the dataset rows into cross-validation folds",
+      "summary": "Defines the partitioning of every dataset row into cross-validation folds; the row and column extent is read from dataset.json",
       "fields": {
-        "n_folds": "Number of row blocks the dataset is split into (equal width except the last, which absorbs the integer-division remainder), must be at least 3 so train/val/test stay disjoint",
-        "row_start": "First row of the usable range, must lie within the dataset rows",
-        "row_end": "Last (exclusive) row of the usable range, must lie within the dataset rows",
-        "guard": "Rows excluded around every internal fold boundary, half trimmed from each side, must be non-negative and even, and strictly smaller than the narrowest fold block"
+        "n_folds": "Number of row blocks the dataset rows are split into (equal height except the last, which absorbs the integer-division remainder); at least 3 keeps train, val and test disjoint",
+        "guard": "Rows excluded around every internal fold boundary, half trimmed from each side; an even value smaller than the narrowest fold block keeps every split non-empty"
       }
     },
     "cross_validation/general::CrossValidationConfig": {

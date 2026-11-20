@@ -17,10 +17,8 @@ from configuration.training.general.run     import RunPathsConfig, TrainingQueue
 @dataclass
 class FoldConfig:
 
-    n_folds   : int = 10
-    row_start : int = 0
-    row_end   : int = 256
-    guard     : int = 16
+    n_folds : int = 10
+    guard   : int = 16
 
 
 @dataclass

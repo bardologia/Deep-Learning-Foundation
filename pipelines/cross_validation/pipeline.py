@@ -67,7 +67,7 @@ class CrossValidationPipeline(StagedPipeline):
             "Run tag"          : self.run_tag,
             "Model"            : self.config.backbone_name,
             "Folds"            : self.config.folds.n_folds,
-            "Row extent"       : f"[{self.config.folds.row_start}, {self.config.folds.row_end})",
+            "Row extent"       : f"[0, {planner.rows})",
             "Inference splits" : ", ".join(self.config.inference_splits),
             "GPUs"             : self.config.gpus,
             "Resume"           : self.config.resume,

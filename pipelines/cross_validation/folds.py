@@ -31,24 +31,18 @@ class FoldPlanner:
 
     INFERENCE_SPLITS = ("test", "val")
 
-    def __init__(self, config: CrossValidationConfig, col_start: int, col_end: int) -> None:
-        folds = config.folds
+    def __init__(self, config: CrossValidationConfig, rows: int, cols: int) -> None:
+        self.n_folds = config.folds.n_folds
+        self.guard   = config.folds.guard
+        self.rows    = rows
+        self.cols    = cols
+        self.blocks  = self._partition()
 
-        self.n_folds   = folds.n_folds
-        self.guard     = folds.guard
-        self.row_start = folds.row_start
-        self.row_end   = folds.row_end
-        self.col_start = col_start
-        self.col_end   = col_end
-        self.blocks    = self._partition(folds.row_start, folds.row_end, folds.n_folds)
+    def _partition(self) -> list[tuple[int, int]]:
+        size   = self.rows // self.n_folds
+        bounds = [index * size for index in range(self.n_folds)] + [self.rows]
 
-    def _partition(self, row_start: int, row_end: int, n_folds: int) -> list[tuple[int, int]]:
-        total = row_end - row_start
-
-        size   = total // n_folds
-        bounds = [row_start + index * size for index in range(n_folds)] + [row_end]
-
-        return [(bounds[index], bounds[index + 1]) for index in range(n_folds)]
+        return [(bounds[index], bounds[index + 1]) for index in range(self.n_folds)]
 
     def _merge_adjacent(self, block_indices: list[int]) -> list[tuple[int, int]]:
         runs  = []
@@ -69,16 +63,16 @@ class FoldPlanner:
     def _run_region(self, run: tuple[int, int]) -> CropRegion:
         first_block, last_block = run
         row_start, row_end = self._trim(self.blocks[first_block][0], self.blocks[last_block][1])
-        return CropRegion(row_start, row_end, self.col_start, self.col_end)
+        return CropRegion(row_start, row_end, 0, self.cols)
 
     def _block_region(self, block_index: int) -> CropRegion:
         row_start, row_end = self._trim(*self.blocks[block_index])
-        return CropRegion(row_start, row_end, self.col_start, self.col_end)
+        return CropRegion(row_start, row_end, 0, self.cols)
 
     def _trim(self, row_start: int, row_end: int) -> tuple[int, int]:
-        margin        = self.guard // 2
-        row_start = row_start + margin if row_start > self.row_start else row_start
-        row_end   = row_end - margin   if row_end   < self.row_end   else row_end
+        margin    = self.guard // 2
+        row_start = row_start + margin if row_start > 0         else row_start
+        row_end   = row_end - margin   if row_end   < self.rows else row_end
         return row_start, row_end
 
     def inference_region(self, fold_index: int, split: str) -> CropRegion:
@@ -86,7 +80,7 @@ class FoldPlanner:
         blocks = {"test": plan.test_block, "val": plan.val_block}
 
         row_start, row_end = self.blocks[blocks[split]]
-        return CropRegion(row_start, row_end, self.col_start, self.col_end)
+        return CropRegion(row_start, row_end, 0, self.cols)
 
     def plan(self, fold_index: int) -> FoldPlan:
         test_block   = fold_index
@@ -230,7 +224,7 @@ class FoldConfigFactory(ConfigFactory):
         if self._planner is None:
             files = DatasetFiles.read(self.config.paths.dataset_path)
 
-            self._planner = FoldPlanner(self.config, col_start=0, col_end=files.cols)
+            self._planner = FoldPlanner(self.config, rows=files.rows, cols=files.cols)
         return self._planner
 
     def fold_inference_config(self, run_directory: Path, split: str, fold_index: int) -> InferenceConfig:

@@ -27,7 +27,7 @@ from tests.conftest import RecordingLogger, make_file_logger
 def worker_config(test_data_dir: Path) -> CrossValidationConfig:
     config                       = CrossValidationConfig()
     config.paths.dataset_path    = test_data_dir
-    config.folds                 = FoldConfig(n_folds=5, row_start=1000, row_end=1512)
+    config.folds                 = FoldConfig(n_folds=5)
     return config
 
 
@@ -251,8 +251,8 @@ def test_training_worker_passes_planned_split_regions(test_data_dir, tmp_path, m
     worker.run(2)
 
     train = sorted((r.row_start, r.row_end) for r in captured["sr"].regions("train"))
-    assert train == [(1000, 1196), (1416, 1512)]
-    assert worker.factory.planner().plan(2).split_regions.regions("test")[0].row_start == 1212
+    assert train == [(0, 30), (84, 96)]
+    assert worker.factory.planner().plan(2).split_regions.regions("test")[0].row_start == 46
 
 
 @pytest.mark.dataset

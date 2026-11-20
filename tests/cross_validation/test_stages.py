@@ -24,7 +24,7 @@ from tests.conftest import make_file_logger
 def stage_config(tmp_path: Path, resume: bool = False) -> CrossValidationConfig:
     config                    = CrossValidationConfig()
     config.paths.log_base_dir = tmp_path
-    config.folds              = FoldConfig(n_folds=5, row_start=1000, row_end=1512)
+    config.folds              = FoldConfig(n_folds=5)
     config.resume             = resume
     config.inference_splits   = ["val", "test"]
     config.seeds              = []
@@ -42,7 +42,7 @@ def fold_names(config: CrossValidationConfig) -> list[str]:
 
 
 def make_planner(config: CrossValidationConfig) -> FoldPlanner:
-    return FoldPlanner(config, col_start=500, col_end=1000)
+    return FoldPlanner(config, rows=512, cols=500)
 
 
 def mark_complete(directory: Path) -> None:
@@ -63,7 +63,7 @@ def build_finished_run(root: Path, run_tag: str, n_folds: int = 3, splits: tuple
     run_dir = root / run_tag
 
     config       = CrossValidationConfig()
-    config.folds = FoldConfig(n_folds=n_folds, row_start=1000, row_end=1512)
+    config.folds = FoldConfig(n_folds=n_folds)
     planner      = make_planner(config)
 
     results = []
@@ -403,7 +403,7 @@ def test_report_rebuilder_writes_the_report_from_the_fold_tree_alone(tmp_path):
     assert (out_dir / "test" / "metrics_comparison.md").is_file()
     assert aggregate.startswith("# Cross-Validation Aggregate Report")
     assert "Model `resunet`, 3 folds." in aggregate
-    assert "| 0    | [1000, 1162) | [1178, 1332) | [1348, 1512)      |" in aggregate
+    assert "| 0    | [0, 162)   | [178, 332) | [348, 512)        |" in aggregate
 
 
 def test_report_rebuilder_handles_seed_sweeps(tmp_path):
@@ -432,7 +432,7 @@ def test_fold_tree_survey_reads_model_splits_and_plan(tmp_path):
     first     = fold_runs[0]
 
     config       = stage_config(tmp_path)
-    config.folds = FoldConfig(n_folds=3, row_start=1000, row_end=1512)
+    config.folds = FoldConfig(n_folds=3)
     expected     = make_planner(config)
 
     assert sorted(fold_runs) == [0, 1, 2]
@@ -444,7 +444,7 @@ def test_fold_tree_survey_reads_model_splits_and_plan(tmp_path):
 
 def test_stored_fold_planner_follows_the_planner_block_convention():
     config       = CrossValidationConfig()
-    config.folds = FoldConfig(n_folds=4, row_start=1000, row_end=1512)
+    config.folds = FoldConfig(n_folds=4)
     configured   = make_planner(config)
 
     stored = StoredFoldPlanner({plan.fold_index: plan.split_regions for plan in configured.plans()})

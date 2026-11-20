@@ -351,7 +351,7 @@ class LaunchLayout:
                 {"key": "folds", "title": "Folds", "panels": [
                     {"kind": "hidden", "fields": ["gpus_file"]},
                     {"kind": "fields", "groups": [
-                        {"title": "Fold layout", "fields": ["folds.n_folds", "folds.row_start", "folds.row_end", "folds.guard"]},
+                        {"title": "Fold layout", "fields": ["folds.n_folds", "folds.guard"]},
                     ]},
                 ]},
                 {"key": "data", "title": "Data", "panels": [

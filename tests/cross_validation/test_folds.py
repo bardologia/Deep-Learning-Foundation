@@ -12,15 +12,10 @@ from tools.data.regions                  import CropRegion, SplitRegions
 from tools.runtime.completion            import CompletionMarker
 
 
-def make_config(n_folds: int, row_start: int = 1000, row_end: int = 2000, guard: int = 0) -> CrossValidationConfig:
+def make_planner(n_folds: int, rows: int = 1000, cols: int = 500, guard: int = 0) -> FoldPlanner:
     config       = CrossValidationConfig()
-    config.folds = FoldConfig(n_folds=n_folds, row_start=row_start, row_end=row_end, guard=guard)
-    return config
-
-
-def make_planner(n_folds: int, row_start: int = 1000, row_end: int = 2000, col_start: int = 500, col_end: int = 1000, guard: int = 0) -> FoldPlanner:
-    config = make_config(n_folds, row_start, row_end, guard=guard)
-    return FoldPlanner(config, col_start=col_start, col_end=col_end)
+    config.folds = FoldConfig(n_folds=n_folds, guard=guard)
+    return FoldPlanner(config, rows=rows, cols=cols)
 
 
 def all_blocks(plan: FoldPlan) -> list[int]:
@@ -40,8 +35,8 @@ def test_blocks_partition_full_extent_contiguously():
     planner = make_planner(5)
     bounds  = [planner.blocks[0][0]] + [end for _, end in planner.blocks]
 
-    assert bounds[0]  == 1000
-    assert bounds[-1] == 2000
+    assert bounds[0]  == 0
+    assert bounds[-1] == 1000
 
     for index in range(len(planner.blocks)):
         assert planner.blocks[index][0] == bounds[index]
@@ -55,14 +50,14 @@ def test_blocks_are_disjoint_and_cover_every_line():
     for start, end in planner.blocks:
         covered.extend(range(start, end))
 
-    assert covered           == list(range(1000, 2000))
+    assert covered           == list(range(1000))
     assert len(set(covered)) == len(covered)
 
 
 def test_uneven_extent_last_block_absorbs_remainder():
-    planner = make_planner(3, row_start=1000, row_end=2000)
+    planner = make_planner(3)
 
-    assert planner.blocks == [(1000, 1333), (1333, 1666), (1666, 2000)]
+    assert planner.blocks == [(0, 333), (333, 666), (666, 1000)]
     sizes = [end - start for start, end in planner.blocks]
 
     assert max(sizes) - min(sizes) <= 3
@@ -70,7 +65,7 @@ def test_uneven_extent_last_block_absorbs_remainder():
 
 
 def test_block_sizes_balanced_when_even():
-    planner = make_planner(4, row_start=1000, row_end=2000)
+    planner = make_planner(4)
     sizes   = [end - start for start, end in planner.blocks]
 
     assert sizes == [250, 250, 250, 250]
@@ -115,7 +110,7 @@ def test_plan_train_is_single_region_when_contiguous():
     plan    = planner.plan(0)
 
     assert isinstance(plan.split_regions.train, CropRegion)
-    assert row_intervals(plan.split_regions.regions("train")) == [(1400, 2000)]
+    assert row_intervals(plan.split_regions.regions("train")) == [(400, 1000)]
 
 
 def test_plan_train_is_list_of_disjoint_regions_when_split():
@@ -123,17 +118,17 @@ def test_plan_train_is_list_of_disjoint_regions_when_split():
     plan    = planner.plan(2)
 
     assert isinstance(plan.split_regions.train, list)
-    assert row_intervals(plan.split_regions.regions("train")) == [(1000, 1400), (1800, 2000)]
+    assert row_intervals(plan.split_regions.regions("train")) == [(0, 400), (800, 1000)]
 
 
-def test_plan_regions_carry_full_range_extent():
-    planner = make_planner(5, col_start=500, col_end=1000)
+def test_plan_regions_carry_every_column():
+    planner = make_planner(5, cols=500)
     plan    = planner.plan(0)
 
     for name in ("train", "val", "test"):
         for region in plan.split_regions.regions(name):
-            assert region.col_start == 500
-            assert region.col_end   == 1000
+            assert region.col_start == 0
+            assert region.col_end   == 500
 
 
 def test_plan_splits_cover_full_rows_without_overlap():
@@ -150,7 +145,7 @@ def test_plan_splits_cover_full_rows_without_overlap():
         for start, end in intervals:
             covered.extend(range(start, end))
 
-        assert sorted(covered)   == list(range(1000, 2000))
+        assert sorted(covered)   == list(range(1000))
         assert len(set(covered)) == len(covered)
 
 
@@ -183,16 +178,16 @@ def test_test_blocks_across_folds_tile_the_extent():
     for start, end in sorted(intervals):
         covered.extend(range(start, end))
 
-    assert covered == list(range(1000, 2000))
+    assert covered == list(range(1000))
 
 
 def test_guard_trims_internal_boundaries_only():
     planner = make_planner(5, guard=64)
     plan    = planner.plan(0)
 
-    assert row_intervals(plan.split_regions.regions("test"))  == [(1000, 1168)]
-    assert row_intervals(plan.split_regions.regions("val"))   == [(1232, 1368)]
-    assert row_intervals(plan.split_regions.regions("train")) == [(1432, 2000)]
+    assert row_intervals(plan.split_regions.regions("test"))  == [(0, 168)]
+    assert row_intervals(plan.split_regions.regions("val"))   == [(232, 368)]
+    assert row_intervals(plan.split_regions.regions("train")) == [(432, 1000)]
 
 
 def test_guard_gap_separates_every_split_pair():
@@ -211,7 +206,7 @@ def test_guard_keeps_split_train_runs_trimmed():
     planner = make_planner(5, guard=64)
     plan    = planner.plan(2)
 
-    assert row_intervals(plan.split_regions.regions("train")) == [(1000, 1368), (1832, 2000)]
+    assert row_intervals(plan.split_regions.regions("train")) == [(0, 368), (832, 1000)]
 
 
 def test_zero_guard_reproduces_block_aligned_regions():
@@ -222,7 +217,7 @@ def test_zero_guard_reproduces_block_aligned_regions():
     assert (test_region.row_start, test_region.row_end) == planner.blocks[0]
 
 
-def test_default_guard_matches_the_scene_fold_blocks():
+def test_default_guard_is_sixteen_rows():
     assert FoldConfig().guard == 16
 
 
@@ -238,7 +233,7 @@ def test_inference_regions_cover_untrimmed_blocks():
         assert (val_region.row_start,  val_region.row_end)  == planner.blocks[plan.val_block]
         assert test_region.contains(plan.split_regions.regions("test")[0])
         assert val_region.contains(plan.split_regions.regions("val")[0])
-        assert (test_region.col_start, test_region.col_end) == (500, 1000)
+        assert (test_region.col_start, test_region.col_end) == (0, 500)
 
 
 def test_inference_regions_tile_the_fold_window_without_gaps():
@@ -246,8 +241,8 @@ def test_inference_regions_tile_the_fold_window_without_gaps():
 
     spans = sorted(planner.inference_region(fold_index, "test").as_tuple()[:2] for fold_index in range(5))
 
-    assert spans[0][0]  == 1000
-    assert spans[-1][1] == 2000
+    assert spans[0][0]  == 0
+    assert spans[-1][1] == 1000
     assert all(left[1] == right[0] for left, right in zip(spans, spans[1:]))
 
 
@@ -271,19 +266,20 @@ def test_split_regions_helpers_consistent_with_plan():
     assert isinstance(plan.split_regions, SplitRegions)
 
 
-def factory_config(test_data_dir: Path, n_folds: int = 5, row_start: int = 1000, row_end: int = 1512) -> CrossValidationConfig:
+def factory_config(test_data_dir: Path, n_folds: int = 5) -> CrossValidationConfig:
     config                    = CrossValidationConfig()
     config.paths.dataset_path = test_data_dir
-    config.folds              = FoldConfig(n_folds=n_folds, row_start=row_start, row_end=row_end)
+    config.folds              = FoldConfig(n_folds=n_folds)
     return config
 
 
 @pytest.mark.dataset
-def test_factory_planner_spans_every_dataset_column(test_data_dir, dataset_json):
+def test_factory_planner_spans_the_whole_dataset_grid(test_data_dir, dataset_json):
     planner = FoldConfigFactory(factory_config(test_data_dir)).planner()
 
-    assert planner.col_start == 0
-    assert planner.col_end   == dataset_json["cols"]
+    assert planner.rows         == dataset_json["rows"]
+    assert planner.cols         == dataset_json["cols"]
+    assert planner.blocks[-1][1] == dataset_json["rows"]
 
 
 @pytest.mark.dataset
@@ -303,7 +299,7 @@ def test_factory_fold_inference_config_sets_split_and_region(test_data_dir, data
     assert inference.split           == "test"
     assert inference.output_subdir   is None
     assert inference.run_directory   == run_dir
-    assert inference.region_override == [1000, 1102, 0, dataset_json["cols"]]
+    assert inference.region_override == [0, dataset_json["rows"] // 5, 0, dataset_json["cols"]]
 
 
 def stamp_inference(base: Path, name: str, split: str) -> Path:
