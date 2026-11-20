@@ -286,10 +286,6 @@ class ChannelLayerNorm(nn.Module):
         return x.permute(0, 3, 1, 2)
 
 
-
-
-
-
 class ConvNeXtBlock(nn.Module):
 
     def __init__(self, channels: int, ffn_ratio: float, drop_path: float, ffn_activation: str, layer_scale_init: float):

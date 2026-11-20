@@ -16,8 +16,6 @@ from pipelines.shared.comparison.trial_collection import TrialRecord
 from tools.orchestration                          import QueuedInferenceStage, QueuedTrainingStage
 
 
-
-
 @pytest.fixture
 def config(tmp_path):
     config                    = BenchmarkConfig()

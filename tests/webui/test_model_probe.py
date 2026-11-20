@@ -302,8 +302,6 @@ def test_load_refuses_a_run_without_the_persisted_config(tmp_path):
     assert "meta/model_config.json" in out["error"]
 
 
-
-
 class _SharedPoolModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()

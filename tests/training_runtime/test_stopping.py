@@ -94,7 +94,6 @@ def test_early_stopping_min_delta_accepts_large_gains(logger, tracker):
     assert es.best_epoch == 1
 
 
-
 def test_early_stopping_state_roundtrip(logger, tracker):
     es = EarlyStopping(_es_config(patience=3), logger, tracker)
     es(1.0, 0)
