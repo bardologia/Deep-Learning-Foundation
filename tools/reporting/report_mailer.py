@@ -378,12 +378,15 @@ class ExperimentSelector(RunSelector):
         return [self.experiments[root] for root in self.resolve(experiment_filter)]
 
 
-class ReportBundle:
+class ExperimentReportBundle:
 
-    def __init__(self, staging_dir: Path, embed_images: bool, logger) -> None:
-        self.staging_dir  = Path(staging_dir)
-        self.embed_images = embed_images
+    def __init__(self, experiment: Experiment, config: ExperimentReportMailConfig, logger) -> None:
+        self.staging_dir  = Path(config.staging_dir)
+        self.embed_images = config.embed_images
         self.logger       = logger
+        self.config       = config
+        self.experiment   = experiment
+        self.freshness    = ReportFreshness(config.inference_dirname, logger)
 
     def _stage_report(self, report_path: Path, output_name: str) -> Path:
         text        = report_path.read_text(encoding="utf-8")
@@ -400,15 +403,6 @@ class ReportBundle:
         destination.write_bytes(path.read_bytes())
         self.logger.ok(f"Staged {destination.name} from {path}")
         return destination
-
-
-class ExperimentReportBundle(ReportBundle):
-
-    def __init__(self, experiment: Experiment, config: ExperimentReportMailConfig, logger) -> None:
-        super().__init__(config.staging_dir, config.embed_images, logger)
-        self.config     = config
-        self.experiment = experiment
-        self.freshness  = ReportFreshness(config.inference_dirname, logger)
 
     def _run_report(self, run_dir: Path, split: str) -> Path:
         inference = run_dir / self.config.inference_dirname
