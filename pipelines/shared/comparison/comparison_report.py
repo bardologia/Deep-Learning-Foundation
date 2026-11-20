@@ -19,22 +19,9 @@ class ComparisonReportBase:
     SIGNIFICANCE_ALPHA = 0.05
 
     HEADLINE_METRICS = [
-        ("curve_rmse_gt",                "RMSE"),
-        ("curve_mae_gt",                 "MAE"),
-        ("overall_r2_gt",                "R²"),
-        ("psnr_db_gt",                   "PSNR"),
-        ("pixel_r2_gt_mean",             "Pixel R²"),
-        ("pixel_cosine_gt_mean",         "Cosine"),
-        ("ssim_gt_z_mean",               "SSIM z"),
-        ("pixel_peak_err_units_mean_gt", "Peak err"),
-    ]
-
-    HEADLINE_GROUPS = [
-        ("Curve error",           ["curve_rmse_gt", "curve_mae_gt", "psnr_db_gt"]),
-        ("Variance explained",    ["overall_r2_gt", "pixel_r2_gt_mean"]),
-        ("Structural similarity", ["ssim_gt_z_mean"]),
-        ("Shape (cosine)",        ["pixel_cosine_gt_mean"]),
-        ("Peak location",         ["pixel_peak_err_units_mean_gt"]),
+        ("rmse_mean", "RMSE"),
+        ("mae_mean",  "MAE"),
+        ("r2_mean",   "R²"),
     ]
 
     seed_dispersion: dict = {}
@@ -163,53 +150,8 @@ class ComparisonReportBase:
 
         return lines
 
-    def _grouped_section(self, entity: str, title: str, intro: str, groups: list[tuple[str, list[str]]], scored: list[TrialRecord]) -> list[str]:
-        metrics = [(key, key) for _, keys in groups for key in keys]
-        if not metrics:
-            return [f"## {title}\n", "_No applicable metrics available._\n"]
-
-        result    = self._ranking(metrics, scored)
-        breakdown = result.group_breakdown(groups)
-        if not breakdown.labels:
-            return [f"## {title}\n", "_No applicable metrics available._\n"]
-
-        leader = breakdown.leader_overall()
-
-        lines = [f"## {title}\n", f"{intro}\n"]
-
-        table = MarkdownTable(["#", entity, "Grouped score", "Δ", *breakdown.labels])
-
-        for position, name in enumerate(breakdown.order(), start=1):
-            cells = []
-            for label in breakdown.labels:
-                score = breakdown.group_score[name][label]
-                rank  = breakdown.group_rank[label][name]
-                cell  = f"{score:.3f} ({RankingResult.format_rank(rank)})"
-                if name in breakdown.group_leaders(label):
-                    cell = f"**{cell}**"
-                cells.append(cell)
-
-            delta = breakdown.overall[name] - leader
-
-            table.add_row(position, f"`{name}`", f"{breakdown.overall[name]:.3f}", f"{delta:+.3f}", *cells)
-
-        lines += table.render()
-        lines.append("")
-        return lines
-
 
 class ComparisonReport(ComparisonReportBase):
-
-    FIGURE_GROUPS = [
-        ("Profile reconstructions",     re.compile(r"^profiles_")),
-        ("Per-pixel metric maps",       re.compile(r"^(pixel_|metric_histograms)")),
-        ("Gaussian parameter analysis", re.compile(r"^param_")),
-        ("Active Gaussian count",       re.compile(r"^active_count")),
-        ("SSIM and z curves",           re.compile(r"^(ssim_|z_metric)")),
-        ("Row slices",                  re.compile(r"^slice_row_")),
-        ("Z slices",                    re.compile(r"^slice_z_")),
-        ("Col slices",                  re.compile(r"^slice_col_")),
-    ]
 
     def __init__(self, records: list[TrialRecord], out_dir: Path, embed_images: bool, logger: Logger, rank_models: bool = True, seed_dispersion: dict | None = None, model_name: str | None = None) -> None:
         self.records         = records
@@ -289,13 +231,13 @@ class ComparisonReport(ComparisonReportBase):
         return table.render()
 
     def _inference_table(self) -> list[str]:
-        table = MarkdownTable(["Model", "Inference run", "Figures", "Animations", "Report"])
+        table = MarkdownTable(["Model", "Inference run", "Figures", "Report"])
 
         for r in self.records:
             inference = f"`{r.inference_dir.name}`" if r.has_inference else "pending"
             report_md = f"[report.md]({self.assets.rel(r.report_path)})" if r.report_path else "—"
 
-            table.add_row(f"`{r.name}`", inference, len(r.figures), len(r.animations), report_md)
+            table.add_row(f"`{r.name}`", inference, len(r.figures), report_md)
 
         return table.render()
 
@@ -309,27 +251,20 @@ class ComparisonReport(ComparisonReportBase):
             "averaged; missing metrics score 0). `Mean rank` is the tie-averaged ordinal rank (1 = best), `Wins` "
             "counts metrics where the model is best, `Δ` is the score gap to the leader. Models are ordered by `Score`."
         )
-        grouped_intro = (
-            "Correlated headline metrics are averaged within a group first, so the curve-error metrics do not outvote "
-            "the independent axes. `Grouped score` averages the group scores with equal weight; each cell is the group "
-            "score with its group rank in parentheses (best in **bold**)."
-        )
 
-        lines  = self._rank_section("Model",    "Leaderboard",         headline_intro, self.HEADLINE_METRICS, scored)
-        lines += self._grouped_section("Model", "Grouped Leaderboard", grouped_intro,  self.HEADLINE_GROUPS,  scored)
-        return lines
+        return self._rank_section("Model", "Leaderboard", headline_intro, self.HEADLINE_METRICS, scored)
 
     def _write_metrics(self) -> Path:
         scored = [r for r in self.records if r.metrics]
 
         if self.rank_models:
             lines  = self.assets.header("Test Metrics Comparison")
-            lines += ["> Best value per metric in **bold** (↓ lower is better, ↑ higher is better). Per-bin array metrics are excluded.\n"]
+            lines += ["> Best value per metric in **bold** (↓ lower is better, ↑ higher is better).\n"]
             if self.has_seed_sweep:
                 lines += ["> Each model was trained under multiple seeds; cells show the seed mean ± seed standard deviation.\n"]
         else:
             lines  = self.assets.header("Per-Fold Test Metrics")
-            lines += ["> Folds of one model across disjoint row regions; no value is highlighted as best (↓ lower is better, ↑ higher is better). Per-bin array metrics are excluded.\n"]
+            lines += ["> Folds of one model across disjoint row regions; no value is highlighted as best (↓ lower is better, ↑ higher is better).\n"]
 
         if not scored:
             lines += ["_No inference metrics available yet._\n"]
@@ -369,51 +304,30 @@ class ComparisonReport(ComparisonReportBase):
 
         return [*table.render(), ""]
 
-    def _write_media(self, groups: list[tuple[str, re.Pattern]] | None, subdir: str, title: str) -> list[Path]:
+    @staticmethod
+    def _figure_names(record: TrialRecord) -> list[str]:
+        return [path.relative_to(record.inference_dir / "figures").as_posix() for path in record.figures]
+
+    def _write_figures(self) -> list[Path]:
         scored = [r for r in self.records if r.has_inference]
+        names  = sorted({name for r in scored for name in self._figure_names(r)}, key=ReportAssets.natural_key)
+        groups = {}
 
-        if groups is None:
-            return [self._write_media_file(self._media_names(scored, subdir), subdir, title, "gif_comparison.md")]
+        for name in names:
+            groups.setdefault(name.split("/")[0], []).append(name)
 
-        names   : set[str]   = {name for r in scored for name in self._record_media(r, subdir)}
-        claimed : set[str]   = set()
-        written : list[Path] = []
+        return [self._write_figure_file(scored, group, f"Figures – {channel}", f"figures_{re.sub(r'[^a-z0-9]+', '_', channel.lower()).strip('_')}.md") for channel, group in groups.items()]
 
-        for group_title, pattern in groups + [("Other figures", re.compile(r".*"))]:
-            group_names = sorted((n for n in names if n not in claimed and pattern.search(n)), key=ReportAssets.natural_key)
-            if not group_names:
-                continue
-            claimed.update(group_names)
+    def _write_figure_file(self, scored: list[TrialRecord], names: list[str], title: str, filename: str) -> Path:
+        lines  = self.assets.header(title)
+        lines += ["> Only runs with at least one completed inference are shown.\n"]
 
-            slug = re.sub(r"[^a-z0-9]+", "_", group_title.lower()).strip("_")
-            out  = self._write_media_file(group_names, subdir, f"{title} – {group_title}", f"figures_{slug}.md")
-            written.append(out)
-
-        return written
-
-    def _media_names(self, scored: list[TrialRecord], subdir: str) -> list[str]:
-        names = {name for r in scored for name in self._record_media(r, subdir)}
-        return sorted(names, key=ReportAssets.natural_key)
-
-    def _record_media(self, record: TrialRecord, subdir: str) -> list[str]:
-        media = record.figures if subdir == "figures" else record.animations
-        return [path.name for path in media]
-
-    def _write_media_file(self, names: list[str], subdir: str, title: str, filename: str) -> Path:
-        scored = [r for r in self.records if r.has_inference]
-
-        lines = self.assets.header(title)
-        lines += ["> Only trials with at least one completed inference run are shown.\n"]
-
-        if not names:
-            lines.append("_No media available yet._\n")
-
-        for media_name in names:
-            lines.append(f"## `{media_name}`\n")
+        for name in names:
+            lines.append(f"## `{name}`\n")
             for r in scored:
-                media_path = r.inference_dir / subdir / media_name
-                if media_path.exists():
-                    lines.append(f"*{r.name}*  \n![]({self.assets.src(media_path)})\n")
+                path = r.inference_dir / "figures" / name
+                if path.exists():
+                    lines.append(f"*{r.name}*  \n![]({self.assets.src(path)})\n")
                 else:
                     lines.append(f"*{r.name}* — _(not found)_\n")
             lines.append("")
@@ -435,8 +349,7 @@ class ComparisonReport(ComparisonReportBase):
                 "trainer_config"  : r.trainer_config,
                 "inference_dir"   : str(r.inference_dir) if r.inference_dir else None,
                 "metrics"         : r.metrics,
-                "figures"         : [path.name for path in r.figures],
-                "animations"      : [path.name for path in r.animations],
+                "figures"         : self._figure_names(r),
                 "report_path"     : str(r.report_path) if r.report_path else None,
             }
 
@@ -452,8 +365,7 @@ class ComparisonReport(ComparisonReportBase):
         FileIO.ensure_dir(self.out_dir)
 
         written = [self._write_overview(), self._write_metrics()]
-        written.extend(self._write_media(self.FIGURE_GROUPS, "figures", "Figures"))
-        written.extend(self._write_media(None, "animations", "Animation Comparison"))
+        written.extend(self._write_figures())
         written.append(self._write_summary_json())
 
         return written

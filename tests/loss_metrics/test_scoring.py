@@ -68,74 +68,25 @@ def test_r2_constant_reference_is_undefined():
     assert R2.undefined_count(out) == 2
 
 
-def test_orientation_lower_tokens():
-    assert MetricOrientation.direction("curve_mse") == "lower"
-    assert MetricOrientation.direction("param_mae") == "lower"
-    assert MetricOrientation.higher_is_better("recon_loss") is False
+def test_orientation_of_the_error_and_loss_keys_is_lower():
+    for key in ("rmse_mean", "mae_mean", "rmse_pointwise", "mae_neighbourhood", "best_val_loss"):
+        assert MetricOrientation.direction(key) == "lower", key
+
+    assert MetricOrientation.higher_is_better("rmse_mean") is False
 
 
-def test_orientation_higher_tokens():
-    assert MetricOrientation.direction("r2_curve")                   == "higher"
-    assert MetricOrientation.direction("ssim_z")                     == "higher"
-    assert MetricOrientation.direction("ssim_cube_norm_col_mean")    == "higher"
-    assert MetricOrientation.higher_is_better("matched_f1")          is True
-    assert MetricOrientation.direction("count_acc_gt3")              == "higher"
-    assert MetricOrientation.direction("count_acc_pred3")            == "higher"
-    assert MetricOrientation.direction("count_exact_frac")           == "higher"
-    assert MetricOrientation.direction("improvement_pixel_mse_mean") == "higher"
+def test_orientation_of_the_r2_keys_is_higher():
+    for key in ("r2_mean", "r2_pointwise"):
+        assert MetricOrientation.direction(key) == "higher", key
+
+    assert MetricOrientation.higher_is_better("r2_mean") is True
 
 
-def test_orientation_neutral_returns_none():
-    assert MetricOrientation.direction("n_pixels") is None
-    assert MetricOrientation.direction("gt_amp") is None
-    assert MetricOrientation.direction("matched_n_pairs") is None
+def test_orientation_of_counts_and_signed_bias_is_neutral():
+    for key in ("n_pixels", "bias_pointwise", "checkpoint_epoch", "seed"):
+        assert MetricOrientation.direction(key) is None, key
+
     assert MetricOrientation.higher_is_better("n_pixels") is None
-    assert MetricOrientation.direction("active_count_pred_mean")  is None
-    assert MetricOrientation.direction("active_frac_pred")        is None
-    assert MetricOrientation.direction("slot_2_active_pred_frac") is None
-
-
-def test_orientation_undefined_counts_are_neutral():
-    for key in ("pixel_r2_gt_undefined_count", "label_r2_undefined_count", "r2_undefined_count"):
-        assert MetricOrientation.direction(key) is None, key
-
-
-def test_orientation_slot_organization_and_failure_ok_are_higher():
-    for key in ("slot_gt_alignment", "slot_mu_rank_diag", "slot_usage_entropy", "failure_frac_ok", "presence_rank_corr"):
-        assert MetricOrientation.direction(key) == "higher", key
-
-
-def test_orientation_fractions_of_faults_are_lower():
-    for key in ("count_over_frac", "count_under_frac", "clamp_amp_ceil_frac", "failure_frac_missed", "failure_miss_rate", "norm_in_ch2_overflow_frac", "norm_in_ch1_nonfinite_frac", "norm_in_nonfinite_frac", "norm_in_worst_abs_mean", "z_ce_gt_12", "pixel_peak_idx_d_gt_p95", "pixel_peak_idx_d_gt_nonempty_mean", "pixel_peak_err_units_mean_gt_nonempty", "roughness_excess_frac", "label_r2_frac_below_half"):
-        assert MetricOrientation.direction(key) == "lower", key
-
-
-def test_orientation_descriptive_slot_and_audit_keys_are_neutral():
-    for key in ("slot_1_amp_active_gt_mean", "slot_3_mu_global_pred_std", "slot_0_mu_gt_mean", "norm_in_ch0_mean", "clamp_n_active", "activity_threshold", "roughness_ratio", "checkpoint_epoch", "n_pixels_gt_empty", "gt_empty_frac", "strat_label_r2_spearman", "strat_gt_active_count_n_bins", "strat_label_r2_pixels_dropped", "ssim_gt_z_n_scored", "ssim_norm_col_n_nonfinite", "ssim_cube_norm_row_n_nonfinite"):
-        assert MetricOrientation.direction(key) is None, key
-
-
-def test_orientation_spreads_are_not_ranked():
-    for key in ("pixel_cosine_gt_std", "pixel_cosine_gt_nonempty_std", "pixel_r2_gt_std", "pixel_mae_gt_std", "pixel_peak_idx_d_gt_std"):
-        assert MetricOrientation.direction(key) is None, key
-
-    assert MetricOrientation.direction("pixel_cosine_gt_mean") == "higher"
-    assert MetricOrientation.direction("pixel_mae_gt_mean")    == "lower"
-
-
-def test_orientation_reconstruction_error_keys_are_declared():
-    for key in ("rmse", "mse_mean", "mse_median", "mse_mean_normalized", "mae_mean", "mae_mean_normalized", "relative_l2_mean", "relative_l2_median", "curve_l1", "curve_l1_p90"):
-        assert MetricOrientation.direction(key) == "lower", key
-    for key in ("pearson_mean", "pearson_median"):
-        assert MetricOrientation.direction(key) == "higher", key
-    for key in ("n_curves", "n_active_curves", "n_valid_pixels", "num_batches", "profile_length", "patch_height", "seed"):
-        assert MetricOrientation.direction(key) is None, key
-
-
-def test_orientation_reduction_overrides_mse_token():
-    assert MetricOrientation.direction("relative_mse_reduction")       == "higher"
-    assert MetricOrientation.higher_is_better("relative_mse_reduction") is True
-    assert MetricOrientation.direction("fraction_pred_beats_reduced")  == "higher"
 
 
 def test_relative_improvement_lower_is_better():

@@ -33,7 +33,6 @@ def main() -> None:
             "Trials"         : len(config.run_tags),
             "Split"          : config.inference_split,
             "Compare images" : config.compare_images,
-            "Compare GIFs"   : config.compare_gifs,
             "Output dir"     : str(out_dir),
         }, title="Configuration")
 
@@ -44,7 +43,6 @@ def main() -> None:
             records         = records,
             out_dir         = out_dir,
             compare_images  = config.compare_images,
-            compare_gifs    = config.compare_gifs,
             embed_images    = config.embed_images,
             inference_split = config.inference_split,
             logger          = logger,

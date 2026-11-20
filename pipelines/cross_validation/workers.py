@@ -80,7 +80,7 @@ class FoldCollector(TrialCollector):
         inference_dir = self._split_inference_dir(record.run_dir, split)
 
         if inference_dir is None or not (inference_dir / "metrics.json").exists():
-            return replace(record, inference_dir=None, metrics={}, figures=[], animations=[], report_path=None)
+            return replace(record, inference_dir=None, metrics={}, figures=[], report_path=None)
 
         return replace(record, **self._inference_fields(inference_dir))
 
@@ -90,8 +90,7 @@ class FoldCollector(TrialCollector):
         return {
             "inference_dir" : inference_dir,
             "metrics"       : FileIO.load_json(inference_dir / "metrics.json"),
-            "figures"       : sorted((inference_dir / "figures").glob("*.png")) if (inference_dir / "figures").is_dir() else [],
-            "animations"    : sorted((inference_dir / "animations").glob("*.gif")) if (inference_dir / "animations").is_dir() else [],
+            "figures"       : sorted((inference_dir / "figures").rglob("*.png")),
             "report_path"   : report_path if report_path.exists() else None,
         }
 
@@ -134,7 +133,7 @@ class FoldCollector(TrialCollector):
         if no_checkpoint:
             self.logger.warning(f"{fold_name}: seeds without a checkpoint: {no_checkpoint}; the checkpoint means cover {len(runs) - len(no_checkpoint)}/{len(runs)} seeds")
 
-        record                 = replace(runs[0], name=fold_name, metrics={}, inference_dir=None, figures=[], animations=[], report_path=None)
+        record                 = replace(runs[0], name=fold_name, metrics={}, inference_dir=None, figures=[], report_path=None)
         record.checkpoint      = checkpoint
         record.training_result = {"status": status, "duration_s": float(np.mean(durations)) if durations else None}
 

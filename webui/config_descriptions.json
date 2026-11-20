@@ -986,7 +986,6 @@
         "run_tags": "Run subfolder names to compare; a trial directory name expands to its nested seed<N> runs which aggregate into one seed-mean entry, and the collector only processes the listed tags without auto-scanning runs_dir, so an empty list yields zero trials",
         "inference_split": "Dataset split whose completed inference directory supplies each trial's metrics; a run carrying inference for several splits contributes only the newest stamp whose completion marker records this split",
         "compare_images": "Whether to render static side-by-side image comparisons across the collected runs",
-        "compare_gifs": "Whether to render animated GIF comparisons across the collected runs",
         "embed_images": "Base64-embed figures inline in the generated markdown report instead of linking external files",
         "output_dir": "Destination for the comparison report; None writes to a _comparison subfolder under runs_dir"
       }
@@ -1001,9 +1000,9 @@
         "output_subdir": "Name of the aggregate output directory written under each group's inference/ subdirectory; empty falls back to inference_subdir when set, else a fresh timestamp shared by all groups",
         "metrics_filename": "Filename of the per-run metrics JSON read from each seed's inference directory and of the aggregate mean/std JSON written next to the report",
         "report_filename": "Filename of the generated seed-comparison markdown report, also used to link each seed's own report",
-        "compute_disagreement": "Also compute per-pixel across-seed disagreement maps (profile, amplitude, mu, sigma std) from every seed's saved inference cubes, write them into each seed's cube directory as metric-map layers and render summary figures; requires save_cubes inference artifacts and raises when a seed lacks them",
-        "compute_ensemble": "Also average every seed's saved prediction cube into one deep-ensemble prediction and score it against the ground truth with the same cube-wide scalars, reported next to the per-seed mean; requires save_cubes inference artifacts and raises when a seed lacks them",
-        "cubes_subdir": "Name of the cube subdirectory inside each seed's inference directory the disagreement maps are read from and written back into"
+        "compute_disagreement": "Also compute the per-pixel across-seed standard deviation of every predicted target channel from the saved inference maps, with a risk-coverage curve and a label-suspect map, written beside the report; needs inference run with save_maps",
+        "compute_ensemble": "Also average every seed's saved prediction maps into one deep-ensemble prediction and score it against the targets with the same per-channel metrics, reported next to the per-seed mean; needs inference run with save_maps",
+        "maps_subdir": "Name of the maps subdirectory inside each seed's inference directory that holds predictions.npy and targets.npy, read by the ensemble and the disagreement maps"
       }
     },
     "comparison::ComparisonPathsConfig": {

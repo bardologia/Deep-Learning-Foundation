@@ -493,7 +493,7 @@ class PaperFigurePackConfig:
     report_filename  : str = "report.md"
     figures_subdir   : str = "figures"
 
-    patterns : List[str] = field(default_factory=lambda: ["pixel_maps/*", "param_scatter/*", "stratified/*", "profiles/*", "data_consistency/*"])
+    patterns : List[str] = field(default_factory=lambda: ["*/*.png"])
 
     output_dir : Path = Path("results/paper_figures")
 

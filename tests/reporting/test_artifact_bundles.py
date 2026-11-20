@@ -55,7 +55,7 @@ def _write_run(run_dir, inferred=True):
         _write(stamp / "metrics.json", json.dumps({"rmse_mean": 0.5}))
         _write(stamp / "figures" / "map.png", PNG_BYTES)
         _write(stamp / "maps" / "predictions.npy", b"\x00" * 2048)
-        _write(stamp / "animations" / "walk_z.gif", b"\x00" * 6000)
+        _write(stamp / "figures" / "pointwise" / "error.gif", b"\x00" * 6000)
 
     return run_dir
 
@@ -218,8 +218,8 @@ def test_run_bundle_packs_everything_the_run_holds(entry_config, runs_dir):
     assert archives[0].parent == entry_config.staging_dir / "backbone" / "unet_a"
     assert _archived_names(archives[0]) == [
         "backbone/unet_a/docs/model_doc.md",
-        "backbone/unet_a/inference/20260101_000000/animations/walk_z.gif",
         "backbone/unet_a/inference/20260101_000000/figures/map.png",
+        "backbone/unet_a/inference/20260101_000000/figures/pointwise/error.gif",
         "backbone/unet_a/inference/20260101_000000/metrics.json",
         "backbone/unet_a/inference/20260101_000000/report.md",
         "backbone/unet_a/logs/training.log",
@@ -279,7 +279,7 @@ def test_excluded_content_names_the_rule_that_dropped_each_file(runs_dir):
         "best_model.pt"                                   : "suffix .pt",
         "checkpoints/last.pt"                             : "suffix .pt",
         "inference/20260101_000000/maps/predictions.npy"  : "path maps",
-        "inference/20260101_000000/animations/walk_z.gif" : "over 0.0 MB",
+        "inference/20260101_000000/figures/pointwise/error.gif" : "over 0.0 MB",
     }
     assert len(kept) == len(paths) - len(rules)
 
@@ -294,7 +294,7 @@ def test_excluded_content_names_the_files_the_size_cap_dropped(runs_dir):
 
     warnings = [message for level, message in logger.messages if level == "warning"]
     assert len(warnings) == 1
-    assert warnings[0].startswith(f"1 file(s) of {run_dir} left out for being over 0.0 MB, largest first: inference/20260101_000000/animations/walk_z.gif (")
+    assert warnings[0].startswith(f"1 file(s) of {run_dir} left out for being over 0.0 MB, largest first: inference/20260101_000000/figures/pointwise/error.gif (")
     assert "best_model.pt" not in warnings[0]
 
 

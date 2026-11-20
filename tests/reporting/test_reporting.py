@@ -136,18 +136,17 @@ def test_natural_key_mixed_tokens():
 
 
 def test_grouper_scalar_keys_filters_non_numeric():
-    records = [_record(loss=0.5, name="x", curve_r2=0.9)]
+    records = [_record(loss=0.5, name="x", r2_mean=0.9)]
     keys    = MetricSectionGrouper.scalar_keys(records)
-    assert "loss"     in keys
-    assert "curve_r2" in keys
-    assert "name"     not in keys
+    assert "loss"    in keys
+    assert "r2_mean" in keys
+    assert "name"    not in keys
 
 
-def test_grouper_scalar_keys_excludes_per_bin():
-    records = [_record(z_mse=0.1, z_mse_3=0.2)]
+def test_grouper_scalar_keys_keep_channel_names_ending_in_digits():
+    records = [_record(rmse_band_3=0.2, flag=True)]
     keys    = MetricSectionGrouper.scalar_keys(records)
-    assert "z_mse"   in keys
-    assert "z_mse_3" not in keys
+    assert keys == ["rmse_band_3"]
 
 
 def test_grouper_scalar_keys_sorted_unique():
@@ -165,17 +164,18 @@ def test_grouper_bool_excluded():
 
 def test_grouper_assigns_known_sections():
     grouper = MetricSectionGrouper()
-    keys    = ["ssim_mean", "curve_mse", "n_pixels"]
+    keys    = ["rmse_mean", "rmse_pointwise", "r2_pointwise", "n_pixels"]
     titles  = dict(grouper.group(keys))
 
-    assert "SSIM"                in titles and "ssim_mean" in titles["SSIM"]
-    assert "Curve-Level"         in titles and "curve_mse" in titles["Curve-Level"]
-    assert "Dataset Statistics"  in titles and "n_pixels"  in titles["Dataset Statistics"]
+    assert titles["Mean over target channels"] == ["rmse_mean"]
+    assert titles["Per-channel error"]         == ["rmse_pointwise"]
+    assert titles["Per-channel R²"]            == ["r2_pointwise"]
+    assert titles["Scored pixels"]             == ["n_pixels"]
 
 
 def test_grouper_each_key_claimed_once():
     grouper = MetricSectionGrouper()
-    keys    = ["pixel_mse_mean", "pixel_r2_mean", "gauss_mu_err"]
+    keys    = ["rmse_mean", "r2_mean", "bias_pointwise", "other_value"]
     groups  = grouper.group(keys)
     flat    = [k for _, ks in groups for k in ks]
     assert sorted(flat) == sorted(keys)
@@ -191,7 +191,7 @@ def test_grouper_leftover_bucket():
 
 def test_grouper_no_empty_sections():
     grouper = MetricSectionGrouper()
-    keys    = ["ssim_a"]
+    keys    = ["r2_a"]
     groups  = grouper.group(keys)
     assert all(ks for _, ks in groups)
     assert len(groups) == 1
@@ -199,14 +199,10 @@ def test_grouper_no_empty_sections():
 
 def test_grouper_section_order_follows_definition():
     grouper = MetricSectionGrouper()
-    keys    = ["matched_mu_mae", "n_pixels", "ssim_y"]
+    keys    = ["n_pixels", "r2_a", "rmse_mean"]
     titles  = [t for t, _ in grouper.group(keys)]
 
-    def idx(prefix):
-        return next(i for i, t in enumerate(titles) if t.startswith(prefix))
-
-    assert idx("Dataset Statistics") < idx("SSIM")
-    assert idx("SSIM") < idx("Matched Gaussian")
+    assert titles == ["Mean over target channels", "Per-channel R²", "Scored pixels"]
 
 
 @pytest.mark.dataset

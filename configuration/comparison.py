@@ -18,7 +18,6 @@ class TrialComparisonConfig:
     inference_split : str = "test"
 
     compare_images : bool           = True
-    compare_gifs   : bool           = True
     embed_images   : bool           = False
     output_dir     : Optional[Path] = None
 
@@ -38,7 +37,7 @@ class SeedComparisonConfig:
 
     compute_disagreement : bool = False
     compute_ensemble     : bool = True
-    cubes_subdir         : str  = "cubes"
+    maps_subdir          : str  = "maps"
 
 
 @dataclass

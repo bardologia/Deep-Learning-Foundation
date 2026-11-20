@@ -28,12 +28,12 @@ def _run_with_figures(base: Path, name: str, stamp: str = "20260101_000000") -> 
     run     = base / name
     figures = _stamp(run, stamp)
 
-    (figures / "pixel_maps").mkdir()
-    (figures / "profiles").mkdir()
+    (figures / "pointwise").mkdir()
+    (figures / "neighbourhood").mkdir()
 
-    (figures / "pixel_maps" / "mse.png").write_bytes(b"png-mse")
-    (figures / "pixel_maps" / "r2.png").write_bytes(b"png-r2")
-    (figures / "profiles" / "best_01.png").write_bytes(b"png-prof")
+    (figures / "pointwise" / "error.png").write_bytes(b"png-mse")
+    (figures / "pointwise" / "target.png").write_bytes(b"png-r2")
+    (figures / "neighbourhood" / "prediction.png").write_bytes(b"png-prof")
 
     return run
 
@@ -42,7 +42,7 @@ def _config(base: Path, out: Path, runs: list[str]) -> PaperFigurePackConfig:
     return PaperFigurePackConfig(
         runs_dir   = base,
         run_filter = runs,
-        patterns   = ["pixel_maps/*.png", "profiles/*.png"],
+        patterns   = ["pointwise/*.png", "neighbourhood/*.png"],
         output_dir = out,
     )
 
@@ -54,8 +54,8 @@ def test_pack_copies_stable_names_and_writes_a_manifest(tmp_path, monkeypatch):
 
     payload = PaperFigurePack(_config(tmp_path / "runs", out, ["run_a", "run_b"]), SilentLogger(), {}).run()
 
-    assert (out / "run_a__pixel_maps__mse.png").read_bytes() == b"png-mse"
-    assert (out / "run_b__profiles__best_01.png").is_file()
+    assert (out / "run_a__pointwise__error.png").read_bytes() == b"png-mse"
+    assert (out / "run_b__neighbourhood__prediction.png").is_file()
     assert len(payload["figures"]) == 6
 
     manifest = json.loads((out / "figure_manifest.json").read_text(encoding="utf-8"))
@@ -66,16 +66,16 @@ def test_pack_copies_stable_names_and_writes_a_manifest(tmp_path, monkeypatch):
 
 def test_pack_takes_the_vector_figures_of_the_paper_style(tmp_path):
     run = _run_with_figures(tmp_path / "runs", "run_a")
-    (run / "inference" / "20260101_000000" / "figures" / "profiles" / "best_02.pdf").write_bytes(b"pdf-prof")
+    (run / "inference" / "20260101_000000" / "figures" / "neighbourhood" / "best_02.pdf").write_bytes(b"pdf-prof")
 
     out    = tmp_path / "figures"
     config = _config(tmp_path / "runs", out, ["run_a"])
 
-    config.patterns = ["pixel_maps/*", "profiles/*"]
+    config.patterns = ["pointwise/*", "neighbourhood/*"]
 
     payload = PaperFigurePack(config, SilentLogger(), {}).run()
 
-    assert (out / "run_a__profiles__best_02.pdf").read_bytes() == b"pdf-prof"
+    assert (out / "run_a__neighbourhood__best_02.pdf").read_bytes() == b"pdf-prof"
     assert len(payload["figures"]) == 4
 
 
@@ -83,25 +83,25 @@ def test_pack_uses_latest_completed_inference_stamp(tmp_path):
     run = _run_with_figures(tmp_path / "runs", "run_a", stamp="20260101_000000")
 
     late = _stamp(run, "20260601_000000")
-    (late / "pixel_maps").mkdir()
-    (late / "pixel_maps" / "mse.png").write_bytes(b"png-late")
+    (late / "pointwise").mkdir()
+    (late / "pointwise" / "error.png").write_bytes(b"png-late")
 
     crashed = _stamp(run, "20260701_000000", split=None)
-    (crashed / "pixel_maps").mkdir()
-    (crashed / "pixel_maps" / "mse.png").write_bytes(b"png-crashed")
+    (crashed / "pointwise").mkdir()
+    (crashed / "pointwise" / "error.png").write_bytes(b"png-crashed")
 
     val = _stamp(run, "20260801_000000", split="val")
-    (val / "pixel_maps").mkdir()
-    (val / "pixel_maps" / "mse.png").write_bytes(b"png-val")
+    (val / "pointwise").mkdir()
+    (val / "pointwise" / "error.png").write_bytes(b"png-val")
 
     out     = tmp_path / "figures"
     config  = _config(tmp_path / "runs", out, ["run_a"])
-    config.patterns = ["pixel_maps/*.png"]
+    config.patterns = ["pointwise/*.png"]
 
     logger = RecordingLogger()
     PaperFigurePack(config, logger, {}).run()
 
-    assert (out / "run_a__pixel_maps__mse.png").read_bytes() == b"png-late"
+    assert (out / "run_a__pointwise__error.png").read_bytes() == b"png-late"
     assert any(level == "warning" and "20260701_000000" in message for level, message in logger.messages)
     assert any(level == "info" and "20260601_000000" in message and "split 'test'" in message for level, message in logger.messages)
 
@@ -123,5 +123,5 @@ def test_repacking_warns_about_overwrites_and_keeps_earlier_entries(tmp_path):
     assert len(payload["figures"]) == 6 and len(manifest["figures"]) == 6
     assert {entry["run"] for entry in manifest["figures"]} == {"run_a", "run_b"}
     assert all(entry["packed_at"] for entry in manifest["figures"])
-    assert any(message.startswith("3 figure(s) overwritten in") and "run_a__pixel_maps__mse.png" in message for message in warnings)
+    assert any(message.startswith("3 figure(s) overwritten in") and "run_a__pointwise__error.png" in message for message in warnings)
     assert any("1 file(s) in" in message and "stray.png" in message for message in warnings)

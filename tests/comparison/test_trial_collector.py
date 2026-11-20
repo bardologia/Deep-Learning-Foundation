@@ -15,7 +15,7 @@ from tests.conftest import RecordingLogger
 def _run_with_metrics(run_dir: Path, rmse: float, split: str = "test", stamp: str = "20260101_000000", extra: dict | None = None) -> None:
     inference_dir = run_dir / "inference" / stamp
     inference_dir.mkdir(parents=True)
-    (inference_dir / "metrics.json").write_text(json.dumps({"curve_rmse_gt": rmse, **(extra or {})}))
+    (inference_dir / "metrics.json").write_text(json.dumps({"rmse_mean": rmse, **(extra or {})}))
     (inference_dir / CompletionMarker.FILENAME).write_text(json.dumps({"stage": "inference", "split": split}))
 
 
@@ -27,10 +27,10 @@ def test_trial_tag_expands_and_aggregates_seed_runs(tmp_path):
     records   = collector.collect()
 
     assert [record.name for record in records] == ["trial_a"]
-    assert records[0].metrics["curve_rmse_gt"] == 3.0
+    assert records[0].metrics["rmse_mean"] == 3.0
     assert records[0].has_inference
     assert collector.seed_dispersion["trial_a"]["n_seeds"] == 2
-    assert collector.seed_dispersion["trial_a"]["metrics"]["curve_rmse_gt"] is not None
+    assert collector.seed_dispersion["trial_a"]["metrics"]["rmse_mean"] is not None
 
 
 def test_explicit_seed_run_tags_aggregate_into_one_trial(tmp_path):
@@ -41,7 +41,7 @@ def test_explicit_seed_run_tags_aggregate_into_one_trial(tmp_path):
     records   = collector.collect()
 
     assert [record.name for record in records] == ["trial_a"]
-    assert records[0].metrics["curve_rmse_gt"] == 3.0
+    assert records[0].metrics["rmse_mean"] == 3.0
 
 
 def test_duplicate_unit_and_seed_tags_collapse_once(tmp_path):
@@ -52,7 +52,7 @@ def test_duplicate_unit_and_seed_tags_collapse_once(tmp_path):
     records   = collector.collect()
 
     assert [record.name for record in records] == ["trial_a"]
-    assert records[0].metrics["curve_rmse_gt"] == 3.0
+    assert records[0].metrics["rmse_mean"] == 3.0
     assert collector.seed_dispersion["trial_a"]["n_seeds"] == 2
 
 
@@ -71,15 +71,15 @@ def test_seed_means_disclose_the_seeds_they_cover(tmp_path):
     infos      = [message for level, message in logger.messages if level == "info"]
     oks        = [message for level, message in logger.messages if level == "ok"]
 
-    assert records[0].metrics["curve_rmse_gt"] == 2.0
+    assert records[0].metrics["rmse_mean"] == 2.0
     assert dispersion["n_seeds"]               == 3
-    assert dispersion["n_used"]                == {"curve_rmse_gt": 1}
-    assert any("seed2" in message and "curve_rmse_gt" in message and "1 of 3" in message for message in warnings)
+    assert dispersion["n_used"]                == {"rmse_mean": 1}
+    assert any("seed2" in message and "rmse_mean" in message and "1 of 3" in message for message in warnings)
     assert any(message == "trial_a: figures and report from trial_a/seed0" for message in infos)
     assert any(message.startswith("Aggregated 3 seed run(s) into 1 trial(s)") for message in oks)
 
     out_dir = tmp_path / "comparison"
-    TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, inference_split="test", logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion).write_all()
+    TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, embed_images=False, inference_split="test", logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion).write_all()
 
     overview = (out_dir / "overview.md").read_text()
 
@@ -125,7 +125,7 @@ def test_named_output_subdir_of_other_split_does_not_win(tmp_path):
     records   = collector.collect()
 
     assert records[0].inference_dir.name       == "20260101_000000"
-    assert records[0].metrics["curve_rmse_gt"] == 1.0
+    assert records[0].metrics["rmse_mean"] == 1.0
 
 
 def test_single_seed_run_tag_stays_identity(tmp_path):
@@ -147,7 +147,7 @@ def test_report_annotates_seed_dispersion(tmp_path):
     records   = collector.collect()
 
     out_dir = tmp_path / "comparison"
-    report  = TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, inference_split="test", logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion)
+    report  = TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, embed_images=False, inference_split="test", logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion)
     report.write_all()
 
     overview = (out_dir / "overview.md").read_text()
@@ -166,7 +166,7 @@ def test_report_states_the_split_and_writes_a_json_summary(tmp_path):
     records   = collector.collect()
 
     out_dir = tmp_path / "comparison"
-    written = TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, inference_split="test", logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion).write_all()
+    written = TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, embed_images=False, inference_split="test", logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion).write_all()
 
     summary = json.loads((out_dir / "comparison_summary.json").read_text())
     by_name = {entry["name"]: entry for entry in summary["trials"]}
@@ -176,26 +176,26 @@ def test_report_states_the_split_and_writes_a_json_summary(tmp_path):
     assert summary["inference_split"] == "test"
     assert sorted(by_name) == ["run_x", "trial_a"]
     assert by_name["run_x"]["inference_dir"].endswith("run_x/inference/20260101_000000")
-    assert by_name["run_x"]["metrics"] == {"curve_rmse_gt": 1.0}
+    assert by_name["run_x"]["metrics"] == {"rmse_mean": 1.0}
     assert by_name["trial_a"]["seed_dispersion"]["n_seeds"] == 2
-    assert by_name["trial_a"]["seed_dispersion"]["n_used"]  == {"curve_rmse_gt": 2}
+    assert by_name["trial_a"]["seed_dispersion"]["n_used"]  == {"rmse_mean": 2}
     assert "seed_dispersion" not in by_name["run_x"]
 
 
 def test_leaderboard_names_the_attainable_p_floor_and_the_shared_seeds(tmp_path):
     for seed, rmse in (("seed0", 1.0), ("seed1", 1.1)):
-        _run_with_metrics(tmp_path / "trial_a" / seed, rmse, extra={"count_exact_frac": 0.9})
+        _run_with_metrics(tmp_path / "trial_a" / seed, rmse, extra={"r2_mean": 0.9})
     for seed, rmse in (("seed0", 2.0), ("seed1", 2.2)):
-        _run_with_metrics(tmp_path / "trial_c" / seed, rmse, extra={"count_exact_frac": 0.5})
+        _run_with_metrics(tmp_path / "trial_c" / seed, rmse, extra={"r2_mean": 0.5})
     for seed, rmse in (("seed1", 3.0), ("seed2", 3.3)):
-        _run_with_metrics(tmp_path / "trial_b" / seed, rmse, extra={"count_exact_frac": 0.4})
+        _run_with_metrics(tmp_path / "trial_b" / seed, rmse, extra={"r2_mean": 0.4})
 
     collector = TrialCollector(runs_dir=tmp_path, run_tags=["trial_a", "trial_b", "trial_c"], logger=RecordingLogger(), inference_split="test")
     records   = collector.collect()
 
     out_dir = tmp_path / "comparison"
     logger  = RecordingLogger()
-    report  = TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, inference_split="test", logger=logger, seed_dispersion=collector.seed_dispersion)
+    report  = TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, embed_images=False, inference_split="test", logger=logger, seed_dispersion=collector.seed_dispersion)
     report.write_all()
 
     overview = (out_dir / "overview.md").read_text()
@@ -203,7 +203,7 @@ def test_leaderboard_names_the_attainable_p_floor_and_the_shared_seeds(tmp_path)
 
     assert "n/a (1 shared seed)" in overview
     assert "with n=2 paired seeds the smallest attainable two-sided p is 0.5" in overview
-    assert overview.count("no such row can reach * at 0.05") == 2
+    assert overview.count("no such row can reach * at 0.05") == 1
     assert len(warnings) == 1
 
 
@@ -212,18 +212,18 @@ def test_figure_section_marks_figures_absent_from_a_trial(tmp_path):
     _run_with_metrics(tmp_path / "run_y", 2.0)
 
     for tag, names in (("run_x", ["a.png", "b.png"]), ("run_y", ["a.png"])):
-        profiles = tmp_path / tag / "inference" / "20260101_000000" / "figures" / "profiles"
-        profiles.mkdir(parents=True)
+        channel = tmp_path / tag / "inference" / "20260101_000000" / "figures" / "pointwise"
+        channel.mkdir(parents=True)
         for name in names:
-            (profiles / name).write_bytes(b"")
+            (channel / name).write_bytes(b"")
 
     out_dir = tmp_path / "comparison"
     out_dir.mkdir()
 
     collector = TrialCollector(runs_dir=tmp_path, run_tags=["run_x", "run_y"], logger=RecordingLogger(), inference_split="test")
-    report    = TrialComparisonReport(records=collector.collect(), out_dir=out_dir, compare_images=True, compare_gifs=False, embed_images=False, inference_split="test", logger=RecordingLogger())
+    report    = TrialComparisonReport(records=collector.collect(), out_dir=out_dir, compare_images=True, embed_images=False, inference_split="test", logger=RecordingLogger())
 
-    path = report._write_figure_section("profiles", "Profile reconstructions")
+    path = report._write_figure_section("pointwise")
     text = path.read_text()
 
     assert "## `a.png`" in text
@@ -231,26 +231,21 @@ def test_figure_section_marks_figures_absent_from_a_trial(tmp_path):
     assert text.count("_(not in this run)_") == 1
 
 
-def test_figure_subdir_outside_the_known_table_gets_its_own_gallery(tmp_path):
+def test_every_target_channel_figure_folder_gets_its_own_gallery(tmp_path):
     _run_with_metrics(tmp_path / "run_x", 1.0)
 
-    stratified = tmp_path / "run_x" / "inference" / "20260101_000000" / "figures" / "stratified"
-    stratified.mkdir(parents=True)
-    (stratified / "bins.png").write_bytes(b"")
+    for channel in ("pointwise", "neighbourhood"):
+        folder = tmp_path / "run_x" / "inference" / "20260101_000000" / "figures" / channel
+        folder.mkdir(parents=True)
+        (folder / "error.png").write_bytes(b"")
 
-    out_dir = tmp_path / "comparison"
-    logger  = RecordingLogger()
-
+    out_dir   = tmp_path / "comparison"
     collector = TrialCollector(runs_dir=tmp_path, run_tags=["run_x"], logger=RecordingLogger(), inference_split="test")
-    written   = TrialComparisonReport(records=collector.collect(), out_dir=out_dir, compare_images=True, compare_gifs=True, embed_images=False, inference_split="test", logger=logger).write_all()
+    written   = TrialComparisonReport(records=collector.collect(), out_dir=out_dir, compare_images=True, embed_images=False, inference_split="test", logger=RecordingLogger()).write_all()
 
-    infos    = [message for level, message in logger.messages if level == "info"]
-    warnings = [message for level, message in logger.messages if level == "warning"]
-
-    assert out_dir / "figures_stratified.md" in written
-    assert "# Figure Comparison – Stratified" in (out_dir / "figures_stratified.md").read_text()
-    assert any("outside FIGURE_SUBDIRS" in message and "stratified" in message for message in infos)
-    assert any("holds animations" in message for message in warnings)
+    assert out_dir / "figures_pointwise.md" in written
+    assert out_dir / "figures_neighbourhood.md" in written
+    assert "# Figure Comparison – neighbourhood" in (out_dir / "figures_neighbourhood.md").read_text()
 
 
 def test_galleries_warn_when_no_trial_holds_figures(tmp_path):
@@ -258,7 +253,7 @@ def test_galleries_warn_when_no_trial_holds_figures(tmp_path):
 
     logger    = RecordingLogger()
     collector = TrialCollector(runs_dir=tmp_path, run_tags=["run_x"], logger=RecordingLogger(), inference_split="test")
-    written   = TrialComparisonReport(records=collector.collect(), out_dir=tmp_path / "comparison", compare_images=True, compare_gifs=False, embed_images=False, inference_split="test", logger=logger).write_all()
+    written   = TrialComparisonReport(records=collector.collect(), out_dir=tmp_path / "comparison", compare_images=True, embed_images=False, inference_split="test", logger=logger).write_all()
 
     warnings = [message for level, message in logger.messages if level == "warning"]
 

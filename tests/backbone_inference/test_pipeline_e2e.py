@@ -30,7 +30,7 @@ def test_inference_writes_maps_metrics_figures_report_and_marker(tmp_path, test_
     targets     = np.load(stamp / "maps" / "targets.npy")
 
     assert predictions.shape == targets.shape == (2, region.row_size, region.col_size)
-    assert set(metrics["channels"]) == {"pointwise", "neighbourhood"}
+    assert {"rmse_pointwise", "r2_neighbourhood", "rmse_mean", "r2_mean"} <= set(metrics)
     assert metrics["split"] == "test"
     assert metrics["checkpoint_epoch"] == 2
     assert sorted(path.name for path in (stamp / "figures" / "pointwise").iterdir()) == ["error.png", "prediction.png", "target.png"]

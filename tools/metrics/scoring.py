@@ -153,21 +153,16 @@ class RankCorrelation:
 
 class MetricOrientation:
 
-    _HIGHER_OVERRIDES = {"relative_mse_reduction", "fraction_pred_beats_reduced", "failure_frac_ok", "presence_rank_corr", "slot_gt_alignment", "slot_mu_rank_diag", "slot_usage_entropy"}
-    _HIGHER_PATTERN   = re.compile(r"^improvement_|valid_fraction")
-    _NEUTRAL_PATTERN  = re.compile(r"^(n_|num_|x_axis_|gt_|pred_)|_undefined_count$|(^|_)matched_(n_pairs|tol)$|^pixel_\w+_std$|^(seed|patch_height|patch_width|profile_length)$|^active_count_\w+_mean$|^active_frac_(gt|pred)$|^slot_\d+_active_(gt|pred)_frac$|^slot_\d+_(amp|mu|sig)_((active|inactive|global)_)?(gt|pred)_(mean|std)$|^norm_in_ch\d+_(mean|std)$|^strat_|^ssim_\w+_n_(scored|nonfinite)$|^(clamp_n_active|presence_n_scored|activity_threshold|roughness_ratio|roughness_gt_mean|roughness_pred_mean|checkpoint_epoch)$")
-    _LOWER_PATTERN    = re.compile(r"^(mae|mse|rmse)(_|$)|^relative_l2_|^curve_l1|^label_r2_frac_below_|^z_ce_|^pixel_peak_idx_d_|^count_(over|under)_frac$|^clamp_\w+_frac$|^failure_(frac_\w+|halluc_rate|miss_rate)$|^norm_in(_ch\d+)?_(overflow|nonfinite)_frac$|^norm_in_worst_|^roughness_excess_frac$|(^|_)nmse$")
-    _LOWER_TOKENS     = ("distance", "_dist", "error", "_err", "loss", "_mse", "_mae", "_rmse")
-    _HIGHER_TOKENS    = ("r2", "ssim", "psnr", "cosine", "pearson", "precision", "recall", "f1", "count_acc", "count_exact")
+    _NEUTRAL_PATTERN = re.compile(r"^(n_|bias_)|^(seed|checkpoint_epoch)$")
+    _LOWER_PATTERN   = re.compile(r"^(rmse|mae|mse)_|loss")
+    _HIGHER_PATTERN  = re.compile(r"^r2_")
 
     @classmethod
     def direction(cls, key: str) -> str | None:
         rules = (
-            ("higher", key in cls._HIGHER_OVERRIDES or bool(cls._HIGHER_PATTERN.search(key))),
             (None,     bool(cls._NEUTRAL_PATTERN.search(key))),
             ("lower",  bool(cls._LOWER_PATTERN.search(key))),
-            ("lower",  any(token in key for token in cls._LOWER_TOKENS)),
-            ("higher", any(token in key for token in cls._HIGHER_TOKENS)),
+            ("higher", bool(cls._HIGHER_PATTERN.search(key))),
         )
 
         return next(direction for direction, matched in rules if matched)

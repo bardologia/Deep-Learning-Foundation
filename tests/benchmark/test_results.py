@@ -135,21 +135,18 @@ def test_collector_attaches_inference_metrics_and_media(tmp_path, logger_stub):
     (tmp_path / "training" / "unet").mkdir(parents=True)
 
     inference_dir = tmp_path / "training" / "unet" / "inference" / "run_a"
-    (inference_dir / "figures").mkdir(parents=True)
-    (inference_dir / "animations").mkdir(parents=True)
-    _write_json(inference_dir / "metrics.json", {"curve_rmse_gt": 0.5})
+    (inference_dir / "figures" / "pointwise").mkdir(parents=True)
+    _write_json(inference_dir / "metrics.json", {"rmse_mean": 0.5})
     _write_json(inference_dir / CompletionMarker.FILENAME, {"stage": "inference", "split": "test"})
-    (inference_dir / "figures" / "profiles_1.png").write_bytes(b"x")
-    (inference_dir / "animations" / "z.gif").write_bytes(b"x")
+    (inference_dir / "figures" / "pointwise" / "error.png").write_bytes(b"x")
     (inference_dir / "report.md").write_text("ok", encoding="utf-8")
 
     records = TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()
 
     record = records[0]
     assert record.has_inference
-    assert record.metrics["curve_rmse_gt"] == 0.5
-    assert [p.name for p in record.figures]    == ["profiles_1.png"]
-    assert [p.name for p in record.animations] == ["z.gif"]
+    assert record.metrics["rmse_mean"] == 0.5
+    assert [p.relative_to(inference_dir / "figures").as_posix() for p in record.figures] == ["pointwise/error.png"]
     assert record.report_path is not None
 
 
@@ -161,13 +158,13 @@ def test_collector_ignores_inference_of_another_split(tmp_path, logger_stub):
     inference_root = tmp_path / "training" / "unet" / "inference"
 
     for name, split, rmse in (("20260101_000000", "test", 0.5), ("region_override", "val", 9.9)):
-        _write_json(inference_root / name / "metrics.json", {"curve_rmse_gt": rmse})
+        _write_json(inference_root / name / "metrics.json", {"rmse_mean": rmse})
         _write_json(inference_root / name / CompletionMarker.FILENAME, {"stage": "inference", "split": split})
 
     records = TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()
 
     assert records[0].inference_dir.name          == "20260101_000000"
-    assert records[0].metrics["curve_rmse_gt"]    == 0.5
+    assert records[0].metrics["rmse_mean"]    == 0.5
 
 
 def test_collector_ignores_inference_without_completion_marker(tmp_path, logger_stub):
@@ -175,7 +172,7 @@ def test_collector_ignores_inference_without_completion_marker(tmp_path, logger_
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
     (tmp_path / "training" / "unet").mkdir(parents=True)
-    _write_json(tmp_path / "training" / "unet" / "inference" / "20260101_000000" / "metrics.json", {"curve_rmse_gt": 0.5})
+    _write_json(tmp_path / "training" / "unet" / "inference" / "20260101_000000" / "metrics.json", {"rmse_mean": 0.5})
 
     records = TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()
 
@@ -193,7 +190,7 @@ def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
     for seed, rmse in ((1, 2.0), (2, 4.0)):
         inference_dir = tmp_path / "training" / "unet" / f"seed{seed}" / "inference" / "run_a"
         inference_dir.mkdir(parents=True)
-        _write_json(inference_dir / "metrics.json", {"curve_rmse_gt": rmse})
+        _write_json(inference_dir / "metrics.json", {"rmse_mean": rmse})
         _write_json(inference_dir / CompletionMarker.FILENAME, {"stage": "inference", "split": "test"})
 
     collector = BenchmarkSeedCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test")
@@ -202,13 +199,13 @@ def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
     assert [record.name for record in records] == ["unet"]
 
     record = records[0]
-    assert record.metrics["curve_rmse_gt"]      == 3.0
+    assert record.metrics["rmse_mean"]      == 3.0
     assert record.training_result["duration_s"] == pytest.approx(15.0)
 
     dispersion = collector.seed_dispersion["unet"]
     assert dispersion["n_seeds"]                  == 2
-    assert dispersion["n_used"]                   == {"curve_rmse_gt": 2}
-    assert dispersion["metrics"]["curve_rmse_gt"] == pytest.approx(float(np.std([2.0, 4.0], ddof=1)))
+    assert dispersion["n_used"]                   == {"rmse_mean": 2}
+    assert dispersion["metrics"]["rmse_mean"] == pytest.approx(float(np.std([2.0, 4.0], ddof=1)))
 
 
 def test_seed_collector_single_run_is_identity(tmp_path, logger_stub):
@@ -231,12 +228,12 @@ def test_metric_table_annotates_seed_dispersion(tmp_path, logger_stub):
         out_dir         = tmp_path,
         embed_images    = False,
         logger          = logger_stub,
-        seed_dispersion = {"unet": {"n_seeds": 2, "n_used": {"overall_r2_gt": 2}, "best_val_loss_std": 0.01, "metrics": {"overall_r2_gt": 0.05}}},
+        seed_dispersion = {"unet": {"n_seeds": 2, "n_used": {"r2_mean": 2}, "best_val_loss_std": 0.01, "metrics": {"r2_mean": 0.05}}},
     )
 
     assert report.has_seed_sweep is True
 
-    lines = "\n".join(report._metric_table(["overall_r2_gt"], records))
+    lines = "\n".join(report._metric_table(["r2_mean"], records))
 
     assert "± " in lines
 
@@ -267,8 +264,8 @@ def _records_with_metrics(out_dir):
     a.inference_dir = out_dir / "unet" / "inf"
     b.inference_dir = out_dir / "resunet" / "inf"
 
-    a.metrics = {"curve_rmse_gt": 0.1, "overall_r2_gt": 0.9, "psnr_db_gt": 40.0}
-    b.metrics = {"curve_rmse_gt": 0.5, "overall_r2_gt": 0.5, "psnr_db_gt": 20.0}
+    a.metrics = {"rmse_mean": 0.1, "r2_mean": 0.9, "mae_mean": 0.08}
+    b.metrics = {"rmse_mean": 0.5, "r2_mean": 0.5, "mae_mean": 0.40}
 
     return [a, b]
 
@@ -320,7 +317,7 @@ def test_metric_table_bolds_best_value(tmp_path, logger_stub):
     records = _records_with_metrics(tmp_path)
     report  = _report(records, tmp_path, logger_stub)
 
-    lines = "\n".join(report._metric_table(["overall_r2_gt"], records))
+    lines = "\n".join(report._metric_table(["r2_mean"], records))
 
     assert "**0.9**" in lines
 
@@ -329,7 +326,7 @@ def test_metric_table_does_not_bold_in_fold_mode(tmp_path, logger_stub):
     records = _records_with_metrics(tmp_path)
     report  = _report(records, tmp_path, logger_stub, rank=False)
 
-    lines = "\n".join(report._metric_table(["overall_r2_gt"], records))
+    lines = "\n".join(report._metric_table(["r2_mean"], records))
 
     assert "**" not in lines
 
@@ -367,7 +364,7 @@ def test_training_table_shows_seed_counts_under_a_sweep(tmp_path, logger_stub):
         out_dir         = tmp_path,
         embed_images    = False,
         logger          = logger_stub,
-        seed_dispersion = {"unet": {"n_seeds": 3, "n_used": {"curve_rmse_gt": 3}, "best_val_loss_std": 0.01, "metrics": {}}},
+        seed_dispersion = {"unet": {"n_seeds": 3, "n_used": {"rmse_mean": 3}, "best_val_loss_std": 0.01, "metrics": {}}},
     )
 
     lines = "\n".join(report._training_table())
@@ -383,7 +380,7 @@ def test_training_table_shows_used_over_total_when_a_seed_dropped_out(tmp_path, 
         out_dir         = tmp_path,
         embed_images    = False,
         logger          = logger_stub,
-        seed_dispersion = {"unet": {"n_seeds": 3, "n_used": {"curve_rmse_gt": 3, "overall_r2_gt": 2}, "best_val_loss_std": 0.01, "metrics": {}}},
+        seed_dispersion = {"unet": {"n_seeds": 3, "n_used": {"rmse_mean": 3, "r2_mean": 2}, "best_val_loss_std": 0.01, "metrics": {}}},
     )
 
     lines = "\n".join(report._training_table())
@@ -425,52 +422,52 @@ def _seeded_benchmark_run(tmp_path: Path, seed_metrics: dict) -> Path:
 
 
 def test_seed_collector_warns_about_a_seed_without_metrics_and_records_the_seeds_used(tmp_path, recording_logger):
-    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}, "seed3": None})
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"rmse_mean": 2.0}, "seed2": {"rmse_mean": 4.0}, "seed3": None})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
     records = collector.collect()
 
-    assert records[0].metrics["curve_rmse_gt"] == 3.0
+    assert records[0].metrics["rmse_mean"] == 3.0
     assert collector.seed_dispersion["unet"]["n_seeds"]       == 3
-    assert collector.seed_dispersion["unet"]["n_used"]        == {"curve_rmse_gt": 2}
+    assert collector.seed_dispersion["unet"]["n_used"]        == {"rmse_mean": 2}
     assert collector.seed_dispersion["unet"]["missing_seeds"] == ["seed3"]
     assert any(level == "warning" and message.startswith("unet:") and "seed3" in message and "cover 2 of 3 seeds" in message for level, message in recording_logger.messages)
     assert ("warning", "1 of 1 seed-swept models average fewer seeds than they trained: ['unet']") in recording_logger.messages
 
 
 def test_seed_collector_names_a_metric_that_is_non_finite_in_one_seed(tmp_path, recording_logger):
-    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0, "overall_r2_gt": 0.5}, "seed2": {"curve_rmse_gt": 4.0, "overall_r2_gt": float("nan")}})
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"rmse_mean": 2.0, "r2_mean": 0.5}, "seed2": {"rmse_mean": 4.0, "r2_mean": float("nan")}})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
     records = collector.collect()
 
-    assert records[0].metrics["overall_r2_gt"] == 0.5
-    assert collector.seed_dispersion["unet"]["n_used"] == {"curve_rmse_gt": 2, "overall_r2_gt": 1}
-    assert any(level == "warning" and message.startswith("unet:") and "overall_r2_gt" in message and "cover 1 to 2 of 2 seeds" in message for level, message in recording_logger.messages)
+    assert records[0].metrics["r2_mean"] == 0.5
+    assert collector.seed_dispersion["unet"]["n_used"] == {"rmse_mean": 2, "r2_mean": 1}
+    assert any(level == "warning" and message.startswith("unet:") and "r2_mean" in message and "cover 1 to 2 of 2 seeds" in message for level, message in recording_logger.messages)
 
 
 def test_seed_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path, recording_logger):
-    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0, "overall_r2_gt": float("nan")}, "seed2": {"curve_rmse_gt": 4.0, "overall_r2_gt": float("nan")}})
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"rmse_mean": 2.0, "r2_mean": float("nan")}, "seed2": {"rmse_mean": 4.0, "r2_mean": float("nan")}})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
     records = collector.collect()
 
-    assert "overall_r2_gt" not in records[0].metrics
-    assert any(level == "warning" and message.startswith("unet:") and "overall_r2_gt" in message and "cover 0 to 2 of 2 seeds" in message for level, message in recording_logger.messages)
+    assert "r2_mean" not in records[0].metrics
+    assert any(level == "warning" and message.startswith("unet:") and "r2_mean" in message and "cover 0 to 2 of 2 seeds" in message for level, message in recording_logger.messages)
 
 
 def test_seed_collector_stays_quiet_when_every_seed_scored(tmp_path, recording_logger):
-    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}})
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"rmse_mean": 2.0}, "seed2": {"rmse_mean": 4.0}})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
     collector.collect()
 
-    assert collector.seed_dispersion["unet"]["n_used"] == {"curve_rmse_gt": 2}
+    assert collector.seed_dispersion["unet"]["n_used"] == {"rmse_mean": 2}
     assert [message for level, message in recording_logger.messages if level == "warning" and "seed" in message and "cover" in message] == []
 
 
 def test_seed_collector_keeps_the_per_run_records_beside_the_aggregates(tmp_path, recording_logger):
-    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": None})
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"rmse_mean": 2.0}, "seed2": None})
     collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
 
     records = collector.collect()
@@ -481,7 +478,7 @@ def test_seed_collector_keeps_the_per_run_records_beside_the_aggregates(tmp_path
 
 
 def test_seed_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directory(tmp_path, recording_logger):
-    run_dir = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}})
+    run_dir = _seeded_benchmark_run(tmp_path, {"seed1": {"rmse_mean": 2.0}, "seed2": {"rmse_mean": 4.0}})
 
     results = FileIO.load_json(run_dir / "pipeline" / "training_results.json")
     results[1]["name"] = "unet-mse-hv/seed2"

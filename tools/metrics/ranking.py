@@ -56,28 +56,6 @@ class RankMath:
 
 
 @dataclass
-class GroupBreakdown:
-    labels      : list[str]
-    group_score : dict[str, dict[str, float]]
-    group_rank  : dict[str, dict[str, float]]
-    overall     : dict[str, float]
-
-    def order(self) -> list[str]:
-        return sorted(self.overall, key=lambda name: (-self.overall[name], name))
-
-    def leader_overall(self) -> float:
-        return max(self.overall.values()) if self.overall else 0.0
-
-    def group_leaders(self, label: str) -> set[str]:
-        present = {name: self.group_score[name][label] for name in self.group_score}
-        if not present:
-            return set()
-
-        best = max(present.values())
-        return {name for name, value in present.items() if value >= best - RankMath.TIE_TOLERANCE}
-
-
-@dataclass
 class RankingResult:
     names       : list[str]
     metric_keys : list[str]
@@ -108,36 +86,6 @@ class RankingResult:
 
     def leader_composite(self) -> float:
         return max(self.composite.values()) if self.composite else 0.0
-
-    def group_breakdown(self, groups: list[tuple[str, list[str]]]) -> GroupBreakdown:
-        kept = [
-            (label, keys)
-            for label, keys in groups
-            if any(key in self.scores[name] for name in self.names for key in keys)
-        ]
-
-        group_score = {name: {} for name in self.names}
-        for label, keys in kept:
-            for name in self.names:
-                members = [self.scores[name].get(key, 0.0) for key in keys]
-                group_score[name][label] = sum(members) / len(keys)
-
-        group_rank = {}
-        for label, _ in kept:
-            values            = {name: group_score[name][label] for name in self.names}
-            group_rank[label] = RankMath.average_ranks(values, reverse=True)
-
-        overall = {
-            name: (sum(group_score[name][label] for label, _ in kept) / len(kept) if kept else 0.0)
-            for name in self.names
-        }
-
-        return GroupBreakdown(
-            labels      = [label for label, _ in kept],
-            group_score = group_score,
-            group_rank  = group_rank,
-            overall     = overall,
-        )
 
 
 class RankingComputer:

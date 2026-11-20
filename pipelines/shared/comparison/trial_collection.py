@@ -33,7 +33,6 @@ class TrialRecord:
     inference_dir   : Path | None = None
     metrics         : dict        = field(default_factory=dict)
     figures         : list[Path]  = field(default_factory=list)
-    animations      : list[Path]  = field(default_factory=list)
     report_path     : Path | None = None
 
     @property
@@ -170,7 +169,6 @@ class TrialArtifactReader:
 
         record.inference_dir = inference_dir
         record.metrics       = FileIO.load_json(inference_dir / "metrics.json")
-        record.animations    = sorted((inference_dir / "animations").glob("*.gif")) if (inference_dir / "animations").is_dir() else []
 
         self._attach_figures(record, inference_dir)
 
@@ -179,7 +177,7 @@ class TrialArtifactReader:
             record.report_path = report_path
 
     def _attach_figures(self, record: TrialRecord, inference_dir: Path) -> None:
-        record.figures = sorted((inference_dir / "figures").glob("*.png")) if (inference_dir / "figures").is_dir() else []
+        record.figures = sorted((inference_dir / "figures").rglob("*.png"))
 
     def _warn_no_inference(self, record: TrialRecord) -> None:
         if self.inference_split is None or record.has_inference:

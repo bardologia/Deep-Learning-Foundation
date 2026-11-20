@@ -94,7 +94,8 @@ class InferencePipeline:
 
         Metrics.write_json(metrics, meta.metrics_path)
 
-        rows = [{"Channel": name, "RMSE": f"{values['rmse']:.5g}", "MAE": f"{values['mae']:.5g}", "Bias": f"{values['bias']:+.5g}", "R2": f"{values['r2']:.4f}"} for name, values in metrics["channels"].items()]
+        values = {name: Metrics.channel_values(metrics, name) for name in run.target_channels}
+        rows   = [{"Channel": name, "RMSE": f"{entry['rmse']:.5g}", "MAE": f"{entry['mae']:.5g}", "Bias": f"{entry['bias']:+.5g}", "R2": f"{entry['r2']:.4f}"} for name, entry in values.items()]
         logger.metrics_table(rows, ["Channel", "RMSE", "MAE", "Bias", "R2"], title=f"Metrics on the {run.split_name} region")
 
         return metrics

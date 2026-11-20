@@ -19,9 +19,9 @@ from tests.conftest import make_file_logger
 
 N_FOLDS = 5
 
-CURVE_VALUES = {
-    "curve_rmse_gt" : [1.0, 2.0, 3.0, 4.0, 5.0],
-    "overall_r2_gt" : [0.5, 0.6, 0.7, 0.8, 0.9],
+METRIC_VALUES = {
+    "rmse_mean" : [1.0, 2.0, 3.0, 4.0, 5.0],
+    "r2_mean" : [0.5, 0.6, 0.7, 0.8, 0.9],
 }
 
 
@@ -50,7 +50,7 @@ def make_records(fold_index_to_metrics: dict[int, dict], with_checkpoint: bool =
 
 def split_metrics() -> dict[int, dict]:
     return {
-        index: {key: values[index] for key, values in CURVE_VALUES.items()}
+        index: {key: values[index] for key, values in METRIC_VALUES.items()}
         for index in range(N_FOLDS)
     }
 
@@ -137,9 +137,9 @@ def test_summary_json_mean_std_correct(tmp_path):
     assert payload["n_folds"] == N_FOLDS
     assert payload["folds"]   == [FoldNaming.name(i) for i in range(N_FOLDS)]
 
-    rmse = payload["splits"]["test"]["curve_rmse_gt"]
+    rmse = payload["splits"]["test"]["rmse_mean"]
     assert rmse["mean"]    == pytest.approx(3.0)
-    assert rmse["std"]     == pytest.approx(float(np.std(CURVE_VALUES["curve_rmse_gt"], ddof=1)))
+    assert rmse["std"]     == pytest.approx(float(np.std(METRIC_VALUES["rmse_mean"], ddof=1)))
     assert rmse["n_used"]  == N_FOLDS
     assert rmse["n_total"] == N_FOLDS
 
@@ -149,10 +149,10 @@ def test_summary_json_per_fold_breakdown(tmp_path):
     report.write_all()
 
     payload  = json.loads((report.out_dir / "cv_summary.json").read_text())
-    per_fold = payload["splits"]["test"]["curve_rmse_gt"]["per_fold"]
+    per_fold = payload["splits"]["test"]["rmse_mean"]["per_fold"]
 
     for index in range(N_FOLDS):
-        assert per_fold[FoldNaming.name(index)] == CURVE_VALUES["curve_rmse_gt"][index]
+        assert per_fold[FoldNaming.name(index)] == METRIC_VALUES["rmse_mean"][index]
 
 
 def test_summary_json_best_val_loss_aggregate(tmp_path):
@@ -177,7 +177,7 @@ def test_aggregate_markdown_has_structure(tmp_path):
     assert "## Fold Plan"               in text
     assert "## Training Across Folds"   in text
     assert "## Split `test`"            in text
-    assert "`curve_rmse_gt`"            in text
+    assert "`rmse_mean`"            in text
 
 
 def test_aggregate_markdown_reports_correct_mean(tmp_path):
@@ -185,20 +185,20 @@ def test_aggregate_markdown_reports_correct_mean(tmp_path):
     report.write_all()
 
     text  = (report.out_dir / "cv_aggregate_report.md").read_text()
-    lines = [line for line in text.splitlines() if "`curve_rmse_gt`" in line]
+    lines = [line for line in text.splitlines() if "`rmse_mean`" in line]
 
     assert lines
     assert "3" in lines[0]
 
 
 def test_aggregate_table_skips_non_numeric_metrics(tmp_path):
-    metrics = {index: {"curve_rmse_gt": float(index + 1), "label_str": "x"} for index in range(N_FOLDS)}
+    metrics = {index: {"rmse_mean": float(index + 1), "label_str": "x"} for index in range(N_FOLDS)}
     report  = make_report(tmp_path, base_records=make_records(metrics), records_by_split={"test": make_records(metrics)})
 
-    lines = report._aggregate_table(["curve_rmse_gt", "label_str"], make_records(metrics))
+    lines = report._aggregate_table(["rmse_mean", "label_str"], make_records(metrics))
     body  = "\n".join(lines)
 
-    assert "`curve_rmse_gt`" in body
+    assert "`rmse_mean`" in body
     assert "`label_str`"     not in body
 
 
@@ -208,7 +208,7 @@ def _seed_dispersion(best_val_loss_std: float, metric_std: float, n_used: int = 
             "n_seeds"           : 2,
             "status"            : "DONE",
             "best_val_loss_std" : best_val_loss_std,
-            "splits"            : {"test": {"curve_rmse_gt": metric_std}},
+            "splits"            : {"test": {"rmse_mean": metric_std}},
             "n_used"            : {"test": n_used},
             "missing_seeds"     : {"test": list(missing)},
         }
@@ -239,7 +239,7 @@ def test_seed_dispersion_annotates_markdown_and_json(tmp_path):
 
     payload = json.loads((report.out_dir / "cv_summary.json").read_text())
     assert payload["seeds_per_fold"][FoldNaming.name(0)] == 2
-    assert payload["splits"]["test"]["curve_rmse_gt"]["per_fold_seed_std"][FoldNaming.name(0)] == pytest.approx(0.5)
+    assert payload["splits"]["test"]["rmse_mean"]["per_fold_seed_std"][FoldNaming.name(0)] == pytest.approx(0.5)
     assert payload["best_val_loss"]["per_fold_seed_std"][FoldNaming.name(0)] == pytest.approx(0.05)
 
 
@@ -251,12 +251,12 @@ def test_no_seed_dispersion_keeps_summary_unchanged(tmp_path):
 
     assert report.has_seed_sweep is False
     assert "seeds_per_fold" not in payload
-    assert "per_fold_seed_std" not in payload["splits"]["test"]["curve_rmse_gt"]
+    assert "per_fold_seed_std" not in payload["splits"]["test"]["rmse_mean"]
 
 
 def test_partial_fold_metrics_counted_in_n_used(tmp_path):
     metrics                     = split_metrics()
-    metrics[3]["curve_rmse_gt"] = float("nan")
+    metrics[3]["rmse_mean"] = float("nan")
 
     base = make_records(metrics)
     rbs  = make_records(metrics)
@@ -265,7 +265,7 @@ def test_partial_fold_metrics_counted_in_n_used(tmp_path):
     report.write_all()
 
     payload = json.loads((report.out_dir / "cv_summary.json").read_text())
-    rmse    = payload["splits"]["test"]["curve_rmse_gt"]
+    rmse    = payload["splits"]["test"]["rmse_mean"]
 
     assert rmse["n_used"]  == N_FOLDS - 1
     assert rmse["n_total"] == N_FOLDS
@@ -316,7 +316,7 @@ def test_training_table_carries_the_fold_status_and_seed_count(tmp_path):
 def test_a_metric_non_finite_in_every_fold_is_named_when_it_is_left_out(tmp_path):
     from tests.conftest import RecordingLogger
 
-    metrics = {index: {"curve_rmse_gt": float(index + 1), "overall_r2_gt": float("nan"), "curve_mae_gt": float("nan") if index == 0 else 0.1} for index in range(N_FOLDS)}
+    metrics = {index: {"rmse_mean": float(index + 1), "r2_mean": float("nan"), "mae_mean": float("nan") if index == 0 else 0.1} for index in range(N_FOLDS)}
     report  = make_report(tmp_path, base_records=make_records(metrics), records_by_split={"test": make_records(metrics)})
     logger  = RecordingLogger()
 
@@ -326,9 +326,9 @@ def test_a_metric_non_finite_in_every_fold_is_named_when_it_is_left_out(tmp_path
     summary  = json.loads((tmp_path / "reports" / "cv_summary.json").read_text())
     warnings = [message for level, message in logger.messages if level == "warning"]
 
-    assert "split test: ['overall_r2_gt'] non-finite in every fold, omitted from the aggregate" in warnings
-    assert "overall_r2_gt" not in summary["splits"]["test"]
-    assert summary["splits"]["test"]["curve_mae_gt"]["n_used"] == N_FOLDS - 1
+    assert "split test: ['r2_mean'] non-finite in every fold, omitted from the aggregate" in warnings
+    assert "r2_mean" not in summary["splits"]["test"]
+    assert summary["splits"]["test"]["mae_mean"]["n_used"] == N_FOLDS - 1
 
 
 def test_summary_json_names_the_commit_that_wrote_it(tmp_path):

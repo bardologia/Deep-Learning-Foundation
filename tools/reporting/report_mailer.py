@@ -24,7 +24,7 @@ from tools.runtime.run_tag                     import RunTag
 
 class TrialTree:
 
-    SKIP = ("logs", "batch_train_logs", "pipeline", "reports", "comparison", "inference", "meta", "docs", "tensorboard", "cubes", "figures", "animations", "data")
+    SKIP = ("logs", "batch_train_logs", "pipeline", "reports", "comparison", "inference", "meta", "docs", "tensorboard", "maps", "figures", "data")
 
     @staticmethod
     def is_run(directory: Path) -> bool:
@@ -148,7 +148,7 @@ class Experiment:
         collector = TrialCollector(runs_dir=self.trials_dir, run_tags=config.run_tags, logger=logger, inference_split=config.inference_split)
         records   = collector.collect()
 
-        TrialComparisonReport(records=records, out_dir=out_dir, compare_images=config.compare_images, compare_gifs=config.compare_gifs, embed_images=config.embed_images, inference_split=config.inference_split, logger=logger, seed_dispersion=collector.seed_dispersion).write_all()
+        TrialComparisonReport(records=records, out_dir=out_dir, compare_images=config.compare_images, embed_images=config.embed_images, inference_split=config.inference_split, logger=logger, seed_dispersion=collector.seed_dispersion).write_all()
 
         return out_dir
 

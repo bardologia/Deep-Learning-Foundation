@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tools.reporting.markdown import MarkdownDoc, MarkdownTable
+from pipelines.backbone.inference.metrics import Metrics
+from tools.reporting.markdown             import MarkdownDoc, MarkdownTable
 
 
 class Report:
@@ -30,7 +31,8 @@ class Report:
     def _metrics(self, doc: MarkdownDoc) -> None:
         table = MarkdownTable(["Target channel", "RMSE", "MAE", "Bias", "R2"], align=["left", "right", "right", "right", "right"])
 
-        for name, values in self.metrics["channels"].items():
+        for name in self.run.target_channels:
+            values = Metrics.channel_values(self.metrics, name)
             table.add_row(name, f"{values['rmse']:.5g}", f"{values['mae']:.5g}", f"{values['bias']:+.5g}", f"{values['r2']:.4f}")
 
         table.add_row("mean", f"{self.metrics['rmse_mean']:.5g}", f"{self.metrics['mae_mean']:.5g}", "", f"{self.metrics['r2_mean']:.4f}")

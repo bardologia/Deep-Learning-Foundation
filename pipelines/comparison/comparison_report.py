@@ -15,61 +15,11 @@ from tools.monitoring.logger                       import Logger
 
 class TrialComparisonReport(ComparisonReportBase):
 
-    FIGURE_SUBDIRS = [
-        ("tracks",              "Channels and derived channels"),
-        ("input_channels",      "Input channels"),
-        ("profiles",            "Profile reconstructions"),
-        ("pixel_maps",          "Per-pixel metric maps"),
-        ("histograms",          "Metric distributions"),
-        ("param_distributions", "Parameter distributions"),
-        ("param_scatter",       "Parameter scatter plots"),
-        ("param_error_maps",    "Parameter error maps"),
-        ("param_error_hists",   "Parameter error histograms"),
-        ("slots",               "Slot diagnostics"),
-        ("ssim",                "SSIM curves (denorm)"),
-        ("ssim_norm",           "SSIM curves (unit-area)"),
-        ("z_metrics",           "Per-z-bin metrics"),
-        ("slices",              "Cube slices"),
-        ("slices_norm",         "Cube slices (unit-area)"),
-    ]
-
-    HEADLINE_METRICS = [
-        ("curve_rmse_gt",                "RMSE"),
-        ("curve_mae_gt",                 "MAE"),
-        ("overall_r2_gt",                "R²"),
-        ("psnr_db_gt",                   "PSNR"),
-        ("pixel_r2_gt_mean",             "Pixel R²"),
-        ("pixel_cosine_gt_mean",         "Cosine"),
-        ("ssim_gt_z_mean",               "SSIM z"),
-        ("ssim_norm_z_mean",             "SSIM norm"),
-        ("pixel_peak_err_units_mean_gt", "Peak err"),
-        ("relative_mse_reduction",       "vs reference"),
-    ]
-
-    COUNT_METRICS = [
-        ("count_exact_frac", "Exact"),
-        ("count_under_frac", "Under"),
-        ("count_over_frac",  "Over"),
-    ]
-
-    HEADLINE_GROUPS = [
-        ("Curve error",           ["curve_rmse_gt", "curve_mae_gt", "psnr_db_gt"]),
-        ("Variance explained",    ["overall_r2_gt", "pixel_r2_gt_mean"]),
-        ("Structural similarity", ["ssim_gt_z_mean", "ssim_norm_z_mean"]),
-        ("Shape (cosine)",        ["pixel_cosine_gt_mean"]),
-        ("Peak location",         ["pixel_peak_err_units_mean_gt"]),
-        ("Gain vs reference",     ["relative_mse_reduction"]),
-    ]
-
-    PRECISION_BUCKET_PATTERN = re.compile(r"^matched_precision_gt(\d+)$")
-    RECALL_BUCKET_PATTERN    = re.compile(r"^matched_recall_gt(\d+)$")
-
     def __init__(
         self,
         records         : list[TrialRecord],
         out_dir         : Path,
         compare_images  : bool,
-        compare_gifs    : bool,
         embed_images    : bool,
         inference_split : str,
         logger          : Logger,
@@ -78,7 +28,6 @@ class TrialComparisonReport(ComparisonReportBase):
         self.records         = records
         self.out_dir         = Path(out_dir)
         self.compare_images  = compare_images
-        self.compare_gifs    = compare_gifs
         self.inference_split = inference_split
         self.logger          = logger
         self.seed_dispersion = seed_dispersion or {}
@@ -87,7 +36,7 @@ class TrialComparisonReport(ComparisonReportBase):
 
     def _write_overview(self) -> Path:
         lines  = self.assets.header("Trial Comparison Overview")
-        lines += [f"Metrics, figures and animations come from each trial's newest completed inference on the `{self.inference_split}` split; a trial without one is listed but not ranked.\n"]
+        lines += [f"Metrics and figures come from each trial's newest completed inference on the `{self.inference_split}` split; a trial without one is listed but not ranked.\n"]
         lines += ["## Runs\n"]
 
         if self.has_seed_sweep:
@@ -129,70 +78,14 @@ class TrialComparisonReport(ComparisonReportBase):
             "metrics rank last), `Wins` counts metrics where the trial is best, `Δ` is the score gap to the leader. "
             "Trials are ordered by `Score`. Per-metric cells show the rank; the best is in **bold**."
         )
-        grouped_intro = (
-            "Correlated headline metrics are averaged within a group first, so the curve-error metrics (RMSE / MAE / "
-            "PSNR) do not outvote the independent axes. `Grouped score` averages the group scores with equal weight; "
-            "each cell is the group score with its group rank in parentheses (best in **bold**)."
-        )
-        precision_intro = (
-            "Matched (permutation-invariant) precision per GT component count `k` — the share of predicted components "
-            "that hit a true component where the pixel truly holds `k`. Precision rewards under-prediction, so read it "
-            "alongside the recall leaderboard, never on its own."
-        )
-        recall_intro = (
-            "Matched (permutation-invariant) recall per GT component count `k` — the share of true components in "
-            "`k`-component pixels that the model recovers. This is the component-recovery metric; rank trials on it "
-            "rather than on precision."
-        )
-        count_intro = (
-            "Count calibration: `Exact` is the pixel share where the predicted active component count equals GT "
-            "(higher better), `Under` / `Over` are the shares where the model predicts too few / too many (lower "
-            "better). Permutation-invariant."
-        )
 
-        lines  = self._rank_section("Run",    "Leaderboard",            headline_intro,  self.HEADLINE_METRICS,           scored)
-        lines += self._grouped_section("Run", "Grouped Leaderboard",    grouped_intro,   self.HEADLINE_GROUPS,            scored)
-        lines += self._rank_section("Run",    "Per-Gaussian Precision", precision_intro, self._precision_metrics(scored), scored)
-        lines += self._rank_section("Run",    "Per-Gaussian Recall",    recall_intro,    self._recall_metrics(scored),    scored)
-        lines += self._rank_section("Run",    "Count Calibration",      count_intro,     self.COUNT_METRICS,              scored)
-        return lines
-
-    def _precision_metrics(self, scored: list[TrialRecord]) -> list[tuple[str, str]]:
-        buckets = self._bucket_indices(scored, self.PRECISION_BUCKET_PATTERN)
-
-        metrics = [("matched_precision", "Overall")]
-        metrics += [(f"matched_precision_gt{k}", f"k={k}") for k in buckets]
-        return metrics
-
-    def _recall_metrics(self, scored: list[TrialRecord]) -> list[tuple[str, str]]:
-        buckets = self._bucket_indices(scored, self.RECALL_BUCKET_PATTERN)
-
-        metrics = [("matched_recall", "Overall")]
-        metrics += [(f"matched_recall_gt{k}", f"k={k}") for k in buckets]
-        return metrics
-
-    def _bucket_indices(self, scored: list[TrialRecord], pattern: re.Pattern) -> list[int]:
-        buckets: set[int] = set()
-        for r in scored:
-            for key in r.metrics:
-                match = pattern.match(key)
-                if match:
-                    buckets.add(int(match.group(1)))
-
-        return sorted(buckets)
+        return self._rank_section("Run", "Leaderboard", headline_intro, self.HEADLINE_METRICS, scored)
 
     def _write_metrics(self) -> Path:
         scored = [r for r in self.records if r.metrics]
 
         lines  = self.assets.header("Metrics Comparison")
-        lines += ["> Best value per metric in **bold** (↓ lower is better, ↑ higher is better). Per-bin array metrics are excluded.\n"]
-        lines += [
-            "> **Reading guide.** Gaussian accuracy is reported by the *Matched Gaussian "
-            "(Permutation-Invariant)* section, which Hungarian-matches predicted Gaussians to GT before "
-            "scoring. `count_acc_gt{k}` is exact-count agreement (calibration), not component recovery — use "
-            "`matched_recall_gt{k}`. Precision and F1 reward under-prediction (a model that collapses slots has "
-            "few false positives), so do not rank trials on them; read them alongside recall.\n"
-        ]
+        lines += ["> Best value per metric in **bold** (↓ lower is better, ↑ higher is better).\n"]
 
         if not scored:
             lines += ["_No inference metrics available._\n"]
@@ -232,17 +125,10 @@ class TrialComparisonReport(ComparisonReportBase):
 
         return [*table.render(), ""]
 
-    def _figure_subdirs(self) -> list[tuple[str, str]]:
-        known   = {subdir for subdir, _title in self.FIGURE_SUBDIRS}
-        present = {path.name for r in self.records if r.figures_dir is not None for path in r.figures_dir.iterdir() if path.is_dir()}
-        extra   = sorted(present - known)
+    def _figure_subdirs(self) -> list[str]:
+        return sorted({path.name for r in self.records if r.figures_dir is not None for path in r.figures_dir.iterdir() if path.is_dir()}, key=ReportAssets.natural_key)
 
-        if extra:
-            self.logger.info(f"Figure sub-directories outside FIGURE_SUBDIRS, rendered after the known ones under their own name: {', '.join(extra)}")
-
-        return list(self.FIGURE_SUBDIRS) + [(subdir, subdir.replace("_", " ").capitalize()) for subdir in extra]
-
-    def _write_figure_section(self, subdir: str, title: str) -> Path | None:
+    def _write_figure_section(self, subdir: str) -> Path | None:
         resolved = [(r, r.figure_subdir(subdir)) for r in self.records if r.has_inference]
         scored   = [(r, path, {p.name for p in path.glob("*.png")}) for r, path in resolved if path is not None]
 
@@ -252,7 +138,7 @@ class TrialComparisonReport(ComparisonReportBase):
 
         sorted_names = sorted(all_names, key=ReportAssets.natural_key)
 
-        lines  = self.assets.header(f"Figure Comparison – {title}")
+        lines  = self.assets.header(f"Figure Comparison – {subdir}")
         lines += [f"> Figures from the `{subdir}/` directory. Only trials with a completed inference run are shown.\n"]
 
         for name in sorted_names:
@@ -271,8 +157,8 @@ class TrialComparisonReport(ComparisonReportBase):
 
     def _write_figure_galleries(self) -> list[Path]:
         written = []
-        for subdir, title in self._figure_subdirs():
-            path = self._write_figure_section(subdir, title)
+        for subdir in self._figure_subdirs():
+            path = self._write_figure_section(subdir)
             if path:
                 self.logger.info(f"Figures [{subdir}] : {path.name}")
                 written.append(path)
@@ -281,34 +167,6 @@ class TrialComparisonReport(ComparisonReportBase):
             self.logger.warning("No trial with a completed inference holds figures in any sub-directory; no figure gallery written")
 
         return written
-
-    def _write_gifs(self) -> Path | None:
-        scored = [r for r in self.records if r.has_inference and r.animations]
-        if not scored:
-            return None
-
-        all_names: set[str] = set()
-        for r in scored:
-            all_names.update(p.name for p in r.animations)
-
-        sorted_names = sorted(all_names, key=ReportAssets.natural_key)
-
-        lines  = self.assets.header("Animation Comparison")
-        lines += ["> GIF animations from each trial’s latest inference run. Only trials with animations are shown.\n"]
-
-        for name in sorted_names:
-            lines.append(f"## `{name}`\n")
-            for r in scored:
-                gif_path = r.inference_dir / "animations" / name
-                if gif_path.exists():
-                    lines.append(f"*{r.name}*  \n![]({self.assets.src(gif_path)})\n")
-                else:
-                    lines.append(f"*{r.name}* — _(not in this run)_\n")
-            lines.append("")
-
-        out = self.out_dir / "gif_comparison.md"
-        out.write_text("\n".join(lines), encoding="utf-8")
-        return out
 
     def _write_summary_json(self) -> Path:
         trials = []
@@ -341,13 +199,5 @@ class TrialComparisonReport(ComparisonReportBase):
 
         if self.compare_images:
             written += self._write_figure_galleries()
-
-        if self.compare_gifs:
-            path = self._write_gifs()
-            if path:
-                self.logger.info(f"Animations : {path.name}")
-                written.append(path)
-            else:
-                self.logger.warning("No trial with a completed inference holds animations; no animation gallery written")
 
         return written

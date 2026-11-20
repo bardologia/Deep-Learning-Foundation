@@ -89,19 +89,19 @@ def test_collector_attaches_training_results(tmp_path):
 
 
 def test_collector_split_view_loads_metrics_when_present(tmp_path):
-    run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {"fold_0": {"test": {"curve_rmse_gt": 2.5}}})
+    run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {"fold_0": {"test": {"rmse_mean": 2.5}}})
     collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=make_file_logger(tmp_path, "workers_test"))
 
     _, by_split = collector.collect_by_split()
     records     = by_split["test"]
 
-    assert records[0].metrics       == {"curve_rmse_gt": 2.5}
+    assert records[0].metrics       == {"rmse_mean": 2.5}
     assert records[0].inference_dir is not None
     assert CompletionMarker.payload(records[0].inference_dir)["split"] == "test"
 
 
 def test_collector_split_view_empty_when_metrics_absent(tmp_path):
-    run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {"fold_0": {"test": {"curve_rmse_gt": 2.5}}})
+    run_dir   = build_run_dir(tmp_path, ["fold_0", "fold_1"], {"fold_0": {"test": {"rmse_mean": 2.5}}})
     collector = FoldCollector(run_dir=run_dir, splits=["test"], logger=make_file_logger(tmp_path, "workers_test"))
 
     _, by_split = collector.collect_by_split()
@@ -115,10 +115,10 @@ def test_collector_split_view_empty_when_metrics_absent(tmp_path):
 def test_collector_aggregates_seeds_per_fold(tmp_path):
     names     = ["fold_0/seed1", "fold_0/seed2", "fold_1/seed1", "fold_1/seed2"]
     inference = {
-        "fold_0/seed1": {"test": {"curve_rmse_gt": 2.0}},
-        "fold_0/seed2": {"test": {"curve_rmse_gt": 4.0}},
-        "fold_1/seed1": {"test": {"curve_rmse_gt": 1.0}},
-        "fold_1/seed2": {"test": {"curve_rmse_gt": 3.0}},
+        "fold_0/seed1": {"test": {"rmse_mean": 2.0}},
+        "fold_0/seed2": {"test": {"rmse_mean": 4.0}},
+        "fold_1/seed1": {"test": {"rmse_mean": 1.0}},
+        "fold_1/seed2": {"test": {"rmse_mean": 3.0}},
     }
 
     run_dir   = build_run_dir(tmp_path, names, inference)
@@ -127,26 +127,26 @@ def test_collector_aggregates_seeds_per_fold(tmp_path):
     base, by_split = collector.collect_by_split()
 
     assert [record.name for record in base]             == ["fold_0", "fold_1"]
-    assert by_split["test"][0].metrics["curve_rmse_gt"] == 3.0
-    assert by_split["test"][1].metrics["curve_rmse_gt"] == 2.0
+    assert by_split["test"][0].metrics["rmse_mean"] == 3.0
+    assert by_split["test"][1].metrics["rmse_mean"] == 2.0
 
     dispersion = collector.seed_dispersion
     assert dispersion["fold_0"]["n_seeds"] == 2
-    assert dispersion["fold_0"]["splits"]["test"]["curve_rmse_gt"] == pytest.approx(float(np.std([2.0, 4.0], ddof=1)))
+    assert dispersion["fold_0"]["splits"]["test"]["rmse_mean"] == pytest.approx(float(np.std([2.0, 4.0], ddof=1)))
 
 
 def test_collector_multiple_splits_independent(tmp_path):
     run_dir = build_run_dir(
         tmp_path,
         ["fold_0", "fold_1"],
-        {"fold_0": {"val": {"curve_rmse_gt": 1.0}, "test": {"curve_rmse_gt": 2.0}}},
+        {"fold_0": {"val": {"rmse_mean": 1.0}, "test": {"rmse_mean": 2.0}}},
     )
     collector = FoldCollector(run_dir=run_dir, splits=["val", "test"], logger=make_file_logger(tmp_path, "workers_test"))
 
     _, by_split = collector.collect_by_split()
 
-    assert by_split["val"][0].metrics  == {"curve_rmse_gt": 1.0}
-    assert by_split["test"][0].metrics == {"curve_rmse_gt": 2.0}
+    assert by_split["val"][0].metrics  == {"rmse_mean": 1.0}
+    assert by_split["test"][0].metrics == {"rmse_mean": 2.0}
 
 
 @pytest.mark.dataset
@@ -382,9 +382,9 @@ def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_p
 def test_collector_warns_when_a_seed_has_no_metrics_and_records_the_coverage(tmp_path):
     names     = ["fold_0/seed1", "fold_0/seed2", "fold_1/seed1", "fold_1/seed2"]
     inference = {
-        "fold_0/seed1": {"test": {"curve_rmse_gt": 2.0}},
-        "fold_1/seed1": {"test": {"curve_rmse_gt": 1.0}},
-        "fold_1/seed2": {"test": {"curve_rmse_gt": 3.0}},
+        "fold_0/seed1": {"test": {"rmse_mean": 2.0}},
+        "fold_1/seed1": {"test": {"rmse_mean": 1.0}},
+        "fold_1/seed2": {"test": {"rmse_mean": 3.0}},
     }
 
     run_dir   = build_run_dir(tmp_path, names, inference)
@@ -393,7 +393,7 @@ def test_collector_warns_when_a_seed_has_no_metrics_and_records_the_coverage(tmp
 
     _, by_split = collector.collect_by_split()
 
-    assert by_split["test"][0].metrics["curve_rmse_gt"] == 2.0
+    assert by_split["test"][0].metrics["rmse_mean"] == 2.0
     assert ("warning", "fold_0 test: metrics averaged over 1/2 seeds; missing ['seed2'] (no completed inference with metrics)") in logger.messages
     assert collector.seed_dispersion["fold_0"]["n_used"]        == {"test": 1}
     assert collector.seed_dispersion["fold_0"]["missing_seeds"] == {"test": ["seed2"]}
@@ -423,8 +423,8 @@ def test_collector_marks_a_fold_partial_and_names_the_seed_that_did_not_finish(t
 def test_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path):
     names     = ["fold_0/seed1", "fold_0/seed2"]
     inference = {
-        "fold_0/seed1": {"test": {"curve_rmse_gt": 2.0, "overall_r2_gt": float("nan")}},
-        "fold_0/seed2": {"test": {"curve_rmse_gt": 4.0, "overall_r2_gt": float("nan")}},
+        "fold_0/seed1": {"test": {"rmse_mean": 2.0, "r2_mean": float("nan")}},
+        "fold_0/seed2": {"test": {"rmse_mean": 4.0, "r2_mean": float("nan")}},
     }
 
     run_dir   = build_run_dir(tmp_path, names, inference)
@@ -433,15 +433,15 @@ def test_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path):
 
     _, by_split = collector.collect_by_split()
 
-    assert "overall_r2_gt" not in by_split["test"][0].metrics
-    assert ("warning", "fold_0 test: ['overall_r2_gt'] non-finite in every seed, dropped from the fold mean") in logger.messages
+    assert "r2_mean" not in by_split["test"][0].metrics
+    assert ("warning", "fold_0 test: ['r2_mean'] non-finite in every seed, dropped from the fold mean") in logger.messages
 
 
 def test_collector_stays_quiet_when_every_seed_contributed(tmp_path):
     import torch
 
     names     = ["fold_0/seed1", "fold_0/seed2"]
-    inference = {name: {"test": {"curve_rmse_gt": 2.0}} for name in names}
+    inference = {name: {"test": {"rmse_mean": 2.0}} for name in names}
 
     run_dir = build_run_dir(tmp_path, names, inference)
     for name in names:
@@ -461,8 +461,8 @@ def test_collector_stays_quiet_when_every_seed_contributed(tmp_path):
 def test_collector_names_a_metric_non_finite_in_every_fold_once_per_split(tmp_path):
     names     = ["fold_0", "fold_1"]
     inference = {
-        "fold_0": {"test": {"curve_rmse_gt": 2.0, "overall_r2_gt": float("nan"), "curve_mae_gt": float("nan")}},
-        "fold_1": {"test": {"curve_rmse_gt": 1.0, "overall_r2_gt": float("nan"), "curve_mae_gt": 0.1}},
+        "fold_0": {"test": {"rmse_mean": 2.0, "r2_mean": float("nan"), "mae_mean": float("nan")}},
+        "fold_1": {"test": {"rmse_mean": 1.0, "r2_mean": float("nan"), "mae_mean": 0.1}},
     }
 
     run_dir   = build_run_dir(tmp_path, names, inference)
@@ -473,7 +473,7 @@ def test_collector_names_a_metric_non_finite_in_every_fold_once_per_split(tmp_pa
 
     omitted = [message for level, message in logger.messages if level == "warning" and message.startswith("split test:")]
 
-    assert omitted == ["split test: ['overall_r2_gt'] non-finite in every fold, omitted from the cross-fold aggregate (cv_aggregate_report.md, cv_summary.json)"]
+    assert omitted == ["split test: ['r2_mean'] non-finite in every fold, omitted from the cross-fold aggregate (cv_aggregate_report.md, cv_summary.json)"]
 
 
 def test_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directory(tmp_path):

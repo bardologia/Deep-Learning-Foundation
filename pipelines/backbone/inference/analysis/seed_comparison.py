@@ -5,17 +5,15 @@ import math
 import os
 from pathlib import Path
 
-import numpy as np
-
-from pipelines.backbone.inference.analysis.seed_disagreement import SeedDisagreementMaps
-from pipelines.backbone.inference.report                     import Report
+from pipelines.backbone.inference.analysis.seed_disagreement import SeedDisagreementMaps, SeedMaps
+from pipelines.backbone.inference.metrics                    import Metrics
 from pipelines.shared.inference.metadata                     import CompletedInference
 from pipelines.shared.inference.run_classifier               import RunDirectoryWalk
 from tools.data.io                                           import FileIO
-from pipelines.backbone.inference.metrics                    import Metrics
 from tools.metrics.scoring                                   import SeedAggregation
 from tools.monitoring.logger                                 import Logger
 from tools.reporting.markdown                                import MarkdownTable, ScalarFormatter
+from tools.reporting.reporting                               import MetricSectionGrouper
 from tools.runtime.completion                                import CompletionMarker
 from tools.runtime.run_tag                                   import RunTag
 
@@ -64,79 +62,34 @@ class SeedInferenceResolver:
         return {"stamp": Path(inference_dir).name, "split": payload["split"], "completed_at": payload["completed_at"]}
 
 
-class SeedActivityThreshold:
-
-    def __init__(self, metrics_filename: str) -> None:
-        self.metrics_filename = metrics_filename
-
-    def resolve(self, seeds: list[str], inference_dirs: list[Path]) -> float:
-        thresholds = {}
-        for seed, inference_dir in zip(seeds, inference_dirs):
-            metrics = FileIO.load_json(Path(inference_dir) / self.metrics_filename)
-
-            thresholds[seed] = float(metrics["activity_threshold"])
-
-        return next(iter(thresholds.values()))
-
-
 class SeedEnsembleEvaluation:
 
-    PRED_CUBE = "pred_curves.npy"
-    GT_CUBE   = "gt_curves.npy"
-
-    def __init__(self, cube_dirs: list[Path], logger: Logger) -> None:
-        self.cube_dirs = [Path(d) for d in cube_dirs]
-        self.logger    = logger
-
-    def _open(self) -> tuple[list[np.ndarray], np.ndarray]:
-        preds  = [np.load(cube_dir / self.PRED_CUBE, mmap_mode="r") for cube_dir in self.cube_dirs]
-
-        gt = np.asarray(np.load(self.cube_dirs[0] / self.GT_CUBE), dtype=np.float32)
-
-        return preds, gt
+    def __init__(self, maps: SeedMaps, logger: Logger) -> None:
+        self.maps   = maps
+        self.logger = logger
 
     def run(self) -> dict:
-        preds, gt = self._open()
+        predictions = self.maps.predictions()
+        scalars     = Metrics.compute(predictions.mean(axis=0), self.maps.targets(), self.maps.channels)
 
-        mean = np.zeros(preds[0].shape, dtype=np.float64)
-        for pred in preds:
-            mean += pred
-        mean = (mean / len(preds)).astype(np.float32)
+        self.logger.subsection(f"Seed ensemble : RMSE {scalars['rmse_mean']:.4g}, R2 {scalars['r2_mean']:.4f} over {predictions.shape[0]} seeds")
 
-        diff       = mean - gt
-        mse        = float((diff * diff).mean(dtype=np.float64))
-        mae        = float(np.abs(diff).mean(dtype=np.float64))
-        gt_mean    = float(gt.mean(dtype=np.float64))
-        overall_r2 = 1.0 - float((diff * diff).sum(dtype=np.float64)) / (float(((gt - gt_mean) ** 2).sum(dtype=np.float64)) + 1e-12)
-
-        scalars = {
-            "n_seeds"       : len(preds),
-            "curve_mse_gt"  : mse,
-            "curve_mae_gt"  : mae,
-            "curve_rmse_gt" : float(np.sqrt(mse)),
-            "overall_r2_gt" : overall_r2,
-            "psnr_db_gt"    : Metrics._psnr(mean, gt),
-        }
-
-        self.logger.subsection(f"Seed ensemble : mse {mse:.4g}, overall R2 {overall_r2:.4f} over {len(preds)} seeds")
-
-        return scalars
+        return {"n_seeds": int(predictions.shape[0]), **scalars}
 
 
 class SeedComparisonReport:
 
     MAX_LISTED = 8
 
-    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], activity_threshold: float, output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None, ensemble: dict | None = None) -> None:
-        self.group_dir          = Path(group_dir)
-        self.run_dirs           = [Path(d) for d in run_dirs]
-        self.inference_dirs     = [Path(d) for d in inference_dirs]
-        self.activity_threshold = float(activity_threshold)
-        self.metrics_filename   = metrics_filename
-        self.report_filename    = report_filename
-        self.logger             = logger
-        self.disagreement       = disagreement
-        self.ensemble           = ensemble
+    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None, ensemble: dict | None = None) -> None:
+        self.group_dir        = Path(group_dir)
+        self.run_dirs         = [Path(d) for d in run_dirs]
+        self.inference_dirs   = [Path(d) for d in inference_dirs]
+        self.metrics_filename = metrics_filename
+        self.report_filename  = report_filename
+        self.logger           = logger
+        self.disagreement     = disagreement
+        self.ensemble         = ensemble
 
         self.output_dir = self.group_dir / "inference" / output_subdir
         self.seeds      = [str(d.relative_to(self.group_dir)) for d in self.run_dirs]
@@ -175,20 +128,18 @@ class SeedComparisonReport:
 
     def _write_metrics(self, means: dict, stds: dict, cis: dict, counts: dict) -> Path:
         payload = {
-            "n_seeds"            : len(self.run_dirs),
-            "split"              : self.split,
-            "activity_threshold" : self.activity_threshold,
-            "seed_runs"          : {seed: str(run_dir) for seed, run_dir in zip(self.seeds, self.run_dirs)},
-            "seed_inference"     : {seed: record for seed, record in zip(self.seeds, self.records)},
-            "mean"               : means,
-            "std"                : stds,
-            "ci95"               : {key: list(interval) for key, interval in cis.items()},
-            "n"                  : counts,
+            "n_seeds"        : len(self.run_dirs),
+            "split"          : self.split,
+            "seed_runs"      : {seed: str(run_dir) for seed, run_dir in zip(self.seeds, self.run_dirs)},
+            "seed_inference" : {seed: record for seed, record in zip(self.seeds, self.records)},
+            "mean"           : means,
+            "std"            : stds,
+            "ci95"           : {key: list(interval) for key, interval in cis.items()},
+            "n"              : counts,
         }
 
         if self.disagreement is not None:
-            payload["disagreement"]      = self.disagreement["summary"]
-            payload["disagreement_maps"] = self.disagreement["maps_written"]
+            payload["disagreement"] = self.disagreement["summary"]
 
         if self.ensemble is not None:
             payload["ensemble"] = self.ensemble
@@ -222,7 +173,7 @@ class SeedComparisonReport:
         return out
 
     def _grouped_keys(self, means: dict) -> list[tuple[str, list[str]]]:
-        return [(title.split(" ", 1)[1], keys) for title, keys in Report.group_metric_keys(means)]
+        return MetricSectionGrouper().group(sorted(means))
 
     def _ci_cell(self, interval: tuple[float, float] | None) -> str:
         if interval is None:
@@ -254,8 +205,8 @@ class SeedComparisonReport:
     def _build_ensemble_section(self, means: dict, stds: dict) -> list[str]:
         out = ["\n## 3. Seed ensemble\n"]
         out.append(
-            f"The {self.ensemble['n_seeds']} seed prediction cubes averaged into one deep-ensemble prediction and scored "
-            "against the ground truth, next to the mean of the per-seed scores. A lower ensemble error than the per-seed "
+            f"The {self.ensemble['n_seeds']} seed prediction maps averaged into one deep-ensemble prediction and scored "
+            "against the targets, next to the mean of the per-seed scores. A lower ensemble error than the per-seed "
             "mean is the usual variance-reduction gain of ensembling.\n"
         )
 
@@ -274,31 +225,26 @@ class SeedComparisonReport:
     def _build_disagreement_section(self) -> list[str]:
         out = ["\n## 4. Seed disagreement maps\n"]
         out.append(
-            "Per-pixel across-seed standard deviation of the model outputs, written as cubes into every seed's inference cube directory "
-            "(they appear as metric-map layers in the cube explorer). Predicted slots are first matched to the shared GT slots per seed, "
-            "so the parameter maps compare the same physical component across seeds; a slot contributes where it is matched in at "
-            f"least {SeedDisagreementMaps.MIN_ACTIVE} seeds. Coverage is the share of region pixels each map's statistics describe.\n"
+            f"Per-pixel across-seed standard deviation of each predicted target channel, saved as {SeedDisagreementMaps.MAP_FILENAME} beside this report. "
+            "The risk-coverage figures rank pixels by their mean disagreement over the channels and score the ensemble error among the most confident ones; "
+            "label suspects are pixels where the seeds agree with each other but not with the target.\n"
         )
 
         summary = self.disagreement["summary"]
-        table   = MarkdownTable(("Map", "Mean", "Median", "p95", "Coverage"))
-        for name in SeedDisagreementMaps.MAP_TITLES:
-            cells    = [summary[f"{name}_{stat}"] for stat in ("mean", "median", "p95")]
-            coverage = f"{summary[f'{name}_finite_frac'] * 100.0:.1f}% ({summary[f'{name}_finite_n']} px)"
-            table.add_row(f"`{name}`", *[self._fmt(cell) if cell is not None else "—" for cell in cells], coverage)
+        table   = MarkdownTable(("Target channel", "Mean std", "Median std", "p95 std"))
+        for name in self.disagreement["channels"]:
+            table.add_row(f"`{name}`", *[self._fmt(summary[f"seed_std_{name}_{stat}"]) for stat in ("mean", "median", "p95")])
 
         out.append("\n".join(table.render()))
         out.append("")
 
-        aurc = summary.get("risk_coverage_aurc")
-        if aurc is not None:
-            out.append(
-                f"Selective prediction under seed-disagreement confidence: AURC {self._fmt(aurc)}, "
-                f"risk at 50% coverage {self._fmt(summary['risk_coverage_risk_at_half_coverage'])} vs "
-                f"{self._fmt(summary['risk_coverage_full_coverage_risk'])} at full coverage; "
-                f"disagreement-error rank correlation {self._fmt(summary['risk_coverage_disagreement_error_spearman'])}."
-            )
-            out.append("")
+        out.append(
+            f"Selective prediction under seed-disagreement confidence: AURC {self._fmt(summary['risk_coverage_aurc'])}, "
+            f"risk at 50% coverage {self._fmt(summary['risk_coverage_risk_at_half_coverage'])} vs "
+            f"{self._fmt(summary['risk_coverage_full_coverage_risk'])} at full coverage; "
+            f"disagreement-error rank correlation {self._fmt(summary['risk_coverage_disagreement_error_spearman'])}."
+        )
+        out.append("")
 
         for name, figure_path in self.disagreement["figures"].items():
             out.append(f"![{name}]({os.path.relpath(figure_path, self.output_dir)})")
@@ -307,10 +253,10 @@ class SeedComparisonReport:
         return out
 
     def _write_report(self, per_seed: list[dict], means: dict, stds: dict, cis: dict, counts: dict) -> Path:
-        lines = ["# ML Template Seed-Comparison Report", ""]
+        lines = ["# Seed-Comparison Report", ""]
         lines.append(f"_Generated on {RunTag.timestamp()}_")
         lines.append("")
-        lines.append(f"Aggregate over {len(self.seeds)} seed replicas of one training, built from each run's completed '{self.split}' inference (no inference re-run), all scored at activity threshold {self._fmt(self.activity_threshold)}. Each seed keeps its own full report (linked below); this report reduces their metrics to mean ± std with a 95% confidence interval.")
+        lines.append(f"Aggregate over {len(self.seeds)} seed replicas of one training, built from each run's completed '{self.split}' inference (no inference re-run). Each seed keeps its own full report (linked below); this report reduces their metrics to mean ± std with a 95% confidence interval.")
 
         lines += self._build_seed_runs_section()
         lines += self._build_metrics_section(per_seed, means, stds, cis, counts)
@@ -374,39 +320,26 @@ class SeedComparison:
         run_dirs = sorted(RunDirectoryWalk.walk(group_dir))
 
         inference_dirs = self._resolve_seeds(group_dir, run_dirs, resolver)
-        seeds          = [str(run_dir.relative_to(group_dir)) for run_dir in run_dirs]
-        threshold      = SeedActivityThreshold(self.config.metrics_filename).resolve(seeds, inference_dirs)
+        output_dir     = group_dir / "inference" / output_subdir
+        maps           = SeedMaps(run_dirs, inference_dirs, self.config.maps_subdir)
 
-        self.logger.info(f"Activity threshold {threshold:g} shared by all {len(seeds)} seeds")
-
-        ensemble = None
-        if self.config.compute_ensemble:
-            ensemble = SeedEnsembleEvaluation([inference_dir / self.config.cubes_subdir for inference_dir in inference_dirs], self.logger).run()
+        ensemble = SeedEnsembleEvaluation(maps, self.logger).run() if self.config.compute_ensemble else None
 
         disagreement = None
         if self.config.compute_disagreement:
-            disagreement = SeedDisagreementMaps(
-                group_dir        = group_dir,
-                run_dirs         = run_dirs,
-                inference_dirs   = inference_dirs,
-                cubes_subdir     = self.config.cubes_subdir,
-                metrics_filename = self.config.metrics_filename,
-                output_dir       = group_dir / "inference" / output_subdir,
-                active_amp_thr   = threshold,
-                logger           = self.logger,
-            ).run()
+            FileIO.ensure_dirs(output_dir)
+            disagreement = {**SeedDisagreementMaps(maps, output_dir, self.logger).run(), "channels": maps.channels}
 
         return SeedComparisonReport(
-            group_dir          = group_dir,
-            run_dirs           = run_dirs,
-            inference_dirs     = inference_dirs,
-            activity_threshold = threshold,
-            output_subdir      = output_subdir,
-            metrics_filename   = self.config.metrics_filename,
-            report_filename    = self.config.report_filename,
-            logger             = self.logger,
-            disagreement       = disagreement,
-            ensemble           = ensemble,
+            group_dir        = group_dir,
+            run_dirs         = run_dirs,
+            inference_dirs   = inference_dirs,
+            output_subdir    = output_subdir,
+            metrics_filename = self.config.metrics_filename,
+            report_filename  = self.config.report_filename,
+            logger           = self.logger,
+            disagreement     = disagreement,
+            ensemble         = ensemble,
         ).run()
 
     def run(self) -> list[Path]:
@@ -423,7 +356,8 @@ class SeedComparison:
             "Inference"    : self.config.inference_subdir or f"newest completed '{self.config.split}' stamp per run",
             "Metrics file" : self.config.metrics_filename,
             "Output"       : output_subdir,
-            "Disagreement" : f"maps + figures from {self.config.cubes_subdir}/" if self.config.compute_disagreement else "disabled",
+            "Ensemble"     : f"from {self.config.maps_subdir}/" if self.config.compute_ensemble else "disabled",
+            "Disagreement" : f"maps and figures from {self.config.maps_subdir}/" if self.config.compute_disagreement else "disabled",
         }, title="Configuration")
 
         reports = []

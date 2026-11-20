@@ -44,11 +44,12 @@ def test_metrics_score_every_channel_and_their_mean():
 
     metrics = Metrics.compute(predictions, targets, ["a", "b"])
 
-    assert metrics["channels"]["a"]["rmse"] == pytest.approx(0.5)
-    assert metrics["channels"]["a"]["bias"] == pytest.approx(0.5)
-    assert metrics["channels"]["a"]["r2"]   == pytest.approx(1.0 - 3.0 / 143.0)
-    assert metrics["channels"]["b"]["rmse"] == pytest.approx(0.0)
-    assert np.isnan(metrics["channels"]["b"]["r2"])
+    assert metrics["rmse_a"] == pytest.approx(0.5)
+    assert metrics["bias_a"] == pytest.approx(0.5)
+    assert metrics["r2_a"]   == pytest.approx(1.0 - 3.0 / 143.0)
+    assert metrics["rmse_b"] == pytest.approx(0.0)
+    assert np.isnan(metrics["r2_b"])
+    assert Metrics.channel_values(metrics, "a")["mae"] == pytest.approx(0.5)
     assert metrics["rmse_mean"] == pytest.approx(0.25)
     assert metrics["n_pixels"]  == 12
 

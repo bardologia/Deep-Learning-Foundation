@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -10,62 +9,41 @@ import numpy as np
 import pytest
 
 from pipelines.backbone.inference.analysis.seed_comparison   import SeedComparison
-from pipelines.backbone.inference.analysis.seed_disagreement import SeedDisagreementMaps
+from pipelines.backbone.inference.analysis.seed_disagreement import RiskCoverage, SeedDisagreementMaps, SeedMaps
 from tools.runtime.completion                                import CompletionMarker
 
-from tests.backbone_inference._helpers import StageLogger
-from tests.conftest                    import SilentLogger
+from tests.conftest import SilentLogger
 
 
-N_Z, N_ROWS, N_COLS = 4, 3, 2
+N_ROWS, N_COLS = 5, 4
+CHANNELS       = ["a", "b"]
 
 
-def _params(*slots: tuple) -> np.ndarray:
-    cube = np.zeros((len(slots) * 3, N_ROWS, N_COLS), dtype=np.float32)
-
-    for k, (amp, mu, sigma) in enumerate(slots):
-        cube[3 * k, :, :]     = amp
-        cube[3 * k + 1, :, :] = mu
-        cube[3 * k + 2, :, :] = sigma
-
-    return cube
-
-
-def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.ndarray, params_gt: np.ndarray | None = None, stamp: str = "stamp", activity_threshold: float | None = 1e-4, region_start: tuple[int, int] = (0, 0)) -> Path:
-    run_dir   = group / name
-    out_dir   = run_dir / "inference" / stamp
-    cubes_dir = out_dir / "cubes"
-    cubes_dir.mkdir(parents=True)
+def _seed_run(group: Path, name: str, predictions: np.ndarray, targets: np.ndarray, stamp: str = "stamp") -> Path:
+    run_dir  = group / name
+    out_dir  = run_dir / "inference" / stamp
+    maps_dir = out_dir / "maps"
+    maps_dir.mkdir(parents=True)
 
     (run_dir / "meta").mkdir(exist_ok=True)
-    np.save(cubes_dir / "pred_curves.npy", pred_curves.astype(np.float32))
-    np.save(cubes_dir / "params_pred.npy", params_pred.astype(np.float32))
-    np.save(cubes_dir / "params_gt.npy",   (params_gt if params_gt is not None else params_pred).astype(np.float32))
-    np.save(cubes_dir / "pixel_mse.npy",   pred_curves.mean(axis=0).astype(np.float32) + 0.1)
+    (run_dir / "meta" / "run_summary.json").write_text(json.dumps({"target_channels": CHANNELS}), encoding="utf-8")
 
-    row_start, col_start = region_start
-    metrics              = {"curve_mse_gt": 1.0, "split_region": [row_start, row_start + N_ROWS, col_start, col_start + N_COLS]}
-    if activity_threshold is not None:
-        metrics["activity_threshold"] = activity_threshold
+    np.save(maps_dir / "predictions.npy", predictions.astype(np.float32))
+    np.save(maps_dir / "targets.npy",     targets.astype(np.float32))
 
-    (out_dir / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+    (out_dir / "metrics.json").write_text(json.dumps({"rmse_mean": 1.0}), encoding="utf-8")
     (out_dir / "report.md").write_text("# per-seed report", encoding="utf-8")
     CompletionMarker.stamp(out_dir, {"stage": "inference", "split": "test"})
 
     return run_dir
 
 
-def _maps(group: Path, runs: list[Path], stamp: str = "stamp", active_amp_thr: float = 1e-4, logger=None) -> SeedDisagreementMaps:
-    return SeedDisagreementMaps(
-        group_dir        = group,
-        run_dirs         = runs,
-        inference_dirs   = [run / "inference" / stamp for run in runs],
-        cubes_subdir     = "cubes",
-        metrics_filename = "metrics.json",
-        output_dir       = group / "inference" / "agg",
-        active_amp_thr   = active_amp_thr,
-        logger           = logger if logger is not None else SilentLogger(),
-    )
+def _targets() -> np.ndarray:
+    return np.arange(len(CHANNELS) * N_ROWS * N_COLS, dtype=np.float64).reshape(len(CHANNELS), N_ROWS, N_COLS)
+
+
+def _maps(group: Path, runs: list[Path]) -> SeedMaps:
+    return SeedMaps(runs, [run / "inference" / "stamp" for run in runs], "maps")
 
 
 def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
@@ -79,240 +57,74 @@ def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
         report_filename      = "report.md",
         compute_disagreement = compute_disagreement,
         compute_ensemble     = False,
-        cubes_subdir         = "cubes",
+        maps_subdir          = "maps",
     )
 
 
 def test_identical_seeds_give_zero_disagreement(tmp_path):
-    group  = tmp_path / "group"
-    curves = np.ones((N_Z, N_ROWS, N_COLS))
-    params = _params((1.0, 5.0, 2.0))
-    runs   = [_seed_run(group, f"seed{i}", curves, params) for i in range(2)]
+    group   = tmp_path / "group"
+    targets = _targets()
+    runs    = [_seed_run(group, f"seed{i}", targets + 1.0, targets) for i in range(2)]
 
-    result = _maps(group, runs).run()
+    result = SeedDisagreementMaps(_maps(group, runs), group / "agg", SilentLogger()).run()
 
-    for run in runs:
-        cubes_dir = run / "inference" / "stamp" / "cubes"
-        assert np.allclose(np.load(cubes_dir / "seed_std_profile.npy"), 0.0)
-        assert np.allclose(np.load(cubes_dir / "seed_std_amp.npy"),     0.0)
-        assert np.allclose(np.load(cubes_dir / "seed_std_mu.npy"),      0.0)
-        assert np.allclose(np.load(cubes_dir / "seed_std_sigma.npy"),   0.0)
-
-    assert result["summary"]["n_seeds"]               == 2
-    assert result["summary"]["seed_std_profile_mean"] == pytest.approx(0.0)
+    assert np.allclose(np.load(group / "agg" / "seed_std.npy"), 0.0)
+    assert result["summary"]["seed_std_a_mean"] == pytest.approx(0.0)
+    assert result["summary"]["seed_std_b_p95"]  == pytest.approx(0.0)
 
 
-def test_stages_are_timed_and_the_profile_map_reports_progress(tmp_path):
-    group  = tmp_path / "group"
-    curves = np.ones((N_Z, N_ROWS, N_COLS))
-    params = _params((1.0, 5.0, 2.0))
-    runs   = [_seed_run(group, f"seed{i}", curves, params) for i in range(2)]
+def test_known_offsets_give_the_sample_std_per_channel(tmp_path):
+    group   = tmp_path / "group"
+    targets = _targets()
+    runs    = [_seed_run(group, "seed0", targets, targets), _seed_run(group, "seed1", targets + np.array([1.0, 3.0])[:, None, None], targets)]
 
-    logger = StageLogger()
-    _maps(group, runs, logger=logger).run()
+    result = SeedDisagreementMaps(_maps(group, runs), group / "agg", SilentLogger()).run()
+    std    = np.load(group / "agg" / "seed_std.npy")
 
-    assert logger.timers == ["Seed disagreement: profile map", "Seed disagreement: slot matching", "Seed disagreement: maps written", "Seed disagreement: risk-coverage"]
-    assert logger.totals == [N_Z]
-    assert logger.tables == ["Seed disagreement summary"]
-    assert ("info", f"Profile cubes of 2 seeds: {N_Z} z bins x {N_ROWS} rows x {N_COLS} cols") in logger.messages
-    assert ("info", "Seed disagreement over 2 seeds at activity threshold 0.0001") in logger.messages
+    assert std.shape == (len(CHANNELS), N_ROWS, N_COLS)
+    assert result["summary"]["seed_std_a_mean"] == pytest.approx(math.sqrt(0.5))
+    assert result["summary"]["seed_std_b_mean"] == pytest.approx(3.0 * math.sqrt(0.5))
+    assert sorted(result["figures"]) == ["a", "b", "label_suspect", "risk_coverage"]
 
 
-def test_known_offsets_give_the_sample_std(tmp_path):
-    group    = tmp_path / "group"
-    curves_a = np.zeros((N_Z, N_ROWS, N_COLS))
-    curves_b = np.zeros((N_Z, N_ROWS, N_COLS))
+def test_risk_coverage_keeps_the_least_disputed_pixels_first():
+    disagreement = np.array([0.1, 0.2, 0.3, 0.4])
+    risk         = np.array([1.0, 2.0, 3.0, 4.0])
 
-    curves_b[0, 0, 0] = 2.0
+    rows, scalars = RiskCoverage(disagreement, risk).run()
 
-    gt   = _params((2.0, 7.0, 2.0))
-    runs = [
-        _seed_run(group, "seed0", curves_a, _params((1.0, 5.0, 2.0)), params_gt=gt),
-        _seed_run(group, "seed1", curves_b, _params((3.0, 9.0, 2.0)), params_gt=gt),
-    ]
-
-    _maps(group, runs).run()
-
-    profile = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_profile.npy")
-    amp     = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_amp.npy")
-    mu      = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
-    sigma   = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_sigma.npy")
-
-    assert profile[0, 0] == pytest.approx(math.sqrt(2.0) / N_Z)
-    assert profile[1, 1] == pytest.approx(0.0)
-    assert np.allclose(amp,   math.sqrt(2.0))
-    assert np.allclose(mu,    math.sqrt(8.0))
-    assert np.allclose(sigma, 0.0)
-
-
-def test_risk_map_and_offsets_are_read_once_per_run(tmp_path, monkeypatch):
-    group  = tmp_path / "group"
-    curves = np.ones((N_Z, N_ROWS, N_COLS))
-    params = _params((1.0, 5.0, 2.0))
-    runs   = [_seed_run(group, f"seed{i}", curves, params) for i in range(2)]
-
-    maps  = _maps(group, runs)
-    calls = {"risk": 0, "offsets": 0}
-
-    mean_risk_map = maps._mean_risk_map
-    offsets       = maps._offsets
-
-    monkeypatch.setattr(maps, "_mean_risk_map", lambda: (calls.__setitem__("risk", calls["risk"] + 1), mean_risk_map())[1])
-    monkeypatch.setattr(maps, "_offsets",       lambda: (calls.__setitem__("offsets", calls["offsets"] + 1), offsets())[1])
-
-    maps.run()
-
-    assert calls == {"risk": 1, "offsets": 1}
-
-
-def test_mu_is_nan_where_fewer_than_two_seeds_are_active(tmp_path):
-    group = tmp_path / "group"
-
-    curves   = np.zeros((N_Z, N_ROWS, N_COLS))
-    active   = _params((1.0, 5.0, 2.0))
-    inactive = _params((0.0, 99.0, 99.0))
-
-    runs = [
-        _seed_run(group, "seed0", curves, active, params_gt=active),
-        _seed_run(group, "seed1", curves, inactive, params_gt=active),
-    ]
-
-    logger = StageLogger()
-    result = _maps(group, runs, logger=logger).run()
-
-    mu  = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
-    amp = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_amp.npy")
-
-    assert np.all(np.isnan(mu))
-    assert np.all(np.isnan(amp))
-    assert result["summary"]["seed_std_mu_finite_n"]         == 0
-    assert result["summary"]["seed_std_mu_finite_frac"]      == 0.0
-    assert result["summary"]["seed_std_mu_mean"]             is None
-    assert result["summary"]["seed_std_profile_finite_frac"] == 1.0
-    assert any(level == "warning" and message.startswith("seed_std_mu: statistics cover 0.0% of the region") for level, message in logger.messages)
-
-
-def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
-    group  = tmp_path / "group"
-    curves = np.ones((N_Z, N_ROWS, N_COLS))
-
-    gt       = _params((1.0, 10.0, 3.0), (2.0, 40.0, 4.0))
-    straight = _params((1.0, 10.0, 3.0), (2.0, 40.0, 4.0))
-    swapped  = _params((2.0, 40.0, 4.0), (1.0, 10.0, 3.0))
-
-    runs = [
-        _seed_run(group, "seed0", curves, straight, params_gt=gt),
-        _seed_run(group, "seed1", curves, swapped, params_gt=gt),
-    ]
-
-    _maps(group, runs).run()
-
-    cubes_dir = runs[0] / "inference" / "stamp" / "cubes"
-
-    assert np.allclose(np.load(cubes_dir / "seed_std_amp.npy"),   0.0)
-    assert np.allclose(np.load(cubes_dir / "seed_std_mu.npy"),    0.0)
-    assert np.allclose(np.load(cubes_dir / "seed_std_sigma.npy"), 0.0)
-
-
-def test_recorded_threshold_above_a_faint_slot_masks_it(tmp_path):
-    curves = np.zeros((N_Z, N_ROWS, N_COLS))
-    faint  = _params((5e-4, 5.0, 2.0))
-    loose  = [_seed_run(tmp_path / "loose",  f"seed{i}", curves, faint) for i in range(2)]
-    strict = [_seed_run(tmp_path / "strict", f"seed{i}", curves, faint, activity_threshold=1e-3) for i in range(2)]
-
-    _maps(tmp_path / "loose",  loose,  active_amp_thr=1e-4).run()
-    _maps(tmp_path / "strict", strict, active_amp_thr=1e-3).run()
-
-    loose_mu  = np.load(loose [0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
-    strict_mu = np.load(strict[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
-
-    assert np.allclose(loose_mu, 0.0)
-    assert np.all(np.isnan(strict_mu))
-
-
-def test_layers_carry_a_source_record_and_replacing_them_warns(tmp_path):
-    group  = tmp_path / "group"
-    curves = np.ones((N_Z, N_ROWS, N_COLS))
-    params = _params((1.0, 5.0, 2.0))
-    runs   = [_seed_run(group, f"seed{i}", curves, params) for i in range(2)]
-
-    first = StageLogger()
-    _maps(group, runs, logger=first).run()
-
-    source = json.loads((runs[1] / "inference" / "stamp" / "cubes" / "seed_disagreement_source.json").read_text(encoding="utf-8"))
-
-    assert source["group_dir"]          == str(group)
-    assert source["output_subdir"]      == "agg"
-    assert source["activity_threshold"] == 1e-4
-    assert set(source["seeds"])         == {"seed0", "seed1"}
-    assert source["written_at"]
-    assert not [message for level, message in first.messages if level == "warning" and "replacing" in message]
-
-    second = StageLogger()
-    _maps(group, runs, logger=second).run()
-
-    replaced = [message for level, message in second.messages if level == "warning" and "replacing" in message]
-
-    assert len(replaced) == 4
-    assert any(message.startswith("seed0: replacing 4 layer(s) of an earlier seed comparison") for message in replaced)
-    assert any(message.startswith("seed1: replacing 1 layer(s) of an earlier seed comparison") and "label_suspect" in message for message in replaced)
-
-
-def test_missing_cubes_raise(tmp_path):
-    group = tmp_path / "group"
-    runs  = [_seed_run(group, f"seed{i}", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0))) for i in range(2)]
-
-    (runs[1] / "inference" / "stamp" / "cubes" / "params_pred.npy").unlink()
-
-    with pytest.raises(FileNotFoundError):
-        _maps(group, runs).run()
-
-
-def test_shape_mismatch_raises(tmp_path):
-    group = tmp_path / "group"
-    run_a = _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
-    run_b = _seed_run(group, "seed1", np.zeros((N_Z, N_ROWS + 1, N_COLS)), _params((1.0, 5.0, 2.0)))
-
-    np.save(run_b / "inference" / "stamp" / "cubes" / "params_pred.npy", np.zeros((3, N_ROWS + 1, N_COLS), dtype=np.float32))
-
-    with pytest.raises(ValueError):
-        _maps(group, [run_a, run_b]).run()
+    assert rows[-1]["coverage"] == 1.0
+    assert scalars["full_coverage_risk"] == pytest.approx(2.5)
+    assert scalars["risk_at_half_coverage"] == pytest.approx(1.5)
+    assert scalars["disagreement_error_spearman"] == pytest.approx(1.0)
 
 
 def test_comparison_writes_maps_figures_and_report_section(tmp_path):
-    group = tmp_path / "runs" / "group"
-    _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
-    _seed_run(group, "seed1", np.ones((N_Z, N_ROWS, N_COLS)),  _params((2.0, 6.0, 3.0)))
+    group   = tmp_path / "runs" / "group"
+    targets = _targets()
+    _seed_run(group, "seed0", targets,       targets)
+    _seed_run(group, "seed1", targets + 1.0, targets)
 
     reports = SeedComparison(_config(group, compute_disagreement=True), SilentLogger()).run()
 
     text    = reports[0].read_text(encoding="utf-8")
     payload = json.loads((group / "inference" / "agg" / "metrics.json").read_text(encoding="utf-8"))
+    figures = group / "inference" / "agg" / "figures" / "seed_disagreement"
 
-    assert payload["activity_threshold"] == 1e-4
-    assert payload["disagreement"]["seed_std_amp_finite_frac"] == 1.0
-    assert set(payload["disagreement_maps"]) == set(SeedDisagreementMaps.MAP_TITLES)
-    assert len(payload["disagreement_maps"]["seed_std_profile"]) == 2
     assert "Seed disagreement maps" in text
-    assert f"100.0% ({N_ROWS * N_COLS} px)" in text
-    assert "seed_std_profile"       in text
     assert "AURC" in text
-    assert payload["disagreement"]["seed_std_amp_mean"] == pytest.approx(math.sqrt(0.5))
+    assert "`a`" in text
+    assert payload["disagreement"]["seed_std_a_mean"] == pytest.approx(math.sqrt(0.5))
     assert payload["disagreement"]["risk_coverage_aurc"] > 0.0
-    assert (group / "inference" / "agg" / "figures" / "seed_disagreement" / "risk_coverage.png").is_file()
-
-    for seed in ("seed0", "seed1"):
-        for name in SeedDisagreementMaps.MAP_TITLES:
-            assert (group / seed / "inference" / "stamp" / "cubes" / f"{name}.npy").is_file()
-
-    for name in SeedDisagreementMaps.MAP_TITLES:
-        assert (group / "inference" / "agg" / "figures" / "seed_disagreement" / f"{name}.png").is_file()
+    assert (group / "inference" / "agg" / "seed_std.npy").is_file()
+    assert sorted(path.name for path in figures.iterdir()) == ["a.png", "b.png", "label_suspect.png", "risk_coverage.png"]
 
 
 def test_comparison_skips_disagreement_when_disabled(tmp_path):
-    group = tmp_path / "runs" / "group"
-    _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
-    _seed_run(group, "seed1", np.ones((N_Z, N_ROWS, N_COLS)),  _params((2.0, 6.0, 3.0)))
+    group   = tmp_path / "runs" / "group"
+    targets = _targets()
+    _seed_run(group, "seed0", targets,       targets)
+    _seed_run(group, "seed1", targets + 1.0, targets)
 
     reports = SeedComparison(_config(group, compute_disagreement=False), SilentLogger()).run()
 
@@ -321,4 +133,4 @@ def test_comparison_skips_disagreement_when_disabled(tmp_path):
 
     assert "Seed disagreement maps" not in text
     assert "disagreement"           not in payload
-    assert not (group / "seed0" / "inference" / "stamp" / "cubes" / "seed_std_profile.npy").exists()
+    assert not (group / "inference" / "agg" / "seed_std.npy").exists()

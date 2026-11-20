@@ -28,15 +28,15 @@ PNG_BYTES = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADU
 def _write_report(run_dir: Path, tag: str, metrics: dict | None = None, split: str = "test") -> Path:
     output_dir  = run_dir / "inference" / tag
     figures_dir = output_dir / "figures"
-    cubes_dir   = output_dir / "cubes"
+    maps_dir    = output_dir / "maps"
     figures_dir.mkdir(parents=True)
-    cubes_dir.mkdir()
+    maps_dir.mkdir()
 
     (figures_dir / "map.png").write_bytes(PNG_BYTES)
     (output_dir / "report.md").write_text(f"# Report ({split})\n\n![map](figures/map.png)\n", encoding="utf-8")
-    (output_dir / "metrics.json").write_text(json.dumps(metrics or {"curve_rmse_gt": 0.5, "overall_r2_gt": 0.8}), encoding="utf-8")
-    np.save(cubes_dir / "pred_curves.npy", np.full((2, 2, 4), 0.5, dtype=np.float32))
-    np.save(cubes_dir / "gt_curves.npy", np.linspace(0.0, 1.0, 16, dtype=np.float32).reshape(2, 2, 4))
+    (output_dir / "metrics.json").write_text(json.dumps(metrics or {"rmse_mean": 0.5, "r2_mean": 0.8}), encoding="utf-8")
+    np.save(maps_dir / "predictions.npy", np.full((2, 2, 4), 0.5, dtype=np.float32))
+    np.save(maps_dir / "targets.npy", np.linspace(0.0, 1.0, 16, dtype=np.float32).reshape(2, 2, 4))
     CompletionMarker.stamp(output_dir, {"stage": "inference", "split": split})
 
     return output_dir / "report.md"
@@ -46,13 +46,13 @@ def _write_aggregate(trial_dir: Path, tag: str, inference: dict) -> Path:
     output_dir = trial_dir / "inference" / tag
     output_dir.mkdir(parents=True)
 
-    (output_dir / "report.md").write_text("# Seed aggregate\n\ncurve_rmse_gt 0.5\n", encoding="utf-8")
+    (output_dir / "report.md").write_text("# Seed aggregate\n\nrmse_mean 0.5\n", encoding="utf-8")
     (output_dir / "metrics.json").write_text(json.dumps({
         "n_seeds"        : len(inference),
         "seed_runs"      : {seed: str(trial_dir / seed) for seed in inference},
         "seed_inference" : {seed: {"stamp": stamp, "split": "test", "completed_at": "2026-01-01T00:00:00"} for seed, stamp in inference.items()},
-        "mean"           : {"curve_rmse_gt": 0.5},
-        "std"            : {"curve_rmse_gt": 0.1},
+        "mean"           : {"rmse_mean": 0.5},
+        "std"            : {"rmse_mean": 0.1},
     }), encoding="utf-8")
 
     return output_dir / "report.md"
@@ -60,6 +60,7 @@ def _write_aggregate(trial_dir: Path, tag: str, inference: dict) -> Path:
 
 def _make_run(run_dir: Path) -> Path:
     (run_dir / "meta").mkdir(parents=True, exist_ok=True)
+    (run_dir / "meta" / "run_summary.json").write_text(json.dumps({"target_channels": ["a", "b"]}), encoding="utf-8")
     return run_dir
 
 
@@ -67,7 +68,7 @@ def _write_experiment(root: Path, name: str, aggregate: bool = True, comparison:
     experiment_dir = root / name
 
     seeded = experiment_dir / "trial_a"
-    for seed, metrics in (("seed0", {"curve_rmse_gt": 0.4, "activity_threshold": 1e-3}), ("seed1", {"curve_rmse_gt": 0.6, "activity_threshold": 1e-3})):
+    for seed, metrics in (("seed0", {"rmse_mean": 0.4}), ("seed1", {"rmse_mean": 0.6})):
         _write_report(_make_run(seeded / seed), "20260101_000000", metrics)
     if aggregate:
         _write_aggregate(seeded, "seed_comparison", {"seed0": "20260101_000000", "seed1": "20260101_000000"})
@@ -261,7 +262,7 @@ def test_bundle_writes_the_missing_seed_aggregate_first(entry_config, tmp_path):
     reports = sorted((experiment_dir / "trial_a" / "inference").glob("*/report.md"))
     assert len(reports) == 1
     assert staged[0].name == "trial_a.md"
-    assert "curve_rmse_gt" in staged[0].read_text(encoding="utf-8")
+    assert "rmse_mean" in staged[0].read_text(encoding="utf-8")
 
 
 def test_bundle_logs_the_seed_aggregation_in_the_mail_log(entry_config, tmp_path):
@@ -610,7 +611,7 @@ def test_same_named_sweeps_under_different_parents_do_not_collide(entry_config, 
 def test_missing_seed_aggregate_averages_the_split_the_comparison_reads(entry_config, tmp_path):
     trial_dir = tmp_path / "ws" / "exp_val" / "trial_a"
     for seed, value in (("seed0", 0.4), ("seed1", 0.6)):
-        _write_report(_make_run(trial_dir / seed), "20260101_000000", {"curve_rmse_gt": value, "activity_threshold": 1e-3}, split="val")
+        _write_report(_make_run(trial_dir / seed), "20260101_000000", {"rmse_mean": value}, split="val")
 
     experiment_dir = trial_dir.parent
     report         = _bundle(entry_config, Experiment(experiment_dir, experiment_dir))._trial_report(trial_dir, "val")
