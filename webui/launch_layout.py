@@ -517,7 +517,7 @@ class LaunchLayout:
                     {"kind": "fields", "groups": [
                         {"title": "Fan-out execution", "fields": ["poll_interval_s"]},
                     ]},
-                    {"kind": "hidden", "fields": ["ablation_features", "ablation_include_full", "gpus_file"]},
+                    {"kind": "hidden", "fields": ["gpus_file"]},
                 ]},
                 {"key": "inference", "title": "Inference", "panels": [
                     {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after", "infer_at_end"]}]},

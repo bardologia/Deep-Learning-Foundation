@@ -150,12 +150,9 @@ def test_pair_components_in_experiment_builder_match_the_catalog():
 def test_experiment_panel_claims_every_trial_field_of_its_entry():
     leaves = [path for path, _ in ConfigCli._leaves(BackboneEntryConfig())]
     trials = LaunchLayout.EXPERIMENT_TRIALS
-    hidden = {"ablation_features", "ablation_include_full"}
 
     for path in leaves:
         head = path.split(".")[0]
-        if head in hidden:
-            continue
         if head.endswith("_trials") or path in ("trials_enabled", "trials_mode"):
             assert path in trials, path
 

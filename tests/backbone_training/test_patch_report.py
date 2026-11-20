@@ -250,12 +250,12 @@ def test_scheduler_writes_the_patch_report_under_the_runs_root(tmp_path):
 def test_scheduler_writes_no_report_outside_patch_mode(tmp_path):
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
-    config.trials_mode = "ablation"
+    config.trials_mode = "amp"
 
     scheduler = backbone_launcher.TrainScheduler(config=config, cli_overrides={}, entry_script=Path("/entry/train_backbone.py"))
     scheduler._write_mode_report()
 
-    assert not (tmp_path / "ablation" / "report").exists()
+    assert not (tmp_path / "amp" / "report").exists()
 
 
 def _patch_scheduler(tmp_path, cli_overrides: dict):

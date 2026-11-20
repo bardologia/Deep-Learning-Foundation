@@ -7,12 +7,10 @@ from pathlib import Path
 import pytest
 
 from configuration.training                  import BackboneEntryConfig, CurriculumInheritance, default_curriculum
-from configuration.training.backbone         import AugmentationTrialsConfig, ClampTrialsConfig, HeadMatchingTrialsConfig, LogEnergyTrialsConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig
+from configuration.training.backbone         import FullModel, AugmentationTrialsConfig, ClampTrialsConfig, HeadMatchingTrialsConfig, LogEnergyTrialsConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig
 from configuration.training.general.run      import TrainingQueueConfig
 from configuration.training.general.trials   import TrialCatalog
-from configuration.training.general.ablation import AblationCatalog
 from pipelines.backbone.training.experiments import (
-    AblationTrialPlanner,
     AugmentationTrialPlanner,
     ClampTrialPlanner,
     ContextTrialPlanner,
@@ -745,7 +743,7 @@ def test_log_energy_plan_round_trips_through_config_cli():
     assert baseline.curriculum.warmup.use_log_energy_curve   is False
     assert baseline.curriculum.complete.use_log_energy_curve is False
     assert baseline.curriculum.complete.use_cosine_curve     is True
-    assert baseline.curriculum.complete.weight_cosine_curve  == AblationCatalog.COSINE_WEIGHT
+    assert baseline.curriculum.complete.weight_cosine_curve  == FullModel.COSINE_WEIGHT
 
     tested = _apply({**plans["logE-w0.25"], "run_name": "logE-w0.25", "logdir": "/tmp/logE"})
     assert tested.curriculum.warmup.use_log_energy_curve      is True
@@ -761,161 +759,6 @@ def test_log_energy_planner_paths_are_entry_config_leaves():
     unknown = [path for _, overrides in planner.plan() for path in overrides if path not in leaves]
 
     assert unknown == []
-
-
-ABL_FEATURES = [
-    {"label": "active_norm", "enable": {"curriculum.warmup.use_active_normalization": True}, "degrade": {"curriculum.warmup.use_active_normalization": False}},
-    {"label": "focal",       "enable": {"curriculum.warmup.amp_focal_gamma": 2.0},           "degrade": {"curriculum.warmup.amp_focal_gamma": 0.0}},
-    {"label": "balance",     "enable": {"curriculum.warmup.presence_balance": True},         "degrade": {"curriculum.warmup.presence_balance": False}},
-]
-
-
-def test_ablation_planner_cumulative_full_to_baseline():
-    planner = AblationTrialPlanner(ABL_FEATURES, include_full=True)
-
-    plans = planner.plan()
-    names = [name for name, _ in plans]
-
-    assert names == [
-        "abl-0-full",
-        "abl-1-no_active_norm",
-        "abl-2-no_focal",
-        "abl-3-baseline",
-    ]
-    assert planner.summary()["Total runs"] == 4
-
-    full = dict(plans)["abl-0-full"]
-    assert full["curriculum.warmup.use_active_normalization"] is True
-    assert full["curriculum.warmup.amp_focal_gamma"]          == 2.0
-    assert full["curriculum.warmup.presence_balance"]         is True
-
-    step1 = dict(plans)["abl-1-no_active_norm"]
-    assert step1["curriculum.warmup.use_active_normalization"] is False
-    assert step1["curriculum.warmup.amp_focal_gamma"]          == 2.0
-    assert step1["curriculum.warmup.presence_balance"]         is True
-
-    baseline = dict(plans)["abl-3-baseline"]
-    assert baseline["curriculum.warmup.use_active_normalization"] is False
-    assert baseline["curriculum.warmup.amp_focal_gamma"]          == 0.0
-    assert baseline["curriculum.warmup.presence_balance"]         is False
-
-
-def test_ablation_planner_without_full_run():
-    planner = AblationTrialPlanner(ABL_FEATURES, include_full=False)
-
-    plans = planner.plan()
-
-    assert [name for name, _ in plans] == [
-        "abl-1-no_active_norm",
-        "abl-2-no_focal",
-        "abl-3-baseline",
-    ]
-    assert planner.summary()["Total runs"] == 3
-
-
-def test_ablation_planner_allows_complete_terms_with_disabled_curriculum():
-    features = [
-        {"label": "curriculum", "enable": {"curriculum.enabled": True},                          "degrade": {"curriculum.enabled": False}},
-        {"label": "moments",    "enable": {"curriculum.complete.use_moments": True},             "degrade": {"curriculum.complete.use_moments": False}},
-    ]
-
-    planner = AblationTrialPlanner(features, include_full=True)
-
-    names = [name for name, _ in planner.plan()]
-    assert names == ["abl-0-full", "abl-1-no_curriculum", "abl-2-baseline"]
-
-    no_curriculum = dict(planner.plan())["abl-1-no_curriculum"]
-    assert no_curriculum["curriculum.enabled"]                       is False
-    assert no_curriculum["curriculum.complete.use_moments"]          is True
-
-
-def test_ablation_catalog_default_is_the_standard_set():
-    features = AblationCatalog.default_features()
-    labels   = [feature["label"] for feature in features]
-
-    assert labels == [
-        "loss_curriculum",
-        "cosine_curve", "architecture_param_loss", "augmentation",
-        "active_norm", "lr_per_group", "lr_warmup",
-        "out_sigma", "out_amp", "derived_phase", "chan_mag",
-        "output_clamp",
-    ]
-    assert "out_mu" not in labels
-    for feature in features:
-        assert set(feature) >= {"label", "enable", "degrade"}
-
-
-def test_ablation_catalog_standard_categories_present():
-    catalog = AblationCatalog.as_dict()
-
-    assert catalog["out_amp"]["degrade"]["normalization.out_amp"]      == "zscore"
-    assert catalog["chan_mag"]["degrade"]["normalization.chan_mag"]    == "zscore_log1p"
-    assert catalog["derived_phase"]["degrade"]["normalization.derived_phase"]  == "zscore"
-    assert catalog["augmentation"]["degrade"]["augmentation.p_flip_h"] == 0.0
-    assert "augmentation.p_noise" not in catalog["augmentation"]["enable"]
-    assert "out_mu"      not in catalog
-    assert "total_power" not in catalog
-    assert "moments"     not in catalog
-
-    loss_curriculum = catalog["loss_curriculum"]
-    assert loss_curriculum["enable"]["curriculum.enabled"] is True
-    assert loss_curriculum["degrade"]                      == {"curriculum.enabled": False}
-
-    cosine = catalog["cosine_curve"]
-    assert cosine["enable"]["curriculum.complete.use_cosine_curve"]  is True
-    assert cosine["degrade"]["curriculum.complete.use_cosine_curve"] is False
-    assert "curriculum.warmup.use_cosine_curve" not in cosine["enable"]
-
-    assert "class_imbalance"  not in catalog
-    assert "predict_presence" not in catalog
-
-    architecture = catalog["architecture_param_loss"]
-    assert architecture["enable"]["backbone_name"]                         == "resunet"
-    assert architecture["enable"]["curriculum.complete.use_param_l1"]      is True
-    assert architecture["enable"]["curriculum.complete.use_param_mse"]     is False
-    assert architecture["degrade"]["backbone_name"]                        == "unet"
-    assert architecture["degrade"]["curriculum.complete.use_param_l1"]     is False
-    assert architecture["degrade"]["curriculum.complete.use_param_mse"]    is True
-    assert architecture["degrade"]["curriculum.complete.weight_param_mse"] == 1.0
-
-    active_norm = catalog["active_norm"]
-    assert active_norm["enable"]["curriculum.complete.use_active_normalization"]  is True
-    assert active_norm["degrade"]["curriculum.complete.use_active_normalization"] is False
-
-    assert "warmup_loss" not in catalog
-    assert "curriculum"  not in catalog
-
-    lr_warmup = catalog["lr_warmup"]
-    assert lr_warmup["enable"]["training.warmup_enabled"]  is True
-    assert lr_warmup["degrade"]["training.warmup_enabled"] is False
-
-    lr_per_group = catalog["lr_per_group"]
-    assert lr_per_group["enable"]["model_overrides"]["output_head_lr"] == 1e-3
-    assert lr_per_group["enable"]["model_overrides"]["encoder_lr"]     == 3e-4
-    assert set(lr_per_group["degrade"]["model_overrides"].values())    == {3e-4}
-    assert set(lr_per_group["degrade"]["model_overrides"])             == set(lr_per_group["enable"]["model_overrides"])
-
-
-def test_ablation_catalog_as_dict_covers_loss_terms():
-    catalog = AblationCatalog.as_dict()
-
-    assert "curve_loss_mse_to_l1" not in catalog
-    assert "spectral_coherence"   not in catalog
-    assert "ssim"                 not in catalog
-    assert "smoothness_tv"        in catalog
-
-
-def test_ablation_catalog_covers_normalization_and_clamp():
-    catalog = AblationCatalog.as_dict()
-
-    norm = catalog["normalization"]
-    assert norm["enable"]["normalization.input_strategy"]   == "per_slot"
-    assert norm["degrade"]["normalization.input_strategy"]  == "zscore"
-    assert norm["degrade"]["normalization.output_strategy"] == "zscore"
-
-    clamp = catalog["output_clamp"]
-    assert clamp["enable"]["normalization.clamp_output"]  is True
-    assert clamp["degrade"]["normalization.clamp_output"] is False
 
 
 def test_input_from_dataset_uses_full_stack(tmp_path):
@@ -960,56 +803,3 @@ def test_scheduler_planners_take_candidates_from_the_dataset_not_the_configured_
         plans = dict(planner.plan())
         assert plans["in-amp-allsec-noderived-noaux"]["paths.secondary_labels"] == tuple(CANDIDATES)
         assert "paths.secondary_labels" not in plans["in-amp-redsec-noderived-noaux"]
-
-
-def test_ablation_catalog_paths_are_entry_config_leaves():
-    leaves  = {path for path, _ in ConfigCli._leaves(BackboneEntryConfig())}
-    unknown = [
-        (feature["label"], side, path)
-        for feature in AblationCatalog.features()
-        for side in ("enable", "degrade")
-        for path in feature.get(side, {})
-        if path not in leaves
-    ]
-
-    assert unknown == []
-
-
-def test_ablation_default_plan_round_trips_through_config_cli():
-    config  = BackboneEntryConfig()
-    planner = AblationTrialPlanner(config.ablation_features, config.ablation_include_full)
-
-    plans = planner.plan()
-    assert len(plans) == len(config.ablation_features) + 1
-
-    def _apply(overrides: dict):
-        cli   = ConfigCli(BackboneEntryConfig())
-        trial = cli.apply(ConfigCli.to_argv(overrides) + ["--trial"])
-        CurriculumInheritance(trial.curriculum, default_curriculum(), cli.overrides).apply()
-        return trial
-
-    for run_name, overrides in plans:
-        trial = _apply({**overrides, "run_name": run_name, "logdir": "/tmp/abl"})
-        assert trial.run_name == run_name
-
-    full     = _apply(dict(plans)["abl-0-full"])
-    baseline = _apply(dict(plans)[f"abl-{len(config.ablation_features)}-baseline"])
-    assert full.curriculum.enabled                               is True
-    assert full.backbone_name                                    == "resunet"
-    assert full.curriculum.complete.use_param_l1                 is True
-    assert full.curriculum.complete.use_cosine_curve             is True
-    assert full.curriculum.warmup.use_param_l1                   is True
-    assert full.curriculum.warmup.use_cosine_curve               is True
-    assert full.curriculum.warmup.presence_balance               is False
-    assert full.training.warmup_enabled                          is True
-    assert baseline.curriculum.enabled                           is False
-    assert baseline.backbone_name                                == "unet"
-    assert baseline.curriculum.complete.use_param_mse            is True
-    assert baseline.curriculum.complete.use_param_l1             is False
-    assert baseline.curriculum.complete.use_active_normalization is False
-    assert baseline.curriculum.warmup.use_param_mse              is True
-    assert set(baseline.model_overrides.values())                == {3e-4}
-    assert baseline.training.warmup_enabled                      is False
-    assert baseline.normalization.clamp_output                   is False
-    assert baseline.normalization.out_amp                        == "zscore"
-    assert baseline.normalization.derived_phase                      == "zscore"

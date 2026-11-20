@@ -3,7 +3,7 @@
 class ScriptPanel {
   static SECTIONS = [
     { category: "Data",        blurb: "From the bundled generator to training targets: synthesise the example dataset, then fit the Gaussian targets." },
-    { category: "Training",    blurb: "Train one stage end to end, fan an experiment ladder across GPUs, or run the cumulative feature ablation." },
+    { category: "Training",    blurb: "Train one stage end to end, or fan an experiment ladder across GPUs." },
     { category: "Inference",   blurb: "Turn trained checkpoints into stitched cubes, metrics, and reports." },
     { category: "Analysis",    blurb: "Post-hoc work on finished runs: rebuild trial reports, diagnose trained models, and collect artifacts for publication." },
     { category: "Experiments", blurb: "Structured studies with their own orchestration: benchmarks, cross-validation, sweeps, and tuning." },
@@ -46,7 +46,6 @@ class ScriptPanel {
           hay      : [s.group_purpose || "", ...variants.map((v) => v.label), s.title, s.purpose, s.file, s.key],
           variants,
           topic    : s.topic,
-          ablation : false,
         };
         groups.set(s.group, item);
         items.push(item);
@@ -64,29 +63,10 @@ class ScriptPanel {
         hay      : [s.title, s.purpose, s.file, s.key],
         variants : [],
         topic    : s.topic,
-        ablation : false,
       });
     });
 
-    const train = items.findIndex((it) => it.category === "Training");
-    items.splice(train < 0 ? items.length : train + 1, 0, this._ablationItem());
     return items;
-  }
-
-  _ablationItem() {
-    return {
-      key      : "ablation",
-      href     : "#/ablation",
-      category : "Training",
-      title    : "Ablation Study",
-      purpose  : "Cumulative ablation of the backbone: train the full model and degrade one selected feature at a time, in order, down to the baseline.",
-      file     : "main/training/train_backbone.py",
-      foot     : "feature regression",
-      hay      : ["Ablation Study", "cumulative ablation feature regression baseline", "main/training/train_backbone.py"],
-      variants : [],
-      topic    : null,
-      ablation : true,
-    };
   }
 
   _renderFilters() {
@@ -179,7 +159,7 @@ class ScriptPanel {
 
   _card(item) {
     const card = document.createElement("a");
-    card.className = "script-card" + (this.query ? "" : " reveal") + (item.ablation ? " script-card--ablation" : "");
+    card.className = "script-card" + (this.query ? "" : " reveal");
     card.href      = item.href;
     if (!this.query) card.style.transitionDelay = `${Math.min(this.delay, 10) * 0.04}s`;
     this.delay += 1;
@@ -197,7 +177,7 @@ class ScriptPanel {
       (variants ? `<div class="script-card__variants">${variants}</div>` : "") +
       `<div class="script-card__foot"><span>${SharedCharts.esc(item.foot)}</span>` +
       `<span class="script-card__foot-right">` +
-      (item.ablation ? "" : `<button type="button" class="script-card__seq" title="Add this entry as a block to your active experiment sequence">+ sequence</button>`) +
+      `<button type="button" class="script-card__seq" title="Add this entry as a block to your active experiment sequence">+ sequence</button>` +
       `<span class="arrow">configure &rarr;</span></span></div>`;
 
     const seq = card.querySelector(".script-card__seq");

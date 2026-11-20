@@ -9,7 +9,7 @@ from pipelines.backbone.training.launcher import BackboneTrainingLauncher, Train
 from tools.runtime.config_cli             import ConfigCli
 
 
-DATASET_MODES = ("secondary", "input", "patch", "reach", "ratio", "ablation")
+DATASET_MODES = ("secondary", "input", "patch", "reach", "ratio")
 
 
 def _resolve(overrides: dict):

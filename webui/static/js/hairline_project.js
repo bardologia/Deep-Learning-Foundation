@@ -327,84 +327,6 @@ class CvFoldsFigure extends HairlineFigureBase {
   }
 }
 
-class AblationTowerFigure extends HairlineFigureBase {
-  static RANGE     = [8, 14, 22];
-  static LEVELS    = 9;
-  static WIDTH     = 8.6;
-  static GAP       = 0.7;
-  static HEIGHT    = 6.2;
-  static GAP_Z     = 0.5;
-  static REST      = 5;
-  static REST_PULL = 0.45;
-
-  constructor({ stage, svg }, value) {
-    super(svg, value, 3.1);
-    this.span = 3 * AblationTowerFigure.WIDTH + 2 * AblationTowerFigure.GAP;
-    this._camera(this._extent(), 164);
-    this._plinth(-8, -8, this.span + 8, this.span + 8, 7, 4);
-    this._buildLevels();
-    this._start(stage, svg);
-  }
-
-  _extent() {
-    const span = this.span;
-    const top  = AblationTowerFigure.LEVELS * (AblationTowerFigure.HEIGHT + AblationTowerFigure.GAP_Z);
-    const far  = span + AblationTowerFigure.RANGE[2];
-    return [[-8, -8, -4], [span + 8, span + 8, -4], [span + 8, -8, -4], [-8, span + 8, -4], [0, 0, top], [span, span, top], [far, span / 2, top * 0.6], [span / 2, far, top * 0.6]];
-  }
-
-  _buildLevels() {
-    this.blocks = [];
-    this.levels = [];
-    for (let i = 0; i < AblationTowerFigure.LEVELS; i++) {
-      const z0    = i * (AblationTowerFigure.HEIGHT + AblationTowerFigure.GAP_Z);
-      const z1    = z0 + AblationTowerFigure.HEIGHT;
-      const level = [0, 1, 2].map((b) => this._block(i, b, z0, z1));
-      level.sort((a, b) => a.depth - b.depth);
-      for (const block of level) {
-        block.el = HL.solid(this.g);
-        this.blocks.push(block);
-      }
-      const middle = level.find((block) => block.b === 1);
-      middle.tw    = HL.tween(i === AblationTowerFigure.REST ? this.amount * AblationTowerFigure.REST_PULL : 0);
-      middle.el.sil.classList.toggle("hi", i === AblationTowerFigure.REST);
-      this.levels.push({ middle, y: this.P(this.span / 2, this.span / 2, (z0 + z1) / 2)[1] });
-    }
-  }
-
-  _block(i, b, z0, z1) {
-    const width   = AblationTowerFigure.WIDTH;
-    const across  = b * (width + AblationTowerFigure.GAP);
-    const jitter  = b === 1 ? 0 : 1.1 * Math.sin(i * 2.3 + b * 1.7);
-    const alongX  = i % 2 === 0;
-    const box     = alongX ? [jitter, across, this.span + jitter, across + width] : [across, jitter, across + width, this.span + jitter];
-    const [ring, inner] = HL.rings(box[0], box[1], box[2], box[3], 1.6, 0.7);
-    return { b, ring, inner, z0, z1, dir: alongX ? [1, 0] : [0, 1], depth: box[0] + box[1] + box[2] + box[3], tw: HL.tween(0), drawn: NaN };
-  }
-
-  _tick(dt, now) {
-    return this._advance(this.blocks, now);
-  }
-
-  _draw(block, out) {
-    HL.put(block.el, HL.prism(this._shifted(block.dir[0] * out, block.dir[1] * out, 0), this.front, block.ring, block.inner, block.z0, block.z1));
-  }
-
-  _move(p) {
-    this._choose(HairlineFigureBase.nearest(this.levels.map((level) => level.y), p[1]));
-  }
-
-  _retarget(now) {
-    const pulled = this.chosen === null ? AblationTowerFigure.REST : this.chosen;
-    const out    = this.chosen === null ? this.amount * AblationTowerFigure.REST_PULL : this.amount;
-    this.levels.forEach((level, i) => {
-      HL.tset(level.middle.tw, i === pulled ? out : 0, now, 0);
-      level.middle.el.sil.classList.toggle("hi", i === pulled);
-    });
-    this.loop.wake();
-  }
-}
-
 class SliceLoafFigure extends HairlineFigureBase {
   static RANGE     = [8, 14, 22];
   static SLICES    = 11;
@@ -4818,7 +4740,6 @@ class ProjectFigures {
   static CATALOG = {
     voxels:     ProjectFigures.entry(VoxelColumnFigure, "A pixel's profile as a column cut into z bins, wide at the bottom and again near the top. The pointer's height picks a bin and it slides out of the column."),
     folds:      ProjectFigures.entry(CvFoldsFigure, "A drum cut into five cross-validation folds, each numbered with dots. The pointer's angle picks a fold and it slides out as the held-out one."),
-    ablation:   ProjectFigures.entry(AblationTowerFigure, "A stacking-block tower of nine levels. The pointer's height picks a level and its middle block slides out, the way an ablation removes one component."),
     slices:     ProjectFigures.entry(SliceLoafFigure, "A cube cut into eleven slices whose tops follow a profile. The pointer picks a slice and it slides out of the block with its neighbours."),
     slots:      ProjectFigures.entry(GaussianSlotsFigure, "Three Gaussian slots, each a tray of fins tracing one component; the middle slot has collapsed flat. The pointer picks a slot and its component rises."),
     gpus:       ProjectFigures.entry(GpuShelfFigure, "Six GPU cards standing in a chassis, each with two fans and a status light. The pointer picks a card and it rises out of its slot."),

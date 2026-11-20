@@ -14,7 +14,7 @@ from configuration.training.general.loss          import ParamMatching
 from configuration.training.general.optimization  import ClipMode, WarmupMode
 from models                                       import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
 from pipelines.backbone.inference.pipeline        import InferencePipeline
-from pipelines.backbone.training.experiments      import AblationTrialPlanner, AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
+from pipelines.backbone.training.experiments      import AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
 from pipelines.backbone.training.patch_report     import PatchTrialsReport
 from pipelines.backbone.training.pipeline         import TrainingPipeline
 from pipelines.shared.config.config_factory       import ConfigFactory
@@ -129,7 +129,7 @@ class SingleTrainRunner:
 
 class TrainScheduler(TrialSweepScheduler):
 
-    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "pair_trials", "log_energy_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "clamp_trials", "stability_trials", "ema_trials", "ablation_features", "ablation_include_full", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
+    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "pair_trials", "log_energy_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "clamp_trials", "stability_trials", "ema_trials", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
 
     MODE_SUBDIRS = {
         "curriculum"    : "curriculum",
@@ -148,7 +148,6 @@ class TrainScheduler(TrialSweepScheduler):
         "stability"     : "stability",
         "ema"           : "ema",
         "amp"           : "amp",
-        "ablation"      : "ablation",
     }
 
     @property
@@ -203,9 +202,7 @@ class TrainScheduler(TrialSweepScheduler):
             return StabilityTrialPlanner(self.config.stability_trials, tuple(mode.value for mode in WarmupMode), tuple(mode.value for mode in ClipMode))
         if mode == "ema":
             return EmaTrialPlanner(self.config.ema_trials)
-        if mode == "amp":
-            return AmpTrialPlanner()
-        return AblationTrialPlanner(self.config.ablation_features, self.config.ablation_include_full)
+        return AmpTrialPlanner()
 
     def _model_key(self) -> str:
         return ModelBuilder.model_key(self.config.backbone_name, self.config.backbone_head)

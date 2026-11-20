@@ -47,7 +47,6 @@ talking to one group of JSON endpoints.
 | Architectures | `#/architectures` | `/api/backbones` | The 20 backbones across 5 families plus their 4 output heads, with selection guidance and per-model defaults. |
 | Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes 30 of them and folds the variants into 2 groups (analyze, compare). |
 | Launch | `#/launch/<key>` | `/api/scripts/<key>/config` | Full-screen launch control per script: config sections grouped by dataclass, typed controls, the override manifest, the command preview and the interpreter. Launch now, queue after the current job, or save for later. Entries that write a sweep (the training entries with their trial modes, cross-validation and the benchmark) also carry a Finalize section: the seed comparison, the trial comparison and the report mail are chained onto the finished run one at a time, each starting only once the previous one exited cleanly. The chain is derived before the run starts, so a run tag left to the timestamp default or a missing SMTP password is refused at the button instead of failing hours later. |
-| Ablation | `#/ablation` | `/api/backbones`, `/api/run` | Reached from a script card. Picks the features to ablate and their order, then launches a cumulative loop that trains the full model and degrades one feature at a time down to the baseline. |
 | Saved | `#/saved` | `/api/saved-runs` | Configurations stored from launch pages, one JSON file each under `logs/saved_runs/`, finalize switches included. Each card can be launched, queued or deleted. |
 | Templates | `#/templates` | `/api/config-templates` | Named sets of config overrides captured from a launch page or a sequence block, one JSON file each under `logs/config_templates/`. A template carries only the fields the form overrode, so it can be imported on any entry point: matching dotted paths apply and the rest are reported as skipped. Each card opens its entry point with the template already applied, renames or deletes it; the `Config templates` rail block on every launch page imports, saves and deletes them without leaving the form. Names are unique per entry point, and saving over one replaces it. |
 | Sequences | `#/sequences` | `/api/sequences/*` | Experiment sequences as a drag-and-drop DAG board: launch blocks chained by predecessors with checkpoints, skip toggles, per-block decision axes, an isolated per-execution workspace, resume scans over the persisted workspace state, and per-block finalize chains carrying the same switches as the launch page, chained onto the block's own end without holding back its successors: inside the workspace in an isolated sequence, on the entry's own sweep directory otherwise. A tuning block that declares `model_overrides` (and, when its study samples the batch size, `training.batch_size`) records the best configuration its run wrote as that verdict once its job ends, so the blocks after it run on the tuned values; while it runs, the board prints the study snapshot its workers write (trials done, best value, stall count, rate and time to the target) from `/api/sequences/<id>/study?block=`. The notifier announces a block held at its checkpoint and a recorded verdict. |
@@ -181,10 +180,10 @@ tests under `tests/webui/`: `config_descriptions.json` and the model library
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`,
 `static/vendor/thinking-orbs-engine.js`, `static/vendor/hairline-kernel.js`,
-`static/vendor/hairline-figures.js` and 42 modules under `static/js/`. `app.js` and
+`static/vendor/hairline-figures.js` and 41 modules under `static/js/`. `app.js` and
 `router.js` wire the views; one module per tab (`home`, `models`, `scripts`, `launch` with its widget
 modules (`python_literal`, `form_widgets`, `model_panels`, `gpu_pickers`,
-`experiment_builder`, `config_form`) and `launch_pickers`, `ablation`, `saved_runs`,
+`experiment_builder`, `config_form`) and `launch_pickers`, `saved_runs`,
 `templates`, `sequences`, `configs`, `console`, `tensorboard`, `results`,
 `cube_view`, `slice_collector`, `fit_lab`, `microscope`, `survey`, `triage`, `autopsy`);
 the rest are shared helpers (`api`, `stream_hub` with the page's single live-output channel, `shared_charts`,
@@ -232,7 +231,7 @@ from one autopilot on the mast, so both answer the same pointer; any header with
 The stock `drawer`, `terminal` (turned to face right), `plug`, `riffle`, `loupe`, `sieve`,
 `elevator`, `slow`, `cabinet`, `router`, `patch` and `phosphor` come from the package;
 `hairline_project` draws the project's own on a shared `HairlineFigureBase`: `voxels`,
-`folds`, `ablation`, `slices`, `slots`, `gpus`, `guard`, `backbone` (the backbone zoo as a
+`folds`, `slices`, `slots`, `gpus`, `guard`, `backbone` (the backbone zoo as a
 bench of swappable cartridges), `landscape`,
 `surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
 `balance`, `podium`, `tiles`, `transect`, `film`, `tray`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,

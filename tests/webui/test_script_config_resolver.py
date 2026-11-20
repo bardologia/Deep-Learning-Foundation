@@ -15,7 +15,6 @@ import pytest
 
 import script_config_resolver
 
-from configuration.training.general.ablation import AblationCatalog
 from project_paths                           import ProjectPaths
 from script_config_resolver                  import ScriptConfigResolver
 
@@ -38,15 +37,6 @@ def test_container_leaves_render_as_python_literals(backbone_leaves):
     for leaf in containers:
         assert "<" not in leaf["value"], leaf["path"]
         ast.literal_eval(leaf["value"])
-
-
-def test_ablation_leaves_expose_the_feature_plan(backbone_leaves):
-    by_path  = {leaf["path"]: leaf for leaf in backbone_leaves}
-    features = ast.literal_eval(by_path["ablation_features"]["value"])
-
-    assert [feature["label"] for feature in features] == list(AblationCatalog.DEFAULT_ORDER)
-    assert by_path["ablation_include_full"]["value"] == "True"
-    assert "ablation_catalog" not in by_path
 
 
 class RecordingPaths:

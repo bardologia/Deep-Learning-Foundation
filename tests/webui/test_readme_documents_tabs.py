@@ -8,7 +8,7 @@ NAV_ROUTE   = re.compile(r'href="#/([a-z_]+)" data-route="[a-z_]+"')
 TABLE_ROUTE = re.compile(r"^\|[^|]+\|\s*`#/([a-z_]+)[^`]*`", re.MULTILINE)
 SCRIPT_TAG  = re.compile(r"/static/js/([a-z_]+)\.js")
 
-OFF_NAV_ROUTES = {"launch", "ablation"}
+OFF_NAV_ROUTES = {"launch"}
 
 
 def _index_html() -> str:

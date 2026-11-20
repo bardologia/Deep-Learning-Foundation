@@ -9,38 +9,44 @@ from configuration.dataset                       import AugmentationConfig, Inpu
 from configuration.inference.general             import InferenceConfig
 from configuration.dataset.gaussian           import GaussianConfig
 from configuration.normalization.general         import NormalizationConfig
-from configuration.training.general.ablation     import AblationCatalog
-from configuration.training.general.loss         import LossConfig, LossCurriculumConfig
+from configuration.training.general.loss         import LossConfig, LossCurriculumConfig, ParamMatching
 from configuration.training.general.optimization import EarlyStoppingConfig, GradientClipperConfig, OptimizerConfig, SchedulerConfig, WarmupConfig
 from configuration.resources                     import ResourceConfig
 from configuration.training.general.runtime      import IOConfig, MemoryConfig, TrainingLoopConfig
 from configuration.training.general.trials       import TrialCatalog
 
 
+class FullModel:
+
+    PARAM_MATCH           = ParamMatching.HUNGARIAN
+    COSINE_WEIGHT         = 0.5
+    CURRICULUM_SWAP_EPOCH = 15
+
+
 def default_curriculum() -> LossCurriculumConfig:
     warmup = LossConfig(
         use_param_l1             = True,
         weight_param_l1          = 1.0,
-        param_matching           = AblationCatalog.PARAM_MATCH_FULL,
+        param_matching           = FullModel.PARAM_MATCH,
         use_active_normalization = True,
         presence_balance         = False,
         use_cosine_curve         = True,
-        weight_cosine_curve      = AblationCatalog.COSINE_WEIGHT,
+        weight_cosine_curve      = FullModel.COSINE_WEIGHT,
     )
 
     complete = LossConfig(
         use_param_l1             = True,
         weight_param_l1          = 1.0,
-        param_matching           = AblationCatalog.PARAM_MATCH_FULL,
+        param_matching           = FullModel.PARAM_MATCH,
         use_active_normalization = True,
         presence_balance         = True,
         use_cosine_curve         = True,
-        weight_cosine_curve      = AblationCatalog.COSINE_WEIGHT,
+        weight_cosine_curve      = FullModel.COSINE_WEIGHT,
     )
 
     return LossCurriculumConfig(
         enabled    = True,
-        swap_epoch = AblationCatalog.CURRICULUM_SWAP_EPOCH,
+        swap_epoch = FullModel.CURRICULUM_SWAP_EPOCH,
         warmup     = warmup,
         complete   = complete,
     )
@@ -196,9 +202,6 @@ class BackboneEntryConfig:
     clamp_trials         : ClampTrialsConfig         = field(default_factory=ClampTrialsConfig)
     stability_trials     : StabilityTrialsConfig     = field(default_factory=StabilityTrialsConfig)
     ema_trials           : EmaTrialsConfig           = field(default_factory=EmaTrialsConfig)
-
-    ablation_features     : list = field(default_factory=AblationCatalog.default_features)
-    ablation_include_full : bool = True
 
     gpus            : list[int] = field(default_factory=lambda: [0])
     ddp             : bool      = False

@@ -505,7 +505,7 @@ Three experiment entries under `main/experiments/` wrap the training loop:
 scene; `tune.py` drives an Optuna study. Patch-shape sweeps run through the
 training entries themselves as `trials_mode=patch`, alongside the other fan-out modes
 (curriculum, warmup, presence, pair, log-energy, secondary, input, context, reach, head,
-augmentation, clamp, stability, EMA, AMP and ablation ladders). The patch sweep report
+augmentation, clamp, stability, EMA and AMP ladders). The patch sweep report
 follows the planned seeds and names the seeds a trial mean drops.
 
 `benchmark.py` refuses a `skip_models` entry that matches no model key and no backbone

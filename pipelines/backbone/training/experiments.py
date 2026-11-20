@@ -187,52 +187,6 @@ class LogEnergyTrialPlanner:
         return plans
 
 
-class AblationTrialPlanner:
-
-    def __init__(self, features: list, include_full: bool) -> None:
-        self.features     = list(features)
-        self.include_full = include_full
-
-    def summary(self) -> dict:
-        return {
-            "Ablation features" : len(self.features),
-            "Order"             : " -> ".join(feature["label"] for feature in self.features),
-            "Total runs"        : len(self.features) + (1 if self.include_full else 0),
-        }
-
-    def _enabled_overrides(self) -> dict:
-        merged = {}
-        for feature in self.features:
-            merged.update(feature["enable"])
-        return merged
-
-    def _degraded_prefix(self, count: int) -> dict:
-        merged = {}
-        for feature in self.features[:count]:
-            merged.update(feature["degrade"])
-        return merged
-
-    def _run_name(self, step: int) -> str:
-        if step == 0:
-            return "abl-0-full"
-        if step == len(self.features):
-            return f"abl-{step}-baseline"
-        return f"abl-{step}-no_{self.features[step - 1]['label']}"
-
-    def plan(self) -> list[tuple[str, dict]]:
-        enabled = self._enabled_overrides()
-        plans   = []
-
-        if self.include_full:
-            plans.append((self._run_name(0), dict(enabled)))
-
-        for step in range(1, len(self.features) + 1):
-            overrides = {**enabled, **self._degraded_prefix(step)}
-            plans.append((self._run_name(step), overrides))
-
-        return plans
-
-
 class ContextTrialPlanner:
 
     RESERVED_KEYS = ("label", "backbone")

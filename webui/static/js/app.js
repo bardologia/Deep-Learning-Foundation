@@ -93,7 +93,6 @@ class App {
       this.project = project;
       window.ResultsSources.configure(project.roots);
       if (this.launchView) this.launchView.project = project;
-      if (this.ablationView) this.ablationView.project = project;
       this._setStatus(true);
       this._initStatus();
     }, 3000);
@@ -137,8 +136,6 @@ class App {
 
     this.launchView = new window.LaunchView(this.runConsole, this.project || {});
     this.runConsole.launchView = this.launchView;
-
-    this.ablationView = new window.AblationView(this.runConsole, this.project || {});
 
     this.savedRunsView = new window.SavedRunsView(this.runConsole, document.getElementById("saved-grid"));
 
@@ -476,7 +473,6 @@ class App {
     } else {
       this.launchView.leave();
     }
-    if (route === "ablation") this.ablationView.enter();
     if (route === "saved") this.savedRunsView.enter();
     if (route === "templates") this.templatesView.enter();
     if (route === "sequences") this.sequencesView.enter();
