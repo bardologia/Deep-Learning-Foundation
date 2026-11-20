@@ -473,6 +473,17 @@ def test_parse_reads_the_preempt_list_and_defaults_it_to_empty():
     assert GpuPoolFile.parse({"gpus": [0], "preempt": [2, 3]}) == PoolEdit(gpus=[0], preempt=[2, 3])
 
 
+@pytest.mark.parametrize("payload, reason", [
+    ({"gpus": [0], "preempt": [0]},    "listed in both"),
+    ({"gpus": [0], "preempt": "1"},    "list"),
+    ({"gpus": [0], "preempt": [1, 1]}, "repeat"),
+    ({"gpus": [0], "preempt": [-1]},   "non-negative"),
+])
+def test_parse_rejects_a_malformed_preempt_list(payload, reason):
+    with pytest.raises(ValueError, match=reason):
+        GpuPoolFile.parse(payload)
+
+
 def test_write_carries_the_preempt_list_only_when_given(tmp_path):
     handle = GpuPoolFile(tmp_path / "gpu_pool.json", SilentLogger())
 
@@ -595,6 +606,29 @@ def test_unchanged_pool_file_is_not_re_read(tmp_path):
     queue._reconcile(gpu_pool, [])
 
     assert gpu_pool == [0]
+
+
+@pytest.mark.parametrize("payload", [
+    "not json at all",
+    '{"gpus": 3}',
+    '{"gpus": [0, "one"]}',
+    '{"gpus": [0, -1]}',
+    '{"gpus": [0, 0]}',
+    '{"gpus": [0, true]}',
+    '[0, 1]',
+    '{"devices": [0, 1]}',
+])
+def test_invalid_pool_edit_is_rejected_loudly_and_leaves_the_pool_unchanged(tmp_path, payload):
+    recorder    = RecordingLogger()
+    queue, pool = _pool_queue(tmp_path, [0], recorder)
+    gpu_pool    = [0]
+
+    _write_pool(pool, payload)
+    queue._reconcile(gpu_pool, [])
+
+    assert gpu_pool == [0]
+    assert recorder.errors
+    assert "unchanged" in recorder.errors[0]
 
 
 def test_pool_edit_is_applied_after_an_invalid_edit_is_fixed(tmp_path):
@@ -1002,3 +1036,19 @@ def test_without_a_resume_hint_the_signal_message_gives_no_advice(tmp_path):
     assert process.poll() is not None
     assert "terminated 1 workers: slow (GPU 0)" in logger.warnings[-1]
     assert "resume" not in logger.warnings[-1]
+
+
+def test_failed_launch_closes_the_log_file_and_propagates(tmp_path, logger_stub, monkeypatch):
+    handles = []
+
+    def refuse(command, stdout, stderr, env):
+        handles.append(stdout)
+        raise OSError("exec format error")
+
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    queue = GpuQueue(gpus=[0], logger=logger_stub, poll_interval_s=0.0, handle_signals=False)
+
+    with pytest.raises(OSError, match="exec format error"):
+        queue._launch(_job(tmp_path, "a", ["true"]), 0)
+
+    assert handles[0].closed

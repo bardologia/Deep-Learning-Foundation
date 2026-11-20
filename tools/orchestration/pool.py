@@ -27,7 +27,17 @@ class ProcessPoolRunner:
             for future in as_completed(futures):
                 job = futures[future]
 
-                result = future.result()
+                try:
+                    result = future.result()
+                except Exception as error:
+                    self.logger.error(f"Job {label_fn(job)} failed after {time.perf_counter() - started:.1f} s with {len(results)}/{len(job_list)} jobs already finished: {error}")
+                    for other in futures:
+                        other.cancel()
+
+                    in_flight = [label_fn(futures[other]) for other in futures if other.running()]
+                    if in_flight:
+                        self.logger.warning(f"Waiting for {len(in_flight)} in-flight job(s) to finish before re-raising, since a running worker cannot be cancelled: {', '.join(in_flight)}")
+                    raise
 
                 results.append((job, result))
                 self.logger.subsection(f"Job {label_fn(job)} completed ({len(results)}/{len(job_list)}, {time.perf_counter() - started:.1f} s elapsed)")

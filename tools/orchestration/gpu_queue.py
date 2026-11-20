@@ -94,16 +94,34 @@ class GpuPoolFile:
     def _devices(payload: dict, key: str) -> list[int]:
         requested = payload[key]
 
+        if not isinstance(requested, list):
+            raise ValueError(f"'{key}' must be a list of device ids, got {requested!r}")
+
+        invalid = [gpu for gpu in requested if isinstance(gpu, bool) or not isinstance(gpu, int) or gpu < 0]
+        if invalid:
+            raise ValueError(f"'{key}' must hold non-negative integers, got {invalid}")
+
+        duplicates = sorted({gpu for gpu in requested if requested.count(gpu) > 1})
+        if duplicates:
+            raise ValueError(f"'{key}' must not repeat a device, duplicated: {duplicates}")
+
         return list(requested)
 
     @classmethod
     def validate(cls, payload) -> list[int]:
+        if not isinstance(payload, dict) or "gpus" not in payload:
+            raise ValueError(f"expected an object holding a 'gpus' key, got {payload!r}")
+
         return cls._devices(payload, "gpus")
 
     @classmethod
     def parse(cls, payload) -> PoolEdit:
         gpus    = cls.validate(payload)
         preempt = cls._devices(payload, "preempt") if "preempt" in payload else []
+        overlap = sorted(set(gpus) & set(preempt))
+
+        if overlap:
+            raise ValueError(f"a device cannot stay in 'gpus' and be freed through 'preempt' at the same time, listed in both: {overlap}")
 
         return PoolEdit(gpus=gpus, preempt=preempt)
 
@@ -464,7 +482,11 @@ class GpuQueue:
         log_fh.write(self._launch_banner(job, gpu_id) + "\n")
         log_fh.flush()
 
-        process = subprocess.Popen(command, stdout=log_fh, stderr=log_fh, env=InheritedCudaMask.restored())
+        try:
+            process = subprocess.Popen(command, stdout=log_fh, stderr=log_fh, env=InheritedCudaMask.restored())
+        except BaseException:
+            log_fh.close()
+            raise
 
         self.logger.info(f"[GPU {gpu_id}] started   {job.name}")
 
