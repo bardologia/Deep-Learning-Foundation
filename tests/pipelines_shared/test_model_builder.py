@@ -1,9 +1,6 @@
 
 from __future__ import annotations
 
-import torch
-
-from models.backbone                      import BACKBONE_CONFIG_REGISTRY, BACKBONE_MODEL_REGISTRY
 from pipelines.shared.model.model_builder import ModelBuilder
 
 

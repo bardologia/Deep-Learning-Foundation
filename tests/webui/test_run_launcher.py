@@ -5,8 +5,6 @@ import time
 from datetime import datetime
 from pathlib  import Path
 
-import pytest
-
 from configuration.diagnostics import ReportMailEntryConfig
 from finalize_chain            import FinalizeChain
 from run_launcher              import RunLauncher
