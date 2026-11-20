@@ -868,7 +868,7 @@ class CubeViewChecks {
   _metrics(answer) {
     const { CubeMetrics } = this.classes;
 
-    this.sandbox.SharedCharts           = { esc: (text) => String(text) };
+    this.sandbox.SharedCharts           = { esc: (text) => String(text), waitLine: (text) => String(text), waitPanel: (text) => String(text) };
     this.sandbox.Api                    = { get: async (url) => answer(new URLSearchParams(url.split("?")[1])) };
     this.sandbox.window.addEventListener = () => {};
 
@@ -1064,7 +1064,7 @@ class CubeViewChecks {
     const asked  = [];
     const toasts = [];
 
-    this.sandbox.SharedCharts      = { esc: (text) => String(text) };
+    this.sandbox.SharedCharts      = { esc: (text) => String(text), waitLine: (text) => String(text), waitPanel: (text) => String(text) };
     this.sandbox.Api               = { get: (url) => new Promise((resolve) => asked.push({ query: new URLSearchParams(url.split("?")[1]), resolve })) };
     this.sandbox.Toast             = { show: (text, kind) => toasts.push({ text, kind }) };
     this.sandbox.fetch             = async () => ({ ok: false });
@@ -1204,7 +1204,7 @@ class CubeViewChecks {
     const asked = [];
     const calls = [];
 
-    this.sandbox.ThinkingOrb             = { busy: (state, text) => `<orb>${text}</orb>` };
+    this.sandbox.SharedCharts            = { esc: (text) => String(text), waitLine: (text) => `<wait>${text}</wait>` };
     this.sandbox.window.addEventListener = () => {};
     this.sandbox.window.innerHeight      = 800;
     this.sandbox.fetch                   = (url) => new Promise((resolve) => asked.push({ query: new URLSearchParams(url.split("?")[1]), resolve }));
@@ -1745,7 +1745,7 @@ class CubeViewChecks {
     const answers = [];
 
     this.sandbox.SharedCharts = { esc: (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;") };
-    this.sandbox.ThinkingOrb  = { panel: (state, text) => `<orb>${text}</orb>` };
+    this.sandbox.SharedCharts.waitPanel = (text) => `<wait>${text}</wait>`;
     this.sandbox.Api          = { get: (url) => { calls.push(url); return new Promise((resolve) => answers.push(resolve)); } };
 
     const host    = { selectedId: "stamp/a" };
@@ -1799,7 +1799,7 @@ class CubeViewChecks {
     Object.assign(view, { polling: false, cubes: [], panels: [], runStrip: null, focusSeq: 0, atLabels: {}, deck: { dataset: {} }, back: this._element(), cross: this._element(), slicesAt: this._element(), profAt: this._element(), slicesEl: this._element() });
     ["_stopSweeps", "_clearProfMetrics", "_hideRefs", "_renderStrip"].forEach((name) => { view[name] = () => {}; });
     this.sandbox.Api            = { post: async () => ({ ok: false, error: "cube gone" }), get: async () => ({ cubes: [] }) };
-    this.sandbox.ThinkingOrb    = { busy: () => "" };
+    this.sandbox.SharedCharts   = { esc: (text) => String(text), waitLine: () => "" };
     this.sandbox.ResultsSources = { runs: () => "runs" };
 
     await view.select("stamp/c");

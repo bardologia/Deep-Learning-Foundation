@@ -13,7 +13,6 @@ class TensorboardView {
     this.empty = document.getElementById("tb-empty");
     this.emptyTitle = document.getElementById("tb-empty-title");
     this.emptyHint = document.getElementById("tb-empty-hint");
-    this.emptyOrb  = document.getElementById("tb-empty-orb");
     this.openBtn = document.getElementById("tb-open");
     this.stopBtn = document.getElementById("tb-stop");
     this.startBtn = document.getElementById("tb-start");
@@ -96,7 +95,7 @@ class TensorboardView {
       pill.className = "tb-pill" + (inst.id === this.selectedId ? " is-active" : "") + (inst.status === "running" ? " is-running" : inst.status === "failed" ? " is-failed" : " is-starting");
       pill.title = inst.logdir;
       pill.innerHTML =
-        (inst.status === "starting" ? ThinkingOrb.html("listening", 20, "starting") : `<span class="tb-pill__dot" aria-hidden="true"></span>`) +
+        `<span class="tb-pill__dot" aria-hidden="true"></span>` +
         `<span class="tb-pill__name">${this._shortdir(inst.logdir)}</span>` +
         `<span class="tb-pill__state">${inst.status}</span>`;
       pill.addEventListener("click", () => {
@@ -129,8 +128,6 @@ class TensorboardView {
     }
 
     this.empty.hidden = false;
-    this.emptyOrb.hidden = !!inst && inst.status === "failed";
-    this.emptyOrb.setAttribute("state", inst ? "listening" : "shaping");
     if (inst && inst.status === "failed") {
       this.emptyTitle.textContent = "TensorBoard failed to start";
       this.emptyHint.textContent = `The instance for ${inst.logdir} exited during startup; see the console server log for its stderr tail.`;
@@ -192,7 +189,7 @@ class TensorboardView {
   }
 
   async _loadTree() {
-    this.pickerList.innerHTML = ThinkingOrb.panel("searching", "Scanning run directories…");
+    this.pickerList.innerHTML = SharedCharts.waitPanel("Scanning run directories…");
     this.pickerRoot.textContent = "";
     const data = await Api.get("/api/tensorboard/tree");
     if (data.error || data.ok === false) {

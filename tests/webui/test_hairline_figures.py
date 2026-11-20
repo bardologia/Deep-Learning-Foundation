@@ -10,7 +10,6 @@ JS_DIR  = STATIC / "js"
 INDEX   = STATIC / "index.html"
 STOCK   = STATIC / "vendor" / "hairline-figures.js"
 PROJECT = JS_DIR / "hairline_project.js"
-ORB     = JS_DIR / "thinking_orb.js"
 SCRIPTS = re.compile(r'<script src="/static/((?:js|vendor)/[\w.-]+\.js)"')
 
 
@@ -24,7 +23,7 @@ def _project_figures() -> set[str]:
 
 
 def _view_sources() -> dict[str, str]:
-    skip  = {PROJECT.name, "hairline_figure.js", ORB.name}
+    skip  = {PROJECT.name, "hairline_figure.js"}
     texts = {path.name: path.read_text() for path in JS_DIR.glob("*.js") if path.name not in skip}
     texts[INDEX.name] = INDEX.read_text()
     return texts
@@ -43,21 +42,6 @@ def _named_figures() -> set[str]:
         for pattern in patterns:
             names.update(re.findall(pattern, text))
         for table in re.findall(r"static FIGURES\s*= \{([^}]*)\}", text):
-            names.update(re.findall(r':\s*"(\w+)"', table))
-    return names
-
-
-def _orb_states() -> set[str]:
-    body = re.search(r"static STATES = \[([^\]]*)\]", ORB.read_text()).group(1)
-    return set(re.findall(r'"(\w+)"', body))
-
-
-def _named_states() -> set[str]:
-    names = set()
-    for text in _view_sources().values():
-        names.update(re.findall(r'<thinking-orb[^>]*?\sstate="(\w+)"', text))
-        names.update(re.findall(r'ThinkingOrb\.(?:html|busy|panel)\("(\w+)"', text))
-        for table in re.findall(r"static ORB_STATES\s*= \{([^}]*)\}", text):
             names.update(re.findall(r':\s*"(\w+)"', table))
     return names
 
@@ -82,18 +66,12 @@ def test_every_catalog_figure_is_shown_somewhere():
     assert sorted((_stock_figures() | _project_figures()) - named) == []
 
 
-def test_every_named_orb_state_exists():
-    assert sorted(_named_states() - _orb_states()) == []
-
-
 def test_engines_load_before_their_elements():
     loaded = _loaded()
 
-    assert loaded.index("vendor/thinking-orbs-engine.js") < loaded.index("js/thinking_orb.js")
     assert loaded.index("vendor/hairline-kernel.js") < loaded.index("vendor/hairline-figures.js")
     assert loaded.index("vendor/hairline-figures.js") < loaded.index("js/hairline_project.js")
     assert loaded.index("js/hairline_project.js") < loaded.index("js/hairline_figure.js")
 
-    for element in ("js/thinking_orb.js", "js/hairline_figure.js"):
-        assert loaded.index(element) < loaded.index("js/home.js")
-        assert loaded.index(element) < loaded.index("js/app.js")
+    assert loaded.index("js/hairline_figure.js") < loaded.index("js/home.js")
+    assert loaded.index("js/hairline_figure.js") < loaded.index("js/app.js")

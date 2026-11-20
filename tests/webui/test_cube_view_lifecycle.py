@@ -426,7 +426,7 @@ def test_figures_view_lists_each_folder_with_linked_thumbnails():
     observed = _check("figures")
     listed   = observed["listed"]
 
-    assert observed["loading"] == "<orb>Loading figures…</orb>"
+    assert observed["loading"] == "<wait>Loading figures…</wait>"
     assert observed["calls"][0] == "/api/cubes/figures?id=stamp%2Fa"
     assert "3 saved figures in 2 folders" in listed
     assert listed.count("<details") == 2 and listed.count(" open>") == 1
@@ -439,7 +439,7 @@ def test_figures_view_lists_once_per_cube_and_drops_a_listing_for_a_replaced_cub
     observed = _check("figures")
 
     assert observed["cached"] == 1
-    assert observed["dropped"] == {"loadedFor": None, "html": "<orb>Loading figures…</orb>"}
+    assert observed["dropped"] == {"loadedFor": None, "html": "<wait>Loading figures…</wait>"}
 
 
 @NEEDS_JS
@@ -534,7 +534,7 @@ def test_volume_falls_back_to_a_loaded_source_and_streams_it_once():
     observed = _check("volume")
 
     assert observed["configured"] == {"source": "pred", "disabled": [False, True, True, False, True], "active": [True, False, False, False, False]}
-    assert observed["request"] == {"id": "cube/a", "source": "pred", "max": "192", "at": "<orb>Streaming volume…</orb>"}
+    assert observed["request"] == {"id": "cube/a", "source": "pred", "max": "192", "at": "<wait>Streaming volume…</wait>"}
     assert observed["drawn"]["dims"] == [2, 3, 4] and observed["drawn"]["key"] == "cube/a|pred" and observed["drawn"]["voxels"] == 24
     assert observed["drawn"]["upload"] == [[4, 3, 2]] and observed["drawn"]["draws"] == 1
     assert observed["drawn"]["at"].startswith("3 × 4 × 2 voxels (row × col × z) · intensity 0.5 … 2")

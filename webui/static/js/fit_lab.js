@@ -209,7 +209,7 @@ class FitLabView {
     if (!base) return;
     localStorage.setItem("fitlab-base", base);
 
-    this.refs.hint.innerHTML = ThinkingOrb.busy("searching", "scanning…");
+    this.refs.hint.innerHTML = SharedCharts.waitLine("scanning…");
     const data = await Api.get(`/api/fitlab/datasets?base=${encodeURIComponent(base)}`);
 
     this.refs.strip.innerHTML = "";

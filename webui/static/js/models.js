@@ -103,7 +103,7 @@ class ModelGallery {
       `<div class="spec"><span class="spec__k">output head</span><span class="spec__v">${m.head}</span></div>` +
       `</div>` +
       `<div class="mdetail__notes" data-note-host><span class="mdetail__when-label">Architecture notes</span>` +
-      `<div class="mdetail__note-body"><span class="mdetail__note-loading">${ThinkingOrb.busy("composing", "loading notes…")}</span></div></div>`;
+      `<div class="mdetail__note-body"><span class="mdetail__note-loading">${SharedCharts.waitLine("loading notes…")}</span></div></div>`;
 
     this.detailEl.classList.remove("is-swap");
     void this.detailEl.offsetWidth;
@@ -127,7 +127,7 @@ class ModelGallery {
       `<div class="spec"><span class="spec__k">structure</span><span class="spec__v">${h.structure}</span></div>` +
       `</div>` +
       `<div class="mdetail__notes" data-note-host><span class="mdetail__when-label">Head notes</span>` +
-      `<div class="mdetail__note-body"><span class="mdetail__note-loading">${ThinkingOrb.busy("composing", "loading notes…")}</span></div></div>`;
+      `<div class="mdetail__note-body"><span class="mdetail__note-loading">${SharedCharts.waitLine("loading notes…")}</span></div></div>`;
 
     this.detailEl.classList.remove("is-swap");
     void this.detailEl.offsetWidth;

@@ -32,8 +32,8 @@ it binds the port, which is why `run.sh` starts from the interpreter the profile
 
 The frontend loads MathJax 3.2.2 (tex-svg), highlight.js 11.9.0, GSAP 3.12.5 and xterm.js
 5.5.0 with its fit addon from a CDN, so equation typesetting, syntax highlighting,
-animation and the terminal view need a network connection. `marked`, the thinking-orbs
-engine and the hairline kernel with its stock figures are vendored under `static/vendor/`.
+animation and the terminal view need a network connection. `marked` and the hairline
+kernel with its stock figures are vendored under `static/vendor/`.
 Everything degrades to plain text offline.
 
 ## Tabs
@@ -179,8 +179,8 @@ tests under `tests/webui/`: `config_descriptions.json` and the model library
 `fit_lab.py`, `model_probe.py`, `triage_board.py`, `ab_autopsy.py`.
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`,
-`static/vendor/thinking-orbs-engine.js`, `static/vendor/hairline-kernel.js`,
-`static/vendor/hairline-figures.js` and 41 modules under `static/js/`. `app.js` and
+`static/vendor/hairline-kernel.js`,
+`static/vendor/hairline-figures.js` and 40 modules under `static/js/`. `app.js` and
 `router.js` wire the views; one module per tab (`home`, `models`, `scripts`, `launch` with its widget
 modules (`python_literal`, `form_widgets`, `model_panels`, `gpu_pickers`,
 `experiment_builder`, `config_form`) and `launch_pickers`, `saved_runs`,
@@ -188,7 +188,7 @@ modules (`python_literal`, `form_widgets`, `model_panels`, `gpu_pickers`,
 `cube_view`, `slice_collector`, `fit_lab`, `microscope`, `survey`, `triage`, `autopsy`);
 the rest are shared helpers (`api`, `stream_hub` with the page's single live-output channel, `shared_charts`,
 `results_sources`, `run_strip`, `canvas_base`, `figure_export`, `figure_saver`, `diagram`,
-`gauges`, `training_anim`, `thinking_orb`, `hairline_figure` with
+`gauges`, `training_anim`, `hairline_figure` with
 `hairline_project`).
 
 The console wears one dark monitor theme: the root tokens give a near-black page, dark
@@ -200,17 +200,9 @@ because content scrolls or opens beneath them. The terminals run on a transparen
 with a bright ANSI palette at a 7:1 minimum contrast. Charts and diagrams draw the light
 colour of each series, and an exported figure takes the dark page as its backdrop.
 
-`thinking_orb` defines the `<thinking-orb>` loading indicator over the vendored
-thinking-orbs engine (Jakub Antalik, MIT); a dark surface opts into light ink by setting
-`--orb-theme: dark`, which the root does. Every wait on the backend shows one: empty
-containers before their first render, picker and hint notes, progress cards, the probe
-and fit computations, and the running markers on console jobs, sequence blocks and
-TensorBoard pills, each in the state that matches the wait (searching for scans, solving
-for fits, and so on). The nav status listens while the backend is live and connects
-while it is down, the orb beside the logo cycles through all nine states with a `cycle`
-attribute, and `BackdropOrb` draws a viewport-sized orb on a fixed canvas behind every
-page that holds each of the seven sphere-like states for 14 s and crossfades to the next
-over 2.4 s at 30 fps (the working and shaping states stay on the small orbs).
+Every wait on the backend shows a short status line (`SharedCharts.waitLine` and
+`SharedCharts.waitPanel`): empty containers before their first render, picker and hint
+notes, progress cards and the probe and fit computations.
 
 `hairline_figure` defines `<hairline-figure name>`, an isometric line drawing that
 answers the pointer, over the vendored hairline kernel (Lucas Marques, MIT). It marks

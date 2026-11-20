@@ -293,17 +293,15 @@ that count next to any mean you take over the map.
 
 ### Every figure a page names exists
 
-The line figures and loading orbs of the console are named by string in `index.html` and
-the view modules (the `name` attribute, `data-figure`, `HairlineFigure.html`, the
-`FIGURES` tables, the orb `state`). The names resolve against the vendored stock bundle
-in `webui/static/vendor/hairline-figures.js`, `ProjectFigures.CATALOG` in
-`webui/static/js/hairline_project.js` and `ThinkingOrbElement.STATES` in
-`webui/static/js/thinking_orb.js`, and an unknown name throws only when its page renders.
+The line figures of the console are named by string in `index.html` and the view modules
+(the `name` attribute, `data-figure`, `HairlineFigure.html`, the `FIGURES` tables). The
+names resolve against the vendored stock bundle in `webui/static/vendor/hairline-figures.js`
+and `ProjectFigures.CATALOG` in `webui/static/js/hairline_project.js`, and an unknown name
+throws only when its page renders.
 
 - Fails in: `tests/webui/test_hairline_figures.py::test_every_named_figure_is_in_a_catalog`
   for a name nothing draws, `::test_every_catalog_figure_is_shown_somewhere` for a
-  figure no page uses, `::test_stock_and_project_catalogs_do_not_share_a_name`, and
-  `::test_every_named_orb_state_exists` for an orb state the element does not draw.
+  figure no page uses, and `::test_stock_and_project_catalogs_do_not_share_a_name`.
 - Fix: register the figure in `ProjectFigures.CATALOG`, or remove it from the catalog
   together with its last use.
 

@@ -2227,7 +2227,7 @@ class CubeVolume {
     this.token += 1;
     const token = this.token;
     const key   = this._key();
-    this.atEl.innerHTML = ThinkingOrb.busy("listening", "Streaming volume…");
+    this.atEl.innerHTML = SharedCharts.waitLine("Streaming volume…");
 
     let buffer = null;
     try {
@@ -2570,7 +2570,7 @@ class CubeFigures {
 
   configure() {
     this.loadedFor = null;
-    this.root.innerHTML = ThinkingOrb.panel("composing", "Loading figures…");
+    this.root.innerHTML = SharedCharts.waitPanel("Loading figures…");
   }
 
   async render() {
@@ -3064,7 +3064,7 @@ class CubeView {
 
   async refresh() {
     this.hint.hidden = false;
-    this.hint.innerHTML = ThinkingOrb.busy("searching", "Loading saved cubes…");
+    this.hint.innerHTML = SharedCharts.waitLine("Loading saved cubes…");
 
     let data;
     try {
@@ -3691,7 +3691,7 @@ class CubeView {
     this.holdHintOn = true;
 
     const { row, col } = this.point;
-    this.coords.innerHTML = ThinkingOrb.busy("composing", `saving slice figures at row = ${row} · col = ${col}…`);
+    this.coords.innerHTML = SharedCharts.waitLine(`saving slice figures at row = ${row} · col = ${col}…`);
 
     await this._saveSlices(row, col);
 

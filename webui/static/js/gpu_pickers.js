@@ -142,7 +142,7 @@ class GpuPicker {
 
     const note     = document.createElement("p");
     note.className = "picker__note";
-    note.innerHTML = ThinkingOrb.busy("searching", "detecting GPUs…");
+    note.innerHTML = SharedCharts.waitLine("detecting GPUs…");
     this.note      = note;
     this.el.appendChild(note);
 

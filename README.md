@@ -460,7 +460,7 @@ launch rail. It also carries the results and cube browsers, the fit
 lab, the model microscope and server telemetry; the browse roots of the results tabs
 start at the profile's data and runs roots. `webui/README.md` documents every tab.
 
-The console uses one dark theme. Every wait on the backend shows an animated orb, and
+The console uses one dark theme. Every wait on the backend shows a short status line, and
 every page carries a line figure that follows the view; on the Home board several of
 them draw live state (the watchdog, the GPU week schedule, the job queue, the GPU
 guard). The Home board is a set of cards for the resource watchdog, notifications, the

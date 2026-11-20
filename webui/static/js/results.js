@@ -103,7 +103,7 @@ class ResultsView {
   }
 
   async open(path) {
-    this.detailEl.innerHTML = ThinkingOrb.panel("searching", "Loading the results tree…");
+    this.detailEl.innerHTML = SharedCharts.waitPanel("Loading the results tree…");
 
     const data = await Api.get(`/api/results/tree?path=${encodeURIComponent(path)}`);
 

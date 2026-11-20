@@ -52,8 +52,7 @@ class ImpactChecks {
       console,
       window      : {},
       document    : { getElementById: (id) => this._node(id), visibilityState: "visible" },
-      SharedCharts: { esc: (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") },
-      ThinkingOrb : { busy: (state, text) => `<orb ${state}>${text}</orb>` },
+      SharedCharts: { esc: (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"), waitLine: (text) => `<wait>${text}</wait>` },
       Toast       : { show: (text, kind) => { this.toasts.push({ text, kind }); } },
       Api         : { post: async (url, body) => { this.posts.push({ url, body }); return this.answer(body); } },
     };

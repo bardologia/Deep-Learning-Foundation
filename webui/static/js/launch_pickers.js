@@ -145,7 +145,7 @@ class DatasetPicker {
       this._renderSingleOptions([]);
       return;
     }
-    this.note.innerHTML = ThinkingOrb.busy("searching", "listing…");
+    this.note.innerHTML = SharedCharts.waitLine("listing…");
     const res = await Api.get(`/api/fs/runs?base=${encodeURIComponent(base)}`);
     if (this._singleStale(seq)) return;
     if (!res.ok) {
@@ -165,7 +165,7 @@ class DatasetPicker {
       this._renderSingleOptions([]);
       return;
     }
-    this.note.innerHTML = ThinkingOrb.busy("searching", "listing…");
+    this.note.innerHTML = SharedCharts.waitLine("listing…");
     const res = await Api.get(`/api/run-config/runs?base=${encodeURIComponent(base)}`);
     if (this._singleStale(seq)) return;
     if (!res.ok) {
@@ -181,7 +181,7 @@ class DatasetPicker {
   }
 
   async _fetchDatasets(base, seq) {
-    this.note.innerHTML = ThinkingOrb.busy("searching", "listing…");
+    this.note.innerHTML = SharedCharts.waitLine("listing…");
     const res = await Api.get(`/api/fs/datasets?base=${encodeURIComponent(base || "")}`);
     if (this._singleStale(seq)) return;
     if (!res.ok) {
@@ -201,7 +201,7 @@ class DatasetPicker {
       this._renderSingleOptions([]);
       return;
     }
-    this.note.innerHTML = ThinkingOrb.busy("searching", "listing…");
+    this.note.innerHTML = SharedCharts.waitLine("listing…");
     const res = await Api.get(`/api/fs/params?dataset=${encodeURIComponent(dataset)}`);
     if (this._singleStale(seq)) return;
     if (!res.ok) {
@@ -362,7 +362,7 @@ class DatasetPicker {
     const bases = mode.query === "dataset" ? [this._datasetQuery()] : this._baseList();
     const seq   = ++this.multiLoadSeq;
 
-    this.count.innerHTML = ThinkingOrb.busy("searching", "listing…");
+    this.count.innerHTML = SharedCharts.waitLine("listing…");
     this.hint.textContent = "";
 
     if (mode.query === "dataset" && !bases[0]) {
@@ -652,7 +652,7 @@ class RunConfigCopy extends EntryFormControl {
     const base = this.base !== null ? this.base : this._defaultBase();
     const seq  = ++this.loadSeq;
 
-    note.innerHTML = ThinkingOrb.busy("searching", "listing…");
+    note.innerHTML = SharedCharts.waitLine("listing…");
     const res = await Api.get(`/api/run-config/runs?base=${encodeURIComponent(base)}`);
     if (seq !== this.loadSeq) return;
 
@@ -767,7 +767,7 @@ class ConfigTemplates extends EntryFormControl {
   async _load() {
     const seq = ++this.loadSeq;
 
-    this.noteEl.innerHTML = ThinkingOrb.busy("searching", "loading…");
+    this.noteEl.innerHTML = SharedCharts.waitLine("loading…");
     const res = await Api.get("/api/config-templates");
     if (seq !== this.loadSeq) return;
 

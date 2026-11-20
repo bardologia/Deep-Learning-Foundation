@@ -243,6 +243,14 @@ class SharedCharts {
     return String(text == null ? "" : text).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   }
 
+  static waitLine(text) {
+    return `<span class="wait-line">${SharedCharts.esc(text)}</span>`;
+  }
+
+  static waitPanel(text) {
+    return `<div class="wait-panel">${SharedCharts.esc(text)}</div>`;
+  }
+
   static fmt(v) {
     if (v === 0) return "0";
     const abs = Math.abs(v);

@@ -74,7 +74,6 @@ class SequenceBoard {
       if (release) release.hidden = state.status !== "held";
       this._paintError(el, state);
       this._paintJob(el, state);
-      this._paintOrb(el, state);
     });
     this._paintEdgeStates();
   }
@@ -142,16 +141,8 @@ class SequenceBoard {
     job.title = `Open job ${state.job_id} in the console`;
   }
 
-  _paintOrb(el, state) {
-    const orb  = el.querySelector(".seq-block__orb");
-    const kind = SequenceBoard.ORB_STATES[state.status];
-    orb.hidden = !kind;
-    if (kind) orb.setAttribute("state", kind);
-  }
-
   static STATUSES     = ["idle", "pending", "held", "launching", "running", "finalizing", "deciding", "done", "failed", "finalize_failed", "cancelled", "skipped", "bypassed"];
   static ACTIVE       = ["launching", "running", "finalizing", "deciding"];
-  static ORB_STATES   = { launching: "connecting", running: "working", finalizing: "composing", deciding: "solving" };
   static STUDY_STATES = ["running", "deciding", "done"];
   static SETTLED      = ["done", "skipped", "bypassed"];
   static BROKEN       = ["failed", "finalize_failed", "cancelled"];
@@ -205,7 +196,7 @@ class SequenceBoard {
     el.innerHTML =
       `<div class="seq-block__head">` +
       `<span class="seq-block__kind">${kind}</span>` +
-      `<span class="seq-block__live"><thinking-orb class="seq-block__orb" state="${SequenceBoard.ORB_STATES[state.status] || "working"}" size="20"${SequenceBoard.ORB_STATES[state.status] ? "" : " hidden"}></thinking-orb><span class="seq-block__state">${state.status}</span></span>` +
+      `<span class="seq-block__live"><span class="seq-block__state">${state.status}</span></span>` +
       `</div>` +
       `<h4 class="seq-block__title" title="${SharedCharts.esc(block.script)}">${SharedCharts.esc(block.name || block.title)}</h4>` +
       `<p class="seq-block__meta">${SharedCharts.esc(block.script)} &middot; ${overrides} override${overrides === 1 ? "" : "s"}</p>` +
@@ -1199,7 +1190,7 @@ class SequencesView extends ConfigForm {
 
     const configHost     = document.createElement("div");
     configHost.className = "seq-drawer__config";
-    configHost.innerHTML = ThinkingOrb.panel("breathing", "Loading configuration…");
+    configHost.innerHTML = SharedCharts.waitPanel("Loading configuration…");
     body.appendChild(configHost);
 
     const actions     = document.createElement("div");

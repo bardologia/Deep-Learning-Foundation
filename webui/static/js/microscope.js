@@ -78,9 +78,8 @@ class MicroscopeView {
     this.root.innerHTML = `
       <div class="cube-pick">
         <div class="run-strip" id="probe-strip" aria-label="Trained backbone runs"></div>
-        <p class="cube-hint" id="probe-hint">${ThinkingOrb.busy("searching", "Scanning the runs directory for loadable backbone runs…")}</p>
+        <p class="cube-hint" id="probe-hint">${SharedCharts.waitLine("Scanning the runs directory for loadable backbone runs…")}</p>
         <div class="cube-progress" id="probe-progress" hidden>
-          <thinking-orb class="cube-progress__orb" state="connecting" size="64"></thinking-orb>
           <div class="cube-progress__track"><i class="cube-progress__fill" id="probe-progress-fill"></i></div>
           <p class="cube-progress__label" id="probe-progress-label">loading&hellip;</p>
         </div>
@@ -818,7 +817,7 @@ class MicroscopeView {
   async _loadAttribution() {
     const token = ++this.attribToken;
 
-    this.refs.bars.innerHTML       = ThinkingOrb.panel("solving", "computing gradients…");
+    this.refs.bars.innerHTML       = SharedCharts.waitPanel("computing gradients…");
     this.refs.barsLegend.innerHTML = "";
     this.refs.gridChips.innerHTML  = "";
     this.refs.grid.innerHTML       = "";
@@ -892,7 +891,7 @@ class MicroscopeView {
   async _loadAblation() {
     const token = ++this.ablToken;
 
-    this.refs.ablation.innerHTML = ThinkingOrb.panel("solving", "re-running the model without each channel…");
+    this.refs.ablation.innerHTML = SharedCharts.waitPanel("re-running the model without each channel…");
 
     const out = await Api.post("/api/probe/ablation", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.ablToken) return;
@@ -913,7 +912,7 @@ class MicroscopeView {
     const token = ++this.occlToken;
 
     this.refs.occlFacts.innerHTML = "";
-    this.refs.occlusion.innerHTML = ThinkingOrb.panel("searching", "sliding an occluder across the window…");
+    this.refs.occlusion.innerHTML = SharedCharts.waitPanel("sliding an occluder across the window…");
 
     const out = await Api.post("/api/probe/occlusion", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.occlToken) return;
@@ -945,7 +944,7 @@ class MicroscopeView {
 
     this.refs.fieldSlots.innerHTML = "";
     this.refs.fieldOver.innerHTML  = "";
-    this.refs.fieldMaps.innerHTML  = ThinkingOrb.panel("shaping", "computing parameter fields…");
+    this.refs.fieldMaps.innerHTML  = SharedCharts.waitPanel("computing parameter fields…");
 
     const out = await Api.post("/api/probe/fields", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.fieldsToken) return;
@@ -1014,7 +1013,7 @@ class MicroscopeView {
     const token = ++this.flipToken;
 
     this.flipsData = null;
-    this.refs.flipsFacts.innerHTML = ThinkingOrb.busy("solving", "re-running the model on flipped windows…");
+    this.refs.flipsFacts.innerHTML = SharedCharts.waitLine("re-running the model on flipped windows…");
 
     const out = await Api.post("/api/probe/flips", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.flipToken) return;
@@ -1065,7 +1064,7 @@ class MicroscopeView {
   async _loadVitals() {
     const token = ++this.vitalsToken;
 
-    this.refs.vitalsSum.innerHTML = ThinkingOrb.busy("listening", "recording activation statistics…");
+    this.refs.vitalsSum.innerHTML = SharedCharts.waitLine("recording activation statistics…");
     this.refs.vitals.innerHTML    = "";
 
     const out = await Api.post("/api/probe/vitals", { row: this.pixel.row, col: this.pixel.col });
@@ -1215,7 +1214,7 @@ class MicroscopeView {
 
     const token = ++this.sweepToken;
     this.refs.sweep.hidden = true;
-    this.refs.sweepFacts.innerHTML = ThinkingOrb.busy("weaving", "sweeping perturbation strengths…");
+    this.refs.sweepFacts.innerHTML = SharedCharts.waitLine("sweeping perturbation strengths…");
 
     const body = { row: this.pixel.row, col: this.pixel.col, kind: this.wi.kind };
     if (this.wi.kind === "scale_channel") body.channel = this.wi.channel;
