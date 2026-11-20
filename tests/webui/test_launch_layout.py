@@ -21,7 +21,6 @@ from configuration.cross_validation.general import CrossValidationConfig
 from configuration.diagnostics              import ReportCollectionEntryConfig, ReportMailEntryConfig, TensorboardExportEntryConfig
 from configuration.inference                import BackboneInferenceEntryConfig
 from configuration.training                 import BackboneEntryConfig
-from configuration.training.general.loss    import LossKind
 from configuration.tuning.general           import TuningEntryConfig
 from tests.webui.conftest import WEBUI_ROOT
 
@@ -103,12 +102,6 @@ def test_every_script_layout_builds_against_its_entry_config(key):
     leaves = [{"path": path} for path, _value in ConfigCli._leaves(config)]
 
     LaunchLayout().build(key, leaves)
-
-
-def test_sweep_loss_choices_match_the_loss_kinds():
-    choices = {choice["value"] for choice in LaunchLayout.MULTI_LOSS_KINDS["choices"]}
-
-    assert choices == {kind.value for kind in LossKind}
 
 
 def test_experiment_panel_claims_every_trial_field_of_its_entry():

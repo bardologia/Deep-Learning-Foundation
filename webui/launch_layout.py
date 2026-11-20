@@ -4,6 +4,8 @@ from __future__ import annotations
 import copy
 from collections import Counter
 
+from configuration.training.general.loss import LossKind
+
 
 class LayoutError(Exception):
     pass
@@ -65,11 +67,7 @@ class LaunchLayout:
 
     MULTI_INT = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add value, Enter", "empty": "add at least one value"}
 
-    MULTI_LOSS_KINDS = {"kind": "multi", "empty": "select at least one loss kind to sweep", "choices": [
-        {"value": "mse",   "label": "Mean squared error"},
-        {"value": "l1",    "label": "Mean absolute error"},
-        {"value": "huber", "label": "Huber"},
-    ]}
+    MULTI_LOSS_KINDS = {"kind": "multi", "empty": "select at least one loss kind to sweep", "choices": [{"value": kind.value, "label": kind.value} for kind in LossKind]}
 
     INFERENCE_REPORT_GROUPS = [
         {"title": "Outputs", "fields": ["save_maps", "save_plots", "stitch_window"]},
