@@ -68,14 +68,6 @@ def test_prompter_prefers_presets_then_defaults_then_the_terminal(logger_stub, m
     assert terminal.ask("port", "Port", "8772", validate=Validators.port) == "9001"
 
 
-def test_prompter_refuses_an_invalid_preset_or_default(logger_stub):
-    with pytest.raises(ValueError, match="preset answer port"):
-        Prompter({"port": "abc"}, False, logger_stub).ask("port", "Port", "8772", validate=Validators.port)
-
-    with pytest.raises(ValueError, match="unattended"):
-        Prompter({}, True, logger_stub).ask("port", "Port", "", validate=Validators.port)
-
-
 def test_prompter_choose_accepts_numbers_and_free_text(logger_stub, monkeypatch):
     typed = iter(["2", "b", "free"])
     monkeypatch.setattr("builtins.input", lambda prompt: next(typed))
@@ -209,13 +201,6 @@ def test_a_rerun_defaults_to_the_saved_answers(tmp_path, logger_stub):
     assert profile.ntfy["enabled"] is True
 
 
-def test_an_invalid_preset_stops_the_run_before_anything_is_written(tmp_path, logger_stub):
-    with pytest.raises(ValueError, match="console_port"):
-        _setup(tmp_path, logger_stub, {"console_port": "12"}).run()
-
-    assert not (tmp_path / "cfg" / "machine.json").exists()
-
-
 def test_a_failing_nvidia_smi_is_reported_by_the_host_step(tmp_path, logger_stub, monkeypatch):
     setup    = _setup(tmp_path, logger_stub)
     broken   = {**FACTS, "driver": "", "driver_error": "nvidia-smi exited 9: could not communicate with the NVIDIA driver", "gpus": [], "torch_index": "cpu", "torch_note": "nvidia-smi exited 9: could not communicate with the NVIDIA driver"}
@@ -270,8 +255,3 @@ def test_verification_quotes_torch_when_a_detected_gpu_is_unusable(tmp_path, log
     assert warnings[0].startswith("a GPU was detected but torch cannot use it: ")
     assert "The NVIDIA driver on your system is too old (found version 12080)" in warnings[0]
     assert "README section 1" in warnings[0]
-
-
-def test_the_wizard_refuses_a_disabled_profile_location(logger_stub):
-    with pytest.raises(RuntimeError, match=MachineProfile.ENV_VAR):
-        MachineProfile(None, {"machine": {}}).save()

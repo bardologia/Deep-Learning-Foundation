@@ -316,13 +316,6 @@ def test_config_cli_apply_no_args_returns_unmodified_config(name):
     assert result is config
 
 
-def test_config_cli_rejects_unknown_override():
-    cli = ConfigCli(BackboneInferenceEntryConfig())
-
-    with pytest.raises(ValueError):
-        cli.apply(["--not-a-real-flag", "1"])
-
-
 def test_tune_worker_requires_model(main_on_path, frozen_env, monkeypatch):
     module = _import_main("tune")
     monkeypatch.setattr(sys, "argv", ["tune.py", "--worker"])

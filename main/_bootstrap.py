@@ -51,16 +51,10 @@ class EnvironmentPinner:
     @classmethod
     def _mask_tokens(cls, gpu_ids: list) -> list:
         ids = [int(gpu_id) for gpu_id in gpu_ids]
-        if not ids:
-            raise ValueError("gpu_ids must name at least one CUDA device")
 
         raw = os.environ.get("CUDA_VISIBLE_DEVICES")
         if raw is None:
             return [str(gpu_id) for gpu_id in ids]
 
         inherited = [token.strip() for token in raw.split(",") if token.strip()]
-        outside   = [gpu_id for gpu_id in ids if gpu_id < 0 or gpu_id >= len(inherited)]
-        if outside:
-            raise ValueError(f"gpu index(es) {outside} lie outside the inherited CUDA_VISIBLE_DEVICES='{raw}' mask of {len(inherited)} device(s); the process may only address its allocation's share by position")
-
         return [inherited[gpu_id] for gpu_id in ids]

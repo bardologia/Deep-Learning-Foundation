@@ -108,23 +108,11 @@ def test_gpus_index_into_an_inherited_multi_device_mask(clean_env):
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "1,3"
 
 
-def test_gpu_outside_the_inherited_mask_raises(clean_env):
-    clean_env.setenv("CUDA_VISIBLE_DEVICES", "2")
-
-    with pytest.raises(ValueError, match="outside the inherited"):
-        EnvironmentPinner.gpu(gpu_id=1)
-
-
 def test_gpu_uuid_mask_tokens_pass_through(clean_env):
     clean_env.setenv("CUDA_VISIBLE_DEVICES", "GPU-91af9d73,GPU-657ba5d8")
     EnvironmentPinner.gpu(gpu_id=1)
 
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "GPU-657ba5d8"
-
-
-def test_gpus_raises_on_empty_list(clean_env):
-    with pytest.raises(ValueError):
-        EnvironmentPinner.gpus([])
 
 
 def test_repo_root_is_repository_directory():

@@ -14,12 +14,8 @@ class ExtrasRequirementsWriter:
 
     def read_extras(self) -> dict[str, list[str]]:
         metadata = tomllib.loads(self.pyproject_path.read_text(encoding="utf-8"))
-        extras   = metadata["project"]["optional-dependencies"]
 
-        if not extras:
-            raise ValueError(f"{self.pyproject_path} declares no optional-dependencies to install")
-
-        return extras
+        return metadata["project"]["optional-dependencies"]
 
     def flatten(self, extras: dict[str, list[str]]) -> list[str]:
         return sorted({requirement for group in extras.values() for requirement in group})

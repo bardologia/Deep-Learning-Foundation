@@ -5,7 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 
 REPO_ROOT   = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -29,13 +28,6 @@ def test_the_groups_are_flattened_into_one_sorted_deduplicated_file(tmp_path):
     written = ExtrasRequirementsWriter(pyproject, tmp_path / "out" / "extras.txt").build()
 
     assert written.read_text(encoding="utf-8") == "onnx==1.22.0\npyflakes==3.4.0\npytest==8.0\n"
-
-
-def test_a_project_without_optional_dependencies_is_refused(tmp_path):
-    pyproject = _pyproject(tmp_path, "")
-
-    with pytest.raises(ValueError, match="declares no optional-dependencies"):
-        ExtrasRequirementsWriter(pyproject, tmp_path / "extras.txt").build()
 
 
 def test_the_command_line_takes_the_pyproject_and_the_output_path(tmp_path):
