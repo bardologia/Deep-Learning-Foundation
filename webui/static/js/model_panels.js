@@ -158,12 +158,10 @@ class ModelCardPanel {
     card.className = "model-pick";
     card.title     = `--${this.leaf.path} ${model.key}`;
 
-    const badge = model.recommended ? `<span class="model-pick__badge">recommended</span>` : "";
-    const meta  = [model.head, model.skip].filter(Boolean).join("  ·  ");
 
     card.innerHTML =
-      `<span class="model-pick__top"><span class="model-pick__name">${model.name}</span>${badge}<span class="model-pick__params">${model.params || ""}</span></span>` +
-      `<span class="model-pick__meta">${meta}</span>`;
+      `<span class="model-pick__top"><span class="model-pick__name">${model.name}</span><span class="model-pick__params">${model.params || ""}</span></span>` +
+      `<span class="model-pick__meta">${model.skip}</span>`;
 
     card.addEventListener("click", () => this._select(model.key));
     this.cards.set(model.key, card);

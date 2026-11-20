@@ -26,7 +26,7 @@ class ModelGallery {
     this.families = data.families || [];
     this.flat = this.families.flatMap((f) => f.models.map((m) => ({ ...m, family: f.family })));
     this._renderList();
-    const initial = this.flat.find((m) => m.recommended) || this.flat[0];
+    const initial = this.flat[0];
     if (initial) this._select(initial.key);
   }
 
@@ -41,7 +41,7 @@ class ModelGallery {
         item.className = "mlist__item";
         item.dataset.key = m.key;
         item.innerHTML =
-          `<span class="mlist__name">${m.name}${m.recommended ? '<span class="mlist__star">best</span>' : ""}</span>` +
+          `<span class="mlist__name">${m.name}</span>` +
           `<span class="mlist__params">${m.params}</span>`;
         item.addEventListener("click", () => this._select(m.key));
         group.appendChild(item);
@@ -69,7 +69,7 @@ class ModelGallery {
     this.detailEl.innerHTML =
       `<div class="mdetail__head">` +
       `<div><span class="mdetail__family">${m.family}</span>` +
-      `<h3 class="mdetail__name">${m.name}${m.recommended ? `<span class="mdetail__best">best in benchmark</span>` : ""}</h3></div>` +
+      `<h3 class="mdetail__name">${m.name}</h3></div>` +
       `<span class="mdetail__params">${m.params} params</span>` +
       `</div>` +
       `<div class="mdetail__diagram">${diagram}</div>` +
@@ -77,7 +77,6 @@ class ModelGallery {
       `<div class="mdetail__specs">` +
       `<div class="spec"><span class="spec__k">backbone key</span><span class="spec__v mono">${m.key}</span></div>` +
       `<div class="spec"><span class="spec__k">skip mechanism</span><span class="spec__v">${m.skip}</span></div>` +
-      `<div class="spec"><span class="spec__k">output head</span><span class="spec__v">${m.head}</span></div>` +
       `</div>` +
       `<div class="mdetail__notes" data-note-host><span class="mdetail__when-label">Architecture notes</span>` +
       `<div class="mdetail__note-body"><span class="mdetail__note-loading">${SharedCharts.waitLine("loading notes…")}</span></div></div>`;

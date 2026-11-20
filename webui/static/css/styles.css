@@ -2152,7 +2152,6 @@ p.seq-block__flag--study  { color: var(--accent); overflow-wrap: anywhere; }
 .mlist__item:hover { background: var(--surface-2); color: var(--ink); }
 .mlist__item.is-active { background: rgba(111, 155, 255, 0.112); border-color: var(--line-strong); color: var(--ink); }
 .mlist__name { font-family: var(--display); font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.mlist__star { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--on-accent); background: var(--accent-2); padding: 2px 6px; border-radius: var(--r-pill); }
 .mlist__params { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
 
 .mdetail__notes { max-width: 1100px; margin-left: auto; margin-right: auto; }
@@ -2160,7 +2159,6 @@ p.seq-block__flag--study  { color: var(--accent); overflow-wrap: anywhere; }
 .mdetail__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
 .mdetail__family { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .mdetail__name { font-family: var(--display); font-size: 26px; font-weight: 700; margin: 8px 0 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.mdetail__best { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--on-accent); background: var(--accent-2); padding: 4px 10px; border-radius: var(--r-pill); }
 .mdetail__params { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); border: 2px solid var(--line); border-radius: var(--r-pill); padding: 5px 12px; white-space: nowrap; }
 .mdetail__diagram { margin: 18px 0 16px; }
 .dgm-net { margin: 0 0 22px; }
@@ -3008,7 +3006,6 @@ p.seq-block__flag--study  { color: var(--accent); overflow-wrap: anywhere; }
 .model-pick__top { display: flex; align-items: baseline; gap: 8px; }
 .model-pick__name { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--ink); }
 .model-pick__params { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
-.model-pick__badge { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); border: 2px solid var(--accent); border-radius: 4px; padding: 1px 5px; }
 .model-pick__meta { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
 
 .tbl-scroll { overflow-x: auto; border: 2px solid var(--line); border-radius: var(--r-card); background: var(--surface); }
