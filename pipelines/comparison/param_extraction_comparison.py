@@ -90,24 +90,14 @@ class ParamTrialCollector:
     def collect(self) -> list[ParamTrial]:
         self.logger.section("Collecting parameter-extraction trials")
 
-        trials  = []
-        invalid = {}
+        trials = []
         for tag in self._discover_tags():
             run_dir = self.params_dir / tag
             ParameterRunMeta.reject_external(run_dir, "enter a Gaussian-fit comparison")
 
-            missing = self._missing_artifacts(run_dir)
-            if missing:
-                invalid[tag] = missing
-                continue
-
             trial = self._build_trial(tag)
             self.logger.info(f"{trial.name:<48} K={trial.k_max} free/gauss={trial.free_per_gaussian}")
             trials.append(trial)
-
-        if invalid:
-            listing = "; ".join(f"{tag}: no {' or '.join(missing)}" for tag, missing in invalid.items())
-            raise FileNotFoundError(f"Requested run tags are not completed Gaussian-fit runs under {self.params_dir}: {listing}")
 
         if not trials:
             self.logger.error(f"No parameter-extraction trials found under {self.params_dir}")
@@ -418,8 +408,6 @@ class ParamExtractionComparisonPipeline:
 
     def run(self) -> list[Path]:
         trials = self._collect()
-        if not trials:
-            raise RuntimeError("No parameter-extraction trials to compare")
 
         self._measure(trials)
         plots = self._plot(trials)

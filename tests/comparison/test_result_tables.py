@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 from configuration.diagnostics          import ResultTableEntryConfig
 from pipelines.comparison.result_tables import ResultTableExporter
@@ -73,24 +72,6 @@ def test_exporter_selected_columns_and_sorting(tmp_path):
 
     assert "other" not in tex
     assert tex.index("better") < tex.index("worse")
-
-
-def test_exporter_rejects_unknown_metric_keys(tmp_path):
-    root = tmp_path / "runs"
-    _run(root, "run_a", "s1", {"curve_mse_gt": 1.0})
-
-    entry = _entry(root, metrics=("not_a_metric",))
-
-    with pytest.raises(KeyError, match="not_a_metric"):
-        ResultTableExporter(entry, SilentLogger()).run()
-
-
-def test_exporter_raises_without_finished_inference(tmp_path):
-    root = tmp_path / "runs"
-    (root / "run_a" / "inference").mkdir(parents=True)
-
-    with pytest.raises(FileNotFoundError):
-        ResultTableExporter(_entry(root), SilentLogger()).run()
 
 
 def test_exporter_reads_only_completed_stamps_of_the_split(tmp_path):

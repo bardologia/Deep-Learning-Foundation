@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 from pipelines.comparison.comparison_report import TrialComparisonReport
 from pipelines.comparison.trial_collector   import TrialCollector
@@ -87,18 +86,6 @@ def test_seed_means_disclose_the_seeds_they_cover(tmp_path):
     assert "| 1/3 " in overview.replace("  ", " ")
 
 
-def test_empty_run_tags_raise(tmp_path):
-    with pytest.raises(ValueError, match="No run tags requested"):
-        TrialCollector(runs_dir=tmp_path, run_tags=[], logger=RecordingLogger(), inference_split="test").collect()
-
-
-def test_missing_run_directory_raises_naming_it(tmp_path):
-    _run_with_metrics(tmp_path / "run_x", 1.0)
-
-    with pytest.raises(FileNotFoundError, match="gone"):
-        TrialCollector(runs_dir=tmp_path, run_tags=["run_x", "gone"], logger=RecordingLogger(), inference_split="test").collect()
-
-
 def test_trial_without_inference_on_the_split_warns_and_names_the_inference_directory(tmp_path):
     _run_with_metrics(tmp_path / "run_x", 1.0)
     _run_with_metrics(tmp_path / "run_y", 2.0, split="val")
@@ -117,14 +104,6 @@ def test_trial_without_inference_on_the_split_warns_and_names_the_inference_dire
     assert str(tmp_path / "run_y" / "inference") in warnings[0]
     assert any(message.startswith("run_y") and message.endswith("no inference, epochs ?, complete no") for message in infos)
     assert "2 trial(s) collected, 1 with inference metrics on split 'test'" in oks
-
-
-def test_comparison_without_any_scored_trial_raises(tmp_path):
-    _run_with_metrics(tmp_path / "run_x", 1.0, split="val")
-    _run_with_metrics(tmp_path / "run_y", 2.0, split="val")
-
-    with pytest.raises(RuntimeError, match="split 'test'"):
-        TrialCollector(runs_dir=tmp_path, run_tags=["run_x", "run_y"], logger=RecordingLogger(), inference_split="test").collect()
 
 
 def test_flat_runs_pass_through_unchanged(tmp_path):

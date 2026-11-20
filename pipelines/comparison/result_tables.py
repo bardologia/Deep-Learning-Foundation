@@ -19,8 +19,6 @@ class ResultTableExporter:
 
     def _discover(self) -> list[tuple[str, Path]]:
         root = Path(self.entry.runs_dir)
-        if not root.is_dir():
-            raise FileNotFoundError(f"Runs directory {root} does not exist; train and infer runs before exporting tables")
 
         rows = []
         for inference_root in sorted(root.rglob("inference")):
@@ -38,9 +36,6 @@ class ResultTableExporter:
             except FileNotFoundError:
                 self.logger.warning(f"Skipping {name}: no completed '{self.entry.split}' inference with {self.entry.metrics_filename}")
 
-        if not rows:
-            raise FileNotFoundError(f"No run under {root} holds a completed '{self.entry.split}' inference with {self.entry.metrics_filename}")
-
         return rows
 
     def _load(self, rows: list[tuple[str, Path]]) -> list[tuple[str, dict]]:
@@ -57,10 +52,6 @@ class ResultTableExporter:
 
         if not self.entry.metrics:
             return seen
-
-        missing = [key for key in self.entry.metrics if key not in seen]
-        if missing:
-            raise KeyError(f"Configured metric keys {missing} appear in no discovered run; available keys include {seen[:20]}")
 
         return list(self.entry.metrics)
 
