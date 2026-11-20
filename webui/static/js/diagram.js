@@ -66,8 +66,6 @@ class ModelDiagram {
     return { skipKind, type, key: model.key, act: actMap[act] || "ReLU", norm: normMap[norm] !== undefined ? normMap[norm] : "BatchNorm" };
   }
 
-  /* ---------- primitives ---------- */
-
   static _defs() {
     const C = this.C;
     return (
@@ -211,8 +209,6 @@ class ModelDiagram {
     return `<text x="${x}" y="${y}"${a} class="${second ? "dgm-lbl" : "dgm-lbl dgm-lbl--flow"}">${text}</text>`;
   }
 
-  /* ---------- network (orthogonal U) ---------- */
-
   static _network(g) {
     const W = 800;
     const mid = W / 2;
@@ -298,8 +294,6 @@ class ModelDiagram {
     }
     return "";
   }
-
-  /* ---------- block detail ---------- */
 
   static _block(block) {
     if (block.horizontal) return this._blockH(block);
@@ -556,8 +550,6 @@ class ModelDiagram {
     );
   }
 
-  /* ---------- op helpers ---------- */
-
   static _o = {
     conv: (a, b) => ({ label: "Conv 3x3", sub: a ? `${a} -> ${b}` : undefined }),
     norm: (name) => ({ label: name }),
@@ -574,8 +566,6 @@ class ModelDiagram {
   static _na(s) {
     return s.norm ? [this._o.norm(s.norm), this._o.act(s.act)] : [this._o.act(s.act)];
   }
-
-  /* ---------- per-model blueprints ---------- */
 
   static _uGraph(o) {
     const sh = o.shapes;
@@ -786,8 +776,6 @@ class ModelDiagram {
     return { network: this._network(graph), blocks };
   }
 
-  /* ---------- block orientation standard ---------- */
-
   static _applyOrientation(g, blocks) {
     const nodeById = {};
     g.nodes.forEach((n) => {
@@ -905,8 +893,6 @@ class ModelDiagram {
       if (!b.horizontal) b.upward = primIn === "bottom" || (primIn !== "top" && primOut === "top");
     });
   }
-
-  /* ---------- custom-layout networks ---------- */
 
   static _netCustom(g) {
     const W = g.width;

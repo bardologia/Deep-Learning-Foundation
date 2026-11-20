@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Restart the webui server and capture screenshots of the UI routes.
-# Usage: refresh.sh [route ...]        (no routes = default page set)
-# Env:   PORT (default 8772), OUT (default /tmp/ml-template-ui)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
