@@ -4347,7 +4347,7 @@ class ProjectFigures {
     balance:    ProjectFigures.entry(BalanceFigure, "A balance weighing run A against run B, its pans numbered with dots. The pointer's side tips the beam, and the heavier pan lights."),
     podium:     ProjectFigures.entry(PodiumFigure, "A podium of five ranks, each step numbered with dots. The pointer picks a step and it rises with its neighbours."),
     tiles:      ProjectFigures.entry(MetricTilesFigure, "A metric map as a field of tiles with a hot spot and a fold seam. The pointer picks a tile and the region around it rises."),
-    film:       ProjectFigures.entry(FilmStripFigure, "Inference stamps as frames on a dated rail, each holding a profile that sharpens from the first stamp to the latest. The pointer picks a frame and it rises."),
+    film:       ProjectFigures.entry(FilmStripFigure, "Inference stamps as frames on a dated rail, each holding a plot that sharpens from the first stamp to the latest. The pointer picks a frame and it rises."),
     tray:       ProjectFigures.entry(ReportTrayFigure, "A loose stack of printed plots on a tray. The pointer's height picks a sheet and it slides out of the stack."),
     shelf:      ProjectFigures.entry(CheckpointShelfFigure, "Checkpoints standing on a shelf as cartridges, the best one pulled forward. The pointer picks a cartridge and it slides out."),
     dial:       ProjectFigures.entry(LrDialFigure, "A learning-rate dial with a detent at each decade. The pointer's angle turns the knob and it settles on the nearest detent."),
