@@ -365,6 +365,9 @@ class BaseTrainer:
                     aggregator.add(loss_dict)
 
                 else:
+                    if self.abort_on_nonfinite_loss:
+                        raise FloatingPointError(f"{self.stage_name} loss is non-finite at step {self.global_step}{self._nonfinite_detail(loss_dict, batch)}")
+
                     nonfinite_count += 1
                     self.logger.warning(f"{self.stage_name} loss is non-finite at step {self.global_step}{self._nonfinite_detail(loss_dict, batch)}; skipping batch (abort_on_nonfinite_loss disabled).")
 
@@ -433,6 +436,9 @@ class BaseTrainer:
                     batch_count  += 1
                     sample_count += batch_samples
                     aggregator.add(loss_dict)
+
+                elif self.abort_on_nonfinite_loss:
+                    raise FloatingPointError(f"{self.stage_name} {stage} loss is non-finite at epoch {epoch + 1}{self._nonfinite_detail(loss_dict, batch)}")
 
                 else:
                     self.logger.warning(f"{self.stage_name} {stage} loss is non-finite at epoch {epoch + 1}{self._nonfinite_detail(loss_dict, batch)}; skipping batch (abort_on_nonfinite_loss disabled).")

@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import math
 
 import numpy as np
 import torch
@@ -109,10 +110,11 @@ class GradientClipper:
         return has_invalid
 
     def maybe_clip(self, model: torch.nn.Module, global_step: int):
-        if self.tracker.debug:
-            self.check_gradients(model, global_step)
+        has_invalid = self.check_gradients(model, global_step) if self.tracker.debug else False
+        norm        = GradientClipper.global_norm(model)
 
-        norm = GradientClipper.global_norm(model)
+        if has_invalid or not math.isfinite(norm):
+            raise FloatingPointError(f"Gradient norm is non-finite ({norm}) at step {global_step}; rescaling cannot contain a NaN/Inf gradient and the next optimizer step would corrupt every parameter.")
 
         if norm > self.EXPLODING_NORM_SENTINEL:
             self.logger.warning(f"Gradient norm {norm:.2f} exceeded the fixed alert sentinel {self.EXPLODING_NORM_SENTINEL} at step {global_step} (alert only, independent of the clip threshold).")

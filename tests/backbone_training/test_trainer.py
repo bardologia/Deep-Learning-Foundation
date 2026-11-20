@@ -211,6 +211,16 @@ def _diverged_loss_dict(bad_term: str) -> dict:
     return {"total_loss": torch.tensor(float("nan")), "components": {"param_l1": torch.tensor(0.5), bad_term: torch.tensor(float("nan"))}, "monitor": {}, "occupancy": {}, "physical": {}}
 
 
+def test_evaluate_raises_on_nonfinite_loss(tmp_path):
+    trainer = _build_trainer(tmp_path)
+    loader  = _loader()
+
+    trainer._eval_step = lambda batch: _loss_dict(float("nan"))
+
+    with pytest.raises(FloatingPointError):
+        trainer.evaluate(loader, epoch=0)
+
+
 def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
     trainer = _build_trainer(tmp_path)
     trainer.abort_on_nonfinite_loss = False
@@ -308,6 +318,26 @@ def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
 
     assert result["num_batches"] == 0
     assert result["avg_loss"]    != result["avg_loss"]
+
+
+def test_nonfinite_train_loss_abort_names_the_term_and_clears_the_data(tmp_path):
+    trainer = _build_trainer(tmp_path)
+
+    trainer._compute_loss = lambda batch: _diverged_loss_dict("mse_curve")
+
+    with pytest.raises(FloatingPointError, match=r"non-finite terms: \['mse_curve'\]; inputs and targets finite"):
+        trainer.train_epoch(_loader(), epoch=0)
+
+
+def test_nonfinite_train_loss_abort_names_corrupt_inputs(tmp_path):
+    trainer = _build_trainer(tmp_path)
+    loader  = _loader()
+
+    loader.dataset.tensors[0][0, 0, 0, 0] = float("nan")
+    trainer._compute_loss                 = lambda batch: _loss_dict(float("nan"))
+
+    with pytest.raises(FloatingPointError, match=r"non-finite terms: none \(every weighted term is finite\); non-finite inputs in the batch"):
+        trainer.train_epoch(loader, epoch=0)
 
 
 def test_evaluate_skip_warning_names_the_nonfinite_term(tmp_path):
