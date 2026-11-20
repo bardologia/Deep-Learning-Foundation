@@ -269,8 +269,8 @@ class ReportMailEntryConfig:
 
     max_attachment_mb : float = 15.0
 
-    recipient      : str   = "victorvicentin42@gmail.com"
-    sender         : str   = "victorvicentin42@gmail.com"
+    recipient      : str   = ""
+    sender         : str   = ""
     smtp_host      : str   = "smtp.gmail.com"
     smtp_port      : int   = 465
     smtp_timeout_s : float = 300.0
