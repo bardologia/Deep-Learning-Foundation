@@ -4,14 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from pipelines.benchmark.workers import (
-    BenchmarkWorker,
-    MaxBatchWorker,
-)
+from pipelines.benchmark.workers import BenchmarkWorker
 from configuration.benchmark import BenchmarkConfig
 from tools.data.io           import FileIO
 from configuration.synthesis import SynthesisConfig
-from tools.runtime.git_state import GitState
 
 
 SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
@@ -66,117 +62,8 @@ def test_size_overrides_missing_model_exits(config):
         worker._size_overrides("unet")
 
 
-def test_max_batch_size_none_without_file(config):
-    worker = BenchmarkWorker(config, "tag")
-
-    assert worker._max_batch_size("unet") is None
-
-
-def test_max_batch_size_returns_measured_value(config):
-    worker = BenchmarkWorker(config, "tag")
-    path   = worker.run_dir / "pipeline" / "max_batch.json"
-
-    FileIO.save_json({"unet": {"status": "PASS", "batch_size": 128}}, path)
-
-    assert worker._max_batch_size("unet") == 128
-
-
-def test_max_batch_size_raises_when_model_missing(config):
-    worker = BenchmarkWorker(config, "tag")
-    path   = worker.run_dir / "pipeline" / "max_batch.json"
-
-    FileIO.save_json({"resunet": {"status": "PASS", "batch_size": 128}}, path)
-
-    with pytest.raises(KeyError, match="unet"):
-        worker._max_batch_size("unet")
-
-
-def test_max_batch_size_raises_when_not_passed(config):
-    worker = BenchmarkWorker(config, "tag")
-    path   = worker.run_dir / "pipeline" / "max_batch.json"
-
-    FileIO.save_json({"unet": {"status": "FAIL", "batch_size": None}}, path)
-
-    with pytest.raises(TypeError):
-        worker._max_batch_size("unet")
-
-
-def test_lr_multiplier_none_without_file(config):
-    worker = BenchmarkWorker(config, "tag")
-
-    assert worker._lr_multiplier("unet") is None
-
-
-def test_lr_multiplier_returns_probed_value(config):
-    worker = BenchmarkWorker(config, "tag")
-    path   = worker.run_dir / "pipeline" / "max_batch.json"
-
-    FileIO.save_json({"unet": {"status": "PASS", "batch_size": 128, "lr_multiplier": 0.25}}, path)
-
-    assert worker._lr_multiplier("unet") == pytest.approx(0.25)
-
-
-def test_lr_multiplier_none_when_the_test_selected_nothing(config):
-    worker = BenchmarkWorker(config, "tag")
-    path   = worker.run_dir / "pipeline" / "max_batch.json"
-
-    FileIO.save_json({"unet": {"status": "PASS", "batch_size": 128, "lr_multiplier": None}}, path)
-
-    assert worker._lr_multiplier("unet") is None
-
-
-def test_lr_multiplier_raises_when_model_missing(config):
-    worker = BenchmarkWorker(config, "tag")
-    path   = worker.run_dir / "pipeline" / "max_batch.json"
-
-    FileIO.save_json({"resunet": {"status": "PASS", "batch_size": 128, "lr_multiplier": 0.5}}, path)
-
-    with pytest.raises(KeyError, match="unet"):
-        worker._lr_multiplier("unet")
-
-
-def test_max_batch_worker_hands_the_probe_its_model_and_work_dir(config, monkeypatch):
-    worker = MaxBatchWorker(config, "tag")
-
-    calls = {}
-
-    class FakeProbe:
-        def __init__(self, config, model_name, overrides, work_dir):
-            calls["model_name"] = model_name
-            calls["overrides"]  = overrides
-            calls["work_dir"]   = work_dir
-        def run(self):
-            return {"model": "unet", "status": "PASS", "batch_size": 64, "peak_gb": 12.0}
-
-    monkeypatch.setattr("pipelines.benchmark.batch_probe.MaxBatchProbe", FakeProbe)
-
-    worker.run("unet")
-
-    assert calls["model_name"] == "unet"
-    assert calls["work_dir"]   == worker.run_dir / "max_batch" / "unet" / "probe"
-    result_path = worker.run_dir / "max_batch" / "unet" / "max_batch_result.json"
-    assert result_path.exists()
-    assert FileIO.load_json(result_path)["batch_size"] == 64
-    assert FileIO.load_json(result_path)["provenance"]["git_commit"] == GitState.commit()
-
-
-def test_max_batch_worker_raises_on_probe_fail(config, monkeypatch):
-    worker = MaxBatchWorker(config, "tag")
-
-    class FakeProbe:
-        def __init__(self, *args, **kwargs):
-            pass
-        def run(self):
-            return {"model": "unet", "status": "FAIL", "batch_size": None, "peak_gb": None}
-
-    monkeypatch.setattr("pipelines.benchmark.batch_probe.MaxBatchProbe", FakeProbe)
-
-    with pytest.raises(SystemExit):
-        worker.run("unet")
-
-
 @pytest.mark.dataset
-def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data_dir, params_dir, monkeypatch):
+def test_training_worker_trains_with_the_configured_batch_size(config, test_data_dir, params_dir, monkeypatch):
     from pipelines.benchmark.workers import TrainingWorker
 
     config.paths.dataset_path    = test_data_dir
@@ -184,9 +71,9 @@ def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data
     config.training.train_rows   = (1000, 1400)
     config.training.val_rows     = (1400, 1700)
     config.training.test_rows    = (1700, 2000)
+    config.training.batch_size   = 500
 
     worker = TrainingWorker(config, "tag")
-    FileIO.save_json({"resunet-conv": {"status": "PASS", "batch_size": 500}}, worker.run_dir / "pipeline" / "max_batch.json")
 
     captured = {}
 
@@ -202,63 +89,6 @@ def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data
 
     assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / config.training.lr_reference_batch_size)
     assert captured["dataset_config"].batch_size         == 500
-
-
-@pytest.mark.dataset
-def test_training_worker_applies_the_probed_lr_multiplier(config, test_data_dir, params_dir, monkeypatch):
-    from pipelines.benchmark.workers import TrainingWorker
-
-    config.paths.dataset_path     = test_data_dir
-    config.paths.parameters_path  = params_dir / "parameters.npy"
-    config.training.train_rows = (1000, 1400)
-    config.training.val_rows   = (1400, 1700)
-    config.training.test_rows  = (1700, 2000)
-    config.find_lr.enabled        = True
-
-    worker = TrainingWorker(config, "tag")
-    FileIO.save_json({"resunet-conv": {"status": "PASS", "batch_size": 500, "lr_multiplier": 0.25}}, worker.run_dir / "pipeline" / "max_batch.json")
-
-    captured = {}
-
-    class FakePipeline:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-        def run(self):
-            return None
-
-    monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)
-
-    worker.run("resunet-conv")
-
-    assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / config.training.lr_reference_batch_size * 0.25)
-
-
-@pytest.mark.dataset
-def test_training_worker_ignores_the_multiplier_when_the_test_is_disabled(config, test_data_dir, params_dir, monkeypatch):
-    from pipelines.benchmark.workers import TrainingWorker
-
-    config.paths.dataset_path     = test_data_dir
-    config.paths.parameters_path  = params_dir / "parameters.npy"
-    config.training.train_rows = (1000, 1400)
-    config.training.val_rows   = (1400, 1700)
-    config.training.test_rows  = (1700, 2000)
-
-    worker = TrainingWorker(config, "tag")
-    FileIO.save_json({"resunet-conv": {"status": "PASS", "batch_size": 500, "lr_multiplier": 0.25}}, worker.run_dir / "pipeline" / "max_batch.json")
-
-    captured = {}
-
-    class FakePipeline:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-        def run(self):
-            return None
-
-    monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)
-
-    worker.run("resunet-conv")
-
-    assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / config.training.lr_reference_batch_size)
 
 
 @pytest.mark.dataset

@@ -8,7 +8,7 @@ from models                                         import BACKBONE_CONFIG_REGIS
 from pipelines.shared.model.model_builder           import ModelBuilder
 from pipelines.shared.orchestration.staged_pipeline import StagedPipeline
 
-from pipelines.benchmark.stages import ComparisonStage, InferenceStage, MaxBatchStage, SizeMatchStage, TrainingStage
+from pipelines.benchmark.stages import ComparisonStage, InferenceStage, SizeMatchStage, TrainingStage
 
 
 class BenchmarkPipeline(StagedPipeline):
@@ -47,22 +47,6 @@ class BenchmarkPipeline(StagedPipeline):
             "Selected"               : ", ".join(self.models),
             "Skipped by skip_models" : ", ".join(skipped) or "none",
         }, title=f"Model selection: {len(self.models)} benchmarked, {len(skipped)} skipped")
-
-    def _run_max_batch(self) -> dict:
-        self._begin_stage("max_batch")
-
-        stage   = MaxBatchStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
-        records = stage.run()
-
-        failed = [name for name, record in records.items() if record["status"] != "PASS"]
-        self._mark_stage("max_batch", "completed" if not failed else "partial")
-
-        if failed and len(failed) == len(records):
-            raise SystemExit(f"max batch probing failed for every model ({', '.join(failed)}); see {stage.report_path}")
-        if failed:
-            self.logger.error(f"Max batch probing failed for {len(failed)}/{len(records)} models: {', '.join(failed)}; they cannot be trained")
-
-        return records
 
     def _run_size_match(self) -> dict:
         self._begin_stage("size_match")
@@ -144,12 +128,10 @@ class BenchmarkPipeline(StagedPipeline):
 
         self._run_size_match()
 
-        self._run_max_batch()
-
         if self.config.stage == "prepare":
             self._log_unit_status()
             self._mark_stage("prepare", "completed")
-            self.logger.info(f"Prepare stage done: size match, max batch and unit status written to {self.pipeline_dir}")
+            self.logger.info(f"Prepare stage done: size match and unit status written to {self.pipeline_dir}")
             return
 
         training_results  = self._run_training()

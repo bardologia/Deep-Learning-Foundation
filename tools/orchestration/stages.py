@@ -148,7 +148,7 @@ class QueuedTrainingStage(QueuedStage):
         return {
             "Items"      : len(self.items),
             "Epochs"     : self.config.training.epochs,
-            "Batch size" : f"{self.config.training.batch_size} (base; a max_batch probe stage overrides it per model, see each worker's [Loaders] table)",
+            "Batch size" : self.config.training.batch_size,
             "GPUs"       : self.config.gpus,
             "Stage dir"  : str(self.stage_dir),
         }

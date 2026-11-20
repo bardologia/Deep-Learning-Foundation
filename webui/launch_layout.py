@@ -578,14 +578,6 @@ class LaunchLayout:
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
                 ]},
-                {"key": "max-batch", "title": "Max-batch probe", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": None, "fields": ["max_batch.vram_budget_gb", {"path": "max_batch.max_batch", "widget": NUM_BATCH}, {"path": "max_batch.measure_steps", "widget": NUM_PROBE}, {"path": "max_batch.seed", "widget": NUM_SEED}]},
-                        {"title": "LR range test", "fields": [
-                            {"gate": "find_lr.enabled", "fields": ["find_lr.scale_min", "find_lr.scale_max", {"path": "find_lr.rungs", "widget": NUM_RUNGS}, {"path": "find_lr.rung_steps", "widget": NUM_BURN}, {"path": "find_lr.probe_batches", "widget": NUM_PROBE}, "find_lr.divergence_factor", "find_lr.safety_factor", "find_lr.min_improvement", "find_lr.noise_sigmas", {"path": "find_lr.seed", "widget": NUM_SEED}]},
-                        ]},
-                    ]},
-                ]},
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Base loss for swept components", "template": "loss", "at": "loss"},
                 ]},

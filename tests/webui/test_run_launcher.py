@@ -394,14 +394,14 @@ def test_a_seed_sweep_run_name_with_slashes_resolves_and_labels_by_relative_path
 
 
 def test_a_nested_fanout_is_served_the_directories_holding_its_logs(tmp_path):
-    units    = [_unit("resunet", str(tmp_path / "bench" / "max_batch" / "resunet" / "worker.log"))]
+    units    = [_unit("resunet", str(tmp_path / "bench" / "training" / "resunet" / "worker.log"))]
     launcher = _job_launcher(tmp_path, units)
 
-    _run_dir(tmp_path, "bench/max_batch/resunet", launcher)
+    _run_dir(tmp_path, "bench/training/resunet", launcher)
 
     launcher.job_tensorboard(_record())
 
-    assert launcher.tensorboard.spec_ensured == [({"bench/max_batch/resunet": str(tmp_path / "bench" / "max_batch" / "resunet")}, "/envs/Dune/bin/python")]
+    assert launcher.tensorboard.spec_ensured == [({"bench/training/resunet": str(tmp_path / "bench" / "training" / "resunet")}, "/envs/Dune/bin/python")]
 
 
 def test_units_without_event_files_fall_back_to_the_whole_logdir(tmp_path):

@@ -1,39 +1,13 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 
 from configuration.dataset                      import AugmentationConfig, InputConfig
 from configuration.normalization.general        import NormalizationConfig
 from configuration.training.backbone            import default_curriculum
 from configuration.training.general.loss        import LossConfig
-from configuration.training.general.pretraining import PretrainConfig
 from configuration.training.general.run         import RunPathsConfig, TrainingQueueConfig, standard_seeds
-
-
-@dataclass
-class MaxBatchConfig:
-
-    vram_budget_gb : float = PretrainConfig.vram_budget_gb
-    max_batch      : int   = PretrainConfig.max_batch
-    measure_steps  : int   = PretrainConfig.measure_steps
-    seed           : int   = PretrainConfig.seed
-
-
-@dataclass
-class FindLrConfig:
-
-    enabled           : bool  = False
-    scale_min         : float = PretrainConfig.lr_scale_min
-    scale_max         : float = PretrainConfig.lr_scale_max
-    rungs             : int   = PretrainConfig.lr_rungs
-    rung_steps        : int   = PretrainConfig.lr_rung_steps
-    probe_batches     : int   = PretrainConfig.lr_probe_batches
-    divergence_factor : float = PretrainConfig.lr_divergence_factor
-    safety_factor     : float = PretrainConfig.lr_safety_factor
-    min_improvement   : float = PretrainConfig.lr_min_improvement
-    noise_sigmas      : float = PretrainConfig.lr_noise_sigmas
-    seed              : int   = PretrainConfig.seed
 
 
 @dataclass
@@ -112,8 +86,6 @@ class BenchmarkConfig:
     stage : str = "full"
 
     paths      : RunPathsConfig         = field(default_factory=RunPathsConfig)
-    max_batch  : MaxBatchConfig         = field(default_factory=MaxBatchConfig)
-    find_lr    : FindLrConfig           = field(default_factory=FindLrConfig)
     size_match : SizeMatchConfig        = field(default_factory=SizeMatchConfig)
     training   : TrainingQueueConfig    = field(default_factory=TrainingQueueConfig)
     inference  : InferenceQueueConfig   = field(default_factory=InferenceQueueConfig)
@@ -147,18 +119,4 @@ class BenchmarkConfig:
             "in_channels"     : self.size_match.in_channels,
             "locked_params"   : list(self.size_match.locked_params),
             "patch_size"      : list(self.training.patch_size),
-        }
-
-    def max_batch_settings(self) -> dict:
-        return {
-            "budget_gb"               : self.max_batch.vram_budget_gb,
-            "ceiling"                 : self.max_batch.max_batch,
-            "measure_steps"           : self.max_batch.measure_steps,
-            "probe_seed"              : self.max_batch.seed,
-            "patch_size"              : list(self.training.patch_size),
-            "in_channels"             : self.size_match.in_channels,
-            "find_lr"                 : asdict(self.find_lr),
-            "lr_multiplier"           : self.training.lr_multiplier,
-            "scale_lr_with_batch"     : self.training.scale_lr_with_batch,
-            "lr_reference_batch_size" : self.training.lr_reference_batch_size,
         }

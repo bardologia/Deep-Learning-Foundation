@@ -72,7 +72,6 @@ def test_runs_inference_follows_infer_after(tmp_path):
 
 def _patch_stage_methods(pipeline, monkeypatch, order):
     monkeypatch.setattr(pipeline, "_run_size_match",  lambda: order.append("size_match") or {})
-    monkeypatch.setattr(pipeline, "_run_max_batch",   lambda: order.append("max_batch") or {})
     monkeypatch.setattr(pipeline, "_run_training",    lambda: order.append("training") or [{"name": "unet/seed0", "status": "DONE"}])
     monkeypatch.setattr(pipeline, "_run_inference",   lambda: order.append("inference") or [{"name": "unet/seed0", "status": "DONE"}])
     monkeypatch.setattr(pipeline, "_run_comparison",  lambda: order.append("comparison") or (Path("/tmp/cmp")))
@@ -87,7 +86,7 @@ def test_run_executes_stages_in_expected_order(tmp_path, monkeypatch):
 
     pipeline.run()
 
-    assert order == ["size_match", "max_batch", "training", "inference", "comparison"]
+    assert order == ["size_match", "training", "inference", "comparison"]
 
     state = FileIO.load_json(pipeline.state_path)
     assert state["stages"]["pipeline"]["status"] == "completed"
@@ -116,7 +115,6 @@ def _recording_pipeline(tmp_path, monkeypatch, **kwargs):
     calls    = []
     returns  = {
         "_run_size_match"  : {},
-        "_run_max_batch"   : {},
         "_log_unit_status" : None,
         "_run_training"    : [],
         "_run_inference"   : [],
@@ -134,7 +132,7 @@ def test_prepare_stage_stops_before_training(tmp_path, monkeypatch):
 
     pipeline.run()
 
-    assert calls == ["_run_size_match", "_run_max_batch", "_log_unit_status"]
+    assert calls == ["_run_size_match", "_log_unit_status"]
     state = FileIO.load_json(pipeline.state_path)
     assert state["stages"]["prepare"]["status"] == "completed"
 
@@ -152,22 +150,22 @@ def test_compare_stage_runs_the_comparison_only(tmp_path, monkeypatch):
 def test_an_exception_in_a_stage_is_logged_with_its_stage_and_marked_failed(tmp_path, monkeypatch):
     pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
 
-    def failing_max_batch():
-        pipeline._begin_stage("max_batch")
-        Mock(side_effect=RuntimeError("probe queue died"))()
+    def failing_training():
+        pipeline._begin_stage("training")
+        Mock(side_effect=RuntimeError("training queue died"))()
 
     monkeypatch.setattr(pipeline, "_run_size_match", lambda: {})
-    monkeypatch.setattr(pipeline, "_run_max_batch",  failing_max_batch)
+    monkeypatch.setattr(pipeline, "_run_training",   failing_training)
 
-    with pytest.raises(RuntimeError, match="probe queue died"):
+    with pytest.raises(RuntimeError, match="training queue died"):
         pipeline.run()
 
     state = FileIO.load_json(pipeline.state_path)
     text  = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
 
-    assert state["stages"]["max_batch"]["status"] == "failed"
-    assert state["stages"]["pipeline"]["status"]  == "failed"
-    assert "Aborted in stage 'max_batch' by RuntimeError: probe queue died" in text
+    assert state["stages"]["training"]["status"] == "failed"
+    assert state["stages"]["pipeline"]["status"] == "failed"
+    assert "Aborted in stage 'training' by RuntimeError: training queue died" in text
     assert ">>> ABORTED benchmark_pipeline" in text
     assert ">>> END benchmark_pipeline" not in text
 

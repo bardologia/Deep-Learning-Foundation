@@ -34,28 +34,24 @@ def _worker(stage: str, model_name: str, seed: int | None, gpu_id: int, run_tag:
     EnvironmentPinner.gpu(gpu_id, expandable_segments=True)
 
     from configuration.benchmark     import BenchmarkConfig
-    from pipelines.benchmark.workers import InferenceWorker, MaxBatchWorker, TrainingWorker
+    from pipelines.benchmark.workers import InferenceWorker, TrainingWorker
     from tools.runtime.config_cli    import ConfigCli
 
     config = ConfigCli.load_worker_config(BenchmarkConfig(), run_tag, run_dir)
 
     workers = {
-        "maxbatch" : MaxBatchWorker,
-        "train"    : TrainingWorker,
-        "infer"    : InferenceWorker,
+        "train" : TrainingWorker,
+        "infer" : InferenceWorker,
     }
 
     worker = workers[stage](config=config, run_tag=run_tag)
 
-    if stage == "maxbatch":
-        worker.run(model_name=model_name)
-    else:
-        worker.run(model_name=model_name, seed=seed, loss_component=loss_component, run_name=run_name)
+    worker.run(model_name=model_name, seed=seed, loss_component=loss_component, run_name=run_name)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--worker",         type=str, default=None, choices=["maxbatch", "train", "infer"])
+    parser.add_argument("--worker",         type=str, default=None, choices=["train", "infer"])
     parser.add_argument("--model",          type=str, default=None)
     parser.add_argument("--loss-component", type=str, default=None)
     parser.add_argument("--seed",           type=int, default=None)

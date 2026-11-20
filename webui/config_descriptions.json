@@ -1254,31 +1254,6 @@
         "output_dir": "base directory; every sweep writes into its own <model>_<launch time> subdirectory holding logs/, figures/, resolved_config.json and results.json (with the sweep's settings, code version, device and status), while work/ is the scratch directory the sweeps share"
       }
     },
-    "benchmark/general::MaxBatchConfig": {
-      "summary": "Configures the probe that measures the largest trainable batch size per benchmarked model under a VRAM budget",
-      "fields": {
-        "vram_budget_gb": "GPU memory ceiling in gigabytes the probed peak training memory must stay under",
-        "max_batch": "upper bound on batch size the search tries, lowered automatically if the train split holds fewer samples",
-        "measure_steps": "number of real training steps run per candidate batch size to measure peak CUDA memory",
-        "seed": "random seed for reproducible weight init and data order during the batch-size probe"
-      }
-    },
-    "benchmark/general::FindLrConfig": {
-      "summary": "LR range test run inside each model's max-batch probe job, selecting a per-model learning-rate multiplier",
-      "fields": {
-        "enabled": "Toggle running the LR range test after each passing batch probe; the selected multiplier is applied to that model's training unit",
-        "scale_min": "Smallest learning-rate multiplier the geometric ramp starts from, relative to the batch-scaled group learning rates",
-        "scale_max": "Largest learning-rate multiplier the geometric ramp reaches when the loss never diverges",
-        "rungs": "Multiplier rungs of the range-test ramp; the trainer is rewound to its captured starting state before each rung, so the rungs differ only in the learning rate",
-        "rung_steps": "Optimizer steps taken at each rung's multiplier, run through the trainer's own step code including gradient accumulation and clipping",
-        "probe_batches": "Held-out batches whose median loss is the rung's measurement, the same batches at every rung so the comparison stays paired",
-        "divergence_factor": "Multiple of the best rung loss at which the ramp stops as diverged",
-        "safety_factor": "Divisor applied to the minimum-loss multiplier, the reference convention being a decade of headroom below the loss minimum",
-        "min_improvement": "Smallest relative drop below the first rung's loss for the ramp to count as a measurement rather than noise",
-        "noise_sigmas": "Standard errors of the rung measurement the drop must also clear, calibrated from the spread across the held-out batches",
-        "seed": "Random seed of the shuffle generator drawing the range-test batches"
-      }
-    },
     "benchmark/general::SizeMatchConfig": {
       "summary": "Governs bisection-search scaling of each backbone's width to match a reference model's parameter count",
       "fields": {
@@ -1343,8 +1318,6 @@
       "fields": {
         "stage": "portion of the pipeline to run: full does everything, prepare stops after size match and max batch, compare runs the comparison report only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
         "paths": "RunPathsConfig sub-config holding the dataset, extracted-parameters, and benchmark run/output directories",
-        "max_batch": "MaxBatchConfig sub-config for the maximum-batch-size probe, run for every training type through the family-matched probe context",
-        "find_lr": "FindLrConfig sub-config for the LR range test run inside the max-batch probe jobs of every training type",
         "size_match": "SizeMatchConfig sub-config for matching each backbone's parameter count to the reference model",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every model in the sweep",
         "inference": "InferenceQueueConfig sub-config for batched inference and diagnostic-artifact output",

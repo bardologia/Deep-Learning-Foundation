@@ -14,7 +14,6 @@ from configuration.tuning.general import TuningConfig, TuningEntryConfig
 from configuration.cross_validation.general import FoldConfig, CrossValidationConfig
 
 from configuration.benchmark.general import (
-    MaxBatchConfig,
     SizeMatchConfig,
     InferenceQueueConfig,
     ComparisonReportConfig,
@@ -35,7 +34,6 @@ DEFAULT_CONFIGS = [
     FoldConfig,
     CrossValidationConfig,
     RunPathsConfig,
-    MaxBatchConfig,
     SizeMatchConfig,
     TrainingQueueConfig,
     InferenceQueueConfig,
@@ -197,12 +195,6 @@ def test_size_match_locked_params_tuple():
     assert cfg.in_channels > 0
 
 
-def test_max_batch_config_budget_positive():
-    cfg = MaxBatchConfig()
-    assert cfg.vram_budget_gb > 0
-    assert cfg.max_batch > 0
-
-
 def test_benchmark_config_runs_inference_when_infer_after_is_on():
     assert BenchmarkConfig().runs_inference() is True
     assert BenchmarkConfig(infer_after=False).runs_inference() is False
@@ -210,7 +202,6 @@ def test_benchmark_config_runs_inference_when_infer_after_is_on():
 
 def test_benchmark_config_subconfigs():
     cfg = BenchmarkConfig()
-    assert isinstance(cfg.max_batch, MaxBatchConfig)
     assert isinstance(cfg.size_match, SizeMatchConfig)
 
 

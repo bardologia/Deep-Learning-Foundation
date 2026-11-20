@@ -104,16 +104,6 @@ def test_probe_union_is_the_single_stage_when_curriculum_disabled():
     assert union.use_cosine_curve  is True
 
 
-def test_catalog_combined_curriculum_mirrors_combined_in_both_phases():
-    curriculum = LossComponentCatalog.combined_curriculum(["param_l1", "total_power_relerr"])
-
-    assert curriculum.enabled is False
-    assert curriculum.warmup.use_param_l1     is True
-    assert curriculum.warmup.use_total_power  is True
-    assert curriculum.complete.use_param_l1   is True
-    assert curriculum.complete.use_total_power is True
-
-
 def test_forward_returns_finite_scalar_total():
     loss = build_loss(n_gaussians=2)
     pred = param_tensor(2, 2, 6, 6, seed=0)
