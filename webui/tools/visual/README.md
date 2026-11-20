@@ -51,17 +51,6 @@ launch form has not finished building when the tab is looked for.
 node snap_experiments.js --port 8772 --out /tmp/ml-template-experiments [--settle 1200] launch/train_backbone launch/cross_validate
 ```
 
-`trial_names.js` runs the builder script under plain node with no DOM and no server. It
-takes the same config-leaf payload the browser receives (`{"key": ..., "leaves": [...]}`,
-as `ScriptConfigResolver` produces it) and prints the run names every available mode
-previews, keyed by mode. `tests/webui/test_experiment_names.py` drives it to assert those
-names byte-match the ones the Python planners plan, which is the contract that keeps the
-preview honest about the directories a sweep will create.
-
-```
-node trial_names.js /tmp/train_backbone.json
-```
-
 ## Sequence editor harnesses
 
 Two tools that run the sequence block editor's own modules under plain node, with no
