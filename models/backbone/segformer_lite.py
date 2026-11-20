@@ -161,9 +161,6 @@ class SegFormerLite(nn.Module, OutputHeadMixin):
 
         LayerFactory.initialize_weights(module=self, mode=config.init_mode)
 
-    def _head_activation(self) -> str:
-        return self.config.ffn_activation
-
     def _fused_embedding(self, x: torch.Tensor) -> torch.Tensor:
         stage_outputs = []
         for patch_embedding, stage in zip(self.patch_embeddings, self.encoder_stages):

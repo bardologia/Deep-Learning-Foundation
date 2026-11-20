@@ -383,9 +383,6 @@ class SwinUNet(nn.Module, OutputHeadMixin):
 
         LayerFactory.initialize_weights(module=self, mode=config.init_mode)
 
-    def _head_activation(self) -> str:
-        return self.config.ffn_activation
-
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
         original_input = x
         x = self.patch_embed(x)

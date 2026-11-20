@@ -101,9 +101,6 @@ class NAFNet(nn.Module, OutputHeadMixin):
 
         LayerFactory.initialize_weights(module=self, mode=self.config.init_mode)
 
-    def _head_activation(self) -> str:
-        return "gelu"
-
     def _stage(self, channels: int, n_blocks: int) -> nn.Sequential:
         return nn.Sequential(*[NAFBlock(channels, self.config.dw_expand, self.config.ffn_expand, self.config.dropout) for _ in range(n_blocks)])
 
