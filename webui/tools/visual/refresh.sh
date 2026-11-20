@@ -3,10 +3,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WEBUI="$(cd "$HERE/../.." && pwd)"
+LOGS="$(cd "$WEBUI/.." && pwd)/logs/visual"
 
 PORT="${PORT:-8772}"
-OUT="${OUT:-/tmp/ml-template-ui}"
-LOG="/tmp/ml-template-webui-${PORT}.log"
+OUT="${OUT:-$LOGS/ui}"
+LOG="$LOGS/webui-${PORT}.log"
 
 if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
   echo "PORT must be a number, got '$PORT'" >&2
@@ -25,6 +26,7 @@ for _ in $(seq 1 20); do
   sleep 0.1
 done
 
+mkdir -p "$LOGS"
 nohup "$WEBUI/run.sh" "$PORT" > "$LOG" 2>&1 &
 
 for i in $(seq 1 60); do

@@ -13,19 +13,19 @@ rendered before considering the change done.
 ```
 tools/visual/refresh.sh                      # restart server, snap the default page set
 tools/visual/refresh.sh home console         # snap only these routes
-PORT=9000 OUT=/tmp/shots tools/visual/refresh.sh
+PORT=9000 OUT=$PWD/shots tools/visual/refresh.sh
 ```
 
 Default routes: `home architectures scripts configuration console`.
-Parametrised routes work too, e.g. `launch/train_model`. Screenshots land in
-`/tmp/ml-template-ui/<route>.png` (slashes become underscores); the directory is cleared
+Parametrised routes work too, e.g. `launch/train_backbone`. Screenshots land in
+`logs/visual/ui/<route>.png` (slashes become underscores); the directory is cleared
 on each run so every PNG reflects the current code. The server is left running on
-the port and its log goes to `/tmp/ml-template-webui-<port>.log`.
+the port and its log goes to `logs/visual/webui-<port>.log`.
 
 `snap_ui.js` can also be run directly against an already-running server:
 
 ```
-node snap_ui.js --port 8772 --out /tmp/ml-template-ui [--settle 1800] [--width 1600] [--height 950] [routes...]
+node snap_ui.js --port 8772 --out ../../../logs/visual/ui [--settle 1800] [--width 1600] [--height 950] [routes...]
 ```
 
 It loads the SPA once, then per route sets the hash, waits for the route's page
@@ -48,7 +48,7 @@ Raise `--settle` on a loaded machine when a route reports `experimentsTab: false
 launch form has not finished building when the tab is looked for.
 
 ```
-node snap_experiments.js --port 8772 --out /tmp/ml-template-experiments [--settle 1200] launch/train_backbone launch/cross_validate
+node snap_experiments.js --port 8772 --out ../../../logs/visual/experiments [--settle 1200] launch/train_backbone launch/cross_validate
 ```
 
 ## Sequence editor harnesses
@@ -63,7 +63,7 @@ values the Python renderer produces, which is the contract that keeps `[32, 32],
 two candidates instead of four.
 
 ```
-node literal_split.js /tmp/fields.json
+node literal_split.js fields.json
 ```
 
 `sequence_actions.js` loads the editor itself against a stub DOM and a stub router that

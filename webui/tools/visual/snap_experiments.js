@@ -7,7 +7,7 @@ class ExperimentSnapper {
 
   constructor(argv) {
     this.port   = 8772;
-    this.outDir = "/tmp/ml-template-experiments";
+    this.outDir = path.resolve(__dirname, "../../../logs/visual/experiments");
     this.settle = 1200;
     this.width  = 1600;
     this.height = 1100;

@@ -9,7 +9,7 @@ class UiSnapper {
 
   constructor(argv) {
     this.port    = 8772;
-    this.outDir  = "/tmp/ml-template-ui";
+    this.outDir  = path.resolve(__dirname, "../../../logs/visual/ui");
     this.settle  = 1800;
     this.width   = 1600;
     this.height  = 950;
