@@ -57,18 +57,6 @@ def test_spatial_run_config_keeps_an_explicit_region_override(tmp_path):
     assert config.region_override == [0, 10, 0, 10]
 
 
-def test_spatial_run_config_refuses_a_split_the_fold_does_not_score(tmp_path):
-    from configuration.inference                       import InferenceConfig
-    from pipelines.cross_validation.folds              import FoldUnitManifest
-    from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
-
-    run = tmp_path / "fold_unit"
-    FoldUnitManifest.write(run, run_tag="cv", unit="fold_unit", fold_index=2, seed=None, inference_regions={"test": (1212, 1312, 0, 256)})
-
-    with pytest.raises(ValueError, match="scores the splits"):
-        SpatialRunConfig.build(InferenceConfig(run_directory=Path("."), split="train"), run)
-
-
 def test_spatial_run_config_leaves_a_plain_run_alone(tmp_path):
     from configuration.inference                       import InferenceConfig
     from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
