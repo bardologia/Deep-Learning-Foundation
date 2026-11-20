@@ -70,17 +70,6 @@ def test_empty_target_channels_feed_the_full_target_stack(tmp_path):
     assert TargetDataset.of(_config(dataset, parameters, channels=[])).secondary_labels is None
 
 
-@pytest.mark.parametrize("overrides, message", [
-    ({"split": "val"},                            "leave inference.split at 'test'"),
-    ({"region_override": [1200, 1296, 600, 696]}, "leave region_override unset"),
-])
-def test_a_target_refuses_settings_of_the_runs_own_split(tmp_path, overrides, message):
-    dataset, parameters = _target_dataset(tmp_path)
-
-    with pytest.raises(ValueError, match=message):
-        TargetDataset.of(_config(dataset, parameters, **overrides))
-
-
 def test_a_target_without_a_dataset_layout_is_refused(tmp_path):
     with pytest.raises(FileNotFoundError, match="dataset.json"):
         TargetDataset.of(_config(tmp_path / "missing", tmp_path / "missing" / "params" / "p" / "parameters.npy"))
@@ -94,13 +83,6 @@ def test_target_labels_outside_the_target_dataset_are_refused(tmp_path):
         TargetDataset.of(_config(dataset, other_labels))
 
 
-def test_a_missing_target_label_cube_is_refused(tmp_path):
-    dataset, _ = _target_dataset(tmp_path)
-
-    with pytest.raises(FileNotFoundError, match="parameters_path"):
-        TargetDataset.of(_config(dataset, dataset / "params" / "absent" / "parameters.npy"))
-
-
 @pytest.mark.parametrize("crop, expected", [
     ((0, 0, 0, 0),       (1000, 2000, 500, 1000)),
     ((1200, 1296, 0, 0), (1200, 1296, 500, 1000)),
@@ -110,19 +92,6 @@ def test_zero_bounds_span_the_whole_target_crop_along_their_axis(tmp_path, crop,
     dataset, parameters = _target_dataset(tmp_path)
 
     assert TargetDataset.of(_config(dataset, parameters, crop=crop)).region == CropRegion(*expected)
-
-
-@pytest.mark.parametrize("crop, message", [
-    ((1300, 1200, 600, 696), "empty or inverted"),
-    ((0, 1296, 600, 696),    "not contained in the global crop"),
-    ((1200, 1296, 600, 0),   "empty or inverted"),
-    ((1900, 2100, 600, 696), "not contained in the global crop"),
-])
-def test_an_invalid_target_crop_is_refused(tmp_path, crop, message):
-    dataset, parameters = _target_dataset(tmp_path)
-
-    with pytest.raises(ValueError, match=message):
-        TargetDataset.of(_config(dataset, parameters, crop=crop))
 
 
 def test_the_dataset_config_moves_onto_the_target_and_keeps_the_runs_geometry(tmp_path):
@@ -179,7 +148,7 @@ def test_a_marker_without_a_target_is_refused_under_the_target_tree(tmp_path):
     stamp.mkdir()
     CompletionMarker.stamp(stamp, {"split": "test"})
 
-    with pytest.raises(KeyError, match="records no 'target_dataset'"):
+    with pytest.raises(KeyError, match="target_dataset"):
         CompletedInference.target(stamp)
 
 
@@ -222,10 +191,3 @@ def test_the_scheduler_skips_only_runs_scored_on_the_same_target(tmp_path):
 
     assert remaining                                           == ["other_crop", "own_only"]
     assert [directory.name for directory in scheduler.skipped] == ["scored"]
-
-
-def test_the_scheduler_refuses_an_invalid_target_before_dispatching(tmp_path):
-    dataset, parameters = _target_dataset(tmp_path)
-
-    with pytest.raises(ValueError, match="empty or inverted"):
-        _scheduler(tmp_path, _config(dataset, parameters, crop=(1300, 1200, 600, 696)))

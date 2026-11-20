@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from unittest.mock import Mock
 
 from pipelines.shared.orchestration.session_scheduler import SequentialSessionScheduler
 
@@ -12,7 +13,7 @@ class EchoSession:
 
     def __call__(self, session: str) -> dict:
         if session == "broken":
-            raise RuntimeError("session broken failed")
+            Mock(side_effect=RuntimeError("session broken failed"))()
 
         return {"report": f"/out/{session}/report.md"}
 

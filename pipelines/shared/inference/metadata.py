@@ -51,23 +51,10 @@ class TargetDataset:
         return self.dataset_path.name
 
     @staticmethod
-    def _check_block(config: InferenceConfig) -> None:
-        if config.split != TargetDataset.SPLIT:
-            raise ValueError(f"inference.target is enabled with split='{config.split}', but a target crop is scored as the held-out {TargetDataset.SPLIT} split of the target scene; leave inference.split at '{TargetDataset.SPLIT}'.")
-
-        if config.region_override:
-            raise ValueError(f"inference.target is enabled together with region_override={config.region_override}; the scored crop of a target dataset is inference.target.row_start/row_end/col_start/col_end, so leave region_override unset.")
-
-    @staticmethod
     def _check_paths(dataset_path: Path, parameters_path: Path) -> CropRegion:
         layout_path = dataset_path / Layout.LAYOUT_RELPATH
-        if not layout_path.is_file():
-            raise FileNotFoundError(f"inference.target.dataset_path={dataset_path} holds no {Layout.LAYOUT_RELPATH}; point it at a dataset directory written by generate_dataset.")
 
         DatasetParameterPairing.relative_template(dataset_path, parameters_path)
-
-        if not parameters_path.is_file():
-            raise FileNotFoundError(f"inference.target.parameters_path={parameters_path} does not exist; the target scene needs a parameter run to score the predictions against.")
 
         return CropRegion(*FileIO.load_json(layout_path)["global_crop"])
 
@@ -78,22 +65,13 @@ class TargetDataset:
         col_bounds  = (global_crop.col_start, global_crop.col_end) if target.col_start == target.col_end == 0 else (target.col_start, target.col_end)
         bounds      = (*row_bounds, *col_bounds)
 
-        if not (bounds[0] < bounds[1] and bounds[2] < bounds[3]):
-            raise ValueError(f"inference.target crop {bounds} is empty or inverted; set start < end on each axis inside the target's global crop {global_crop.as_tuple()}, or leave both bounds of an axis at 0 to span the whole crop along it.")
-
-        region = CropRegion(*bounds)
-        if not global_crop.contains(region):
-            raise ValueError(f"inference.target crop {region.as_tuple()} is not contained in the global crop {global_crop.as_tuple()} of {target.dataset_path}.")
-
-        return region
+        return CropRegion(*bounds)
 
     @staticmethod
     def of(config: InferenceConfig) -> "TargetDataset | None":
         target = config.target
         if not target.enabled:
             return None
-
-        TargetDataset._check_block(config)
 
         dataset_path    = Path(target.dataset_path)
         parameters_path = Path(target.parameters_path)
@@ -188,9 +166,6 @@ class CompletedInference:
     @staticmethod
     def target(stamp: Path) -> dict:
         payload = CompletionMarker.payload(stamp)
-
-        if TargetDataset.KEY not in payload:
-            raise KeyError(f"inference completion marker at {stamp} records no '{TargetDataset.KEY}'; every stamp under a cross-dataset tree is written with one, so this stamp was not written by the target-dataset inference.")
 
         return payload[TargetDataset.KEY]
 

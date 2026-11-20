@@ -96,9 +96,6 @@ class UnitResume:
         return f"{files} file(s) including {TrainerState.FILENAME} ({stat.st_size / 1024 ** 2:.1f} MB, last saved {saved}); the epochs it held are retrained, pass training.resume to continue from it instead"
 
     def skip_training(self) -> bool:
-        if self.config is None:
-            raise ValueError(f"UnitResume for {self.run_directory} was built without the entry configuration; skip_training compares a reused run with it, pass config=")
-
         if not self.enabled:
             if self.run_directory.is_dir():
                 if CompletionMarker.is_complete(self.run_directory):

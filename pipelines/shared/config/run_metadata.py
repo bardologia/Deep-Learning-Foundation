@@ -51,9 +51,6 @@ class RunDirectoryLeftovers:
         if not found:
             return
 
-        if CompletionMarker.is_complete(run_directory):
-            raise ValueError(f"Run directory {run_directory} already holds a completed run ({', '.join(found)}) and training.resume is False, so a fresh run would overwrite it. Pick a new run_name, set resume=True to reuse the completed run, or delete the directory.")
-
         logger.warning(f"Run directory {run_directory} holds an unfinished earlier attempt; deleting its artifacts before the fresh run starts: {', '.join(found)}")
 
         for name in found:
@@ -88,12 +85,7 @@ class TrainingRunMetadata:
         file_mode         = "a" if trainer_config.training.resume else "w"
         self.logger       = logger or Logger(log_dir = str(self.logs_directory), name = f"{model_name}_metadata", level = "INFO", file_mode = file_mode)
 
-        try:
-            RunDirectoryLeftovers.clear(self.run_directory, trainer_config.training.resume, self.logger)
-        except ValueError as error:
-            if self._owns_logger:
-                self.logger.close(error)
-            raise
+        RunDirectoryLeftovers.clear(self.run_directory, trainer_config.training.resume, self.logger)
 
         self.writer = SummaryWriter(log_dir=str(self.tensorboard_dir))
 

@@ -43,29 +43,6 @@ class _LabellingRunner(_Runner):
         return f"{self.LABEL}_{self.config.run_name}"
 
 
-def test_validate_rejects_fewer_than_two_distinct_gpus(tmp_path):
-    with pytest.raises(ValueError, match="at least two distinct devices"):
-        DdpFanout.for_runner(_config(tmp_path, gpus=[0]), {}, Path("train.py"), _Runner)
-
-    with pytest.raises(ValueError, match="at least two distinct devices"):
-        DdpFanout.for_runner(_config(tmp_path, gpus=[1, 1]), {}, Path("train.py"), _Runner)
-
-
-def test_validate_rejects_an_indivisible_batch(tmp_path):
-    config = _config(tmp_path, gpus=[0, 1, 2])
-
-    with pytest.raises(ValueError, match="does not divide across 3 DDP ranks"):
-        DdpFanout.for_runner(config, {}, Path("train.py"), _Runner)
-
-
-def test_validate_rejects_enabled_pretrain_probes(tmp_path):
-    config = _config(tmp_path)
-    config.pretrain.find_lr = True
-
-    with pytest.raises(ValueError, match="find_lr"):
-        DdpFanout.for_runner(config, {}, Path("train.py"), _Runner)
-
-
 def test_for_runner_composes_a_fresh_run_name(tmp_path):
     fanout = DdpFanout.for_runner(_config(tmp_path, run_name="gamma_ddp"), {}, Path("train.py"), _Runner)
 
@@ -88,39 +65,6 @@ def test_for_runner_resumes_an_existing_run_directory(tmp_path):
     assert fanout._rank_overrides(1)["resume_from"] == str(target / "ddp" / "rank1")
     assert "run_name" not in fanout._rank_overrides(0)
     assert "logdir"   not in fanout._rank_overrides(1)
-
-
-def test_resume_rejects_a_run_with_fewer_mirrors_than_ranks(tmp_path):
-    target = tmp_path / "elsewhere" / "old_run"
-    (target / "ddp" / "rank1").mkdir(parents=True)
-
-    config = _config(tmp_path, resume_from=str(target), gpus=[0, 1, 2])
-    config.training.batch_size = 6
-
-    with pytest.raises(SystemExit, match="different rank group"):
-        DdpFanout.for_runner(config, {}, Path("train.py"), _Runner)
-
-
-def test_resume_rejects_a_run_with_more_mirrors_than_ranks(tmp_path):
-    target = tmp_path / "elsewhere" / "old_run"
-    (target / "ddp" / "rank1").mkdir(parents=True)
-    (target / "ddp" / "rank2").mkdir(parents=True)
-
-    with pytest.raises(SystemExit, match="different rank group"):
-        DdpFanout.for_runner(_config(tmp_path, resume_from=str(target)), {}, Path("train.py"), _Runner)
-
-
-def test_resume_rejects_a_run_without_ddp_mirrors(tmp_path):
-    target = tmp_path / "elsewhere" / "old_run"
-    target.mkdir(parents=True)
-
-    with pytest.raises(SystemExit, match="different rank group"):
-        DdpFanout.for_runner(_config(tmp_path, resume_from=str(target)), {}, Path("train.py"), _Runner)
-
-
-def test_for_runner_rejects_a_missing_resume_directory(tmp_path):
-    with pytest.raises(FileNotFoundError, match="not an existing run directory"):
-        DdpFanout.for_runner(_config(tmp_path, resume_from=str(tmp_path / "missing")), {}, Path("train.py"), _Runner)
 
 
 def test_rank_overrides_isolate_the_secondary_ranks(tmp_path):

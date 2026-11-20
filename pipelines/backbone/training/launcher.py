@@ -292,13 +292,11 @@ class BackboneTrainingLauncher:
             seeds = SeedSet.resolve(config.seeds, config.seed)
 
             if trial.trial:
-                DdpDispatch.reject_trials(config, trial_unit=True)
                 SeedSweepRunner(config, SingleTrainRunner).run()
             elif len(seeds) == 1:
                 if not DdpDispatch.single_seed(config, cli.overrides, self.entry_script, SingleTrainRunner):
                     SeedSweepRunner(config, SingleTrainRunner).run()
             else:
-                DdpDispatch.reject_seed_sweep(config, seeds)
                 SeedFanoutScheduler.for_runner(config, cli.overrides, self.entry_script, SingleTrainRunner, infer_at_end=config.infer_at_end, infer_after=config.infer_after).run()
             return
 

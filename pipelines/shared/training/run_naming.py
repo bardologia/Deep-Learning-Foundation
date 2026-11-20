@@ -16,8 +16,6 @@ class RunNaming:
     @classmethod
     def loss_tag(cls, loss: LossConfig) -> str:
         parts = [f"{term.name}_{getattr(loss, term.weight_key):g}" for term in cls.NAMING_ORDER if getattr(loss, term.use_flag)]
-        if not parts:
-            raise ValueError("Cannot name a run from a loss config with no enabled loss terms")
 
         return "-".join(parts)
 

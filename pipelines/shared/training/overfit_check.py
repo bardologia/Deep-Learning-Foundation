@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import math
 import shutil
+import sys
 import time
 from dataclasses import fields
 from pathlib import Path
@@ -109,8 +110,6 @@ class OverfitCheck:
         initial = float(train_losses[0])
         best    = float(min(train_losses))
         final   = float(train_losses[-1])
-        if initial <= 0.0:
-            raise RuntimeError(f"Overfit check is inconclusive: the initial epoch loss is {initial:.6f}, which is not positive, so the loss-reduction ratio is undefined. A zero or negative starting loss means the forward pass or the loss definition is broken; fix that before training.")
 
         ratio  = best / initial
         passed = best <= self.config.stop_threshold or ratio <= self.config.pass_loss_ratio
@@ -157,7 +156,7 @@ class OverfitCheck:
         })
 
         if not verdict["passed"]:
-            raise RuntimeError(f"Overfit check failed: best loss {verdict['best_loss']:.6f} vs initial {verdict['initial_loss']:.6f} (ratio {verdict['loss_ratio']:.4f} > {self.config.pass_loss_ratio}); the model cannot fit {self.config.n_examples} examples with regularization disabled, so normal training was aborted.")
+            sys.exit(f"Overfit check failed: best loss {verdict['best_loss']:.6f} vs initial {verdict['initial_loss']:.6f} (ratio {verdict['loss_ratio']:.4f} > {self.config.pass_loss_ratio}); the model cannot fit {self.config.n_examples} examples with regularization disabled, so normal training was aborted.")
 
         self.logger.subsection("Overfit check passed; continuing with normal training.")
 

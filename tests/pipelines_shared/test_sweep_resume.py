@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from pipelines.shared.training.sweep_resume import SweepResults, SweepResumePlan, SweepResumeRoot
 from tools.data.io                          import FileIO
@@ -36,16 +35,6 @@ def test_root_resolution_climbs_out_of_a_nested_seed_run(tmp_path):
     run = _run_dir(tmp_path, "a/seed0")
 
     assert SweepResumeRoot.resolve(str(run), ["a/seed0", "a/seed1"]) == tmp_path
-
-
-def test_root_resolution_rejects_a_missing_path(tmp_path):
-    with pytest.raises(FileNotFoundError, match="does not exist"):
-        SweepResumeRoot.resolve(str(tmp_path / "nope"), ["a"])
-
-
-def test_root_resolution_rejects_a_folder_without_planned_runs(tmp_path):
-    with pytest.raises(SystemExit, match="holds no run directory matching"):
-        SweepResumeRoot.resolve(str(tmp_path), ["a", "b"])
 
 
 def test_plan_classifies_complete_unfinished_and_missing(tmp_path):

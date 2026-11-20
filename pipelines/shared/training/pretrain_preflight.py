@@ -9,7 +9,6 @@ import os
 import torch
 
 from tools.monitoring.logger    import Logger
-from tools.training.checkpoint  import TrainerState
 from tools.training.pretraining import PretrainContext, PretrainOrchestrator, TrainStepMemoryProbe, TrainerFeed
 
 
@@ -29,14 +28,6 @@ class PretrainPreflight:
 
     def _enabled(self) -> bool:
         return bool(self._enabled_probes())
-
-    def _refuse_on_resume(self) -> None:
-        if not self.training.resume:
-            return
-
-        probes = ", ".join(self._enabled_probes())
-
-        raise RuntimeError(f"pretraining probes ({probes}) cannot run on a run resuming from {TrainerState.FILENAME}: they would rewrite the recorded training.batch_size={self.training.batch_size}, num_workers/prefetch_factor or lr_multiplier under the restored optimizer, scheduler and warmup state. A run that probed records its probes switched off; pass --pretrain.<probe> false for each probe typed or recorded before that, or start a fresh run")
 
     def _warn_occupied_device(self, logger: Logger, context_gb: float) -> None:
         if context_gb <= TrainStepMemoryProbe.CONTEXT_WARN_GB:
@@ -78,8 +69,6 @@ class PretrainPreflight:
         result_dir.mkdir(parents=True, exist_ok=True)
 
         with Logger(log_dir=str(result_dir / "logs"), name="pretrain", level="INFO") as logger:
-            self._refuse_on_resume()
-
             device     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             context_gb = TrainStepMemoryProbe.measure_context(device)
 

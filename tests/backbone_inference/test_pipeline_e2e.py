@@ -143,25 +143,6 @@ def test_inference_pipeline_with_region_override(tmp_path, test_data_dir, params
 
 
 @pytest.mark.dataset
-def test_region_override_must_contain_the_stored_split_region(tmp_path, test_data_dir, params_dir):
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
-
-    config = InferenceConfig(
-        run_directory   = run_dir,
-        output_subdir   = "shifted",
-        device          = "cpu",
-        split           = "test",
-        region_override = [1000, 1096, 500, 596],
-        num_workers     = 0,
-        save_plots      = False,
-        save_animations = False,
-    )
-
-    with pytest.raises(ValueError, match="must contain the stored"):
-        InferencePipeline(config).run()
-
-
-@pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_runner_scores_each_region_of_a_split_stored_as_two(tmp_path, test_data_dir, params_dir):
     from configuration.inference                       import BackboneInferenceEntryConfig

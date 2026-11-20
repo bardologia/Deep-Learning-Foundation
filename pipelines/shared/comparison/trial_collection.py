@@ -316,9 +316,6 @@ class TrialCollector(TrialArtifactReader):
         self.logger.ok(f"{len(records)} run(s) collected: {inference}, {n_unfinished} without {CompletionMarker.FILENAME}, {n_no_ckpt} without {self.CHECKPOINT_FILENAME}")
 
     def collect(self) -> list[TrialRecord]:
-        if not self.training_dir.is_dir():
-            raise FileNotFoundError(f"No training directory at {self.training_dir}; expected one sub-directory per trial there, check the run tag")
-
         runs = self._run_dirs()
 
         size_match, training_results = self._aggregate_sources(runs)

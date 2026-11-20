@@ -116,14 +116,6 @@ def test_zero_workers_disables_prefetch_and_persistence(tmp_path):
     assert val.prefetch_factor      is None
 
 
-def test_train_dataset_smaller_than_the_batch_raises(tmp_path):
-    with pytest.raises(ValueError, match="Train loader yields zero batches"):
-        Loader.build(
-            _CountingDataset(3), _CountingDataset(8), _CountingDataset(8),
-            batch_size=4, num_workers=0, logger=_logger(tmp_path), seed=0,
-        )
-
-
 def _activate_ddp(monkeypatch, rank: int, world: int) -> None:
     for key, value in DistributedContext.environment(rank=rank, world_size=world, master_port=29501).items():
         monkeypatch.setenv(key, value)

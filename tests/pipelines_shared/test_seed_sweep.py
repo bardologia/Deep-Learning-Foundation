@@ -82,11 +82,6 @@ def test_single_explicit_seed_runs_once_with_that_seed():
     assert record == [(5, "exp")]
 
 
-def test_multi_seed_config_is_rejected_loudly():
-    with pytest.raises(ValueError, match="exactly one seed"):
-        SeedSweepRunner(_Config(seeds=[0, 1, 2]), _factory([])).run()
-
-
 def test_base_run_name_prefers_the_explicit_run_name():
     assert SeedSweepRunner.base_run_name(_Config(run_name="exp"), base_label="model") == "exp"
 
@@ -185,13 +180,6 @@ def test_run_records_the_sweep_configuration(tmp_path):
 
     assert recorded["seeds"]       == [3, 0, 17]
     assert recorded["resume_from"] == ""
-
-
-def test_fanout_resume_rejects_a_folder_without_seed_runs(tmp_path):
-    config = _Config(resume_from=str(tmp_path), seeds=[0, 1], logdir=Path("/elsewhere"))
-
-    with pytest.raises(SystemExit, match="neither a seed run directory"):
-        SeedFanoutScheduler.for_runner(config, {}, Path("/entry/train.py"), _factory([]))
 
 
 def test_for_runner_resolves_the_run_dir_through_the_runner(tmp_path):

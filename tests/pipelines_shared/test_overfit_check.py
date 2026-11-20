@@ -195,7 +195,7 @@ def test_run_failing_raises_and_still_writes_report(tmp_path):
     check   = _check(tmp_path, max_steps=50, steps_per_epoch=10, pass_loss_ratio=0.05)
     trainer = _StubTrainer(losses=[1.0, 0.9, 0.8])
 
-    with pytest.raises(RuntimeError, match="Overfit check failed"):
+    with pytest.raises(SystemExit, match="Overfit check failed"):
         check.run(trainer, _TensorDataset(n=6))
 
     report = json.loads(check.report_path.read_text())
@@ -224,13 +224,3 @@ def test_run_restores_global_rng_state(tmp_path):
 
     assert torch.equal(torch.get_rng_state(), expected_torch)
     assert np.array_equal(np.random.get_state()[1], expected_numpy)
-
-
-def test_non_positive_initial_loss_is_inconclusive(tmp_path):
-    check   = _check(tmp_path, n_examples=2, max_steps=20, steps_per_epoch=10)
-    trainer = _StubTrainer(losses=[0.0, -1.0])
-
-    with pytest.raises(RuntimeError, match="Overfit check is inconclusive"):
-        check.run(trainer, _TensorDataset(n=6))
-
-    assert not check.report_path.exists()

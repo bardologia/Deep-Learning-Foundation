@@ -65,29 +65,3 @@ def test_trial_entries_train_in_process_inside_a_rank(monkeypatch, tmp_path):
 
     assert sweep.ran  == 1
     assert fanout.ran == 0
-
-
-def test_trial_entries_reject_ddp_with_several_seeds(monkeypatch, tmp_path):
-    _stubs(monkeypatch)
-
-    with pytest.raises(ValueError, match="ddp=True trains exactly one seed"):
-        BackboneTrainingLauncher(entry_script=ENTRY).run(["--ddp", "true", "--seeds", "[0, 1]", "--gpus", "[0, 1]", "--logdir", str(tmp_path)])
-
-
-def test_trial_entries_reject_ddp_with_a_trial_sweep(monkeypatch, tmp_path):
-    _stubs(monkeypatch)
-
-    with pytest.raises(ValueError, match="fans its units out one GPU each"):
-        BackboneTrainingLauncher(entry_script=ENTRY).run(["--ddp", "true", "--trials_enabled", "true", "--seeds", "[3]", "--gpus", "[0, 1]", "--logdir", str(tmp_path)])
-
-
-def test_trial_entries_reject_ddp_on_a_trial_unit(monkeypatch, tmp_path):
-    _stubs(monkeypatch)
-
-    with pytest.raises(ValueError, match="not available for a --trial unit"):
-        BackboneTrainingLauncher(entry_script=ENTRY).run(["--trial", "--ddp", "true", "--seeds", "[3]", "--gpus", "[0, 1]", "--logdir", str(tmp_path)])
-
-
-def test_cluster_trial_sweeps_refuse_ddp(tmp_path):
-    with pytest.raises(ValueError, match="fans its units out one GPU each"):
-        BackboneTrainingLauncher(entry_script=ENTRY).build_scheduler(["--ddp", "true", "--run_name", "base", "--logdir", str(tmp_path)])

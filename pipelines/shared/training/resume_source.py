@@ -59,9 +59,6 @@ class TrainingResume:
         self.target        = Path(launch_config.resume_from).expanduser()
         self.changed       = {}
 
-        if not self.target.is_dir() and not self.target.parent.is_dir():
-            raise FileNotFoundError(f"resume_from points at '{self.target}', which does not exist and has no parent directory to be created in; paste the run directory, the sweep folder or one of its runs")
-
         self.kind, self.root, self.recording = self._locate(trial_sweep, unit)
 
     def _seed_sweep_root(self) -> Path | None:

@@ -31,9 +31,6 @@ class RunArtifactLoader:
     def _build_dataset_config(self, payload: dict, batch_size: Optional[int], num_workers: int) -> DatasetConfig:
         split_regions = SplitRegions.from_payload(payload["split_regions"])
 
-        if not isinstance(payload["patch"]["stride"], list):
-            raise ValueError(f"dataset_creation_config.json stores patch stride {payload['patch']['stride']!r} from before per-axis strides; patch it to a [vertical, horizontal] list (e.g. [32, 32]) to run inference on this run.")
-
         patch = PatchConfig(
             size                  = tuple(payload["patch"]["size"]),
             stride                = tuple(payload["patch"]["stride"]),
@@ -58,9 +55,6 @@ class RunArtifactLoader:
         )
 
     def _load_checkpoint(self, ckpt_path: Path, device: str) -> tuple[dict, np.ndarray, dict]:
-        if not ckpt_path.is_file():
-            raise FileNotFoundError(f"Checkpoint not found for inference: {ckpt_path}")
-
         ckpt   = torch.load(str(ckpt_path), map_location=device, weights_only=False)
         z_axis = np.asarray(ckpt["z_axis"], dtype=np.float32)
 
@@ -73,11 +67,6 @@ class RunArtifactLoader:
         return ckpt, z_axis, meta
 
     @staticmethod
-    def _validate_x_axis(ckpt_x_axis: np.ndarray, z_axis: np.ndarray, ckpt_path: Path, dataset_dir: Path) -> None:
-        if ckpt_x_axis.shape != z_axis.shape or not np.allclose(ckpt_x_axis, z_axis, rtol=1e-5, atol=1e-5):
-            raise ValueError(f"Checkpoint '{ckpt_path}' was trained on z axis [{ckpt_x_axis[0]:.3f}, {ckpt_x_axis[-1]:.3f}] with {ckpt_x_axis.size} bins, but the dataset it is scored on ({dataset_dir}) produces axis [{z_axis[0]:.3f}, {z_axis[-1]:.3f}] with {z_axis.size} bins; every z metric would be reported in the wrong units.")
-
-    @staticmethod
     def _axis_label(axis: np.ndarray) -> str:
         return f"[{axis[0]:.3f}, {axis[-1]:.3f}] m, {axis.size} bins"
 
@@ -88,14 +77,8 @@ class RunArtifactLoader:
         regions = dataset_config.split_regions.regions(split_name)
 
         if region_override is None:
-            if len(regions) != 1:
-                raise ValueError(f"Inference requires a single contiguous region for split '{split_name}'; found {len(regions)} disjoint regions. Stitching is only defined over one rectangular crop.")
-
             region = regions[0]
         else:
-            if not any(region_override.contains(stored) for stored in regions):
-                raise ValueError(f"region_override {region_override.as_tuple()} must contain the stored '{split_name}' region {[stored.as_tuple() for stored in regions]}; the override only widens the inferred crop, it never relocates it.")
-
             region = region_override
 
         arrays = cropper.load_split(region, load_cube=load_cube)

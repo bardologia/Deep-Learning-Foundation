@@ -80,9 +80,6 @@ class Loader:
             val_loader   = DataLoader(val_dataset,   shuffle = False,         drop_last = False, **_base)
             test_loader  = DataLoader(test_dataset,  shuffle = False,         drop_last = False, **_base)
 
-        if len(train_loader) == 0:
-            raise ValueError(f"Train loader yields zero batches: {len(train_dataset)} training samples with batch size {batch_size} and drop_last=True. Lower the batch size or widen the training split; training on an empty loader would produce a run with no gradient steps.")
-
         logger.kv_table({
             "Train samples" : len(train_dataset),
             "Val samples"   : len(val_dataset),

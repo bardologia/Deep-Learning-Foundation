@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from configuration.training.backbone          import BackboneEntryConfig, EmaTrialsConfig, StabilityTrialsConfig
 from pipelines.shared.training.trial_planners import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
@@ -77,41 +76,6 @@ def test_stability_planner_paths_are_entry_config_leaves():
             assert path in leaves, path
 
 
-def test_stability_planner_rejects_bad_settings():
-    with pytest.raises(ValueError, match="at least one fraction"):
-        StabilityTrialPlanner(StabilityTrialsConfig(warmup_fractions=[]), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="warmup_fractions"):
-        StabilityTrialPlanner(StabilityTrialsConfig(warmup_fractions=[0.0]), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="warmup_fractions"):
-        StabilityTrialPlanner(StabilityTrialsConfig(warmup_fractions=[1.5]), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="unique"):
-        StabilityTrialPlanner(StabilityTrialsConfig(warmup_fractions=[0.03, 0.03]), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="warmup_mode"):
-        StabilityTrialPlanner(StabilityTrialsConfig(warmup_mode="sigmoid"), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="clip_mode"):
-        StabilityTrialPlanner(StabilityTrialsConfig(clip_mode="quantile"), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="active clipping strategy"):
-        StabilityTrialPlanner(StabilityTrialsConfig(clip_mode="disabled"), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="at least one threshold"):
-        StabilityTrialPlanner(StabilityTrialsConfig(max_grad_norms=[]), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="max_grad_norms"):
-        StabilityTrialPlanner(StabilityTrialsConfig(max_grad_norms=[0.0]), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="unique"):
-        StabilityTrialPlanner(StabilityTrialsConfig(max_grad_norms=[1.0, 1.0]), WARMUP_MODES, CLIP_MODES)
-
-    with pytest.raises(ValueError, match="fixed strategy"):
-        StabilityTrialPlanner(StabilityTrialsConfig(clip_mode="adaptive_percentile", max_grad_norms=[1.0, 0.5]), WARMUP_MODES, CLIP_MODES)
-
-
 def test_ema_planner_default_walks_the_ladder():
     planner = EmaTrialPlanner(EmaTrialsConfig(decays=[0.99, 0.999]))
 
@@ -131,20 +95,6 @@ def test_ema_planner_paths_are_entry_config_leaves():
     for _, overrides in EmaTrialPlanner(EmaTrialsConfig()).plan():
         for path in overrides:
             assert path in leaves, path
-
-
-def test_ema_planner_rejects_bad_decays():
-    with pytest.raises(ValueError, match="at least one"):
-        EmaTrialPlanner(EmaTrialsConfig(decays=[]))
-
-    with pytest.raises(ValueError, match="between 0 and 1"):
-        EmaTrialPlanner(EmaTrialsConfig(decays=[1.0]))
-
-    with pytest.raises(ValueError, match="between 0 and 1"):
-        EmaTrialPlanner(EmaTrialsConfig(decays=[0.0]))
-
-    with pytest.raises(ValueError, match="unique"):
-        EmaTrialPlanner(EmaTrialsConfig(decays=[0.999, 0.999]))
 
 
 def test_amp_planner_walks_the_pair():

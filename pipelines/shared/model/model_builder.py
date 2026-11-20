@@ -42,8 +42,6 @@ class ModelBuilder:
         config   = registry[model_name]()
 
         if head is not None:
-            if "head" in model_overrides:
-                raise ValueError("Select the head via the dedicated head field, not model_overrides['head']")
             model_overrides = {"head": head, **model_overrides}
 
         for key, suffix in ModelBuilder.GROUP_FANOUTS.items():
@@ -54,15 +52,10 @@ class ModelBuilder:
             uniform         = model_overrides.pop(key)
             group_fields    = [spec.name for spec in fields(config) if spec.name.endswith(suffix)]
 
-            if not group_fields:
-                raise AttributeError(f"Model override '{key}' found no *{suffix} fields on {type(config).__name__}")
-
             for name in group_fields:
                 setattr(config, name, uniform)
 
         for attribute, value in model_overrides.items():
-            if not hasattr(config, attribute):
-                raise AttributeError(f"Unknown model override '{attribute}' for {type(config).__name__}")
             setattr(config, attribute, value)
 
         return config

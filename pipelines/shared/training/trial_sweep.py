@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 from pipelines.shared.inference.metadata       import CompletedInference
-from pipelines.shared.training.ddp_fanout      import DdpDispatch
 from pipelines.shared.training.seed_sweep      import SeedSet
 from pipelines.shared.training.sweep_resume    import SweepResults, SweepResumePlan, SweepResumeRoot
 from tools.orchestration                       import ExperimentStage, GpuJob
@@ -20,14 +19,9 @@ class TrialSweepScheduler:
     MODE_SUBDIRS = {}
 
     def __init__(self, config, cli_overrides: dict, entry_script: Path) -> None:
-        DdpDispatch.reject_trials(config, trial_unit=False)
-
         self.config       = config
         self.entry_script = Path(entry_script)
         self._planner     = None
-
-        if config.trials_mode not in self.MODE_SUBDIRS:
-            raise ValueError(f"Unknown trials_mode '{config.trials_mode}', expected one of {sorted(self.MODE_SUBDIRS)}")
 
         self.resume_plan = None
         self.runs_root   = Path(config.logdir) / self.MODE_SUBDIRS[config.trials_mode]
@@ -124,9 +118,6 @@ class TrialSweepScheduler:
         return [(run_name, overrides) for run_name, overrides in units if run_name not in done]
 
     def trial_argv(self, run_name: str, overrides: dict, batched_inference: bool = False) -> list[str]:
-        if self.staged_inference and not batched_inference:
-            raise ValueError(f"infer_at_end batches inference after every training unit finishes, so '{run_name}' is built with infer_after disabled; the caller must submit the inference pass itself via inference_argv(), or set infer_after instead to run inference inside each unit")
-
         batched = {"infer_after": False} if self.staged_inference else {}
 
         return ConfigCli.to_argv({**self.forward_overrides, **overrides, **batched, **self._unit_overrides(run_name)})
@@ -136,8 +127,6 @@ class TrialSweepScheduler:
             return {"run_name": run_name, "logdir": str(self.runs_root)}
 
         hits = SweepResumeRoot.matches(self.runs_root, run_name)
-        if len(hits) != 1:
-            raise SystemExit(f"unit '{run_name}' matches {len(hits)} run directories under {self.runs_root}: {[str(hit) for hit in hits]}; remove or move the extra ones before resuming")
 
         return {"resume_from": str(hits[0])}
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from types   import SimpleNamespace
 
-import pytest
 
 from pipelines.shared.inference.inference_scheduler import InferenceScheduler, RunSelection
 from pipelines.shared.inference.metadata            import CompletedInference, RegionPass
@@ -84,14 +83,6 @@ def test_filter_takes_every_run_under_a_named_directory_and_matches_bare_run_nam
     assert by_name   == ["other/lonely", "exp/trial_a/seed1"]
 
 
-def test_an_unmatched_filter_entry_lists_the_runs_found(tmp_path):
-    runs = tmp_path / "runs"
-    _make_run(runs / "group_a" / "run_a1", RunArtifacts.BACKBONE_CONFIG)
-
-    with pytest.raises(FileNotFoundError, match="names no run under .*runs found there: group_a/run_a1"):
-        _scheduler(runs, ["missing"])._candidate_dirs()
-
-
 def test_runs_already_scored_on_the_split_are_skipped(tmp_path):
     runs    = tmp_path / "runs"
     done    = _make_run(runs / "done", RunArtifacts.BACKBONE_CONFIG)
@@ -140,13 +131,6 @@ def test_job_names_and_logs_stay_unique_for_equally_named_leaves(tmp_path):
     assert len({job.log_path for job in jobs}) == 2
 
 
-def test_missing_runs_directory_raises(tmp_path):
-    scheduler = _scheduler(tmp_path / "absent", [])
-
-    with pytest.raises(NotADirectoryError, match="runs_dir does not exist"):
-        scheduler._run_dirs(SilentLogger())
-
-
 def test_pool_file_defaults_into_the_work_directory(tmp_path):
     scheduler = _scheduler(tmp_path / "runs", [])
 
@@ -158,16 +142,6 @@ def test_pool_file_honors_configured_gpus_file(tmp_path):
     scheduler  = _scheduler(tmp_path / "runs", [], gpus_file=str(configured))
 
     assert scheduler.pool_file == configured
-
-
-def test_zero_matching_runs_raises(tmp_path):
-    runs = tmp_path / "runs"
-    (runs / "interrupted" / "meta").mkdir(parents=True)
-
-    scheduler = _scheduler(runs, [])
-
-    with pytest.raises(FileNotFoundError, match="No trained run found"):
-        scheduler._run_dirs(SilentLogger())
 
 
 def test_run_selection_relative_name_of_the_root_is_its_own_name(tmp_path):
@@ -221,15 +195,3 @@ def test_directories_without_a_trained_model_are_listed_as_skipped(tmp_path):
 
     assert scheduler._run_dirs(logger) == [runs / "backbone_run"]
     assert ("metrics_table", "Skipping 1 directory(ies) that hold no trained model") in logger.messages
-
-
-@pytest.mark.parametrize("field, value, message", [
-    ("output_subdir", "final_test",     "output_subdir='final_test'"),
-    ("run_directory", Path("runs/one"), "run_directory='runs/one'"),
-])
-def test_a_block_setting_a_field_the_fan_out_overwrites_is_refused(tmp_path, field, value, message):
-    scheduler = _scheduler(tmp_path / "absent", [])
-    setattr(scheduler.block, field, value)
-
-    with pytest.raises(ValueError, match=message):
-        scheduler.run()

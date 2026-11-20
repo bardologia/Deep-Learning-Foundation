@@ -11,24 +11,10 @@ class DatasetQueueResolver:
         self.dataset_filter = dataset_filter
 
     def resolve(self) -> list[Path]:
-        if not isinstance(self.dataset_filter, (list, tuple)):
-            raise TypeError(f"dataset_filter must be a list of dataset names, got {type(self.dataset_filter).__name__}: {self.dataset_filter!r}")
-
-        if not self.base_path.is_dir():
-            raise NotADirectoryError(f"dataset_base_path does not exist: {self.base_path}")
-
         dataset_dirs = sorted(
             [d for d in self.base_path.iterdir() if d.is_dir()]
             if not self.dataset_filter
             else [self.base_path / str(name) for name in self.dataset_filter]
         )
-
-        if not dataset_dirs:
-            raise FileNotFoundError(f"dataset_base_path {self.base_path} holds no dataset directory, so the queue is empty; check that the dataset root exists and that the machine profile points at it")
-
-        invalid = [d for d in dataset_dirs if not (d / "data").is_dir()]
-        if invalid:
-            names = ", ".join(d.name for d in invalid)
-            raise NotADirectoryError(f"Queue entries without a data/ directory under {self.base_path}: {names}")
 
         return dataset_dirs

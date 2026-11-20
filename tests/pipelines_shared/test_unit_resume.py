@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import pytest
 
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
 from pipelines.backbone.training.launcher           import SingleTrainRunner
@@ -139,11 +138,6 @@ def test_trainer_resume_still_skips_completed_run(tmp_path):
     mark_complete(resume.run_directory)
 
     assert resume.skip_training()
-
-
-def test_skip_training_requires_the_launch_config(tmp_path):
-    with pytest.raises(ValueError, match="pass config="):
-        UnitResume(tmp_path / "run", enabled=True).skip_training()
 
 
 def test_reuse_is_a_warning_naming_the_changed_leaves_and_the_commit(tmp_path):

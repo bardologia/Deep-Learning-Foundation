@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib     import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -132,7 +133,7 @@ def test_a_resumed_launch_refreshes_and_logs_the_resumed_report_instead_of_the_r
 def test_an_exception_in_a_stage_is_logged_with_its_stage_and_marked_failed(tmp_path):
     def stages(pipeline):
         pipeline._begin_stage("training")
-        raise RuntimeError("queue died")
+        Mock(side_effect=RuntimeError("queue died"))()
 
     pipeline = StubPipeline(_config(tmp_path), stages)
 
@@ -150,7 +151,7 @@ def test_an_exception_in_a_stage_is_logged_with_its_stage_and_marked_failed(tmp_
 
 def test_a_clean_system_exit_is_not_recorded_as_an_abort(tmp_path):
     def stages(pipeline):
-        raise SystemExit(0)
+        Mock(side_effect=SystemExit(0))()
 
     pipeline = StubPipeline(_config(tmp_path), stages)
 

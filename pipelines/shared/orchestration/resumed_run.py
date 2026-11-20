@@ -21,14 +21,9 @@ class StagedRunLocator:
     def root(cls, resume_from: str) -> Path:
         target = Path(resume_from).expanduser()
 
-        if not target.exists():
-            raise FileNotFoundError(f"resume_from points at '{target}', which does not exist; paste the run directory of the experiment to finish, or any path inside it")
-
         for candidate in (target, *target.parents):
             if cls.config_path(candidate).is_file():
                 return candidate
-
-        raise FileNotFoundError(f"resume_from '{target}' lies in no staged run: no directory at or above it holds {cls.PIPELINE_DIRNAME}/{cls.CONFIG_FILENAME}, which every cross-validation and benchmark launch writes first")
 
 
 class TuningRunLocator(StagedRunLocator):
@@ -41,14 +36,9 @@ class TuningRunLocator(StagedRunLocator):
     def root(cls, resume_from: str) -> Path:
         target = Path(resume_from).expanduser()
 
-        if not target.exists():
-            raise FileNotFoundError(f"resume_from points at '{target}', which does not exist; paste the run directory of the tuning run to continue, or any path inside it")
-
         for candidate in (target, *target.parents):
             if cls.config_path(candidate).is_file():
                 return candidate
-
-        raise FileNotFoundError(f"resume_from '{target}' lies in no tuning run: no directory at or above it holds {cls.CONFIG_FILENAME}, which every tuning launch writes beside its study database")
 
 
 class ResumedRun:

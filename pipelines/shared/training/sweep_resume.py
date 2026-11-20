@@ -29,9 +29,6 @@ class SweepResumeRoot:
     def resolve(cls, resume_from: str, unit_names: list[str]) -> Path:
         target = Path(resume_from).expanduser()
 
-        if not target.is_dir():
-            raise FileNotFoundError(f"resume_from points at '{target}', which does not exist; paste the sweep folder holding the runs, or one of its run directories")
-
         for name in unit_names:
             parts = Path(name).parts
 
@@ -45,8 +42,6 @@ class SweepResumeRoot:
 
         if any(cls.matches(target, name) for name in unit_names):
             return target
-
-        raise SystemExit(f"resume_from '{target}' holds no run directory matching any of the {len(unit_names)} planned units (e.g. '{unit_names[0]}', matched with or without the composed label prefix); paste the sweep folder or one of its runs, with the entry settings matching the original launch")
 
 
 class SweepResumePlan:

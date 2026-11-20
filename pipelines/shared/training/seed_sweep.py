@@ -62,9 +62,6 @@ class SeedSweepRunner:
     def run(self):
         seeds = SeedSet.resolve(self.config.seeds, self.config.seed)
 
-        if len(seeds) > 1:
-            raise ValueError(f"SeedSweepRunner trains exactly one seed, got {seeds}; multi-seed runs fan out across the GPU pool via SeedFanoutScheduler")
-
         config      = deepcopy(self.config)
         config.seed = seeds[0]
         return self.runner_factory(config).run()
@@ -95,16 +92,11 @@ class SeedFanoutScheduler:
     def _resume_run_dir(cls, resume_from: str) -> Path:
         target = Path(resume_from).expanduser()
 
-        if not target.is_dir():
-            raise FileNotFoundError(f"resume_from points at '{target}', which does not exist; paste the sweep base directory holding the seed runs, or one of its seed directories")
-
         if SeedSet.SEED_DIR.fullmatch(target.name):
             return target.parent
 
         if any(child.is_dir() and SeedSet.SEED_DIR.fullmatch(child.name) for child in target.iterdir()):
             return target
-
-        raise SystemExit(f"resume_from '{target}' is neither a seed run directory nor a sweep base directory holding seed runs; paste the base directory whose children are seed<N> runs, or one of those seed directories")
 
     @classmethod
     def for_runner(cls, config, cli_overrides: dict, entry_script: Path, runner_factory: Callable[[object], object], base_label: str | None = None, infer_at_end: bool = False, infer_after: bool = False) -> "SeedFanoutScheduler":

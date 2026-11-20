@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from configuration.cross_validation             import CrossValidationConfig
 from pipelines.shared.orchestration.resumed_run import ResumedRun, StagedRunLocator
@@ -38,15 +37,6 @@ def test_locator_accepts_the_run_directory_and_anything_inside_it(tmp_path):
     assert StagedRunLocator.root(str(run_dir / "folds"))                        == run_dir
     assert StagedRunLocator.root(str(run_dir / "folds" / "resunet_fold_0"))     == run_dir
     assert StagedRunLocator.root(str(StagedRunLocator.config_path(run_dir)))    == run_dir
-
-
-def test_locator_rejects_a_missing_path_and_a_path_outside_any_run(tmp_path):
-    with pytest.raises(FileNotFoundError, match="does not exist"):
-        StagedRunLocator.root(str(tmp_path / "nope"))
-
-    (tmp_path / "plain").mkdir()
-    with pytest.raises(FileNotFoundError, match="lies in no staged run"):
-        StagedRunLocator.root(str(tmp_path / "plain"))
 
 
 def test_resumed_run_loads_the_recorded_configuration_and_points_at_the_run(tmp_path):

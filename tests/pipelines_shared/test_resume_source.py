@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 from configuration.training                        import BackboneEntryConfig
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
@@ -175,13 +174,6 @@ def test_a_directory_without_any_recording_keeps_the_launch_settings(tmp_path):
     assert config is launch
     assert resume.recording is None
     assert any(level == "warning" for level, _ in logger.messages)
-
-
-def test_a_path_without_a_parent_directory_is_refused(tmp_path):
-    launch, cli = _launch(str(tmp_path / "nope" / "unit"))
-
-    with pytest.raises(FileNotFoundError, match="no parent directory"):
-        TrainingResume(BackboneEntryConfig, launch, cli.overrides, trial_sweep=False)
 
 
 def test_sweep_recording_keeps_the_earlier_configuration_when_it_changes(tmp_path):

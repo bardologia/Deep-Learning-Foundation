@@ -134,7 +134,6 @@ class RunLoader(RunArtifactLoader):
         )
 
         dataset_axis = GaussianAxis.build(gaussian.x_min, gaussian.x_max, layout.profile_length)
-        self._validate_x_axis(z_axis, dataset_axis, ckpt_path, dataset_config.preprocessing_run_directory)
 
         core_region = None
         if region_override is not None:

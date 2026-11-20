@@ -31,8 +31,6 @@ class UnitManifest:
     @classmethod
     def read(cls, run_directory: Path) -> dict:
         path = cls.path(run_directory)
-        if not path.is_file():
-            raise FileNotFoundError(f"No unit manifest at {path}; the run was not written by a staged-experiment worker, so its fold, model or seed identity cannot be read back")
 
         return FileIO.load_json(path)
 
@@ -57,8 +55,6 @@ class UnitLedger:
             return
 
         key = self.identity(manifest)
-        if key in self.by_identity:
-            raise ValueError(f"Two run directories under {self.stage_dir} record the same unit identity {key}: {self.by_identity[key]} and {run_dir}; remove or move one of them before resuming")
 
         self.by_identity[key] = run_dir
 

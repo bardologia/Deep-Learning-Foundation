@@ -9,44 +9,6 @@ class StabilityTrialPlanner:
         self.warmup_modes = tuple(warmup_modes)
         self.clip_modes   = tuple(clip_modes)
 
-        self._validate()
-
-    def _validate(self) -> None:
-        fractions = list(self.trials.warmup_fractions)
-        norms     = list(self.trials.max_grad_norms)
-
-        if not fractions:
-            raise ValueError("stability_trials.warmup_fractions must name at least one fraction for the warmup rungs")
-
-        for fraction in fractions:
-            if not 0.0 < fraction <= 1.0:
-                raise ValueError(f"stability_trials.warmup_fractions entry {fraction} must lie in (0, 1]")
-
-        if len(set(fractions)) != len(fractions):
-            raise ValueError(f"stability_trials.warmup_fractions {fractions} must be unique, one warmup rung each")
-
-        if self.trials.warmup_mode not in self.warmup_modes:
-            raise ValueError(f"Unknown stability_trials.warmup_mode '{self.trials.warmup_mode}'; allowed modes are {self.warmup_modes}")
-
-        if self.trials.clip_mode not in self.clip_modes:
-            raise ValueError(f"Unknown stability_trials.clip_mode '{self.trials.clip_mode}'; allowed modes are {self.clip_modes}")
-
-        if self.trials.clip_mode == "disabled":
-            raise ValueError("stability_trials.clip_mode must name an active clipping strategy; 'disabled' would make the clipping rungs identical to the warmup rungs")
-
-        if not norms:
-            raise ValueError("stability_trials.max_grad_norms must name at least one threshold for the clipping rungs")
-
-        for norm in norms:
-            if norm <= 0:
-                raise ValueError(f"stability_trials.max_grad_norms entry {norm} must be positive")
-
-        if len(set(norms)) != len(norms):
-            raise ValueError(f"stability_trials.max_grad_norms {norms} must be unique, one clipping rung each")
-
-        if self.trials.clip_mode != "fixed" and len(norms) > 1:
-            raise ValueError(f"stability_trials.max_grad_norms lists {len(norms)} thresholds but clip_mode '{self.trials.clip_mode}' ignores the threshold, so the clipping rungs would be identical; sweep several norms only under the fixed strategy")
-
     def summary(self) -> dict:
         return {
             "Ladder"     : "none -> +warmup per fraction -> +clip per norm -> +both",
@@ -90,21 +52,6 @@ class EmaTrialPlanner:
 
     def __init__(self, trials) -> None:
         self.trials = trials
-
-        self._validate()
-
-    def _validate(self) -> None:
-        decays = list(self.trials.decays)
-
-        if not decays:
-            raise ValueError("ema_trials.decays must name at least one decay for the EMA-on rungs")
-
-        for decay in decays:
-            if not 0.0 < decay < 1.0:
-                raise ValueError(f"ema_trials.decays entry {decay} must lie strictly between 0 and 1")
-
-        if len(set(decays)) != len(decays):
-            raise ValueError(f"ema_trials.decays {decays} must be unique, one EMA-on rung each")
 
     def summary(self) -> dict:
         return {

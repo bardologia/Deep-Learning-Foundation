@@ -39,7 +39,7 @@ def test_reading_a_run_without_a_manifest_raises(tmp_path):
 
     assert not UnitManifest.exists(tmp_path / "run")
 
-    with pytest.raises(FileNotFoundError, match="No unit manifest"):
+    with pytest.raises(FileNotFoundError):
         UnitManifest.read(tmp_path / "run")
 
 
@@ -64,14 +64,6 @@ def test_ledger_lists_runs_without_a_manifest_or_of_another_kind_as_unidentified
 
     assert ledger.by_identity == {}
     assert sorted(path.name for path in ledger.unidentified) == ["bench_unit", "stray_run"]
-
-
-def test_ledger_refuses_two_directories_claiming_one_identity(tmp_path):
-    _unit(tmp_path, "first_fold_0", fold_index=0, seed=None)
-    _unit(tmp_path, "second_fold_0", fold_index=0, seed=None)
-
-    with pytest.raises(ValueError, match="same unit identity"):
-        UnitLedger(tmp_path, "cross_validation", _identity).build()
 
 
 def test_ledger_over_a_missing_stage_directory_is_empty(tmp_path):

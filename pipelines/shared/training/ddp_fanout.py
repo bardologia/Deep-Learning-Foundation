@@ -50,21 +50,6 @@ class DdpFanout:
         self.rank_starts = {}
 
     @classmethod
-    def _validate(cls, config) -> None:
-        gpus = [int(gpu) for gpu in config.gpus]
-
-        if len(gpus) < 2 or len(set(gpus)) != len(gpus):
-            raise ValueError(f"ddp=True needs at least two distinct devices in gpus, got {config.gpus}; run without ddp for a single-GPU training")
-
-        if config.training.batch_size % len(gpus) != 0:
-            raise ValueError(f"training.batch_size {config.training.batch_size} does not divide across {len(gpus)} DDP ranks; pick a multiple of the rank count so the global batch is preserved exactly")
-
-        probes = {"find_batch_size": config.pretrain.find_batch_size, "tune_loader": config.pretrain.tune_loader, "find_lr": config.pretrain.find_lr}
-        active = [name for name, enabled in probes.items() if enabled]
-        if active:
-            raise ValueError(f"ddp=True cannot run the pre-training probes ({', '.join(active)}): probe outcomes are rank-local and could diverge, desynchronising the rank group; disable the probes or run them once without ddp first")
-
-    @classmethod
     def _mirrors(cls, target: Path) -> dict:
         mirrors = {}
 
@@ -79,24 +64,11 @@ class DdpFanout:
         return mirrors
 
     @classmethod
-    def _validate_resume_group(cls, target: Path, mirrors: dict, n_ranks: int) -> None:
-        expected = set(range(1, n_ranks))
-        found    = set(mirrors)
-
-        if found != expected:
-            raise SystemExit(f"resume_from run '{target.name}' was trained by a different rank group: gpus asks for {n_ranks} ranks, expecting mirror directories for the ranks {sorted(expected)} under {target / 'ddp'}, but the run holds {sorted(path.name for path in mirrors.values()) or 'none'}. A rank without a mirror would train from scratch and desynchronise the gradient averaging; resume with the run's original device count or start a fresh run")
-
-    @classmethod
     def for_runner(cls, config, cli_overrides: dict, entry_script: Path, runner_factory: Callable[[object], object], base_label: str | None = None) -> "DdpFanout":
-        cls._validate(config)
-
         if config.resume_from:
             target = Path(config.resume_from).expanduser()
-            if not target.is_dir():
-                raise FileNotFoundError(f"resume_from points at '{target}', which is not an existing run directory; paste the full path of the run to resume")
 
             mirrors = cls._mirrors(target)
-            cls._validate_resume_group(target, mirrors, len(config.gpus))
 
             config.logdir = target.parent
             config.resume = True
@@ -285,21 +257,6 @@ class DdpFanout:
 
 
 class DdpDispatch:
-
-    @staticmethod
-    def reject_seed_sweep(config, seeds: list[int]) -> None:
-        if config.ddp:
-            raise ValueError(f"ddp=True trains exactly one seed data-parallel, but seeds={seeds}; pin a single seed, or drop ddp to fan the seeds out one GPU each")
-
-    @staticmethod
-    def reject_trials(config, trial_unit: bool) -> None:
-        if not config.ddp:
-            return
-
-        if trial_unit:
-            raise ValueError("ddp=True is not available for a --trial unit: a trial sweep fans its units out one GPU each, so a unit owns a single device; drop --trial to train one data-parallel run, or drop ddp")
-
-        raise ValueError(f"ddp=True trains one run across the gpus devices, but trials_enabled=True schedules the '{config.trials_mode}' sweep, which fans its units out one GPU each; disable the trials to train a single data-parallel run, or drop ddp to run the sweep. Data-parallel training is local-only for now, so a sweep unit never carries it to the cluster either")
 
     @classmethod
     def single_seed(cls, config, cli_overrides: dict, entry_script: Path, runner_factory: Callable[[object], object], base_label: str | None = None) -> bool:

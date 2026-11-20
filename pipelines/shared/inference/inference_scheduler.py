@@ -34,9 +34,6 @@ class RunSelection:
         selected = []
         for name in run_filter:
             hits = [run_dir for run_dir in self.runs if self._matches(run_dir, name)]
-            if not hits:
-                found = ", ".join(self.relative(run_dir) for run_dir in self.runs) or "none"
-                raise FileNotFoundError(f"run_filter entry '{name}' names no run under {self.root}; runs found there: {found}")
             selected.extend(hits)
 
         return list(dict.fromkeys(selected))
@@ -56,17 +53,7 @@ class InferenceScheduler:
         self.pool_file       = GpuPoolFile.resolve(config.gpus_file, self.work_dir)
         self.skipped         = []
 
-    def _check_block(self) -> None:
-        if self.block.output_subdir:
-            raise ValueError(f"The inference block sets output_subdir='{self.block.output_subdir}', but the scheduler names every stamp itself (a timestamp under <run>/inference/, one per run found under runs_dir), so that name would be ignored; leave output_subdir unset.")
-
-        if Path(self.block.run_directory) != Path("."):
-            raise ValueError(f"The inference block sets run_directory='{self.block.run_directory}', but the scheduler replaces it with every run found under runs_dir, so that path would be ignored; leave run_directory at '.' and point runs_dir at the run (or the tree) to score.")
-
     def _root(self) -> Path:
-        if not self.runs_dir.is_dir():
-            raise NotADirectoryError(f"runs_dir does not exist: {self.runs_dir}")
-
         return self.runs_dir
 
     def _candidate_dirs(self) -> list[Path]:
@@ -121,9 +108,6 @@ class InferenceScheduler:
         candidates = self._candidate_dirs()
         matched    = self._trained(candidates, logger)
 
-        if not matched:
-            raise FileNotFoundError(f"No trained run found under {self.runs_dir}: {len(candidates)} candidate director(ies) were walked and none holds meta/{RunArtifacts.BACKBONE_CONFIG}. Check runs_dir.")
-
         column = f"Inference ({self.split})" if self.target is None else f"Inference on {self.target.name}"
         rows   = []
         for directory in matched:
@@ -160,8 +144,6 @@ class InferenceScheduler:
             logger.error(f"{len(failed)} of {len(results)} runs failed; see the per-run logs under {self.work_dir}")
 
     def run(self) -> list[GpuJobResult]:
-        self._check_block()
-
         with Logger(log_dir=str(self.work_dir), name="inference") as logger:
             logger.section("Inference")
 

@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from configuration.dataset                import AugmentationConfig
 from configuration.training               import LossConfig, LossCurriculumConfig, ParamMatching
@@ -20,11 +19,6 @@ def test_loss_tag_lists_enabled_terms_with_weights_param_first():
     loss = _loss(use_param_l1=True, weight_param_l1=1.0, use_cosine_curve=True, weight_cosine_curve=0.05, use_moments=True, weight_moments=0.05)
 
     assert RunNaming.loss_tag(loss) == "param_l1_1-moments_0.05-cosine_curve_0.05"
-
-
-def test_loss_tag_rejects_empty_loss():
-    with pytest.raises(ValueError):
-        RunNaming.loss_tag(_loss())
 
 
 def test_matching_tag_names_the_strategy():

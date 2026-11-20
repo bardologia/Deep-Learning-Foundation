@@ -54,33 +54,13 @@ class Layout:
         if secondary_labels is None:
             return None
 
-        if not self.channel_labels:
-            raise ValueError("Dataset records no channel labels in dataset.json; the dataset must list its channel labels before secondaries can be selected by label.")
-
-        primary     = self.channel_labels[0]
         secondaries = list(self.channel_labels[1:])
         requested   = [str(label) for label in secondary_labels]
-
-        if primary in requested:
-            raise ValueError(f"Channel {primary} is the reference and is always included; remove it from secondary_labels")
-
-        unknown = [label for label in requested if label not in secondaries]
-        if unknown:
-            raise ValueError(f"Unknown secondary labels {unknown}; secondaries are {secondaries}")
-
-        if len(set(requested)) != len(requested):
-            raise ValueError(f"secondary_labels contains duplicates: {requested}")
 
         return [secondaries.index(label) for label in requested]
 
     @classmethod
     def secondary_channel_labels(cls, run_directory) -> list:
         layout_path = Path(run_directory) / cls.LAYOUT_RELPATH
-        if not layout_path.is_file():
-            raise FileNotFoundError(f"{layout_path} does not exist; the dataset's channel labels are read from it, so point paths.dataset_path at a generated dataset")
 
-        channel_labels = FileIO.load_json(layout_path)["channel_labels"]
-        if not channel_labels:
-            raise ValueError(f"{layout_path} records no channel labels; generate the dataset again so its secondary channels can be enumerated")
-
-        return list(channel_labels[1:])
+        return list(FileIO.load_json(layout_path)["channel_labels"][1:])

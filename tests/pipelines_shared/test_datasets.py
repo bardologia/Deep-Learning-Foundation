@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -185,7 +186,7 @@ def _sparse_cube(n_active: int = 4) -> np.ndarray:
 
 def _stack_shim(enabled: set[str], views: dict) -> SimpleNamespace:
     def _refuse(artifact):
-        raise AssertionError(f"the stack read the {artifact} artifact although its group is disabled")
+        Mock(side_effect=AssertionError(f"the stack read the {artifact} artifact although its group is disabled"))()
 
     return SimpleNamespace(
         _group_enabled = lambda flag: flag in enabled,

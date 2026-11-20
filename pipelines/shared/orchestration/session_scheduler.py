@@ -9,8 +9,7 @@ from tools.orchestration.pool import ProcessPoolRunner
 
 class SequentialSessionScheduler:
 
-    EMPTY_MESSAGE : str | None = None
-    SESSION_NOUN  : str        = "sessions"
+    SESSION_NOUN : str = "sessions"
 
     def __init__(self, logger: Logger) -> None:
         self.logger = logger
@@ -32,8 +31,6 @@ class SequentialSessionScheduler:
 
     def run(self) -> dict:
         sessions = self._sessions()
-        if not sessions and self.EMPTY_MESSAGE is not None:
-            raise RuntimeError(self.EMPTY_MESSAGE)
 
         self.logger.subsection(f"Dispatching {len(sessions)} {self.SESSION_NOUN} sequentially")
 
