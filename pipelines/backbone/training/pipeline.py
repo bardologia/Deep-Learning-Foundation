@@ -289,7 +289,7 @@ class TrainingPipeline:
 
         return trainer, dataset, model
 
-    def run(self, probe_config=None, resolved_entry_config=None):
+    def run(self, resolved_entry_config=None):
         self.run_metadata = TrainingRunMetadata(
             trainer_config = self.trainer_config,
             model_name     = self.backbone_name,
@@ -351,7 +351,6 @@ class TrainingPipeline:
 
             trainer = self._make_trainer(model, model_cfg, z_axis, train_dataset.normalizer, self.run_metadata.run_directory, self.logger, writer=self.run_metadata.writer)
 
-            trainer.maybe_run_loss_probe(train_loader, probe_config)
             results = trainer.train(train_loader, val_loader, test_loader)
             self.run_metadata.save_test_metrics(trainer.test_metrics)
 

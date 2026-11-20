@@ -146,23 +146,6 @@ def test_lr_multiplier_raises_when_model_missing(config):
         worker._lr_multiplier("unet")
 
 
-def test_probe_config_is_disabled(config):
-    probe = BenchmarkWorker(config, "tag").config.probe
-
-    assert probe.enabled    is False
-    assert probe.exit_after is True
-
-
-def test_probe_config_is_the_configured_one(config):
-    config.probe.enabled   = True
-    config.probe.n_batches = 7
-
-    probe = BenchmarkWorker(config, "tag").config.probe
-
-    assert probe.enabled   is True
-    assert probe.n_batches == 7
-
-
 def test_max_batch_worker_hands_the_probe_its_model_and_work_dir(config, monkeypatch):
     worker = MaxBatchWorker(config, "tag")
 
@@ -221,7 +204,7 @@ def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data
     class FakePipeline:
         def __init__(self, **kwargs):
             captured.update(kwargs)
-        def run(self, probe_config=None):
+        def run(self):
             return None
 
     monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)
@@ -251,7 +234,7 @@ def test_training_worker_applies_the_probed_lr_multiplier(config, test_data_dir,
     class FakePipeline:
         def __init__(self, **kwargs):
             captured.update(kwargs)
-        def run(self, probe_config=None):
+        def run(self):
             return None
 
     monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)
@@ -279,7 +262,7 @@ def test_training_worker_ignores_the_multiplier_when_the_test_is_disabled(config
     class FakePipeline:
         def __init__(self, **kwargs):
             captured.update(kwargs)
-        def run(self, probe_config=None):
+        def run(self):
             return None
 
     monkeypatch.setattr("pipelines.backbone.training.pipeline.TrainingPipeline", FakePipeline)

@@ -21,7 +21,6 @@ from configuration.training.backbone import (
     LogEnergyTrialsConfig,
     PatchTrialsConfig,
     SecondaryTrialsConfig,
-    LossScaleProbeConfig,
     BackboneTrainerConfig,
     BackboneEntryConfig,
 )

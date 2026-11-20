@@ -248,7 +248,7 @@ class FoldTrainingWorker(CrossValidationWorker):
             prior_bias_init = self.config.prior_bias_init,
         )
 
-        pipeline.run(probe_config=self.config.probe)
+        pipeline.run()
 
     def run(self, fold_index: int, seed: int | None = None, run_name: str | None = None) -> None:
         split_regions = self.factory.planner().plan(fold_index).split_regions

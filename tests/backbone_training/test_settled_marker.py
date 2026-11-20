@@ -27,13 +27,12 @@ def test_backbone_run_writes_settled_marker_before_preflight_and_pipeline(tmp_pa
         resume_from  = None,
         infer_after  = False,
         infer_at_end = False,
-        probe        = None,
         training     = SimpleNamespace(resume=False),
     )
 
     monkeypatch.setattr(SingleTrainRunner, "_resolve_run_name",   lambda self: "unit")
     monkeypatch.setattr(SingleTrainRunner, "_pretrain_preflight", lambda self: probe.observe("preflight", self))
-    monkeypatch.setattr(SingleTrainRunner, "_pipeline",           lambda self, logdir: SimpleNamespace(run=lambda probe_config, resolved_entry_config: probe.observe("pipeline", self)))
+    monkeypatch.setattr(SingleTrainRunner, "_pipeline",           lambda self, logdir: SimpleNamespace(run=lambda resolved_entry_config: probe.observe("pipeline", self)))
 
     runner.run()
 

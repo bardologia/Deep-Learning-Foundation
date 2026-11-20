@@ -5,7 +5,6 @@ import torch
 from torch.utils.data import DataLoader
 
 from pipelines.backbone.training.loss        import Loss
-from pipelines.backbone.training.loss_probe  import LossScaleProbe
 from pipelines.shared.training.curriculum    import CurriculumController
 from pipelines.backbone.training.docs        import TrainingDocs
 from pipelines.backbone.training.diagnostics import ParamSampler, ReconstructionFigures, SlotVitals
@@ -162,16 +161,3 @@ class Trainer(BaseTrainer):
 
     def _trial_callback(self, val_loss: float, epoch: int) -> None:
         pass
-
-    def maybe_run_loss_probe(self, train_loader, probe_config=None) -> None:
-        if probe_config is None or not probe_config.enabled:
-            return
-
-        probe = LossScaleProbe(
-            probe_cfg    = probe_config,
-            loss_cfg     = self.initial_loss_cfg,
-            gaussian_cfg = self.gaussian_cfg,
-            norm_stats   = self.norm_stats,
-            logger       = self.logger,
-        )
-        probe.run(train_loader, self.model, self.device, self.z_axis)

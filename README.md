@@ -358,9 +358,7 @@ earlier recording to `pipeline/config_history/`.
 Resumed seed and trial sweeps of the training entries re-infer every reused unit that
 lacks an inference for the split, sort unfinished units into resumable (a `last.pt` is
 there) and restarting, and keep the earlier launches' entries in their training and
-inference results files. A trial sweep or multi-seed fan-out with the loss-scale probe
-set to exit after its report (`probe.enabled` with `probe.exit_after`) is refused,
-since every unit would stop with nothing trained.
+inference results files.
 
 Inference works the same way from the other side. Point an inference entry at any path
 and it scores every run of its family found below it:

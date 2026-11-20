@@ -357,11 +357,6 @@ class LaunchLayout:
                 {"gate": "enabled", "fields": ["n_examples", "max_steps", "steps_per_epoch", "pass_loss_ratio", "stop_threshold"]},
             ]},
         ],
-        "loss_probe": [
-            {"title": "Loss-scale probe", "fields": [
-                {"gate": "enabled", "fields": ["n_batches", "reference", "exit_after", "enabled_losses"]},
-            ]},
-        ],
     }
 
     TRAIN_ESSENTIALS = [
@@ -526,7 +521,6 @@ class LaunchLayout:
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
                     {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
-                    {"kind": "fields", "title": "Loss-scale probe", "template": "loss_probe", "at": "probe"},
                     {"kind": "fields", "title": "Pre-run tuning", "template": "pretrain", "at": "pretrain"},
                     {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
                 ]},
@@ -589,7 +583,6 @@ class LaunchLayout:
                 ]},
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
-                    {"kind": "fields", "title": "Loss-scale probe", "template": "loss_probe", "at": "probe"},
                     {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
                 ]},
                 {"key": "max-batch", "title": "Max-batch probe", "panels": [
@@ -647,7 +640,6 @@ class LaunchLayout:
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
                     {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
-                    {"kind": "fields", "title": "Loss-scale probe", "template": "loss_probe", "at": "probe"},
                     {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [

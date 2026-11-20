@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass, field
 
 from configuration.dataset                      import AugmentationConfig, InputConfig
 from configuration.normalization.general        import NormalizationConfig
-from configuration.training.backbone            import LossScaleProbeConfig, default_curriculum
+from configuration.training.backbone            import default_curriculum
 from configuration.training.general.loss        import LossConfig
 from configuration.training.general.pretraining import PretrainConfig
 from configuration.training.general.run         import RunPathsConfig, TrainingQueueConfig, standard_seeds
@@ -124,7 +124,6 @@ class BenchmarkConfig:
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
     loss          : LossConfig           = field(default_factory=_default_base_loss)
-    probe         : LossScaleProbeConfig = field(default_factory=LossScaleProbeConfig)
     overfit_check : OverfitCheckConfig   = field(default_factory=OverfitCheckConfig)
 
     gpus            : list[int]  = field(default_factory=lambda: [0])

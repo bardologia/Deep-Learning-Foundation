@@ -126,7 +126,7 @@ class TrainingWorker(BenchmarkWorker):
             overfit_check  = self.config.overfit_check,
         )
 
-        pipeline.run(probe_config=self.config.probe)
+        pipeline.run()
 
     def _apply_probed_overrides(self, model_name: str) -> None:
         measured_batch = self._max_batch_size(model_name)

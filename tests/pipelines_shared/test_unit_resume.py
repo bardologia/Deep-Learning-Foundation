@@ -39,7 +39,6 @@ class _EntryStub:
     logdir       : Path          = Path("")
     infer_after  : bool          = False
     infer_at_end : bool          = False
-    probe        : None          = None
     training     : _TrainingStub = field(default_factory=_TrainingStub)
     pretrain     : _PretrainStub = field(default_factory=_PretrainStub)
 
@@ -301,7 +300,7 @@ class _StubPipeline:
     def __init__(self, config) -> None:
         self.config = config
 
-    def run(self, probe_config=None, resolved_entry_config=None):
+    def run(self, resolved_entry_config=None):
         _StubPipeline.launched.append(self.config.run_name)
         return "trained"
 

@@ -356,7 +356,7 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path
             captured["overfit_check"]   = overfit_check
             captured["prior_bias_init"] = prior_bias_init
 
-        def run(self, probe_config=None):
+        def run(self):
             pass
 
     monkeypatch.setattr(backbone_pipeline_module, "TrainingPipeline", _FakePipeline, raising=True)

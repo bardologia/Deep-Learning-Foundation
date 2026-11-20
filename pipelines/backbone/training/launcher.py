@@ -136,7 +136,7 @@ class SingleTrainRunner:
 
             self._pretrain_preflight()
             pipeline = self._pipeline(self.config.logdir)
-            results  = pipeline.run(probe_config=self.config.probe, resolved_entry_config=self.config)
+            results  = pipeline.run(resolved_entry_config=self.config)
 
         if (self.config.infer_after or self.config.infer_at_end) and not self.unit_resume.skip_inference(self.config.inference.split):
             self._run_inference(self.run_directory)

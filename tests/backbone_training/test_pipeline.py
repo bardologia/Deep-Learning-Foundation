@@ -78,7 +78,7 @@ def test_training_pipeline_end_to_end_produces_checkpoint(test_data_dir, params_
         run_name       = "pipeline_smoke",
     )
 
-    train_losses, val_losses, best_val = pipeline.run(probe_config=None)
+    train_losses, val_losses, best_val = pipeline.run()
 
     run_directory = pipeline.run_metadata.run_directory
 
@@ -103,7 +103,7 @@ def test_training_pipeline_saves_configs(test_data_dir, params_dir, tmp_path):
         run_name       = "pipeline_cfg",
     )
 
-    pipeline.run(probe_config=None)
+    pipeline.run()
 
     meta_dir = pipeline.run_metadata.run_directory / "meta"
     written  = list(meta_dir.glob("*.json")) + list(meta_dir.glob("*.yaml")) + list(meta_dir.glob("*.txt"))
@@ -134,7 +134,7 @@ def test_training_pipeline_overfit_check_gates_and_reports(test_data_dir, params
         overfit_check  = overfit_check,
     )
 
-    train_losses, val_losses, best_val = pipeline.run(probe_config=None)
+    train_losses, val_losses, best_val = pipeline.run()
 
     run_directory = pipeline.run_metadata.run_directory
     report_path   = run_directory / "meta" / "overfit_report.json"
@@ -178,7 +178,7 @@ def test_training_pipeline_overfit_check_abort_leaves_configs(test_data_dir, par
     )
 
     with pytest.raises(RuntimeError, match="Overfit check failed"):
-        pipeline.run(probe_config=None)
+        pipeline.run()
 
     run_directory = pipeline.run_metadata.run_directory
 
@@ -204,7 +204,7 @@ def _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init: b
 @pytest.mark.slow
 def test_training_pipeline_starts_the_conv_head_at_the_training_label_prior(test_data_dir, params_dir, tmp_path):
     pipeline = _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init=True)
-    pipeline.run(probe_config=None)
+    pipeline.run()
 
     record      = FileIO.load_json(pipeline.run_metadata.run_directory / "meta" / "head_prior_bias.json")
     threshold   = pipeline.trainer_config.gaussian.activity_threshold
@@ -227,7 +227,7 @@ def test_training_pipeline_starts_the_conv_head_at_the_training_label_prior(test
 @pytest.mark.slow
 def test_training_pipeline_keeps_the_default_head_bias_when_the_prior_is_off(test_data_dir, params_dir, tmp_path):
     pipeline = _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init=False)
-    pipeline.run(probe_config=None)
+    pipeline.run()
 
     assert (pipeline.run_metadata.run_directory / "meta" / "run_summary.json").is_file()
     assert not (pipeline.run_metadata.run_directory / "meta" / "head_prior_bias.json").exists()
@@ -246,7 +246,7 @@ def test_training_pipeline_records_a_dataset_stage_abort_in_its_run_log(tmp_path
     monkeypatch.setattr(pipeline, "_build_dataset_pipeline", Mock(side_effect=ValueError("dataset stage broke")))
 
     with pytest.raises(ValueError, match="dataset stage broke"):
-        pipeline.run(probe_config=None)
+        pipeline.run()
 
     text = (pipeline.run_metadata.run_directory / "logs" / "resunet_metadata.log").read_text(encoding="utf-8")
 

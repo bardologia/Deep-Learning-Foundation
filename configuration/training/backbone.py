@@ -137,16 +137,6 @@ class EmaTrialsConfig:
 
 
 @dataclass
-class LossScaleProbeConfig:
-
-    enabled        : bool       = False
-    n_batches      : int        = 1000
-    reference      : str | None = "param_l1"
-    exit_after     : bool       = True
-    enabled_losses : dict       = field(default_factory=dict)
-
-
-@dataclass
 class BackboneTrainerConfig:
 
     gaussian         : GaussianConfig
@@ -184,7 +174,6 @@ class BackboneEntryConfig:
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
 
-    probe         : LossScaleProbeConfig = field(default_factory=LossScaleProbeConfig)
     overfit_check : OverfitCheckConfig   = field(default_factory=OverfitCheckConfig)
 
     prior_bias_init : bool = False
