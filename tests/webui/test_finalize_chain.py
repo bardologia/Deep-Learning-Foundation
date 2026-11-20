@@ -101,6 +101,7 @@ def _sweep_tree(root: Path, trials: tuple = ("rung_a", "rung_b")) -> Path:
     for trial in trials:
         (root / trial / "seed0").mkdir(parents=True)
     (root / "batch_train_logs").mkdir()
+    (root / "report").mkdir()
     return root
 
 

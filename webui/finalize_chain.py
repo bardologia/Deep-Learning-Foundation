@@ -14,7 +14,7 @@ class FinalizeChain:
 
     STEPS           = ("compare_seeds", "compare_trials", "mail_experiment_reports")
     MAIL_STEP       = "mail_experiment_reports"
-    SKIP_DIRS       = ("logs", "batch_train_logs")
+    SKIP_DIRS       = ("logs", "batch_train_logs", "report")
     TAGGED_SWEEPS   = {"cross_validate": "folds", "benchmark": "training"}
     STAGING_DIRNAME = "_mailed_reports"
 
