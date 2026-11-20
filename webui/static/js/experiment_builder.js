@@ -597,7 +597,7 @@ class ExperimentBuilder {
 
     const note       = document.createElement("p");
     note.className   = "exp-panel__note";
-    note.textContent = "Cumulative ladder on the shared base config: rung 0 trains without augmentation, rung 1 adds horizontal flips, rung 2 adds vertical flips, and one final rung per noise std adds additive Gaussian input noise on top of both flips; rot90 stays off everywhere and every rung repeats across the seeds list.";
+    note.textContent = "Cumulative ladder on the shared base config: rung 0 trains without augmentation, rung 1 adds horizontal flips, rung 2 adds vertical flips, and one final rung per noise std adds additive normal input noise on top of both flips; rot90 stays off everywhere and every rung repeats across the seeds list.";
 
     const grid     = document.createElement("div");
     grid.className = "exp-panel__grid";

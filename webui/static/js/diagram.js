@@ -870,10 +870,10 @@ class ModelDiagram {
       return (onAxis[0] || winners[0]);
     };
 
-    const sideSet = (all, primary) => {
+    const sideSet = (all, first) => {
       const sides = ["top", "bottom", "left", "right"].filter((s) => all && all[s] > 0);
       sides.sort((a, b) => all[b] - all[a]);
-      return [primary, ...sides.filter((s) => s !== primary)];
+      return [first, ...sides.filter((s) => s !== first)];
     };
 
     const orderFmt = (all, main) => {
