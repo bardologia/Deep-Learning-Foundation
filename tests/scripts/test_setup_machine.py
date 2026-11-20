@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from configuration.reference_layout import ReferenceLayout
 from scripts.setup_machine          import MachineSetup, Prompter, Validators
