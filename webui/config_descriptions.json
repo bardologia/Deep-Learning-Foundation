@@ -609,7 +609,7 @@
         "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "logdir": "Base directory under which this run's output subdirectory and TensorBoard logs are written",
         "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation",
-        "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-channel labels",
+        "paths": "TrainingPathsConfig sub-config holding the dataset directory and whether its files are fingerprinted",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
@@ -812,7 +812,7 @@
         "gpus": "GPU device indices the GpuQueue cycles jobs across, default [0]; one run is launched per free GPU concurrently until the queue drains",
         "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
         "poll_interval_s": "seconds GpuQueue sleeps between reap/launch cycles while jobs are running or queued, default 5.0",
-        "inference": "InferenceConfig used for every worker run, with run_directory replaced per-run, save_cubes=True, cpu_workers=16 and gif_axes=['z','col','row']; all other InferenceConfig fields (split, checkpoint_name, save_plots, etc.) keep their normal defaults",
+        "inference": "InferenceConfig used for every worker run, with run_directory replaced per run; all other InferenceConfig fields (split, checkpoint_name, save_maps, save_plots, etc.) keep their normal defaults",
         "skip_completed": "Whether runs already holding a completed inference stamp for inference.split are left alone, so relaunching over an experiment scores only the runs still missing it; off re-scores every selected run into a fresh timestamped stamp"
       }
     },
@@ -886,7 +886,7 @@
       "summary": "Top-level settings orchestrating a multi-model benchmark sweep through training, inference, and comparison stages",
       "fields": {
         "stage": "portion of the pipeline to run: full does everything, prepare stops after size match and max batch, compare runs the comparison report only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
-        "paths": "RunPathsConfig sub-config holding the dataset, extracted-parameters, and benchmark run/output directories",
+        "paths": "RunPathsConfig sub-config holding the dataset directory and the benchmark run and output directories",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every model in the sweep",
         "inference": "InferenceQueueConfig sub-config for batched inference and diagnostic-artifact output",
         "comparison": "ComparisonReportConfig sub-config controlling the cross-model comparison report",
@@ -921,7 +921,7 @@
         "stage": "portion of the pipeline to run: full does everything, prepare stops after validating the fold plan and writing the resolved config, compare runs the cross-fold reports only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
         "backbone_name": "Backbone architecture identifier resolved via ModelBuilder's registry, e.g. resunet",
         "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation, shared across all folds",
-        "paths": "RunPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and the cross-validation run/output directories",
+        "paths": "RunPathsConfig sub-config holding the dataset directory and the cross-validation run and output directories",
         "folds": "FoldConfig sub-config setting fold count, row-range extent, and the boundary guard band",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every fold's training job",
         "inference": "InferenceQueueConfig sub-config governing the queue that runs per-fold inference jobs after training",
@@ -965,7 +965,7 @@
       "summary": "Entry point wiring an Optuna tuning sweep: model type, resources, data, and nested search/training configs",
       "fields": {
         "stage": "Part of the run to execute. 'prepare' only creates the studies, so trial workers launched separately have something to attach to; 'compare' only writes the best configuration and the study plots of studies the workers filled; 'full' runs the trials between the two, which is what a local launch does",
-        "paths": "RunPathsConfig sub-config holding the dataset/parameters paths, secondary labels, and log/output base directory shared by every trial",
+        "paths": "RunPathsConfig sub-config holding the dataset directory and the log and output base directory shared by every trial",
         "tuning": "TuningConfig sub-config controlling the Optuna search (trial count, epochs, pruning, seeding)",
         "gpus": "list of GPU device indices across which each model's trials are distributed and run in parallel",
         "n_workers": "Trial workers each study is fanned out over. Zero means one worker per device in the GPU pool, which is what a local launch can keep busy at once; a launch whose pool is sized elsewhere sets the count explicitly",
@@ -1132,12 +1132,12 @@
     "diagnostics::ArtifactMailConfig": {
       "summary": "Per-source artifact gathering for a dataset or a training run: resolves the path lists against the source directory, drops whatever the exclusion rules leave out, packs the rest into deflate archives that each stay under the attachment cap, and keeps the source tree inside them so unpacking every archive into one folder rebuilds it",
       "fields": {
-        "source_dir": "dataset folder, parameter-extraction run folder or training run folder whose artifacts are packed",
+        "source_dir": "dataset folder or training run folder whose artifacts are packed",
         "staging_dir": "directory that receives this source's archives; re-gathering deletes the archives of the previous run first",
         "label": "identity of the source in the subject line and the root folder every archived file sits under, also the stem of the archive filenames with the slash replaced by a double underscore",
         "required_paths": "paths relative to the source directory that must exist, each a file or a directory whose whole subtree is taken; a missing one aborts the gathering loudly",
         "optional_paths": "paths relative to the source directory attached when present, each a file or a directory whose whole subtree is taken; a missing one only warns",
-        "excluded_paths": "globs of content never packed, matched against a file's path relative to the source directory, against each of its parent directories and against the bare name of each of them, so 'cubes' drops a directory of that name wherever it sits while 'inference/*/cubes' drops only the ones inside an inference stamp",
+        "excluded_paths": "globs of content never packed, matched against a file's path relative to the source directory, against each of its parent directories and against the bare name of each of them, so 'maps' drops a directory of that name wherever it sits while 'inference/*/maps' drops only the ones inside an inference stamp",
         "excluded_suffixes": "file extensions never packed, matched case-insensitively against the file name, .pt for the checkpoints and .npy for the arrays among them",
         "max_file_mb": "upper bound of one packed file in megabytes, above which the file is left out and named in the left-out table; zero turns the size rule off and packs every file the other two rules keep",
         "max_attachment_mb": "upper bound of one archive in megabytes, measured on the uncompressed sources; keep it under the mail server limit with room for the roughly one third that base64 encoding adds on the wire"
@@ -1165,7 +1165,7 @@
         "dataset_required_paths": "dataset generation outputs that must exist in a dataset, each a file or a directory whose whole subtree is attached; a missing one aborts that dataset loudly",
         "dataset_optional_paths": "dataset generation outputs attached when present; a missing one only warns. The arrays under data/ are deliberately absent from the default: they run to hundreds of megabytes and would need dozens of messages",
         "staging_dir": "directory that receives the gathered files, one subfolder per source; re-gathering overwrites the previous copies and deletes the archives of the previous run",
-        "max_attachment_mb": "upper bound of one archive in megabytes, measured on the uncompressed sources; a run, dataset or parameter run whose artifacts exceed it is split across as many messages as it needs, and a single file above it aborts loudly. Keep it under the mail server limit with room for the roughly one third that base64 encoding adds on the wire",
+        "max_attachment_mb": "upper bound of one archive in megabytes, measured on the uncompressed sources; a run or dataset whose artifacts exceed it is split across as many messages as it needs, and a single file above it aborts loudly. Keep it under the mail server limit with room for the roughly one third that base64 encoding adds on the wire",
         "recipient": "address every message is sent to",
         "sender": "address the messages are sent from, also used as the SMTP login user",
         "smtp_host": "SMTP server the messages are submitted to over SSL, defaults to smtp.gmail.com",
@@ -1184,7 +1184,7 @@
         "split": "Dataset split whose region provides the real input stack the probes are cut from",
         "device": "Torch device the model and probe windows run on; cpu is enough since only a handful of windows are evaluated",
         "checkpoint_name": "Checkpoint filename loaded from each run directory and used as the run-discovery marker",
-        "output_subdir": "Name of the output directory created inside each run directory for the gradient cube, summary JSON, figures and markdown report",
+        "output_subdir": "Name of the output directory created inside each run directory for the gradient maps, summary JSON, figures and markdown report",
         "window": "Side length in pixels of the square probe window cut around each probe pixel; must fit inside the split region and bound all mass_windows",
         "n_row_probes": "Number of probe pixels along row, spread evenly across the split region with a window/2 margin",
         "n_col_probes": "Number of probe pixels along range, spread evenly across the split region with a window/2 margin",
