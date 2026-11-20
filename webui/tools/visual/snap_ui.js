@@ -26,7 +26,6 @@ class UiSnapper {
       else if (a === "--settle") this.settle = Number(argv[++i]);
       else if (a === "--width")  this.width  = Number(argv[++i]);
       else if (a === "--height") this.height = Number(argv[++i]);
-      else if (a.startsWith("--")) throw new Error("unknown flag: " + a);
       else this.routes.push(a);
     }
   }

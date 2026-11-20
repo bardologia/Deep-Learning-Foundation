@@ -21,7 +21,6 @@ class ExperimentSnapper {
       if      (a === "--port")   this.port   = Number(argv[++i]);
       else if (a === "--out")    this.outDir = path.resolve(argv[++i]);
       else if (a === "--settle") this.settle = Number(argv[++i]);
-      else if (a.startsWith("--")) throw new Error("unknown flag: " + a);
       else this.routes.push(a);
     }
   }

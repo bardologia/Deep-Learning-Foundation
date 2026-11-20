@@ -15,9 +15,6 @@ class ChromiumResolver {
   }
 
   candidates() {
-    if (!fs.existsSync(this.CACHE_ROOT))
-      throw new Error("no playwright cache at " + this.CACHE_ROOT + " (run 'npx playwright-core install chromium', or set PW_CHROMIUM)");
-
     return fs.readdirSync(this.CACHE_ROOT)
              .filter(d => d.startsWith("chromium"))
              .sort((a, b) => this.buildNumber(b) - this.buildNumber(a));
@@ -32,7 +29,6 @@ class ChromiumResolver {
         if (fs.existsSync(exe)) return exe;
       }
     }
-    throw new Error("no chromium found under " + this.CACHE_ROOT + " (set PW_CHROMIUM)");
   }
 }
 
