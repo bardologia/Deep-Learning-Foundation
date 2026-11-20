@@ -1,9 +1,9 @@
 # ML-Template
 
-A project skeleton for supervised deep learning, lifted out of a working research
-codebase. It carries the configuration layer, the dataset, training and inference
-pipelines, the experiment and analysis entry points, a local web console and about 6700
-tests. The domain code is gone; what is left is the machinery around a model.
+A project skeleton for supervised deep learning. It carries the configuration layer, the
+dataset, training and inference pipelines, the experiment and analysis entry points, a
+local web console and about 3500 tests, with a small synthetic dense regression task as
+the worked example: the machinery around a model, ready for your data.
 
 The example task is dense per-pixel regression on a 2-D grid: a few float input channels
 in, a few float target channels out, every target pixel a known nonlinear and spatially
@@ -536,7 +536,7 @@ pipelines/      the pipelines behind the entry points
 models/         backbones and their shared blocks
 tools/          shared components (logger, training, metrics, monitoring)
 webui/          the control console, stdlib HTTP server plus static frontend
-tests/          about 6700 tests, self-contained
+tests/          about 3500 tests, self-contained
 scripts/        maintenance utilities and the setup wizard
 notes/          model and design notes, read by the console
 datasets/       generated example datasets, gitignored
