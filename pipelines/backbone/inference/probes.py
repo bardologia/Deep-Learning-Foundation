@@ -13,6 +13,13 @@ class ModelDevice:
         return parameters[0].device if parameters else torch.device("cpu")
 
 
+class WeightedError:
+
+    @staticmethod
+    def mse(predictions: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor) -> float:
+        return float((((predictions - targets) ** 2) * weights).sum()) / (float(weights.sum()) * predictions.shape[1])
+
+
 class ProbeWindows:
 
     def __init__(self, run, window: int) -> None:

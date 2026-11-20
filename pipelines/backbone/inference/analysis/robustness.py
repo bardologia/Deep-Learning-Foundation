@@ -9,21 +9,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from pipelines.backbone.inference.analysis.input_attribution import ChannelGroups, TrackChannels
-from pipelines.backbone.inference.analysis.run_batch         import AnalysisOutcome, AnalysisRun, RunBatch
-from pipelines.backbone.inference.probes                     import PredictionCurves
-from tools.data.io                                           import FileIO
-from tools.reporting.markdown                                import MarkdownDoc, MarkdownTable
-from tools.reporting.plotting                                import PlotBase
+from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
+from pipelines.backbone.inference.probes             import ModelDevice, WeightedError
+from tools.data.io                                   import FileIO
+from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
+from tools.reporting.plotting                        import PlotBase
 
 
 class RobustnessCore:
 
     TOLERANCE_FACTOR = 2.0
 
-    def __init__(self, model, renderer: PredictionCurves, on_sweep, seed: int = 0) -> None:
+    def __init__(self, model, on_sweep, seed: int = 0) -> None:
         self.model    = model
-        self.renderer = renderer
+        self.device   = ModelDevice.of(model)
         self.on_sweep = on_sweep
         self.rng      = np.random.default_rng(seed)
 
@@ -36,16 +35,15 @@ class RobustnessCore:
         return len(set(list(factors) + [1.0]))
 
     @staticmethod
-    def drop_sweeps(n_secondaries: int, draws: int) -> int:
-        return 1 + sum(min(draws, math.comb(n_secondaries, n_dropped)) for n_dropped in range(1, n_secondaries + 1))
+    def drop_sweeps(n_channels: int, draws: int) -> int:
+        return 1 + sum(min(draws, math.comb(n_channels, n_dropped)) for n_dropped in range(1, n_channels + 1))
 
-    def _mse(self, batches: list[tuple[torch.Tensor, np.ndarray]], transform) -> float:
-        total = 0.0
-        for images, gt_curves in batches:
-            perturbed = transform(images)
-            with torch.no_grad():
-                curves = self.renderer.render(self.model(perturbed))
-            total += float(((curves - gt_curves) ** 2).mean())
+    def _predict(self, images: torch.Tensor) -> torch.Tensor:
+        with torch.no_grad():
+            return self.model(images.to(self.device))
+
+    def _mse(self, batches: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]], transform) -> float:
+        total = sum(WeightedError.mse(self._predict(transform(images)), targets.to(self.device), weights.to(self.device)) for images, targets, weights in batches)
 
         self.on_sweep()
 
@@ -82,23 +80,21 @@ class RobustnessCore:
 
         return rows
 
-    def drop_curve(self, batches: list, per_track: list[list[int]], draws: int) -> list[dict]:
-        n_tracks = len(per_track)
-        rows     = []
+    def drop_curve(self, batches: list, n_channels: int, draws: int) -> list[dict]:
+        rows = []
 
-        for n_dropped in range(n_tracks + 1):
+        for n_dropped in range(n_channels + 1):
             if n_dropped == 0:
                 rows.append({"dropped": 0, "mse": self._mse(batches, lambda images: images), "mse_std": None})
                 continue
 
-            n_draws = min(draws, math.comb(n_tracks, n_dropped))
+            n_draws = min(draws, math.comb(n_channels, n_dropped))
             values  = []
 
             for _draw in range(n_draws):
-                chosen   = self.rng.choice(n_tracks, size=n_dropped, replace=False)
-                channels = [index for track in chosen for index in per_track[track]]
+                channels = self.rng.choice(n_channels, size=n_dropped, replace=False)
 
-                def transform(images, channels=tuple(channels)):
+                def transform(images, channels=tuple(int(channel) for channel in channels)):
                     occluded = images.clone()
                     occluded[:, list(channels)] = 0.0
                     return occluded
@@ -115,13 +111,11 @@ class RobustnessCore:
             s     = int(shift)
             total = 0.0
 
-            for images, _gt_curves in batches:
-                with torch.no_grad():
-                    base    = self.renderer.render(self.model(images))
-                    shifted = self.renderer.render(self.model(torch.roll(images, s, dims=2)))
-
-                expected = np.roll(base, s, axis=-2)
-                total   += float(((expected[..., s:, :] - shifted[..., s:, :]) ** 2).mean())
+            for images, _targets, _weights in batches:
+                base     = self._predict(images)
+                shifted  = self._predict(torch.roll(images, s, dims=2))
+                expected = torch.roll(base, s, dims=2)
+                total   += float(((expected[:, :, s:] - shifted[:, :, s:]) ** 2).mean())
 
             rows.append({"shift": s, "mse": total / len(batches)})
             self.on_sweep()
@@ -163,10 +157,10 @@ class RobustnessPlots(PlotBase):
         ax.axvline(tolerance["sigma"], color=self.OKABE_ITO[3], linestyle=":", linewidth=1.1)
         ax.annotate(f"tolerance σ {suffix} {tolerance['sigma']:.2f}", xy=(tolerance["sigma"], 0.97), xycoords=("data", "axes fraction"), xytext=(4, 0), textcoords="offset points", fontsize=7, color="0.25", va="top")
 
-        ax.set_xlabel("Added noise sigma [normalized input units]")
-        ax.set_ylabel("Curve MSE")
+        ax.set_xlabel("Added noise sigma (normalized input units)")
+        ax.set_ylabel("Weighted MSE (normalized target units)")
         ax.set_yscale("log")
-        ax.set_title("Degradation under input noise by channel scope")
+        ax.set_title("Degradation under input noise by channel")
         ax.grid(True, alpha=0.3)
         ax.legend(loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False, fontsize=8)
         fig.tight_layout()
@@ -184,7 +178,7 @@ class RobustnessPlots(PlotBase):
 
         ax.set_xscale("log", base=2)
         ax.set_xlabel("Global input gain factor")
-        ax.set_ylabel("Curve MSE")
+        ax.set_ylabel("Weighted MSE (normalized target units)")
         ax.set_yscale("log")
         ax.set_title("Degradation under calibration (gain) error")
         ax.grid(True, alpha=0.3)
@@ -206,10 +200,10 @@ class RobustnessPlots(PlotBase):
         ax.axhline(ys[0], color="0.4", linestyle="--", linewidth=1.0, label="clean loss")
 
         ax.set_xticks(xs)
-        ax.set_xlabel("Tracks dropped (secondary + derived channel zeroed)")
-        ax.set_ylabel("Curve MSE")
+        ax.set_xlabel("Input channels dropped (set to zero in normalized units)")
+        ax.set_ylabel("Weighted MSE (normalized target units)")
         ax.set_yscale("log")
-        ax.set_title("Degradation under track dropout (± spread across subsets)")
+        ax.set_title("Degradation under channel dropout (spread across subsets)")
         ax.grid(True, alpha=0.3)
         ax.legend(loc="lower right", fontsize=8, framealpha=0.9)
         fig.tight_layout()
@@ -222,11 +216,11 @@ class RobustnessPlots(PlotBase):
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
 
         ax.plot([row["shift"] for row in rows], [row["mse"] for row in rows], marker="o", color=self.OKABE_ITO[2], linewidth=1.4, label="shift inconsistency")
-        ax.axhline(clean, color="0.4", linestyle="--", linewidth=1.0, label="clean loss vs GT")
+        ax.axhline(clean, color="0.4", linestyle="--", linewidth=1.0, label="clean loss against the targets")
 
         ax.set_xticks([row["shift"] for row in rows])
-        ax.set_xlabel("Row shift [px]")
-        ax.set_ylabel("Curve MSE between shifted predictions")
+        ax.set_xlabel("Row shift (pixels)")
+        ax.set_ylabel("MSE between shifted predictions")
         ax.set_yscale("log")
         ax.set_title("Shift-equivariance error")
         ax.grid(True, alpha=0.3)
@@ -241,27 +235,12 @@ class RobustnessRun(AnalysisRun):
     SUMMARY_FILENAME = "robustness.json"
     REPORT_FILENAME  = "robustness.md"
 
-    def _batches(self, run, renderer: PredictionCurves) -> list[tuple[torch.Tensor, np.ndarray]]:
-        batches = []
-        for index, batch in enumerate(run.loader):
-            if index >= self.config.max_batches:
-                break
-            gt_phys = run.dataset.normalizer.denormalize_output(batch[1].float()).numpy()
-            batches.append((batch[0], renderer.render(gt_phys)))
+    def _batches(self, run) -> list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+        return [batch for _, batch in zip(range(self.config.max_batches), run.loader)]
 
-        return batches
-
-    def _noise_scopes(self, run) -> dict[str, list[int] | None]:
-        groups = ChannelGroups.build(run)
-        scopes = {"all channels": None}
-
-        amplitude = groups.get("primary", []) + groups.get("secondaries", [])
-        if amplitude:
-            scopes["amplitude channels"] = amplitude
-        if "derived" in groups:
-            scopes["derived"] = groups["derived"]
-
-        return scopes
+    @staticmethod
+    def _noise_scopes(run) -> dict[str, list[int] | None]:
+        return {"all channels": None, **{name: [index] for index, name in enumerate(run.input_channels)}}
 
     def _write_report(self, run, results: dict, figures: dict[str, Path], n_batches: int) -> Path:
         clean     = results["noise"]["all channels"][0]["mse"]
@@ -269,13 +248,13 @@ class RobustnessRun(AnalysisRun):
 
         doc = MarkdownDoc(title=f"Robustness: {run.backbone_name}")
         doc.paragraph(
-            f"Curve-MSE degradation on {n_batches} '{self.config.split}' batches under four controlled stresses. "
-            f"Gaussian noise is added to the normalized inputs (averaged over {self.config.noise_draws} draws), either on all channels or restricted to one channel "
-            "family, which separates amplitude fragility from derived-phase fragility. The gain sweep scales every input by a global factor, probing calibration "
-            "error. Track dropout zeroes whole tracks (secondary and derived channels), averaged over up to "
-            f"{self.config.draws_per_count} random track subsets per count, capped at the number of distinct subsets; counts with a single possible subset report no spread. "
-            "Shift equivariance circularly shifts the input along row and compares the equally shifted prediction on the unwrapped rows: a dense per-pixel model "
-            "should predict the same profile for the same pixel, so this error isolates positional dependence. "
+            f"Degradation of the pixel-weighted MSE of the normalized prediction on {n_batches} '{self.config.split}' batches under four controlled stresses. "
+            f"Gaussian noise is added to the normalized inputs (averaged over {self.config.noise_draws} draws), either on all channels or on one input channel at a time, "
+            "which shows which channels the model is fragile to. The gain sweep scales every input by a global factor, probing calibration "
+            "error. Channel dropout sets input channels to zero, averaged over up to "
+            f"{self.config.draws_per_count} random channel subsets per count, capped at the number of distinct subsets; counts with a single possible subset report no spread. "
+            "Shift equivariance circularly shifts the input along rows and compares the equally shifted prediction on the unwrapped rows: a dense per-pixel model "
+            "should predict the same value for the same pixel, so this error isolates positional dependence. "
             f"The noise tolerance is the interpolated sigma at which the loss doubles: σ {'≥' if tolerance['censored'] else '='} {tolerance['sigma']:.2f}."
         )
 
@@ -283,7 +262,7 @@ class RobustnessRun(AnalysisRun):
         gain_label = "Gain " + " / ".join(f"{row['gain']:g}" for row in extremes) + " MSE"
 
         doc.kv_table({
-            "Clean curve MSE"   : f"{clean:.4g}",
+            "Clean MSE"         : f"{clean:.4g}",
             "Noise tolerance σ" : f"{'≥ ' if tolerance['censored'] else ''}{tolerance['sigma']:.2f}",
             gain_label          : " / ".join(f"{row['mse']:.4g}" for row in extremes),
         })
@@ -299,21 +278,20 @@ class RobustnessRun(AnalysisRun):
         doc.table(noise_table)
 
         doc.heading("Gain error", level=2)
-        gain_table = MarkdownTable(("Gain factor", "Curve MSE"))
+        gain_table = MarkdownTable(("Gain factor", "MSE"))
         for row in results["gain"]:
             gain_table.add_row(f"{row['gain']:.2f}", f"{row['mse']:.4g}")
         doc.table(gain_table)
 
-        if results["drop"] is not None:
-            doc.heading("Track dropout", level=2)
-            drop_table = MarkdownTable(("Tracks dropped", "Curve MSE", "± across draws"))
-            for row in results["drop"]:
-                spread = row.get("mse_std")
-                drop_table.add_row(str(row["dropped"]), f"{row['mse']:.4g}", f"{spread:.2g}" if spread is not None else "n/a")
-            doc.table(drop_table)
+        doc.heading("Channel dropout", level=2)
+        drop_table = MarkdownTable(("Channels dropped", "MSE", "Spread across draws"))
+        for row in results["drop"]:
+            spread = row.get("mse_std")
+            drop_table.add_row(str(row["dropped"]), f"{row['mse']:.4g}", f"{spread:.2g}" if spread is not None else "n/a")
+        doc.table(drop_table)
 
         doc.heading("Shift equivariance", level=2)
-        shift_table = MarkdownTable(("Row shift [px]", "Consistency MSE"))
+        shift_table = MarkdownTable(("Row shift (pixels)", "Consistency MSE"))
         for row in results["shift"]:
             shift_table.add_row(str(row["shift"]), f"{row['mse']:.4g}")
         doc.table(shift_table)
@@ -325,25 +303,22 @@ class RobustnessRun(AnalysisRun):
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
     def _analyse(self, run) -> AnalysisOutcome:
-        renderer = PredictionCurves(run.n_gaussians, run.z_axis)
-        batches  = self._batches(run, renderer)
-
-        sigmas        = list(self.config.noise_sigmas)
-        scopes        = self._noise_scopes(run)
-        shifts        = [int(s) for s in self.config.shift_pixels]
-        per_secondary = TrackChannels.build(run) if run.dataset.input_config.use_secondaries or run.dataset.input_config.use_derived else None
+        batches = self._batches(run)
+        sigmas  = list(self.config.noise_sigmas)
+        scopes  = self._noise_scopes(run)
+        shifts  = [int(s) for s in self.config.shift_pixels]
 
         planned = {
             "noise"   : len(scopes) * RobustnessCore.noise_sweeps(sigmas, self.config.noise_draws),
             "gain"    : RobustnessCore.gain_sweeps(list(self.config.gain_factors)),
-            "dropout" : RobustnessCore.drop_sweeps(len(per_secondary), self.config.draws_per_count) if per_secondary is not None else 0,
+            "dropout" : RobustnessCore.drop_sweeps(run.in_channels, self.config.draws_per_count),
             "shift"   : len(shifts),
         }
         self.logger.info(f"{self.run_dir.name}: {sum(planned.values())} sweeps over {len(batches)} batches planned (" + ", ".join(f"{stress} {count}" for stress, count in planned.items()) + ")")
 
         with self.logger.track() as progress:
             task = progress.add_task("[section]Robustness sweeps[/section]", total=sum(planned.values()))
-            core = RobustnessCore(run.model, renderer, functools.partial(progress.advance, task), seed=self.config.seed)
+            core = RobustnessCore(run.model.module, functools.partial(progress.advance, task), seed=self.config.seed)
 
             with self.logger.timer(f"Robustness: noise ({planned['noise']} sweeps)"):
                 noise = {scope: core.noise_curve(batches, sigmas, channels=channels, draws=self.config.noise_draws) for scope, channels in scopes.items()}
@@ -351,10 +326,8 @@ class RobustnessRun(AnalysisRun):
             with self.logger.timer(f"Robustness: gain ({planned['gain']} sweeps)"):
                 gain = core.gain_curve(batches, list(self.config.gain_factors))
 
-            drop = None
-            if per_secondary is not None:
-                with self.logger.timer(f"Robustness: dropout ({planned['dropout']} sweeps)"):
-                    drop = core.drop_curve(batches, per_secondary, self.config.draws_per_count)
+            with self.logger.timer(f"Robustness: dropout ({planned['dropout']} sweeps)"):
+                drop = core.drop_curve(batches, run.in_channels, self.config.draws_per_count)
 
             with self.logger.timer(f"Robustness: shift ({planned['shift']} sweeps)"):
                 shift = core.shift_consistency(batches, shifts)
@@ -367,9 +340,8 @@ class RobustnessRun(AnalysisRun):
             "noise" : plots.noise_curves(noise, clean, tolerance, self.output_dir / "noise.png"),
             "gain"  : plots.gain_curve(gain, clean, self.output_dir / "gain.png"),
             "shift" : plots.shift_curve(shift, clean, self.output_dir / "shift.png"),
+            "drop"  : plots.drop_curve(drop, self.output_dir / "drop.png"),
         }
-        if drop is not None:
-            figures["drop"] = plots.drop_curve(drop, self.output_dir / "drop.png")
 
         results = {"noise": noise, "noise_tolerance": tolerance, "gain": gain, "drop": drop, "shift": shift}
 

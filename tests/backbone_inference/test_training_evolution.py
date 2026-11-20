@@ -15,12 +15,9 @@ from tests.conftest                    import SilentLogger
 
 
 def test_evolution_frame_renders_an_image():
-    frames = EvolutionFrames()
-    z_axis = np.linspace(-10.0, 30.0, 24)
-    gt     = np.exp(-((z_axis - 10.0) ** 2) / 8.0)
-    pred   = 0.5 * gt
+    prediction = np.random.default_rng(0).normal(size=(12, 16))
 
-    image = frames.frame(z_axis, gt, pred, epoch=5, ylim=1.5)
+    image = EvolutionFrames().frame(prediction, "pointwise", epoch=5, vmin=-2.0, vmax=2.0)
 
     assert image.size[0] > 100 and image.size[1] > 100
     assert image.mode == "RGB"
@@ -47,9 +44,10 @@ def test_evolution_pass_announces_tracks_and_times_replay_and_frames(tmp_path, t
     for epoch in (1, 2):
         shutil.copy(run_dir / "best_model.pt", run_dir / "checkpoints" / f"epoch_{epoch:04d}.pt")
 
-    logger = StageLogger()
-    TrainingEvolutionRun(run_dir, TrainingEvolutionConfig(window=32, n_row_probes=2, n_col_probes=1), logger).run()
+    logger  = StageLogger()
+    outcome = TrainingEvolutionRun(run_dir, TrainingEvolutionConfig(batch_size=4), logger).run()
 
-    assert ("info", f"{run_dir.name}: replaying 2 snapshots (epoch_0001 .. epoch_0002) at 2 probe pixels, then rendering 4 frames") in logger.messages
-    assert logger.totals == [2, 4] and logger.advances == 6
+    assert ("info", f"{run_dir.name}: replaying 2 snapshots (epoch_0001 .. epoch_0002) over the 'test' split") in logger.messages
     assert logger.timers == ["Training evolution: snapshot replay (2 snapshots)", "Training evolution: frame rendering (4 frames)"]
+    assert outcome.payload["epochs"] == [2, 2]
+    assert sorted(path.name for path in (run_dir / "training_evolution").glob("*.gif")) == ["evolution_neighbourhood.gif", "evolution_pointwise.gif"]

@@ -9,7 +9,6 @@ import numpy as np
 import torch
 
 from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
-from pipelines.backbone.inference.probes             import PredictionCurves
 from tools.data.io                                   import FileIO
 from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
 from tools.reporting.plotting                        import PlotBase
@@ -136,7 +135,7 @@ class LossLandscapePlots(PlotBase):
         ax.axhline(CutDiagnostics.RADIUS_FACTOR * max(center, 1e-12), color="0.4", linestyle=":", linewidth=1.0, label=f"{CutDiagnostics.RADIUS_FACTOR:.0f}× centre loss")
 
         ax.set_xlabel("Step along the direction (filter-normalized)")
-        ax.set_ylabel("Curve MSE")
+        ax.set_ylabel("Weighted MSE (normalized target units)")
         ax.set_yscale("log")
         ax.set_title("Loss cuts along random filter-normalized directions")
         ax.grid(True, alpha=0.3)
@@ -162,7 +161,7 @@ class LossLandscapePlots(PlotBase):
         ax.set_xlabel("Direction 1 (filter-normalized)")
         ax.set_ylabel("Direction 0 (filter-normalized)")
         ax.set_title("Loss landscape around the trained weights")
-        fig.colorbar(filled, ax=ax, fraction=0.045, pad=0.02).set_label("Curve MSE")
+        fig.colorbar(filled, ax=ax, fraction=0.045, pad=0.02).set_label("Weighted MSE (normalized target units)")
         fig.tight_layout()
 
         return self._save(fig, path)
@@ -173,25 +172,22 @@ class LossLandscapeRun(AnalysisRun):
     SUMMARY_FILENAME = "loss_landscape.json"
     REPORT_FILENAME  = "loss_landscape.md"
 
-    def __init__(self, run_dir: Path, config, logger) -> None:
-        super().__init__(run_dir, config, logger)
-
     def _loss_fn(self, run):
-        renderer = PredictionCurves(run.n_gaussians, run.z_axis)
-        batches  = []
-
-        for index, batch in enumerate(run.loader):
-            if index >= self.config.max_batches:
-                break
-            gt_phys = run.dataset.normalizer.denormalize_output(batch[1].float()).numpy()
-            batches.append((batch[0], renderer.render(gt_phys)))
+        module  = run.model.module
+        device  = run.model.device
+        batches = [batch for _, batch in zip(range(self.config.max_batches), run.loader)]
 
         def evaluate() -> float:
-            total = 0.0
-            for images, gt_curves in batches:
-                pred_curves = renderer.render(run.model(images))
-                total      += float(((pred_curves - gt_curves) ** 2).mean())
-            return total / len(batches)
+            total, mass = 0.0, 0.0
+
+            with torch.no_grad():
+                for inputs, targets, weights in batches:
+                    error  = (module(inputs.to(device)) - targets.to(device)) ** 2
+                    pixel  = weights.to(device)
+                    total += float((error * pixel).sum())
+                    mass  += float(pixel.sum()) * error.shape[1]
+
+            return total / mass
 
         return evaluate, len(batches)
 
@@ -224,11 +220,11 @@ class LossLandscapeRun(AnalysisRun):
 
         doc = MarkdownDoc(title=f"Loss landscape: {run.backbone_name}")
         doc.paragraph(
-            f"Curve-MSE landscape around the trained weights along {len(diagnostics)} filter-normalized random directions (Li et al. 2018 convention), "
+            f"Weighted MSE landscape around the trained weights along {len(diagnostics)} filter-normalized random directions (Li et al. 2018 convention), "
             f"evaluated on {n_batches} '{self.config.split}' batches. Sharpness is the relative loss increase within ±{CutDiagnostics.SHARPNESS_RADIUS} of the centre; "
             f"curvature is the normalized quadratic coefficient fitted within ±{CutDiagnostics.CURVATURE_RADIUS}; the flatness radius is the interpolated step at which the loss "
             f"doubles (censored at the sampled span when it never does); the minimum offset flags cuts whose sampled minimum is not the trained point. "
-            "The objective is the physical curve MSE, not the training loss, so runs with different loss configurations stay comparable. "
+            "The objective is the pixel-weighted mean squared error of the normalized prediction over every target channel, not the training loss, so runs with different loss configurations stay comparable. "
             "A cut holding a non-finite loss is left out of the summary and listed with the steps where the perturbed model diverged."
         )
 

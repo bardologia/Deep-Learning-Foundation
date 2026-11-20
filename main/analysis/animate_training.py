@@ -15,7 +15,7 @@ def main() -> None:
     from tools.runtime.config_cli                                 import ConfigCli
     from tools.monitoring.logger                                  import Logger
 
-    cli    = ConfigCli(TrainingEvolutionConfig(), description="Animate how a backbone run learned: re-predict probe pixels from every epoch snapshot saved during training (snapshot_every_n_epochs > 0) and render one GIF per pixel of the prediction converging onto the fixed ground truth; GIFs, JSON and a markdown report land inside each run directory")
+    cli    = ConfigCli(TrainingEvolutionConfig(), description="Animate how a backbone run learned: re-predict the split from every epoch snapshot saved during training (snapshot_every_n_epochs > 0) and render one GIF per target channel with the RMSE of every snapshot; GIFs, JSON and a markdown report land inside each run directory")
     config = cli.apply()
 
     with Logger(log_dir="logs", name="animate_training") as logger:

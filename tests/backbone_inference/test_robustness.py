@@ -5,43 +5,48 @@ import numpy as np
 import pytest
 import torch
 
-from configuration.diagnostics                               import RobustnessConfig
-from pipelines.backbone.inference.analysis.input_attribution import TrackChannels
-from pipelines.backbone.inference.analysis.robustness        import RobustnessCore, RobustnessRun
-from pipelines.backbone.inference.probes                     import PredictionCurves
-
 from types import SimpleNamespace
+
+from configuration.diagnostics                        import RobustnessConfig
+from pipelines.backbone.inference.analysis.robustness import RobustnessCore, RobustnessRun
 
 from tests.backbone_inference._helpers import StageLogger, build_run_directory
 from tests.conftest                    import SilentLogger
 
 
-H, W, N_Z = 8, 8, 10
+H, W = 8, 8
 
 
-def _model(images):
-    x      = np.asarray(images, dtype=np.float32)
-    params = np.zeros((x.shape[0], 3, H, W), dtype=np.float32)
+class _Model(torch.nn.Module):
+    def forward(self, images):
+        return (images[:, 1:2].abs() + images[:, 2:3].abs() + 0.5)
 
-    params[:, 0] = np.abs(x[:, 1]) + np.abs(x[:, 2]) + 0.5
-    params[:, 1] = 5.0
-    params[:, 2] = 2.0
 
-    return params
+class _PositionalModel(_Model):
+    def forward(self, images):
+        return super().forward(images) + torch.arange(H, dtype=torch.float32)[None, None, :, None]
+
+
+class _CountingModel(_Model):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def forward(self, images):
+        self.calls += 1
+        return super().forward(images)
 
 
 def _batches():
-    rng      = np.random.default_rng(0)
-    images   = torch.from_numpy(rng.uniform(0.4, 1.0, size=(2, 3, H, W))).float()
-    renderer = PredictionCurves(1, np.linspace(-5.0, 15.0, N_Z))
+    rng    = np.random.default_rng(0)
+    images = torch.from_numpy(rng.uniform(0.4, 1.0, size=(2, 3, H, W))).float()
 
-    gt_curves = renderer.render(_model(images))
-    return [(images, gt_curves)], renderer
+    return [(images, _Model()(images), torch.ones(2, 1, H, W))]
 
 
 def test_noise_curve_starts_clean_and_degrades():
-    batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer, lambda: None)
+    batches = _batches()
+    core    = RobustnessCore(_Model(), lambda: None)
 
     rows = core.noise_curve(batches, [0.0, 0.5, 2.0])
 
@@ -51,8 +56,8 @@ def test_noise_curve_starts_clean_and_degrades():
 
 
 def test_noise_curve_orders_an_out_of_order_sigma_list():
-    batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer, lambda: None)
+    batches = _batches()
+    core    = RobustnessCore(_Model(), lambda: None)
 
     rows = core.noise_curve(batches, [0.5, 0.0, 2.0])
 
@@ -61,8 +66,8 @@ def test_noise_curve_orders_an_out_of_order_sigma_list():
 
 
 def test_noise_on_unused_channels_is_harmless():
-    batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer, lambda: None)
+    batches = _batches()
+    core    = RobustnessCore(_Model(), lambda: None)
 
     unused = core.noise_curve(batches, [0.0, 1.0], channels=[0])
     used   = core.noise_curve(batches, [0.0, 1.0], channels=[1, 2])
@@ -72,8 +77,8 @@ def test_noise_on_unused_channels_is_harmless():
 
 
 def test_noise_draws_report_spread():
-    batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer, lambda: None)
+    batches = _batches()
+    core    = RobustnessCore(_Model(), lambda: None)
 
     rows = core.noise_curve(batches, [0.0, 0.5], draws=3)
 
@@ -82,8 +87,8 @@ def test_noise_draws_report_spread():
 
 
 def test_gain_curve_always_holds_the_reference():
-    batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer, lambda: None)
+    batches = _batches()
+    core    = RobustnessCore(_Model(), lambda: None)
 
     rows  = core.gain_curve(batches, [0.5, 2.0])
     gains = [row["gain"] for row in rows]
@@ -94,39 +99,33 @@ def test_gain_curve_always_holds_the_reference():
     assert rows[2]["mse"] > 0.0
 
 
-def test_drop_curve_degrades_with_more_tracks():
-    batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer, lambda: None)
+def test_drop_curve_degrades_with_more_channels():
+    batches = _batches()
+    core    = RobustnessCore(_Model(), lambda: None)
 
-    rows = core.drop_curve(batches, [[1], [2]], draws=2)
+    rows = core.drop_curve(batches, 3, draws=3)
 
     assert rows[0]["dropped"] == 0
     assert rows[0]["mse"]     == pytest.approx(0.0, abs=1e-12)
-    assert rows[1]["mse"]     > 0.0
-    assert rows[2]["mse"]     > rows[1]["mse"]
-    assert rows[2]["dropped"] == 2
+    assert rows[2]["mse"]     > 0.0
+    assert rows[3]["mse"]     > rows[2]["mse"]
+    assert rows[3]["dropped"] == 3
 
 
 def test_drop_curve_evaluates_each_distinct_subset_once():
-    batches, renderer = _batches()
-    calls             = []
+    batches = _batches()
+    model   = _CountingModel()
+    rows    = RobustnessCore(model, lambda: None).drop_curve(batches, 2, draws=8)
 
-    def counting_model(images):
-        calls.append(images)
-        return _model(images)
-
-    core = RobustnessCore(counting_model, renderer, lambda: None)
-    rows = core.drop_curve(batches, [[1], [2]], draws=8)
-
-    assert len(calls) == 4
+    assert model.calls == 4
 
     assert rows[1]["mse_std"] is not None
     assert rows[2]["mse_std"] is None
 
 
 def test_shift_consistency_is_zero_for_a_pointwise_model():
-    batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer, lambda: None)
+    batches = _batches()
+    core    = RobustnessCore(_Model(), lambda: None)
 
     rows = core.shift_consistency(batches, [1, 3])
 
@@ -135,14 +134,7 @@ def test_shift_consistency_is_zero_for_a_pointwise_model():
 
 
 def test_shift_consistency_detects_position_dependence():
-    batches, renderer = _batches()
-
-    def positional_model(images):
-        params = _model(images)
-        params[:, 0] += np.arange(H, dtype=np.float32)[None, :, None]
-        return params
-
-    rows = RobustnessCore(positional_model, renderer, lambda: None).shift_consistency(batches, [2])
+    rows = RobustnessCore(_PositionalModel(), lambda: None).shift_consistency(_batches(), [2])
 
     assert rows[0]["mse"] > 1e-6
 
@@ -169,26 +161,10 @@ def test_tolerance_sigma_interpolates_and_censors():
     assert censored["censored"] is True
 
 
-def test_track_channels_map_secondaries_and_derived_channels():
-    input_config = SimpleNamespace(
-        use_primary                     = True,
-        use_secondaries                 = True,
-        use_derived                     = True,
-        primary_channels_per_source     = 1,
-        secondaries_channels_per_source = 1,
-        derived_channels_per_source     = 1,
-    )
-    run = SimpleNamespace(dataset=SimpleNamespace(input_config=input_config), n_secondaries=2)
-
-    per_track = TrackChannels.build(run)
-
-    assert per_track == [[1, 3], [2, 4]]
-
-
 def test_planned_sweep_counts_match_the_sweeps_run():
-    batches, renderer = _batches()
-    sweeps            = []
-    core              = RobustnessCore(_model, renderer, lambda: sweeps.append(1))
+    batches = _batches()
+    sweeps  = []
+    core    = RobustnessCore(_Model(), lambda: sweeps.append(1))
 
     core.noise_curve(batches, [0.0, 0.5, 2.0], draws=3)
     assert len(sweeps) == RobustnessCore.noise_sweeps([0.0, 0.5, 2.0], 3) == 7
@@ -196,7 +172,7 @@ def test_planned_sweep_counts_match_the_sweeps_run():
     core.gain_curve(batches, [0.5, 2.0])
     assert len(sweeps) == 7 + RobustnessCore.gain_sweeps([0.5, 2.0]) == 10
 
-    core.drop_curve(batches, [[0], [1], [2]], draws=2)
+    core.drop_curve(batches, 3, draws=2)
     assert len(sweeps) == 10 + RobustnessCore.drop_sweeps(3, 2) == 16
 
     core.shift_consistency(batches, [1, 2])
@@ -226,7 +202,7 @@ def test_report_labels_the_gain_row_with_the_swept_extremes(tmp_path):
         "noise"           : {"all channels": [{"sigma": 0.0, "mse": 1.0, "mse_std": None}]},
         "noise_tolerance" : {"sigma": 0.0, "censored": True},
         "gain"            : [{"gain": 0.8, "mse": 1.5}, {"gain": 1.0, "mse": 1.0}, {"gain": 1.25, "mse": 1.7}],
-        "drop"            : None,
+        "drop"            : [],
         "shift"           : [],
     }
     run.output_dir.mkdir(parents=True)

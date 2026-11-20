@@ -473,10 +473,8 @@ class TrainingEvolutionConfig:
     checkpoint_name : str = "best_model.pt"
     output_subdir   : str = "training_evolution"
 
-    window       : int = 64
-    n_row_probes : int = 2
-    n_col_probes : int = 2
-    fps          : int = 4
+    batch_size : int = 8
+    fps        : int = 4
 
     figure_style : str = "report"
 

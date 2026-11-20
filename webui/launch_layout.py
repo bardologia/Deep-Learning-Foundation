@@ -530,10 +530,8 @@ class LaunchLayout:
                         {"title": "Animation", "fields": [
                             "split",
                             "device",
-                            {"path": "window",           "widget": {"kind": "number", "min": 16, "max": 256, "step": 16}},
-                            {"path": "n_row_probes", "widget": {"kind": "number", "min": 1, "max": 8, "step": 1}},
-                            {"path": "n_col_probes",   "widget": {"kind": "number", "min": 1, "max": 8, "step": 1}},
-                            {"path": "fps",              "widget": {"kind": "number", "min": 1, "max": 30, "step": 1}},
+                            {"path": "batch_size", "widget": {"kind": "number", "min": 1, "max": 256, "step": 1}},
+                            {"path": "fps",        "widget": {"kind": "number", "min": 1, "max": 30, "step": 1}},
                         ]},
                         {"title": "Figures", "fields": [{"path": "figure_style", "widget": CH_FIGSTYLE}]},
                     ]},

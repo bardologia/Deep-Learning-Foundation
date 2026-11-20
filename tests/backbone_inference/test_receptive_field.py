@@ -33,15 +33,18 @@ class _DeadModel(torch.nn.Module):
         return x * 0.0
 
 
-class _AmpOnlyModel(torch.nn.Module):
+class _FirstChannelOnlyModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.conv = torch.nn.Conv2d(2, 1, kernel_size=3, padding=1, bias=False)
         torch.nn.init.constant_(self.conv.weight, 1.0)
 
     def forward(self, x):
-        amp = self.conv(x)
-        return torch.cat([amp, torch.ones_like(amp) * 5.0, torch.ones_like(amp) * 2.0], dim=1)
+        first = self.conv(x)
+        return torch.cat([first, torch.ones_like(first) * 5.0, torch.ones_like(first) * 2.0], dim=1)
+
+
+TARGETS = ["first", "second", "third"]
 
 
 def _windows(n_probes: int = 2) -> torch.Tensor:
@@ -50,7 +53,7 @@ def _windows(n_probes: int = 2) -> torch.Tensor:
 
 
 def test_conv3_mass_is_complete_inside_a_small_window():
-    erf     = ErfComputation(_ConvModel(3), WINDOW, [4, 8, 16])
+    erf     = ErfComputation(_ConvModel(3), WINDOW, [4, 8, 16], TARGETS)
     maps, _ = erf.gradient_maps(_windows())
     grad    = maps["combined"]
 
@@ -62,8 +65,8 @@ def test_conv3_mass_is_complete_inside_a_small_window():
 
 
 def test_wider_kernel_has_wider_sigma():
-    erf3 = ErfComputation(_ConvModel(3), WINDOW, [8])
-    erf9 = ErfComputation(_ConvModel(9), WINDOW, [8])
+    erf3 = ErfComputation(_ConvModel(3), WINDOW, [8], TARGETS)
+    erf9 = ErfComputation(_ConvModel(9), WINDOW, [8], TARGETS)
 
     sigma3 = erf3.sigma(erf3.gradient_maps(_windows())[0]["combined"])
     sigma9 = erf9.sigma(erf9.gradient_maps(_windows())[0]["combined"])
@@ -72,18 +75,18 @@ def test_wider_kernel_has_wider_sigma():
     assert sigma9[1] > sigma3[1]
 
 
-def test_family_maps_follow_channel_dependence():
-    erf     = ErfComputation(_AmpOnlyModel(), WINDOW, [8])
+def test_channel_maps_follow_the_input_dependence():
+    erf     = ErfComputation(_FirstChannelOnlyModel(), WINDOW, [8], TARGETS)
     maps, _ = erf.gradient_maps(_windows())
 
-    assert maps["amp"]   is not None
-    assert maps["mu"]    is None
-    assert maps["sigma"] is None
-    assert np.allclose(maps["combined"], maps["amp"])
+    assert maps["first"]    is not None
+    assert maps["second"]   is None
+    assert maps["third"]    is None
+    assert np.allclose(maps["combined"], maps["first"])
 
 
 def test_probe_sigmas_cover_every_probe():
-    erf              = ErfComputation(_ConvModel(3), WINDOW, [8])
+    erf              = ErfComputation(_ConvModel(3), WINDOW, [8], TARGETS)
     _, probe_sigmas  = erf.gradient_maps(_windows(n_probes=3))
 
     assert probe_sigmas.shape == (3, 2)
@@ -91,7 +94,7 @@ def test_probe_sigmas_cover_every_probe():
 
 
 def test_fine_mass_curve_is_monotone_and_reaches_one():
-    erf         = ErfComputation(_ConvModel(3), WINDOW, [8])
+    erf         = ErfComputation(_ConvModel(3), WINDOW, [8], TARGETS)
     maps, _     = erf.gradient_maps(_windows())
     sides, fine = erf.fine_mass_curve(maps["combined"])
 
@@ -109,8 +112,8 @@ def test_side_at_mass_interpolates_between_samples():
     assert ErfComputation.side_at_mass(sides, masses, 1.0)  == pytest.approx(6.0)
 
 
-def test_gaussian_grad_matches_gaussian_mass_reference():
-    erf    = ErfComputation(_ConvModel(3), WINDOW, [8])
+def test_normal_gradient_matches_the_normal_mass_reference():
+    erf    = ErfComputation(_ConvModel(3), WINDOW, [8], TARGETS)
     center = WINDOW // 2
     coords = np.arange(WINDOW) - center
     rr, cc = np.meshgrid(coords, coords, indexing="ij")
@@ -148,7 +151,7 @@ def test_probe_centers_fit_an_odd_window():
 
 
 def test_zero_gradient_probe_gets_nan_sigmas():
-    erf     = ErfComputation(_ConvModel(3), WINDOW, [8])
+    erf     = ErfComputation(_ConvModel(3), WINDOW, [8], TARGETS)
     windows = _windows(n_probes=2)
 
     windows[1] = 0.0

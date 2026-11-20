@@ -19,41 +19,39 @@ from tools.reporting.plotting                        import PlotBase
 
 class ErfComputation:
 
-    FAMILIES = ("amp", "mu", "sigma")
-
-    def __init__(self, model, window: int, mass_windows: list[int]) -> None:
+    def __init__(self, model, window: int, mass_windows: list[int], target_names: list[str]) -> None:
         self.model        = model
         self.window       = int(window)
         self.mass_windows = [int(w) for w in mass_windows]
+        self.target_names = list(target_names)
 
     def gradient_maps(self, windows: torch.Tensor) -> tuple[dict[str, np.ndarray | None], np.ndarray]:
         half   = self.window // 2
         device = ModelDevice.of(self.model)
 
-        family_totals = {family: torch.zeros(self.window, self.window) for family in self.FAMILIES}
-        probe_sigmas  = []
+        channel_totals = {name: torch.zeros(self.window, self.window) for name in self.target_names}
+        probe_sigmas   = []
 
         for p in range(windows.shape[0]):
             x = windows[p:p + 1].clone().to(device).requires_grad_(True)
             y = self.model(x)
 
             probe_map = torch.zeros(self.window, self.window)
-            for f, family in enumerate(self.FAMILIES):
-                target       = y[0, f::3, half, half].abs().sum()
-                grad         = torch.autograd.grad(target, x, retain_graph=True)[0]
+            for index, name in enumerate(self.target_names):
+                grad         = torch.autograd.grad(y[0, index, half, half].abs(), x, retain_graph=True)[0]
                 contribution = grad.abs().sum(dim=(0, 1)).cpu()
 
-                family_totals[family] += contribution
-                probe_map             += contribution
+                channel_totals[name] += contribution
+                probe_map            += contribution
 
             probe_sigmas.append(self.sigma(probe_map.numpy()) if float(probe_map.sum()) > 0.0 else (np.nan, np.nan))
 
         combined = np.zeros((self.window, self.window))
         maps     = {}
-        for family in self.FAMILIES:
-            arr          = (family_totals[family] / windows.shape[0]).numpy()
-            combined    += arr
-            maps[family] = arr if arr.sum() > 0.0 else None
+        for name in self.target_names:
+            arr        = (channel_totals[name] / windows.shape[0]).numpy()
+            combined  += arr
+            maps[name] = arr if arr.sum() > 0.0 else None
 
         maps["combined"] = combined
         return maps, np.asarray(probe_sigmas)
@@ -117,7 +115,7 @@ class ErfComputation:
         return grad.sum(axis=1) / total, grad.sum(axis=0) / total, offsets
 
     @staticmethod
-    def gaussian_mass(sides: np.ndarray, sigma_row: float, sigma_col: float) -> np.ndarray:
+    def normal_mass(sides: np.ndarray, sigma_row: float, sigma_col: float) -> np.ndarray:
         scale = 2.0 * math.sqrt(2.0)
         return np.array([math.erf(s / (scale * sigma_row)) * math.erf(s / (scale * sigma_col)) for s in sides])
 
@@ -175,15 +173,15 @@ class ReceptiveFieldPlots(PlotBase):
         self._overlay_geometry(fig.axes[0], grad, sigma_row, sigma_col)
         return self._save(fig, path)
 
-    def family_map(self, grad: np.ndarray, family: str, sigma_row: float, sigma_col: float, path: Path) -> Path:
+    def channel_map(self, grad: np.ndarray, name: str, sigma_row: float, sigma_col: float, path: Path) -> Path:
         half    = grad.shape[0] // 2
         display = np.log10(grad / grad.max() + 1e-12)
 
         fig = self._imshow_figure(
             display,
-            x_label        = "Range offset [px]",
-            y_label        = "Row offset [px]",
-            title          = f"Effective receptive field of predicted {family}",
+            x_label        = "Col offset (pixels)",
+            y_label        = "Row offset (pixels)",
+            title          = f"Effective receptive field of target '{name}'",
             cmap           = self._cmap_with_bad("inferno"),
             vmin           = -6.0,
             vmax           = 0.0,
@@ -198,21 +196,21 @@ class ReceptiveFieldPlots(PlotBase):
 
         return self._save(fig, path)
 
-    def mass_curve(self, sides: np.ndarray, fine_masses: np.ndarray, gaussian_masses: np.ndarray, marker_masses: dict[int, float], radii: dict[float, float], path: Path) -> Path:
+    def mass_curve(self, sides: np.ndarray, fine_masses: np.ndarray, normal_masses: np.ndarray, marker_masses: dict[int, float], radii: dict[float, float], path: Path) -> Path:
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
 
         ax.plot(sides, fine_masses * 100.0, color=self.OKABE_ITO[0], linewidth=1.4, label="measured")
-        ax.plot(sides, gaussian_masses * 100.0, color=self.OKABE_ITO[1], linewidth=1.2, linestyle="--", label="matched Gaussian")
+        ax.plot(sides, normal_masses * 100.0, color=self.OKABE_ITO[1], linewidth=1.2, linestyle="--", label="matched normal profile")
         ax.scatter(sorted(marker_masses), [marker_masses[w] * 100.0 for w in sorted(marker_masses)], s=26, color=self.OKABE_ITO[0], edgecolors="white", linewidths=0.6, zorder=4, label="configured windows")
 
         for index, (q, side) in enumerate(sorted(radii.items())):
             ax.axvline(side, color="0.45", linestyle=":", linewidth=0.9)
             ax.annotate(f"s{q * 100.0:.0f} = {side:.1f}", xy=(side, 4.0 + 14.0 * index), xytext=(3, 0), textcoords="offset points", fontsize=7, color="0.25", rotation=90)
 
-        ax.set_xlabel("Window side [px]")
-        ax.set_ylabel("Gradient mass inside window [%]")
+        ax.set_xlabel("Window side (pixels)")
+        ax.set_ylabel("Gradient mass inside window (%)")
         ax.set_title("Cumulative gradient mass by window")
         ax.set_ylim(0.0, 102.0)
         ax.grid(True, alpha=0.3)
@@ -236,7 +234,7 @@ class ReceptiveFieldPlots(PlotBase):
         ax.legend(loc="upper right", fontsize=8, framealpha=0.9)
 
         ax.set_yscale("log")
-        ax.set_xlabel(f"{axis_name.capitalize()} offset [px]")
+        ax.set_xlabel(f"{axis_name.capitalize()} offset (pixels)")
         ax.set_ylabel("Normalized gradient mass")
         ax.set_title(f"ERF marginal profile along {axis_name} (σ = {sigma:.2f} px)")
         ax.grid(True, alpha=0.3)
@@ -270,9 +268,9 @@ class RunReceptiveField(AnalysisRun):
         doc = MarkdownDoc(title=f"Effective receptive field: {run.backbone_name}")
         doc.paragraph(
             f"Measured on the '{self.config.split}' split with {self.config.n_row_probes * self.config.n_col_probes} probe pixels and a {self.config.window}px window: "
-            "gradient of the centre-pixel output magnitude with respect to the input window, averaged over probes, split by output family (amplitude, z, width). "
-            "sX is the interpolated window side containing X% of the gradient mass. The Gaussian shape check compares the mass inside the ±2σ box "
-            "against the 0.911 a separable Gaussian ERF would place there; a smaller value means heavier tails than Gaussian."
+            "gradient of the centre-pixel output magnitude with respect to the input window, averaged over probes, split by target channel. "
+            "sX is the interpolated window side containing X% of the gradient mass. The shape check compares the mass inside the ±2σ box "
+            "against the 0.911 a separable normal ERF would place there; a smaller value means heavier tails than normal."
         )
 
         sigma_spread = measures["probe_sigma_spread"]
@@ -281,18 +279,18 @@ class RunReceptiveField(AnalysisRun):
             "ERF sigma col"          : f"{measures['sigma_col_px']:.2f} px (± {sigma_spread['col_std']:.2f} across {sigma_spread['n_valid_probes']} of {sigma_spread['n_probes']} probes)",
             "Anisotropy σ_row/σ_col" : f"{measures['anisotropy']:.2f}",
             "s50 / s90 / s99"        : " / ".join(f"{measures['mass_sides'][key]:.1f} px" for key in ("50", "90", "99")),
-            "Mass in ±2σ box"        : f"{measures['mass_within_2sigma'] * 100.0:.1f}% (Gaussian reference 91.1%)",
+            "Mass in ±2σ box"        : f"{measures['mass_within_2sigma'] * 100.0:.1f}% (normal reference 91.1%)",
         })
 
-        doc.heading("Per-family ERF", level=2)
-        family_table = MarkdownTable(("Output family", "σ row", "σ range"))
-        for family in ErfComputation.FAMILIES:
-            entry = measures["families"][family]
+        doc.heading("Per-channel ERF", level=2)
+        channel_table = MarkdownTable(("Target channel", "σ row", "σ col"))
+        for name in run.target_channels:
+            entry = measures["channels"][name]
             if entry is None:
-                family_table.add_row(family, "no dependence", "no dependence")
+                channel_table.add_row(name, "no dependence", "no dependence")
             else:
-                family_table.add_row(family, f"{entry['sigma_row_px']:.2f} px", f"{entry['sigma_col_px']:.2f} px")
-        doc.table(family_table)
+                channel_table.add_row(name, f"{entry['sigma_row_px']:.2f} px", f"{entry['sigma_col_px']:.2f} px")
+        doc.table(channel_table)
 
         doc.heading("Gradient mass by window", level=2)
         table    = MarkdownTable(("Window", "Mass inside", "Marginal"))
@@ -313,7 +311,7 @@ class RunReceptiveField(AnalysisRun):
         centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
 
-        erf                = ErfComputation(run.model.module, self.config.window, self.config.mass_windows)
+        erf                = ErfComputation(run.model.module, self.config.window, self.config.mass_windows, run.target_channels)
         maps, probe_sigmas = erf.gradient_maps(windows)
         grad               = maps["combined"]
         valid              = np.isfinite(probe_sigmas[:, 0])
@@ -329,13 +327,13 @@ class RunReceptiveField(AnalysisRun):
         within_2sigma               = erf.mass_within_2sigma(grad, sigma_row, sigma_col)
         row_prof, col_prof, offsets = erf.axis_profiles(grad)
 
-        families = {}
-        for family in ErfComputation.FAMILIES:
-            if maps[family] is None:
-                families[family] = None
+        channels = {}
+        for name in run.target_channels:
+            if maps[name] is None:
+                channels[name] = None
             else:
-                fam_row, fam_col = erf.sigma(maps[family])
-                families[family] = {"sigma_row_px": fam_row, "sigma_col_px": fam_col}
+                channel_row, channel_col = erf.sigma(maps[name])
+                channels[name]           = {"sigma_row_px": channel_row, "sigma_col_px": channel_col}
 
         measures = {
             "sigma_row_px"       : sigma_row,
@@ -344,7 +342,7 @@ class RunReceptiveField(AnalysisRun):
             "mass_by_window"     : {str(w): mass for w, mass in sorted(masses.items())},
             "mass_sides"         : {f"{q * 100.0:.0f}": side for q, side in radii.items()},
             "mass_within_2sigma" : within_2sigma,
-            "families"           : families,
+            "channels"           : channels,
             "probe_sigma_spread" : {
                 "row_std"        : float(probe_sigmas[valid, 0].std()),
                 "col_std"        : float(probe_sigmas[valid, 1].std()),
@@ -357,14 +355,14 @@ class RunReceptiveField(AnalysisRun):
 
         plots        = ReceptiveFieldPlots()
         figure_paths = {
-            "erf_map"          : plots.erf_map(grad, sigma_row, sigma_col, anisotropy, radii[0.90], self.output_dir / "erf_map.png"),
-            "mass_curve"       : plots.mass_curve(sides, fine, erf.gaussian_mass(sides, sigma_row, sigma_col), masses, radii, self.output_dir / "mass_curve.png"),
-            "profile_row"  : plots.axis_profile(offsets, row_prof, sigma_row, "row", self.output_dir / "profile_row.png"),
-            "profile_range"    : plots.axis_profile(offsets, col_prof, sigma_col, "col", self.output_dir / "profile_range.png"),
+            "erf_map"     : plots.erf_map(grad, sigma_row, sigma_col, anisotropy, radii[0.90], self.output_dir / "erf_map.png"),
+            "mass_curve"  : plots.mass_curve(sides, fine, erf.normal_mass(sides, sigma_row, sigma_col), masses, radii, self.output_dir / "mass_curve.png"),
+            "marginal_row": plots.axis_profile(offsets, row_prof, sigma_row, "row", self.output_dir / "marginal_row.png"),
+            "marginal_col": plots.axis_profile(offsets, col_prof, sigma_col, "col", self.output_dir / "marginal_col.png"),
         }
-        for family in ErfComputation.FAMILIES:
-            if maps[family] is not None:
-                figure_paths[f"erf_{family}"] = plots.family_map(maps[family], family, families[family]["sigma_row_px"], families[family]["sigma_col_px"], self.output_dir / f"erf_{family}.png")
+        for name in run.target_channels:
+            if maps[name] is not None:
+                figure_paths[f"erf_{name}"] = plots.channel_map(maps[name], name, channels[name]["sigma_row_px"], channels[name]["sigma_col_px"], self.output_dir / f"erf_{name}.png")
 
         self._write_summary(run, centers, measures)
         report_path = self._write_report(run, measures, masses, figure_paths)

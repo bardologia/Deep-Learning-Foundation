@@ -15,7 +15,7 @@ def main() -> None:
     from tools.runtime.config_cli                             import ConfigCli
     from tools.monitoring.logger                              import Logger
 
-    cli    = ConfigCli(LossLandscapeConfig(), description="Map the curve-MSE landscape around the trained weights of backbone runs along two filter-normalized random directions: 1D cuts, a 2D log contour and a sharpness scalar per direction, written into each run directory; the physical curve objective keeps runs with different training losses comparable")
+    cli    = ConfigCli(LossLandscapeConfig(), description="Map the weighted-MSE landscape around the trained weights of backbone runs along two filter-normalized random directions: 1D cuts, a 2D log contour and a sharpness scalar per direction, written into each run directory; the normalized-target MSE objective keeps runs with different training losses comparable")
     config = cli.apply()
 
     with Logger(log_dir="logs", name="map_loss_landscape") as logger:
