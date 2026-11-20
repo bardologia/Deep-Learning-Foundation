@@ -80,16 +80,16 @@ class LaunchView extends ConfigForm {
     ],
   };
 
-  static MODEL_COLORS = { input: "#6f9bff", model: "#eef2f5", latent: "#fbbf24", output: "#2dd4bf", calc: "#a78bfa" };
+  static MODEL_COLORS = { input: "#6f9bff", model: "#eef2f5", output: "#2dd4bf", calc: "#a78bfa" };
 
-  static MODEL_TAGS = { input: "input", model: "network", latent: "latent", output: "output", calc: "result" };
+  static MODEL_TAGS = { input: "input", model: "network", output: "output", calc: "result" };
 
   static PROCESS_MEANINGS = {
     train_backbone : LaunchView.BACKBONE_MEANING,
     benchmark      : LaunchView.BACKBONE_MEANING,
     cross_validate : LaunchView.BACKBONE_MEANING,
     tune           : LaunchView.BACKBONE_MEANING,
-    infer: {
+    infer_backbone: {
       title  : "Inference",
       summary: "Runs a trained model over a split region with a sliding window, stitches the predicted target maps, and scores them against the targets.",
       flow   : [
@@ -116,7 +116,7 @@ class LaunchView extends ConfigForm {
     [/^animate_training$/, "film"],
     [/^measure_receptive_field$/, "field"],
     [/^stress_inputs$/, "sieve"],
-    [/^(xray_weights|xray_activations|attribute_inputs|probe_layers|analyze)$/, "loupe"],
+    [/^(xray_weights|xray_activations|attribute_inputs|probe_layers)$/, "loupe"],
   ];
 
   static figureFor(key) {

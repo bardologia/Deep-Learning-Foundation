@@ -1089,23 +1089,6 @@ class ExperimentBuilder {
     const model = this.modelLeaf ? this.view._effective(this.modelLeaf) : "model";
     const entry = this._modeEntry(this._mode());
 
-    const spec = entry.pattern ? entry.pattern(this, model) : null;
-
-    if (spec) {
-      const pattern       = document.createElement("span");
-      pattern.className   = "exp-name";
-      pattern.textContent = spec.text;
-      this.namesEl.appendChild(pattern);
-
-      const more       = document.createElement("span");
-      more.className   = "exp-name exp-name--more";
-      more.textContent = spec.note;
-      this.namesEl.appendChild(more);
-
-      SeedAxisNote.append(this.namesEl, this.view, this.seedsLeaf);
-      return;
-    }
-
     const names = entry.names(this, model);
     const limit = 12;
     names.slice(0, limit).forEach((name) => {
