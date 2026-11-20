@@ -718,6 +718,8 @@ def test_state_lists_the_phase_of_every_hour_of_the_week(schedule):
     ({"greedy": "sure"},                    "true or false"),
     ({"charity": "why not"},                "true or false"),
     ({"weekday_gpus": []},                  "at least one GPU"),
+    ({"weekend_gpus": [0, 0]},              "repeat"),
+    ({"weekday_gpus": [-1]},                "non-negative"),
     ({"start_day": 9},                      "[0, 6]"),
     ({"start_hour": 24},                    "[0, 23]"),
     ({"night_gpus": []},                    "at least one GPU"),
