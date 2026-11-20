@@ -201,19 +201,6 @@ class MachineProfile:
 
         return rules
 
-    def summary(self) -> dict:
-        return {
-            "path"       : None if self.path is None else str(self.path),
-            "exists"     : self.exists,
-            "hostname"   : self.machine["hostname"],
-            "env_name"   : self.env_name,
-            "interpreter": self.interpreter,
-            "roots"      : self.roots,
-            "dataset"    : self.dataset,
-            "gpu_pool"   : self.gpu_pool,
-            "written_at" : self.data.get("written_at", ""),
-        }
-
     def env_lines(self) -> list[str]:
         console = self.console
         values  = {

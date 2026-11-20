@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 
-from backbone_model_library import BackboneModelLibrary
 from config_template_store  import ConfigTemplateStore
 from launch_layout          import LaunchLayout, LayoutError
 from process_manager        import ProcessManager
@@ -19,19 +18,11 @@ from stream_hub             import StreamChannel, StreamHub
 
 class CatalogRouter(SubRouter):
 
-    PROJECT = {
-        "name"        : "ML Template",
-        "tagline"     : "Deep learning project template and control console",
-        "description" : "A reusable scaffold for supervised deep learning projects: dataset assembly, model zoo, training, inference, experiments and analysis, all wired to this console. The bundled example task regresses two target channels from four input channels of a synthetic dataset on a 2-D grid.",
-        "pipelines"   : ["Parameter Extraction", "Dataset", "Training", "Inference", "Tuning"],
-    }
-
-    def __init__(self, paths: ProjectPaths, catalog: ScriptCatalog, resolver: ScriptConfigResolver, layout: LaunchLayout, models: BackboneModelLibrary, launcher: RunLauncher) -> None:
+    def __init__(self, paths: ProjectPaths, catalog: ScriptCatalog, resolver: ScriptConfigResolver, layout: LaunchLayout, launcher: RunLauncher) -> None:
         self.paths    = paths
         self.catalog  = catalog
         self.resolver = resolver
         self.layout   = layout
-        self.models   = models
         self.launcher = launcher
 
         super().__init__(("/api/project", "/api/scripts"))
@@ -43,22 +34,10 @@ class CatalogRouter(SubRouter):
         table.wildcard("GET", "/api/scripts/", "",        self.script_detail)
 
     def project(self, exchange: HttpExchange) -> None:
-        interpreters = self.paths.discover_interpreters()
-        model_names  = [model["name"] for family in self.models.collect() for model in family["models"]]
-
         exchange.send_json({
-            **self.PROJECT,
-            "models"       : model_names,
             "repo_root"    : str(self.paths.repo_root),
             "roots"        : self.paths.roots(),
-            "profile"      : self.paths.profile.summary(),
-            "interpreters" : interpreters,
-            "preferred"    : self.paths.preferred_interpreter(interpreters),
-            "counts"       : {
-                "scripts"   : len(self.catalog.list_scripts()),
-                "models"    : len(model_names),
-                "pipelines" : len(self.PROJECT["pipelines"]),
-            },
+            "interpreters" : self.paths.discover_interpreters(),
         })
 
     def scripts(self, exchange: HttpExchange) -> None:

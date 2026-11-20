@@ -126,7 +126,7 @@ class WebUIServer:
             AutopsyRouter(self.autopsy),
             ContentLibraryRouter("/api/configs",      self.configs,      "groups"),
             BackboneRouter("/api/backbones", self.models),
-            CatalogRouter(self.paths, self.catalog, self.resolver, self.layout, self.models, self.launcher),
+            CatalogRouter(self.paths, self.catalog, self.resolver, self.layout, self.launcher),
             JobRouter(self.paths, self.processes, self.launcher, self.stream_hub),
             SavedRunRouter(self.paths, self.saved_runs, self.launcher),
             ConfigTemplateRouter(self.templates),

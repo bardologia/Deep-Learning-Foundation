@@ -129,7 +129,7 @@ def build_routers() -> list:
         AutopsyRouter(None),
         ContentLibraryRouter("/api/configs",      None, "groups"),
         BackboneRouter("/api/backbones", None),
-        CatalogRouter(None, None, None, None, None, None),
+        CatalogRouter(None, None, None, None, None),
         JobRouter(None, None, None, None),
         SavedRunRouter(None, None, None),
         ConfigTemplateRouter(None),

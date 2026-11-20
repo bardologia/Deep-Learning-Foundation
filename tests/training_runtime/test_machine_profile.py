@@ -317,7 +317,7 @@ def test_save_writes_the_profile_and_its_shell_twin(tmp_path):
 
     reloaded = MachineProfile.load(path)
     assert reloaded.console["port"] == 9001
-    assert reloaded.summary()["env_name"] == "Env"
+    assert reloaded.env_name           == "Env"
 
 
 def test_field_rule_is_immutable():
