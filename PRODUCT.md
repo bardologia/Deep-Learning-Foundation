@@ -6,29 +6,45 @@ product
 
 ## Users
 
-A single ML researcher (and occasional colleagues) operating a shared multi-GPU Linux server for dense per-pixel regression deep learning. The web UI is glanced at on a side monitor while long trainings run, and consulted closely when something goes wrong (GPU intrusion, RAM pressure, contention with other users).
+Researchers who start a new machine-learning project from ML-Template, alone or in a small
+group, on a workstation or a shared multi-GPU Linux server. The console sits on a side
+monitor while long training runs proceed and is read closely when something needs
+attention: a failed job, GPU intrusion by another user, memory pressure or contention.
 
 ## Product Purpose
 
-Local control room for the ML-Template codebase: launch and monitor training/inference runs, inspect configs, browse results, and watch live server telemetry (GPU/CPU/RAM/disk/processes) with watchdog and neighbour-impact guards.
+The local control room of a project built on the template. It launches and queues the
+entry points with their full configuration, streams their output, chains experiments into
+sequences, browses runs, reports and figures, inspects trained models, and watches the
+machine (GPUs, CPU, memory, disk, processes) with watchdogs and neighbour-impact guards.
 
 ## Brand Personality
 
-Instrument-grade, scientific, quietly futuristic. A measurement device, not a SaaS product. Dark surfaces are the app's existing vocabulary for live machine output (consoles, CLI panes, process stages); light surfaces are for configuration and reading.
+Instrument-grade, scientific and quiet. A measurement device, not a SaaS product. The
+console uses one dark theme throughout, the vocabulary of live machine output: consoles,
+terminals and telemetry traces.
 
 ## Anti-references
 
 - Packed uniform card walls where every metric shouts equally.
-- Consumer dashboard gloss: rounded pastel cards, gradient text, glassmorphism.
+- Consumer dashboard gloss: pastel cards, gradient text, decorative effects that carry no
+  information.
 - Grafana-default look: undifferentiated panel soup.
 
 ## Design Principles
 
-- Hierarchy by importance: GPUs are the reason the server exists; they read first. Guards and alarms surface only when they matter.
-- Telemetry is an instrument panel: mono numerals, hairlines, phosphor-like traces, high legibility at a distance.
+- Hierarchy by importance: GPUs are the scarce resource and read first. Guards and alarms
+  surface only when they matter.
+- Telemetry is an instrument panel: monospaced numerals, hairlines, trace plots, high
+  legibility at a distance.
 - Alarm states are unmissable and unambiguous; idle states are calm.
-- Density is allowed (process tables, logs) but rhythm and grouping keep it scannable.
+- Density is allowed (process tables, logs, configuration forms), but rhythm and grouping
+  keep it scannable.
+- Every launch control maps to a configuration field of its entry point, and the command
+  preview shows the exact command line a launch runs.
 
-## Accessibility & Inclusion
+## Accessibility and Inclusion
 
-Reduced-motion honoured everywhere (REDUCED_MOTION gates all canvas loops and CSS animation). Text contrast at or above 4.5:1 on both light and dark surfaces. State never conveyed by colour alone (lights are paired with text labels).
+Reduced motion is honoured everywhere: it gates the canvas loops, the line-figure
+autopilot and the CSS animations. Text contrast is at least 4.5:1, and state is never
+conveyed by colour alone; lights are paired with text labels.
