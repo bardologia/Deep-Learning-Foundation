@@ -143,8 +143,3 @@ class MetricOrientation:
         )
 
         return next(direction for direction, matched in rules if matched)
-
-    @classmethod
-    def higher_is_better(cls, key: str) -> bool | None:
-        direction = cls.direction(key)
-        return None if direction is None else direction == "higher"

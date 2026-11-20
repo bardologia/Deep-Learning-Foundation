@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
-from tools.monitoring.logger                       import NullLogger
+from tests.conftest                               import SilentLogger
 
 
 @dataclass
@@ -15,7 +15,7 @@ class _Entry:
 
 
 def test_save_writes_the_config_and_a_provenance_record(tmp_path):
-    written    = ResolvedEntryConfigWriter.save(_Entry(), tmp_path, NullLogger())
+    written    = ResolvedEntryConfigWriter.save(_Entry(), tmp_path, SilentLogger())
     provenance = json.loads(ResolvedEntryConfigWriter.provenance_path_for(tmp_path).read_text())
 
     assert written == tmp_path / "docs" / "resolved_entry_config.json"

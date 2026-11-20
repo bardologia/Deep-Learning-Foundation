@@ -39,12 +39,6 @@ class CatalogRoots:
     def contains(self, target: Path) -> bool:
         return any(target.is_relative_to(root) for root in self.snapshot())
 
-    def enclosing(self, target: Path) -> Path | None:
-        matches = [root for root in self.snapshot() if target.is_relative_to(root)]
-        if not matches:
-            return None
-        return Path(max(matches, key=len))
-
     def snapshot(self) -> tuple:
         with self.lock:
             return tuple(self.roots)

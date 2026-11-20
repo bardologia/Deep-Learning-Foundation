@@ -47,10 +47,6 @@ class HttpExchange:
     def number(self, name: str, default: str = "0") -> float:
         return float(self.text(name, default))
 
-    def optional_number(self, name: str) -> float | None:
-        raw = self.text(name)
-        return float(raw) if raw else None
-
     def header(self, name: str, default: str = "") -> str:
         return self.handler.headers.get(name) or default
 
@@ -86,13 +82,6 @@ class HttpExchange:
             return
 
         self.send_payload("image/png", png, "no-cache")
-
-    def send_bytes(self, blob: bytes | None) -> None:
-        if blob is None:
-            self.not_found()
-            return
-
-        self.send_payload("application/octet-stream", blob, "no-cache")
 
     def send_file(self, target: Path, cache: str) -> None:
         data = target.read_bytes()

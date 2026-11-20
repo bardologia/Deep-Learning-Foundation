@@ -91,19 +91,6 @@ def test_containment_rejects_a_shared_name_prefix(roots, tmp_path):
     assert roots.contains(Path(str(tmp_path / "runs") + "_backup") / "leak.png") is False
 
 
-def test_the_enclosing_root_is_the_deepest_match(roots, tmp_path):
-    outer = tmp_path / "runs"
-    inner = outer / "group"
-    inner.mkdir(parents=True)
-
-    roots.open(str(outer))
-    roots.open(str(inner))
-
-    assert roots.enclosing(inner / "run_a") == inner.resolve()
-    assert roots.enclosing(outer / "run_b") == outer.resolve()
-    assert roots.enclosing(tmp_path / "elsewhere") is None
-
-
 def test_the_same_root_is_recorded_once(roots, tmp_path):
     roots.open(str(tmp_path))
     roots.open(str(tmp_path) + "/")

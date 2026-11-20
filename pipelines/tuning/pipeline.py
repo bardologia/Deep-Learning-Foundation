@@ -105,14 +105,6 @@ class TuningScheduler:
 
         return [target_model]
 
-    def planned_workers(self) -> list[tuple[str, str, int, int]]:
-        workers = []
-        for model_name in self.selected_models():
-            counts = self._distribute_trials(self.config.tuning.n_trials, self.worker_count())
-            workers += [(model_name, self._study_name(model_name), count, index) for index, count in enumerate(counts) if count > 0]
-
-        return workers
-
     def worker_argv(self, model_name: str, study_name: str, n_trials: int, worker_index: int) -> list[str]:
         return [
             "--worker",

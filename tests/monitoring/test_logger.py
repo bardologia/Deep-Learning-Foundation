@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import pytest
 
 from tools.monitoring              import logger as logger_module
-from tools.monitoring.logger       import Logger, NullLogger, LiveMonitor, get_console
+from tools.monitoring.logger       import Logger, LiveMonitor, get_console
 from tools.runtime.config_cli      import ConfigCli
 from tools.runtime.detacher        import Detacher
 from tools.runtime.machine_profile import MachineProfile
@@ -349,10 +349,6 @@ def test_track_yields_progress(tmp_path):
     logger.close()
 
 
-def test_progress_bar_aliases_track():
-    assert Logger.progress_bar is Logger.track
-
-
 def test_live_monitor_updates(tmp_path):
     logger = Logger(log_dir=str(tmp_path), name="exp_live")
     with logger.live_monitor(title="Run") as monitor:
@@ -470,15 +466,6 @@ def test_live_monitor_render_returns_panel():
     panel = monitor._render()
 
     assert panel is not None
-
-
-def test_null_logger_swallows_everything():
-    nl = NullLogger()
-
-    assert nl.info("x")            is None
-    assert nl.section("y")         is None
-    assert nl.anything("a", b=2)   is None
-    assert nl.kv_table({"k": "v"}) is None
 
 
 def test_progress_bars_refresh_at_rich_default_rate_so_console_tiles_stay_live():

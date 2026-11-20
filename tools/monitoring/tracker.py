@@ -63,9 +63,6 @@ class Tracker:
             except (TypeError, ValueError):
                 continue
 
-    def log_figure(self, tag, figure, step=None) -> None:
-        self._emit("add_figure", tag, figure, step, close=True)
-
     def log_histogram(self, tag, values, step=None, bins="auto") -> None:
         v       = np.asarray(values).ravel().astype(np.float32)
         finite  = v[np.isfinite(v)]
@@ -99,9 +96,3 @@ class Tracker:
     def close(self) -> None:
         if self.writer is not None:
             self.writer.close()
-
-
-class NullTracker(Tracker):
-
-    def __init__(self, debug: bool = False) -> None:
-        super().__init__(writer=None, debug=debug)

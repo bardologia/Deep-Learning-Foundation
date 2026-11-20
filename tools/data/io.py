@@ -36,18 +36,6 @@ class FileIO:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    @staticmethod
-    def save_text_metadata(entries: dict, path: Path) -> Path:
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(path, "w", encoding="utf-8") as f:
-            for key, value in entries.items():
-                f.write(f"{key}: {value}\n")
-
-        return path
-
-
 
 class DatasetFingerprint:
 

@@ -32,21 +32,15 @@ def test_orientation_of_the_error_and_loss_keys_is_lower():
     for key in ("rmse_mean", "mae_mean", "rmse_pointwise", "mae_neighbourhood", "best_val_loss"):
         assert MetricOrientation.direction(key) == "lower", key
 
-    assert MetricOrientation.higher_is_better("rmse_mean") is False
-
 
 def test_orientation_of_the_r2_keys_is_higher():
     for key in ("r2_mean", "r2_pointwise"):
         assert MetricOrientation.direction(key) == "higher", key
 
-    assert MetricOrientation.higher_is_better("r2_mean") is True
-
 
 def test_orientation_of_counts_and_signed_bias_is_neutral():
     for key in ("n_pixels", "bias_pointwise", "checkpoint_epoch", "seed"):
         assert MetricOrientation.direction(key) is None, key
-
-    assert MetricOrientation.higher_is_better("n_pixels") is None
 
 
 def test_rank_correlation_averages_tied_ranks():

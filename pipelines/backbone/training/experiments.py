@@ -74,8 +74,6 @@ class AugmentationTrialPlanner:
 
 class ArchitecturePatchStep:
 
-    PYRAMID_BACKBONES = frozenset({"unet", "unet_skip", "resunet", "attention_unet"})
-
     def __init__(self, backbone_name: str, model_overrides: dict) -> None:
         self.backbone_name   = backbone_name
         self.model_overrides = model_overrides

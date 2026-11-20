@@ -86,14 +86,11 @@ def test_validators(tmp_path):
     assert Validators.creatable_dir(str(tmp_path / "a" / "b")) is None
     assert Validators.creatable_dir("relative/path")           is not None
     assert Validators.creatable_dir(str(tmp_path / "f" / "x")) is not None
-    assert Validators.optional_dir("")                         is None
-    assert Validators.optional_file("")                        is None
     assert Validators.port("8772")                             is None
     assert Validators.port("80")                               is not None
     assert Validators.host("0.0.0.0")                          is None
     assert Validators.email("a@b.co")                          is None
     assert Validators.email("nope")                            is not None
-    assert Validators.optional_email("")                       is None
     assert Validators.topic("my-topic_1")                      is None
     assert Validators.topic("bad topic")                       is not None
     assert Validators.gpu_list([0, 1])("0,1")                  is None

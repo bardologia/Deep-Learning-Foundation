@@ -62,8 +62,6 @@ class SilentLogger:
     def track(self, transient: bool = False):
         yield SilentProgress()
 
-    progress_bar = track
-
     @contextlib.contextmanager
     def live_monitor(self, title: str = "Training Monitor"):
         yield SilentProgress()
@@ -74,7 +72,6 @@ class RecordingWriter:
     def __init__(self):
         self.scalars    = []
         self.histograms = []
-        self.figures    = []
         self.layouts    = []
         self.flushed    = 0
         self.closed     = 0
@@ -84,9 +81,6 @@ class RecordingWriter:
 
     def add_histogram(self, tag, values, step, bins="auto"):
         self.histograms.append((tag, np.asarray(values), step, bins))
-
-    def add_figure(self, tag, figure, step, close=True):
-        self.figures.append((tag, figure, step, close))
 
     def add_custom_scalars(self, layout):
         self.layouts.append(layout)

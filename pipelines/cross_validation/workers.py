@@ -259,11 +259,6 @@ class FoldTrainingWorker(CrossValidationWorker):
 
 class FoldInferenceWorker(CrossValidationWorker):
 
-    def _log(self, run_directory: Path, message: str) -> None:
-        logger = Logger(log_dir=str(run_directory / "logs"), name="fold_inference", level="INFO")
-        logger.info(message)
-        logger.close()
-
     def _run_inference(self, run_directory: Path, split: str, fold_index: int) -> None:
         from pipelines.backbone.inference.pipeline import InferencePipeline
 

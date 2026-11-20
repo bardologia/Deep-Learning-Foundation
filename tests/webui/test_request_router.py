@@ -189,7 +189,6 @@ def test_query_accessors_apply_defaults():
     assert exchange.integer("row")          == 7
     assert exchange.number("frac")         == 0.5
     assert exchange.number("keep", "-inf") == float("-inf")
-    assert exchange.optional_number("vmax") is None
 
 
 def test_route_table_prefers_exact_then_wildcard():

@@ -15,7 +15,6 @@ matplotlib.use("Agg")
 class PlotBase:
 
     FULL_WIDTH : float = 5.5
-    HALF_WIDTH : float = 2.65
 
     OKABE_ITO = ["#0072B2", "#D55E00", "#009E73", "#E69F00", "#CC79A7", "#56B4E9", "#F0E442", "#000000"]
 

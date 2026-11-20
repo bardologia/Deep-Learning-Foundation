@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from tests.conftest           import RecordingWriter
-from tools.monitoring.tracker import Tracker, NullTracker
+from tools.monitoring.tracker import Tracker
 from unittest.mock import Mock
 
 
@@ -175,21 +175,6 @@ def test_log_histogram_of_finite_values_logs_no_diagnostics():
     assert w.scalars == []
 
 
-def test_log_figure_delegates_with_close():
-    w = RecordingWriter()
-    t = Tracker(writer=w)
-
-    sentinel = object()
-    t.log_figure("recon/px0", sentinel, step=4)
-
-    tag, figure, step, close = w.figures[0]
-
-    assert tag    == "recon/px0"
-    assert figure is sentinel
-    assert step   == 4
-    assert close  is True
-
-
 def test_log_layout_forwards_the_custom_scalars_layout():
     w = RecordingWriter()
     t = Tracker(writer=w)
@@ -220,14 +205,3 @@ def test_flush_and_close_noop_without_writer():
     t = Tracker()
     t.flush()
     t.close()
-
-
-def test_null_tracker_is_inactive():
-    nt = NullTracker()
-
-    assert nt.active is False
-    assert isinstance(nt, Tracker)
-
-    nt.log_scalar("x", 1.0)
-    nt.flush()
-    nt.close()

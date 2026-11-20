@@ -108,21 +108,6 @@ def test_save_json_serializes_nonjson_via_default(tmp_path):
     assert loaded["path"] == "/x/y"
 
 
-def test_save_text_metadata_format(tmp_path):
-    path = tmp_path / "meta.txt"
-    FileIO.save_text_metadata({"name": "foo", "count": 3}, path)
-
-    lines = path.read_text().splitlines()
-    assert lines == ["name: foo", "count: 3"]
-
-
-def test_save_text_metadata_creates_parent(tmp_path):
-    path = tmp_path / "sub" / "meta.txt"
-    FileIO.save_text_metadata({"k": "v"}, path)
-
-    assert path.is_file()
-
-
 @pytest.mark.dataset
 def test_save_json_roundtrip_scene_layout(dataset_json, tmp_path):
     path = tmp_path / "dataset_copy.json"

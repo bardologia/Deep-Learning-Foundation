@@ -37,8 +37,6 @@ class DatasetSelector(RunSelector):
 
 class RunContentSelector(RunSelector):
 
-    SEARCH_ENTRY = "train_backbone"
-
     def __init__(self, runs_dir: Path, logger) -> None:
         super().__init__(runs_dir, RunDirectoryWalk.MARKER, logger, action="mail")
 

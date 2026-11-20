@@ -303,9 +303,9 @@ def test_figsize_full_width():
 
 
 def test_figsize_custom_aspect():
-    w, h = PlotBase.figsize(PlotBase.HALF_WIDTH, aspect=1.0)
-    assert w == pytest.approx(2.65)
-    assert h == pytest.approx(2.65)
+    w, h = PlotBase.figsize(PlotBase.FULL_WIDTH, aspect=1.0)
+    assert w == pytest.approx(5.5)
+    assert h == pytest.approx(5.5)
 
 
 def test_paper_save_upgrades_line_plot_to_pdf(plotter, paper_style, tmp_path):

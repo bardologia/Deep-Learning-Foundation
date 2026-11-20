@@ -359,8 +359,6 @@ class Logger:
         with progress:
             yield progress
 
-    progress_bar = track
-
     @contextmanager
     def live_monitor(self, title: str = "Training Monitor"):
         monitor = LiveMonitor(self.console, title=title)
@@ -414,9 +412,3 @@ class Logger:
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         self.close(exc_val if exc_type is not None else None)
         return False
-
-
-class NullLogger:
-
-    def __getattr__(self, name: str):
-        return lambda *args, **kwargs: None

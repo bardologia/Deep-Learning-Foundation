@@ -112,14 +112,6 @@ class Validators:
         return None if ancestor.is_dir() else f"{ancestor} exists and is not a directory"
 
     @staticmethod
-    def optional_dir(value: str) -> str | None:
-        return None if not value else Validators.existing_dir(value)
-
-    @staticmethod
-    def optional_file(value: str) -> str | None:
-        return None if not value else Validators.existing_file(value)
-
-    @staticmethod
     def port(value: str) -> str | None:
         return None if value.isdigit() and 1024 <= int(value) <= 65535 else f"{value!r} is not a port between 1024 and 65535"
 
@@ -130,10 +122,6 @@ class Validators:
     @staticmethod
     def email(value: str) -> str | None:
         return None if Validators.EMAIL.match(value or "") else f"{value!r} is not an email address"
-
-    @staticmethod
-    def optional_email(value: str) -> str | None:
-        return None if not value else Validators.email(value)
 
     @staticmethod
     def topic(value: str) -> str | None:

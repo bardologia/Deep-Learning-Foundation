@@ -54,8 +54,5 @@ class Normalizer:
     def normalize_target(self, tensor: Array) -> Array:
         return self._forward("target", tensor)
 
-    def denormalize_input(self, tensor: Array) -> Array:
-        return self._inverse("input", tensor)
-
     def denormalize_target(self, tensor: Array) -> Array:
         return self._inverse("target", tensor)
